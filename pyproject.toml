@@ -53,3 +53,32 @@ path = "revedaEditor/gui/revinit.py"
 [tool.pyright]
 venvPath = "C:/Users/eskiye50/"
 venv = "reveda_3p13"
+
+[tool.poetry]
+name = "revolution-eda"
+version = "0.8.0"
+description = "Custom IC Design Environment for professionals"
+authors = ["Revolution Semiconductor <48187772+eskiyerli@users.noreply.github.com>"]
+license = "Mozilla Public License v2 modified by Commons Clause"
+readme = "README.md"
+packages = [{include = "revedaEditor"}]
+
+[tool.poetry.dependencies]
+python = ">=3.12,<3.14"
+PySide6 = "~6.9.2"
+quantiphy = "~2.20"
+python-dotenv = "~1.1.0"
+numpy = "~2.3.1"
+gdstk = "~0.9.60"
+pyqtgraph = "~0.14.0.dev0"
+polars = "~1.33.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "~8.4.1"
+
+[tool.poetry.scripts]
+reveda = "reveda:main"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
