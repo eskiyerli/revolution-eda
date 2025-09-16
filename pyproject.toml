@@ -1,0 +1,55 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "revolution-eda"
+dynamic = ["version"]
+description = "Revolution EDA is a new generation integrated circuit design environment."
+readme = "README.md"
+requires-python = ">=3.13.0"
+license-files = { paths = ["LICENSE.txt"] }
+authors = [
+    { name = "Revolution EDA", email = "48187772+eskiyerli@users.noreply.github.com" },
+]
+keywords = ["electronic", "design", "schematic", "layout"]
+dependencies = [
+    "PySide6~=6.9.0",
+    "python-dotenv~=1.1.0",
+    "quantiphy~=2.20",
+    "setuptools~=80.8.0",
+    "gdstk~=0.9.53",
+    "numpy~=2.2.6",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Electronic Design Automation (EDA)",
+]
+
+[project.urls]
+Documentation = "https://github.com/eskiyerli/revolution-eda#readme"
+Issues = "https://github.com/eskiyerli/revolution-eda/issues"
+Source = "https://github.com/eskiyerli/revolution-eda"
+Website = "https://reveda.eu"
+
+[project.scripts]
+reveda = "reveda:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["revedaEditor", "pdk"]
+modules = ["revinit", "reveda"]
+exclude = ["plugins/"]
+
+[tool.hatch.version]
+path = "revedaEditor/gui/revinit.py"
+
+[tool.hatch.build.targets.wheel.force-include]
+"./exampleLibraries" = "exampleLibraries"
+"./reveda.py" = "reveda.py"
+"./reveda.conf" = "reveda.conf"
+"./library.json" = "library.json"
+
+[tool.pyright]
+venvPath = "C:/Users/eskiye50/"
+venv = "reveda_3p13"
