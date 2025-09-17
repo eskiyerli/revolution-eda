@@ -304,29 +304,37 @@ class libraryBrowser(QMainWindow):
     def createNewCellView(self, libItem, cellItem, viewItem):
         viewTuple = ddef.viewTuple(libItem.libraryName, cellItem.cellName, viewItem.viewName)
         
-        def _create_editor_window(editor_class, load_method):
-            window = editor_class(viewItem, self.libraryDict, self.libBrowserCont.designView)
+        if viewItem.viewType == "schematic":
+            window = schematicEditor(viewItem, self.libraryDict, self.libBrowserCont.designView)
             self.appMainW.openViews[viewTuple] = window
-            getattr(window, load_method)()
+            window.loadSchematic()
             window.show()
-        
-        def _create_text_editor(editor_class, finished_callback):
-            editor = editor_class(self.appMainW, "")
+        elif viewItem.viewType == "symbol":
+            window = symbolEditor(viewItem, self.libraryDict, self.libBrowserCont.designView)
+            self.appMainW.openViews[viewTuple] = window
+            window.loadSymbol()
+            window.show()
+        elif viewItem.viewType == "layout":
+            # Initialize empty layout file if it doesn't exist
+            if not viewItem.data(Qt.UserRole + 2).exists():
+                with viewItem.data(Qt.UserRole + 2).open(mode="w") as f:
+                    json.dump([{"viewType": "layout"}, {"snapGrid": [5, 5]}, {}], f, indent=4)
+            window = layoutEditor(viewItem, self.libraryDict, self.libBrowserCont.designView)
+            self.appMainW.openViews[viewTuple] = window
+            window.loadLayout()
+            window.show()
+        elif viewItem.viewType == "veriloga":
+            editor = ted.verilogaEditor(self.appMainW, "")
             editor.cellViewTuple = viewTuple
-            editor.closedSignal.connect(finished_callback)
+            editor.closedSignal.connect(self.verilogaCreateFinished)
             editor.show()
-        
-        handlers = {
-            "schematic": lambda: _create_editor_window(schematicEditor, "loadSchematic"),
-            "symbol": lambda: _create_editor_window(symbolEditor, "loadSymbol"),
-            "layout": lambda: _create_editor_window(layoutEditor, "loadLayout"),
-            "veriloga": lambda: _create_text_editor(ted.verilogaEditor, self.verilogaCreateFinished),
-            "spice": lambda: _create_text_editor(ted.xyceEditor, self.spiceCreateFinished),
-            "revbench": lambda: self.openRevbenchWindow(libItem, cellItem, viewItem)
-        }
-        
-        if viewItem.viewType in handlers:
-            handlers[viewItem.viewType]()
+        elif viewItem.viewType == "spice":
+            editor = ted.xyceEditor(self.appMainW, "")
+            editor.cellViewTuple = viewTuple
+            editor.closedSignal.connect(self.spiceCreateFinished)
+            editor.show()
+        elif viewItem.viewType == "revbench":
+            self.openRevbenchWindow(libItem, cellItem, viewItem)
         elif viewItem.viewType == "config":
             schViewsList = [cellItem.child(row).viewName for row in range(cellItem.rowCount()) 
                            if cellItem.child(row).viewType == "schematic"]

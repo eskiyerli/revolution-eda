@@ -557,7 +557,7 @@ class layoutScene(editorScene):
             Returns:
                 tuple: (view_type, grid_settings, remaining_data)
             """
-            if len(data) < 3:
+            if len(data) < 2:
                 raise ValueError("Insufficient data in layout file")
 
             view_type, grid_settings, *item_data = data
