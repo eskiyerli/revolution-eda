@@ -45,16 +45,41 @@ Revolution EDA features a modular plugin architecture that enables extensible fu
 
 ## Installation
 
-When downloading from PyPI, consider downloading the source package to access *exampleLibraries*.
+### Prerequisites
 
-## Getting Started
+- Python 3.12 or 3.13
+- [Poetry](https://python-poetry.org/docs/#installation) dependency management tool
 
-1. Install Revolution EDA from PyPI
-2. Launch the application
-3. Load example libraries to explore features
-4. Create or import your circuit designs
-5. Set up simulation parameters
-6. Run simulations and analyze results with the integrated plotter
+### From Source
+
+```bash
+# Clone the repository
+git clone https://github.com/eskiyerli/revolution-eda.git
+cd revolution-eda
+
+# Install dependencies
+poetry install
+
+# Run the application
+poetry run reveda
+```
+
+To use preliminerary IHP PDK, clone the ihp_pdk repository preferably to another directory:
+```bash
+git clone https://github.com/eskiyerli/ihp_pdk.git
+```
+
+If you would like to use preliminary IHP PDK, make sure that `REVEDA_PDK_PATH` variable in `.env` file points to where it is downloaded. For example, you had cloned the repository under the same directory where `revolution-eda` repo is cloned, `.env` file content could be:
+```
+REVEDA_PDK_PATH=../ihp_pdk
+```
+You could also clone `example_libraries` repo to have some ideal elements and IHP sg13g2_pr library. The second library also three layout parametric cells included for `rsil`, `cap_cmim` and `sg13_lv_nmos`. There is no guarantee given that these parametric cells are error-free and can be used with the relevant IHP process.
+
+Once again, the user can clone the relevant repository to download the example libraries:
+```bash
+git clone https://github.com/eskiyerli/exampleLibraries.git
+```
+User Library Path Editor to add the paths to downloaded libraries to library browser.
 
 ## Attribution
 
