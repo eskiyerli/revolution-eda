@@ -27,15 +27,20 @@
 # The PySide6 plugin covers qt-plugins
 # nuitka-project: --standalone
 # nuitka-project: --enable-plugin=pyside6
-# nuitka-project: --nofollow-import-to=defaultPDK, gf180_pdk,
-# nuitka-project: --include-data-dir=compiled_plugins=plugins
-# nuitka-project: --output-dir=dist
-# nuitka-project: --product-version="0.7.9"
-# nuitka-project: --linux-icon=./logo-color.png
-# nuitka-project: --windows-icon-from-ico=./logo-color.png
+# nuitka-project: --include-data-dir=docs=docs
+# nuitka-project: --include-package=revedaEditor
+# nuitka-project: --include-package=defaultPDK
+# nuitka-project: --include-package=pygments
+# nuitka-project: --include-data-dir=defaultPDK/stipples=defaultPDK/stipples
+# nuitka-project: --include-data-files=.env=.env
+# nuitka-project: --output-dir=/home/eskiyerli/dist
+# nuitka-project: --product-name="Revolution EDA"
+# nuitka-project: --product-version="0.8.1"
+# nuitka-project: --linux-icon=logo-color.png
+# nuitka-project: --windows-icon-from-ico=logo-color.ico
 # nuitka-project: --company-name="Revolution EDA"
 # nuitka-project: --file-description="Electronic Design Automation Software for Professional Custom IC Design Engineers"
-
+# nuitka-project: --copyright="Revolution Semiconductor (C) 2025"
 # import time
 import importlib
 import os
@@ -46,7 +51,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from typing import Optional
 import logging
-from dotenv import load_dotenv
+from dotenv import load_dotenv, set_key
 from PySide6.QtWidgets import QApplication
 
 import revedaEditor.gui.pythonConsole as pcon
@@ -55,13 +60,13 @@ import revedaEditor.gui.revedaMain as rvm
 
 class revedaApp(QApplication):
     """Revolution EDA application with plugin support and path management."""
-    
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        load_dotenv()
         self.base_path = Path(__file__).resolve().parent
-        self._setup_logger()
+        load_dotenv()
         self._setup_paths()
+        self._setup_logger()
         self._setup_plugins()
 
     def _setup_logger(self):
@@ -75,7 +80,6 @@ class revedaApp(QApplication):
             self.logger.addHandler(handler)
 
     def _setup_paths(self):
-        """Setup application paths from environment variables."""
         pdk_path = os.environ.get("REVEDA_PDK_PATH")
         if pdk_path:
             path_obj = Path(pdk_path)
@@ -95,39 +99,82 @@ class revedaApp(QApplication):
             self.revedaPluginPathObj = (path_obj if path_obj.is_absolute() else self.base_path / plugin_path).resolve()
             if self.revedaPluginPathObj.exists():
                 sys.path.append(str(self.revedaPluginPathObj))
-            else:
-                self.revedaPluginPathObj = self.base_path / "plugins"
-                sys.path.append(str(self.revedaPluginPathObj))
-
-        else:
-            self.revedaPluginPathObj = self.base_path / "plugins"
-            sys.path.append(str(self.revedaPluginPathObj))
 
     def _setup_plugins(self):
-        """Discover and load plugins."""
         self.plugins = {}
-        for _, name, _ in pkgutil.iter_modules([str(self.revedaPluginPathObj)]):
-            self.logger.info(f"Found plugin: {name}")
-            
-            try:
-                module = importlib.import_module(name)
-                self.plugins[f"plugins.{name}"] = module
-            except ImportError as e:
-                self.logger.error(f"Failed to load plugin {name}: {e}")
-                
-        self.logger.info(f"Loaded plugins: {list(self.plugins.keys())}")
+        if hasattr(self, 'revedaPluginPathObj'):
+            for _, name, _ in pkgutil.iter_modules([str(self.revedaPluginPathObj)]):
+                self.logger.info(f"Found plugin: {name}")
+                try:
+                    module = importlib.import_module(name)
+                    self.plugins[f"plugins.{name}"] = module
+                except ImportError as e:
+                    self.logger.error(f"Failed to load plugin {name}: {e}")
+            self.logger.info(f"Loaded plugins: {list(self.plugins.keys())}")
 
 
-def initialize_app(argv) -> tuple[revedaApp, Optional[str]]:
-    """Initialize application and determine style."""
-    app = revedaApp(argv)
-    style_map = {"Windows": "Fusion", "Linux": "Fusion", "Darwin": "macOS"}
-    return app, style_map.get(platform.system())
+    def update_pdk_path(self, new_path: str):
+        """Update PDK path and persist to .env file"""
+        self.revedaPdkPathObj = Path(new_path).resolve()
+        
+        # Update environment variable
+        os.environ["REVEDA_PDK_PATH"] = str(self.revedaPdkPathObj)
+        
+        # Update sys.path
+        if str(self.revedaPdkPathObj) not in sys.path:
+            sys.path.append(str(self.revedaPdkPathObj))
+        
+        # Persist to .env file
+        self._update_env_file("REVEDA_PDK_PATH", str(self.revedaPdkPathObj))
+        
+        self.logger.info(f"PDK path updated to: {self.revedaPdkPathObj}")
 
+    def update_plugins_path(self, new_path:str):
+        """Update plugin path and persist to .env file"""
+        if new_path:
+            self.revedaPluginPathObj = Path(new_path).resolve()
+            # Update environment variable
+            os.environ["REVEDA_PLUGIN_PATH"] = str(self.revedaPluginPathObj)
+
+            # Update sys.path
+            if str(self.revedaPluginPathObj) not in sys.path:
+                sys.path.append(str(self.revedaPluginPathObj))
+
+            # Persist to .env file
+            self._update_env_file("REVEDA_PLUGIN_PATH", str(self.revedaPluginPathObj))
+
+            self.logger.info(f"Plugin path updated to: {self.revedaPluginPathObj}")
+        
+    def _update_env_file(self, key, value):
+        """Update or add environment variable in .env file"""
+        env_file = self.base_path / ".env"
+        lines = []
+        
+        # Read existing .env file if it exists
+        if env_file.exists():
+            with env_file.open('r') as f:
+                lines = f.readlines()
+        
+        # Update or add the key-value pair
+        key_found = False
+        for i, line in enumerate(lines):
+            if line.strip().startswith(f"{key}="):
+                lines[i] = f"{key}={value}\n"
+                key_found = True
+                break
+        
+        if not key_found:
+            lines.append(f"{key}={value}\n")
+        
+        # Write back to .env file
+        with env_file.open('w') as f:
+            f.writelines(lines)
 
 
 def main():
-    app, style = initialize_app(sys.argv)
+    app = revedaApp(sys.argv)
+    style_map = {"Windows": "Fusion", "Linux": "Fusion", "Darwin": "macOS"}
+    style = style_map.get(platform.system())
     if style:
         app.setStyle(style)
         print(f"Applied {style} style")

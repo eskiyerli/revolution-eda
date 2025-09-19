@@ -504,10 +504,14 @@ class importVerilogaCellDialogue(QDialog):
         layout.addRow(edf.boldLabel("Library:"), self.libNamesCB)
         self.cellNamesCB = QComboBox()
         self.cellNamesCB.setEditable(True)
-        initialCellNames = [
-            self._model.item(0).child(i).cellName
-            for i in range(self._model.item(0).rowCount())
-        ]
+        try:
+            initialCellNames = [
+                self._model.item(0).child(i).cellName
+                for i in range(self._model.item(0).rowCount())
+            ]
+        except Exception as e:
+            initialCellNames = []
+            print(f'No libraries could be found.')
         self.cellNamesCB.addItems(initialCellNames)
         layout.addRow(edf.boldLabel("Cell:"), self.cellNamesCB)
         self.vaViewName = edf.longLineEdit()
@@ -662,7 +666,7 @@ class appProperties(QDialog):
     def __init__(self, parent):
         self.parent = parent
         super().__init__(parent)
-        self.setMinimumSize(750, 450)
+        self.setMinimumSize(750, 550)
         self.setWindowTitle("Revolution EDA Options")
         mainLayout = QVBoxLayout()
         mainLayout.setStretch(0, 2)
@@ -680,7 +684,7 @@ class appProperties(QDialog):
         filePathsLayout.addLayout(rootPathDialogLayout)
         rootPathDialogLayout.addWidget(self.rootPathButton, 1)
         simInPathDialogLayout = QHBoxLayout()
-        simInPathDialogLayout.addWidget(edf.boldLabel("Simulation Inputs (PDK) Path:"), 2)
+        simInPathDialogLayout.addWidget(edf.boldLabel("PDK Path:"), 2)
         self.simInpPathEdit = edf.longLineEdit()
         simInPathDialogLayout.addWidget(self.simInpPathEdit, 5)
         self.simInpPathButton = QPushButton("...")
@@ -695,6 +699,14 @@ class appProperties(QDialog):
         self.simOutPathButton.clicked.connect(self.onSimOutPathButtonClicked)
         simOutPathDialogLayout.addWidget(self.simOutPathButton, 1)
         filePathsLayout.addLayout(simOutPathDialogLayout)
+        pluginsPathDialogLayout = QHBoxLayout()
+        pluginsPathDialogLayout.addWidget(edf.boldLabel("Plugins Path:"), 2)
+        self.pluginsPathEdit = edf.longLineEdit()
+        pluginsPathDialogLayout.addWidget(self.pluginsPathEdit, 5)
+        self.pluginsPathButton = QPushButton("...")
+        self.pluginsPathButton.clicked.connect(self.onPluginsPathButtonClicked)
+        pluginsPathDialogLayout.addWidget(self.pluginsPathButton, 1)
+        filePathsLayout.addLayout(pluginsPathDialogLayout)
         filePathsGroup.setLayout(filePathsLayout)
         mainLayout.addWidget(filePathsGroup)
         switchViewsGroup = QGroupBox("Switch and Stop Views")
@@ -706,6 +718,12 @@ class appProperties(QDialog):
         switchViewsLayout.addRow(edf.boldLabel("Stop Views:"), self.stopViewsEdit)
         switchViewsGroup.setLayout(switchViewsLayout)
         mainLayout.addWidget(switchViewsGroup)
+        performanceGroup = QGroupBox("Performance Settings")
+        performanceLayout = QFormLayout()
+        self.threadPoolEdit = edf.shortLineEdit()
+        performanceLayout.addRow(edf.boldLabel("Thread Pool Max Count:"), self.threadPoolEdit)
+        performanceGroup.setLayout(performanceLayout)
+        mainLayout.addWidget(performanceGroup)
         saveGroupBox = QGroupBox("Save Options")
         saveGBLayout = QVBoxLayout()
         self.optionSaveBox = QCheckBox("Save options to configuration file?")
@@ -734,6 +752,12 @@ class appProperties(QDialog):
         self.simInpPathEdit.setText(
             QFileDialog.getExistingDirectory(self, caption="Simulation Inputs (PDK) path:")
         )
+
+    def onPluginsPathButtonClicked(self):
+        self.pluginsPathEdit.setText(
+            QFileDialog.getExistingDirectory(self, caption="Plugins path:")
+        )
+
 
 class libraryPathsModel(QStandardItemModel):
     def __init__(self, libraryDict):

@@ -93,7 +93,7 @@ class symbolScene(editorScene):
         )
 
         self.symbolShapes = ["line", "arc", "rect", "circle", "pin", "label", "polygon"]
-
+        self.attributeList = [] # list of symbol attributes
         self.origin = QPoint(0, 0)
         # some default attributes
 

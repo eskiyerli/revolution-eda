@@ -1,38 +1,70 @@
 # Installation
 
-Revolution EDA can be used in Windows, Mac and Linux systems. There are a few different methods of installation depending on the user preference and experience.
+Revolution EDA can be used on Windows, Mac, and Linux systems. There are several installation methods depending on your preference and experience.
 
-## Cloning from Github RevEDA Release repository
+## Prerequisites
 
-Revolution EDA release repository is in GitHub and is regularly updated with the latest code.
-The released code is licensed with Mozilla Public License v2 modified with Commons Clause. This
-basically means that the users are able to use and modify the code as they wish but they cannot
-sell it.
+- Python 3.12 or 3.13
+- [Poetry](https://python-poetry.org/docs/#installation) dependency management tool (if installing from source)
 
-There are a few different methods to clone the repository:
+## From PyPI (Recommended)
 
-1. Command line: `git clone https://github.com/eskiyerli/revedaRelease.git`
-2. Using Github CLI: `gh repo clone eskiyerli/revedaRelease`
-3. Using Github Desktop:  Under `File` menu, find clone `Clone Repository...` item and click.
-   Choose `Github.com` tab and enter repository URL:  <https://github.com/eskiyerli/revedaRelease>
+The easiest way to install Revolution EDA is from PyPI:
 
-<img src="assets/image-20230209082047928.png" alt="Github Desktop Dialog" class="small-image"  />
+```bash
+pip install revolution-eda
+```
 
-## Download a release from RevEDA Release repository
+After installation, start the program with:
 
-Revolution EDA is also released has single binary packages created for Windows and Linux
-using [Nuitka](https://nuitka.net) . According to Nuitka documentation,
+```bash
+reveda
+```
 
-> Nuitka is the optimizing Python compiler written in Python that creates executables that run
-> without an need for a separate installer. Data files can both be included or put alongside.
+## From Source
 
-These binaries can be found in [Revolution EDA Release](https://github.com/eskiyerli/revedaRelease/releases). The current
-version is tagged as version 0.6.2 and can be found at (<https://github.com/eskiyerli/revedaRelease/releases/tag/v0.6.2> . Windows version is a single executable called `reveda.exe` and Linux executable is named `reveda.bin`. Note that Windows might warn you about if you want to run it. If you want to try to software, you should answer `yes`. For Linux version, you should make it executable by issuing `chmod +x reveda.bin`
-command. Note that the binaries created by Nuitka is not guaranteed by the Revolution EDA.
+For development or the latest features:
 
-## Download from PyPi Repository
+```bash
+# Clone the repository
+git clone https://github.com/eskiyerli/revolution-eda.git
+cd revolution-eda
 
-Revolution EDA is also available as a downloadable package in PyPi repository. Use `pip`
-command to download and install: `pip install revolution-eda`.
+# Install dependencies
+poetry install
 
-Regardless of the installation method, you can start Revolution EDA with `reveda` command.
+# Run the application
+poetry run reveda
+```
+
+## Binary Releases
+
+Pre-compiled binaries are available for Windows and Linux, created using [Nuitka](https://nuitka.net). These executables run without requiring a separate Python installation.
+
+Download from [Revolution EDA Releases](https://github.com/eskiyerli/revolution-eda/releases):
+- Windows: `reveda.exe`
+- Linux: `reveda.bin` (make executable with `chmod +x reveda.bin`)
+
+## PDK Installation
+
+To use the preliminary IHP PDK:
+
+```bash
+git clone https://github.com/eskiyerli/ihp_pdk.git
+```
+
+Set the `REVEDA_PDK_PATH` environment variable in your `.env` file:
+
+```
+REVEDA_PDK_PATH=../ihp_pdk
+```
+
+## Example Libraries
+
+For example components and IHP sg13g2_pr library:
+
+```bash
+git clone https://github.com/eskiyerli/exampleLibraries.git
+```
+
+Use the Library Path Editor in Revolution EDA to add library paths to the browser.

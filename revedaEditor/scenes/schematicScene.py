@@ -980,10 +980,14 @@ class schematicScene(editorScene):
 
             for prop, value in instanceProperties.items():
                 setattr(symbolInstance, prop, value)
-
-            # Process labels
+            # as pylabels can depend on NLPLabel results, process first
+            # NLP Labels.
             for labelItem in symbolInstance.labels.values():
-                labelItem.labelDefs()
+                if labelItem.labelType==lbl.symbolLabel.labelTypes[1]:
+                    labelItem.labelDefs()
+            for labelItem in symbolInstance.labels.values():
+                if labelItem.labelType==lbl.symbolLabel.labelTypes[2]:
+                    labelItem.labelDefs()
 
             return symbolInstance
 

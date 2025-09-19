@@ -23,6 +23,7 @@
 #
 
 import json
+from PySide6.QtWidgets import QGraphicsSimpleTextItem, QGraphicsRectItem
 
 import revedaEditor.common.shapes as shp
 import revedaEditor.common.labels as lbl
@@ -58,96 +59,29 @@ class symbolAttribute(object):
         self._definition = value
 
 class symbolEncoder(json.JSONEncoder):
+    def _get_common_fields(self, item):
+        """Extract common fields for items with scene position."""
+        return {
+            "loc": (item.scenePos() - item.scene().origin).toTuple(),
+            "ang": item.angle,
+            "fl": item.flipTuple,
+        }
+
     def default(self, item):
-        if isinstance(item, shp.symbolRectangle):
-            return {
-                "type": "rect",
-                "rect": item.rect.getCoords(),
-                "loc": (item.scenePos() - item.scene().origin).toTuple(),
-                "ang": item.angle,
-                "fl": item.flipTuple,
-            }
-        elif isinstance(item, shp.symbolLine):
-            return {
-                "type": "line",
-                "st": item.start.toTuple(),
-                "end": item.end.toTuple(),
-                "loc": (item.scenePos() - item.scene().origin).toTuple(),
-                "ang": item.angle,
-                "fl": item.flipTuple,
-            }
-        elif isinstance(item, shp.symbolCircle):
-            return {
-                "type": "circle",
-                "cen": item.centre.toTuple(),
-                "end": item.end.toTuple(),
-                "loc": (item.scenePos() - item.scene().origin).toTuple(),
-                "ang": item.angle,
-                "fl": item.flipTuple,
-            }
-        elif isinstance(item, shp.symbolPolygon):
-            pointsList = [item.mapToScene(point).toTuple() for point in item.points]
-            return {
-                "type": "polygon",
-                "ps": pointsList,
-                "fl": item.flipTuple,
-            }
-        elif isinstance(item, shp.symbolArc):
-            return {
-                "type": "arc",
-                "st": item.start.toTuple(),
-                "end": item.end.toTuple(),
-                "loc": (item.scenePos() - item.scene().origin).toTuple(),
-                "ang": item.angle,
-                "fl": item.flipTuple,
-            }
-        elif isinstance(item, shp.symbolPin):
-            return {
-                "type": "pin",
-                "st": item.start.toTuple(),
-                "nam": item.pinName,
-                "pd": item.pinDir,
-                "pt": item.pinType,
-                "loc": (item.scenePos() - item.scene().origin).toTuple(),
-                "ang": item.angle,
-                "fl": item.flipTuple,
-            }
-        elif isinstance(item, shp.text):
-            return {
-                "type": "text",
-                "st": item.start.toTuple(),
-                "tc": item.textContent,
-                "ff": item.fontFamily,
-                "fs": item.fontStyle,
-                "th": item.textHeight,
-                "ta": item.textAlignment,
-                "to": item.textOrient,
-                "loc": (item.scenePos() - item.scene().origin).toTuple(),
-                "ang": item.angle,
-                "fl": item.flipTuple,
-            }
-        elif isinstance(item, lbl.symbolLabel):
-            return {
-                "type": "label",
-                "st": item.start.toTuple(),
-                "nam": item.labelName,
-                "def": item.labelDefinition,  # label as entered
-                "txt": item.labelText,  # shown label
-                "val": item.labelValue,  # label value
-                "vis": item.labelVisible,  # label visibility
-                "lt": item.labelType,
-                "ht": item.labelHeight,
-                "al": item.labelAlign,
-                "or": item.labelOrient,
-                "use": item.labelUse,
-                "loc": (item.scenePos() - item.scene().origin).toTuple(),
-                "fl": item.flipTuple,
-            }
-        elif isinstance(item, symbolAttribute):
-            return {
-                "type": "attr",
-                "nam": item.name,
-                "def": item.definition,
-            }
-        else:
-            return {"type": "unknown"}
+        type_handlers = {
+            shp.symbolRectangle: lambda i: {"type": "rect", "rect": i.rect.getCoords(), **self._get_common_fields(i)},
+            shp.symbolLine: lambda i: {"type": "line", "st": i.start.toTuple(), "end": i.end.toTuple(), **self._get_common_fields(i)},
+            shp.symbolCircle: lambda i: {"type": "circle", "cen": i.centre.toTuple(), "end": i.end.toTuple(), **self._get_common_fields(i)},
+            shp.symbolArc: lambda i: {"type": "arc", "st": i.start.toTuple(), "end": i.end.toTuple(), **self._get_common_fields(i)},
+            shp.symbolPolygon: lambda i: {"type": "polygon", "ps": [i.mapToScene(p).toTuple() for p in i.points], "fl": i.flipTuple},
+            shp.symbolPin: lambda i: {"type": "pin", "st": i.start.toTuple(), "nam": i.pinName, "pd": i.pinDir, "pt": i.pinType, **self._get_common_fields(i)},
+            shp.text: lambda i: {"type": "text", "st": i.start.toTuple(), "tc": i.textContent, "ff": i.fontFamily, "fs": i.fontStyle, "th": i.textHeight, "ta": i.textAlignment, "to": i.textOrient, **self._get_common_fields(i)},
+            lbl.symbolLabel: lambda i: {"type": "label", "st": i.start.toTuple(), "nam": i.labelName, "def": i.labelDefinition, "txt": i.labelText, "val": i.labelValue, "vis": i.labelVisible, "lt": i.labelType, "ht": i.labelHeight, "al": i.labelAlign, "or": i.labelOrient, "use": i.labelUse, "loc": (i.scenePos() - i.scene().origin).toTuple(), "fl": i.flipTuple},
+            symbolAttribute: lambda i: {"type": "attr", "nam": i.name, "def": i.definition},
+            QGraphicsSimpleTextItem: lambda i: {"type": "simpletext", "text": i.text(), "pos": (i.pos().x(), i.pos().y())},
+            QGraphicsRectItem: lambda i: {"type": "qrect", "rect": (i.rect().x(), i.rect().y(), i.rect().width(), i.rect().height()), "pos": (i.pos().x(), i.pos().y())},
+        }
+        
+        handler = type_handlers.get(type(item))
+        return handler(item) if handler else super().default(item)
+

@@ -25,7 +25,8 @@ import pathlib
 import shutil
 import logging
 from typing import List, Dict
-from PySide6.QtCore import (QThreadPool, QThread, Slot, Signal, QTimer, QObject, QSize)
+from PySide6.QtCore import (QThreadPool, QThread, Slot, Signal, QTimer, QObject,
+                            QSize)
 from PySide6.QtGui import (
     QAction,
     QIcon,
@@ -57,6 +58,7 @@ import revedaEditor.backend.libraryMethods as libm
 from revedaEditor.gui.startThread import startThread
 from revedaEditor.resources import resources  # noqa: F401
 
+
 class EventLoopMonitor(QObject):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -81,9 +83,11 @@ class mainwContainer(QWidget):
 
     def init_UI(self):
         # self.console.setfont(QFont("Fira Mono Regular", 12))
-        self.console.writeoutput(f"Welcome to Revolution EDA version {revinit.__version__}")
-        self.console.writeoutput("Revolution Semiconductor (C) 2024.")
-        self.console.writeoutput("Mozilla Public License v2.0 modified with Commons Clause")
+        self.console.writeoutput(
+            f"Welcome to Revolution EDA version {revinit.__version__}")
+        self.console.writeoutput("Revolution Semiconductor (C) 2025.")
+        self.console.writeoutput(
+            "Mozilla Public License v2.0 modified with Commons Clause")
         # layout statements, using a grid layout
         gLayout = QVBoxLayout()
         gLayout.setSpacing(10)
@@ -95,8 +99,8 @@ class MainWindow(QMainWindow):
     # Class-level constants
     WINDOW_SIZE = QSize(900, 300)
     VIEW_TYPES = {
-        'switch': frozenset({"schematic", "veriloga", "spice", "symbol"}),
-        'stop': frozenset({"symbol"})
+        'switch': ["schematic", "veriloga", "spice", "symbol"],
+        'stop': ["symbol"]
     }
     PATHS = {
         'defaultPDK': "defaultPDK",
@@ -148,19 +152,17 @@ class MainWindow(QMainWindow):
 
     def _init_data_structures(self) -> None:
         """Initialize data structures and views."""
-        try:
-            self.switchViewList: List[str] = list(self.VIEW_TYPES['switch'])
-            self.stopViewList: List[str] = list(self.VIEW_TYPES['stop'])
-            self.openViews: Dict = {}
-        except Exception as e:
-            self._handle_init_error("Data structure initialization failed", e)
+
+        self.switchViewList: List[str] = self.VIEW_TYPES['switch']
+        self.stopViewList: List[str] = self.VIEW_TYPES['stop']
+        self.openViews: Dict = {}
 
     def _init_paths(self) -> None:
         """Initialize application paths."""
 
         try:
             self._app = QApplication.instance()
-            if hasattr(self._app,"revedaeditor_pathObj"):
+            if hasattr(self._app, "revedaeditor_pathObj"):
                 self.runPath = self._app.revedaeditor_pathObj.parent
             else:
                 self.runPath = pathlib.Path.cwd()
@@ -168,9 +170,12 @@ class MainWindow(QMainWindow):
                 self.pdkPath = self._app.revedaPdkPathObj
             else:
                 self.pdkPath = self.runPath / self.PATHS["defaultPDK"]
-            self.outputPrefixPath = self.runPath.parent / self.PATHS['testbenches']
+            self.outputPrefixPath = self.runPath.parent / self.PATHS[
+                'testbenches']
             self.libraryPathObj = self.runPath / self.PATHS['library']
             self.confFilePath = self.runPath / self.PATHS['config']
+            self.pluginsPath: str = str(self._app.revedaPluginPathObj) if hasattr(
+                self._app, "revedaPluginPathObj") else ""
         except Exception as e:
             self._handle_init_error("Path initialization failed", e)
 
@@ -179,8 +184,7 @@ class MainWindow(QMainWindow):
         try:
             # Core application components
             self.app = QApplication.instance()
-            self.logger = self.app.logger
-
+            self.logger = logging.getLogger('reveda')
             # Library components
             self.libraryDict = self.readLibDefFile(self.libraryPathObj)
             self.libraryBrowser = libw.libraryBrowser(self)
@@ -192,7 +196,8 @@ class MainWindow(QMainWindow):
 
             self.loadState()
         except Exception as e:
-            self._handle_init_error("Application component initialization failed", e)
+            self._handle_init_error("Application component initialization failed",
+                                    e)
 
     def _setup_thread_pool(self) -> None:
         """Configure and initialize thread pool."""
@@ -203,9 +208,7 @@ class MainWindow(QMainWindow):
 
     def _handle_init_error(self, message: str, error: Exception) -> None:
         """Handle initialization errors."""
-        if hasattr(self, 'logger'):
-            self.logger.error(f"{message}: {str(error)}")
-        raise RuntimeError(f"{message}: {str(error)}")
+        self.logger.error(f"{message}: {str(error)}")
 
     def logger_def(self):
 
@@ -214,7 +217,6 @@ class MainWindow(QMainWindow):
         c_format = logging.Formatter("%(levelname)s - %(message)s")
         c_handler.setFormatter(c_format)
         self.logger.addHandler(c_handler)
-
 
     def _createMenuBar(self):
         self.mainW_menubar = self.menuBar()
@@ -243,15 +245,17 @@ class MainWindow(QMainWindow):
         self.exitAction = QAction(exitIcon, "Exit", self)
         self.exitAction.setShortcut("Ctrl+Q")
         importVerilogaIcon = QIcon(":/icons/document-import.png")
-        self.importVerilogaAction = QAction(importVerilogaIcon, "Import Verilog-a file...")
-        self.importSpiceAction = QAction(importVerilogaIcon, "Import Spice file...", self)
+        self.importVerilogaAction = QAction(importVerilogaIcon,
+                                            "Import Verilog-a file...")
+        self.importSpiceAction = QAction(importVerilogaIcon,
+                                         "Import Spice file...", self)
         self.importLaypFileAction = QAction(
             importVerilogaIcon, "Import KLayout Layer Prop. " "File...", self
         )
         self.importXschSymAction = QAction(
             importVerilogaIcon, "Import Xschem Symbols...", self
         )
-        self.importGDSAction = QAction(importVerilogaIcon,"Import GDS...", self)
+        self.importGDSAction = QAction(importVerilogaIcon, "Import GDS...", self)
         self.importGDSAction.setToolTip("Import GDS to Layout")
         openLibIcon = QIcon(":/icons/database--pencil.png")
         self.libraryBrowserAction = QAction(openLibIcon, "Library Browser", self)
@@ -303,8 +307,10 @@ class MainWindow(QMainWindow):
             'rootPathEdit': str(self.runPath),
             'simInpPathEdit': str(self.pdkPath),
             'simOutPathEdit': str(self.outputPrefixPath),
+            'pluginsPathEdit': self.pluginsPath,
             'switchViewsEdit': ", ".join(self.switchViewList),
-            'stopViewsEdit': ", ".join(self.stopViewList)
+            'stopViewsEdit': ", ".join(self.stopViewList),
+            'threadPoolEdit': str(self.threadPool.maxThreadCount())
         }
 
         # Set text values in one loop
@@ -317,22 +323,37 @@ class MainWindow(QMainWindow):
                 'rootPathEdit': dlg.rootPathEdit.text(),
                 'simInpPathEdit': dlg.simInpPathEdit.text(),
                 'simOutPathEdit': dlg.simOutPathEdit.text(),
+                'pluginsPathEdit': dlg.pluginsPathEdit.text(),
                 'switchViewsEdit': dlg.switchViewsEdit.text(),
-                'stopViewsEdit': dlg.stopViewsEdit.text()
+                'stopViewsEdit': dlg.stopViewsEdit.text(),
+                'threadPoolEdit': dlg.threadPoolEdit.text()
             }
 
             # Update paths
             self.runPath = pathlib.Path(text_values['rootPathEdit'])
             self.pdkPath = pathlib.Path(text_values['simInpPathEdit'])
             self.outputPrefixPath = pathlib.Path(text_values['simOutPathEdit'])
+            self.pluginsPath = text_values['pluginsPathEdit']
+
+            self.app.update_pdk_path(str(self.pdkPath))
+            self.app.update_plugins_path(self.pluginsPath)
 
             # Process lists in a more compact way
-            self.switchViewList = [x.strip() for x in text_values['switchViewsEdit'].split(',')]
-            self.stopViewList = [x.strip() for x in text_values['stopViewsEdit'].split(',')]
+            self.switchViewList = [x.strip() for x in
+                                   text_values['switchViewsEdit'].split(',')]
+            self.stopViewList = [x.strip() for x in
+                                 text_values['stopViewsEdit'].split(',')]
+
+            # Update thread pool setting
+            try:
+                threadCount = int(text_values['threadPoolEdit'])
+                self.threadPool.setMaxThreadCount(max(1, threadCount))
+            except ValueError:
+                pass
 
             # Save state if needed
-            dlg.optionSaveBox.isChecked() and self.saveState()
-
+            if dlg.optionSaveBox.isChecked():
+                self.saveState()
 
     def importVerilogaClick(self):
         """
@@ -341,7 +362,7 @@ class MainWindow(QMainWindow):
         self.importVerilogaModule(ddef.viewTuple("", "", ""), "")
 
     def importVerilogaModule(self, viewT: ddef.viewTuple, filePath: str):
-        library_model = self.libraryBrowser.libraryModel
+        library_model = self.libraryBrowser.designView.libraryModel
         # Open the import dialog
         importDlg = fd.importVerilogaCellDialogue(library_model, self)
         importDlg.vaFileEdit.setText(filePath)
@@ -357,7 +378,8 @@ class MainWindow(QMainWindow):
         # Execute the import dialog and check if it was accepted
         if importDlg.exec() == QDialog.Accepted:
             # Create the Verilog-A object from the file path
-            imported_va_obj = hdl.verilogaC(pathlib.Path(importDlg.vaFileEdit.text()))
+            imported_va_obj = hdl.verilogaC(
+                pathlib.Path(importDlg.vaFileEdit.text()))
 
             # Create the Verilog-A view item tuple
             vaViewItemTuple = imv.createVaView(
@@ -395,7 +417,8 @@ class MainWindow(QMainWindow):
             imlyp.parseLyp(lypFile, outputFile)
 
     def importXschSymClick(self):
-        importDlg = fd.xschemSymIimportDialogue(self, self.libraryBrowser.libraryModel)
+        importDlg = fd.xschemSymIimportDialogue(self,
+                                                self.libraryBrowser.designView.libraryModel)
 
         if importDlg.exec() == QDialog.Accepted:
             symbolFiles = importDlg.symFileEdit.text().split(",")
@@ -416,7 +439,7 @@ class MainWindow(QMainWindow):
 
     def importSpiceSubckt(self, viewT: ddef.viewTuple, filePath: str):
         # Get the library model
-        library_model = self.libraryBrowser.libraryModel
+        library_model = self.libraryBrowser.designView.libraryModel
         # Open the import dialog
         importDlg = fd.importSpiceCellDialogue(library_model, self)
         importDlg.spiceFileEdit.setText(filePath)
@@ -432,7 +455,8 @@ class MainWindow(QMainWindow):
         # Execute the import dialog and check if it was accepted
         if importDlg.exec() == QDialog.Accepted:
             # Create the Verilog-A object from the file path
-            importedSpiceObj = hdl.spiceC(pathlib.Path(importDlg.spiceFileEdit.text()))
+            importedSpiceObj = hdl.spiceC(
+                pathlib.Path(importDlg.spiceFileEdit.text()))
 
             # Create the Verilog-A view item tuple
             spiceViewItemTuple = imv.createSpiceView(
@@ -450,7 +474,6 @@ class MainWindow(QMainWindow):
                     importedSpiceObj,
                 )
 
-
     def importGDSClick(self):
         dlg = fd.gdsImportDialogue(self)
         dlg.unitEdit.setText("1 nm")
@@ -464,16 +487,21 @@ class MainWindow(QMainWindow):
                 if gdsImportLibDirObj.exists():
                     shutil.rmtree(gdsImportLibDirObj, ignore_errors=True)
 
-                libItem = libm.getLibItem(self.libraryBrowser.libraryModel, gdsImportLibName)
+                libItem = libm.getLibItem(self.libraryBrowser.designView.libraryModel,
+                                          gdsImportLibName)
                 if libItem:
-                    self.libraryBrowser.libraryModel.removeLibraryFromModel(libItem)
-                gdsImportLibItem = self.libraryBrowser.libraryModel.addLibraryToModel(gdsImportLibDirObj)
+                    self.libraryBrowser.designView.libraryModel.removeLibraryFromModel(
+                        libItem)
+                gdsImportLibItem = self.libraryBrowser.designView.libraryModel.addLibraryToModel(
+                    gdsImportLibDirObj)
                 gdsImportLibDirObj.mkdir(parents=True, exist_ok=True)
                 gdsImportLibDirObj.joinpath("reveda.lib").touch(exist_ok=True)
             else:
-                gdsImportLibDirObj, gdsImportLibItem = self.createNewLibrary(gdsImportLibName)
+                gdsImportLibDirObj, gdsImportLibItem = self.createNewLibrary(
+                    gdsImportLibName)
             try:
-                gdsImportObj = igds.gdsImporter(self, gdsImportFileObj, gdsImportLibItem)
+                gdsImportObj = igds.gdsImporter(self, gdsImportFileObj,
+                                                gdsImportLibItem)
                 if gdsImportObj:
                     gdsImportRunner = startThread(gdsImportObj.gdsImporter())
                 self.threadPool.start(gdsImportRunner)
@@ -481,14 +509,14 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 self.logger.error(f"GDS Import failed: {e}")
 
-
     def createNewLibrary(self, libraryName):
         warning = QMessageBox()
         warning.setIcon(QMessageBox.Warning)
         warning.setWindowTitle("Warning")
         warning.setText("The library does not exist.")
-        warning.setInformativeText(f"Do you want to create a new library: {libraryName}?\n"
-                                   "Select the parent directory of the library.")
+        warning.setInformativeText(
+            f"Do you want to create a new library: {libraryName}?\n"
+            "Select the parent directory of the library.")
         warning.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
         warning.setDefaultButton(QMessageBox.Yes)
         ret = warning.exec()
@@ -502,7 +530,8 @@ class MainWindow(QMainWindow):
                 libraryPath.mkdir(parents=True, exist_ok=True)
                 libraryPath.joinpath("reveda.lib").touch(exist_ok=True)
                 self.libraryDict[libraryName] = libraryPath
-                libraryItem = self.libraryBrowser.libraryModel.addLibraryToModel(libraryPath)
+                libraryItem = self.libraryBrowser.designView.libraryModel.addLibraryToModel(
+                    libraryPath)
                 return libraryPath, libraryItem
         else:
             return None, None
@@ -518,7 +547,6 @@ class MainWindow(QMainWindow):
     def aboutClick(self):
         abtDlg = hlp.aboutDialog(self)
         abtDlg.show()
-
 
     def loadState(self):
         if not self.confFilePath.exists():
@@ -550,22 +578,18 @@ class MainWindow(QMainWindow):
                 if value and value[0] != '':
                     setattr(self, attr, value)
 
+            # Restore window geometry
+            if 'windowGeometry' in items:
+                geom = items['windowGeometry']
+                if len(geom) == 4:
+                    self.setGeometry(geom[0], geom[1], geom[2], geom[3])
+
+            # Restore thread pool settings
+            if 'threadPoolMaxCount' in items:
+                self.threadPool.setMaxThreadCount(items['threadPoolMaxCount'])
+
         except (json.JSONDecodeError, IOError) as e:
             self.logger.error(f"Error loading configuration: {e}")
-
-    # def loadState(self):
-    #     if self.confFilePath.exists():
-    #         self.logger.info(f"Configuration file: {self.confFilePath} exists")
-    #         with self.confFilePath.open(mode="r") as f:
-    #             items = json.load(f)
-    #         if items:
-    #             self.runPath = pathlib.Path(items.get("runPath", os.getcwd()))
-    #             self.pdkPath = pathlib.Path(items.get("pdkPath", self.pdkPath))
-    #             self.outputPrefixPath = pathlib.Path(items.get("outputPrefixPath", self.pdkPath))
-    #             if items.get("switchViewList")[0] != "":
-    #                 self.switchViewList = items.get("switchViewList", "")
-    #             if items.get("stopViewList")[0] != "":
-    #                 self.stopViewList = items.get("stopViewList", "")
 
     def saveState(self):
         items = {
@@ -574,6 +598,8 @@ class MainWindow(QMainWindow):
             "outputPrefixPath": str(self.outputPrefixPath),
             "switchViewList": self.switchViewList,
             "stopViewList": self.stopViewList,
+            "windowGeometry": [self.x(), self.y(), self.width(), self.height()],
+            "threadPoolMaxCount": self.threadPool.maxThreadCount(),
         }
         with self.confFilePath.open(mode="w", encoding="utf") as f:
             json.dump(items, f, indent=4)
@@ -609,7 +635,6 @@ class MainWindow(QMainWindow):
             for item in self.app.topLevelWidgets():
                 item.close()
             # self.app.closeAllWindows()
-
 
     @Slot()
     def selectionChangedScene(self):

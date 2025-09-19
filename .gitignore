@@ -21,3 +21,5 @@ library.json
 *.prn
 *.raw
 
+.env
+.env

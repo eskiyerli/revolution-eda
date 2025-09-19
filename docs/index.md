@@ -8,11 +8,7 @@ This documentation is organized to take you through the different stages of the 
 
 Whether you are a novice designer or an experienced professional, our electronic design automation package offers the flexibility and power you need to create sophisticated electronic designs. We hope that this documentation will be a valuable resource for you as you explore and use our software.
 
-------
 
-### [Config Editor](./configEditor.md)
-
-Revolution EDA also offers the ability to create a *config* view to control the netlisting process. Using a config view, the designer can decide which view will be used in the netlist process, e.g. schematic, veriloga, spice or symbol. Over time other hardware description languages will be also incorporated.
 
 ------
 
@@ -43,3 +39,9 @@ Schematic editor is used to instantiate symbol and define the nets that connect 
 ### [Symbol Editor](./symbolTutorial.md)
 
 Symbol Editor is where the schematic representation of a basic circuit component, such as an inductor, capacitor or even an entire circuit can be created to be later used in the schematic editor.
+
+------
+
+### [Config Editor](./configEditor.md)
+
+Revolution EDA also offers the ability to create a *config* view to control the netlisting process. Using a config view, the designer can decide which view will be used in the netlist process, e.g. schematic, veriloga, spice or symbol. Over time other hardware description languages will be also incorporated.
