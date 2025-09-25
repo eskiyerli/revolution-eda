@@ -5,10 +5,11 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QWidget, 
 from PySide6.QtCore import QUrl, Qt
 from PySide6.QtGui import (QDesktopServices, QPixmap, QAction, QIcon)
 from PySide6.QtPrintSupport import (QPrinter,  QPrintDialog)
+import PySide6.QtWebEngineWidgets  # noqa: F401
 import markdown
 import re
 
-from revedaEditor.gui.startThread import startThread
+# from revedaEditor.gui.startThread import startThread
 
 class MarkdownViewer(QTextBrowser):
     def __init__(self, basePath="docs"):
