@@ -504,10 +504,14 @@ class importVerilogaCellDialogue(QDialog):
         layout.addRow(edf.boldLabel("Library:"), self.libNamesCB)
         self.cellNamesCB = QComboBox()
         self.cellNamesCB.setEditable(True)
-        initialCellNames = [
-            self._model.item(0).child(i).cellName
-            for i in range(self._model.item(0).rowCount())
-        ]
+        try:
+            initialCellNames = [
+                self._model.item(0).child(i).cellName
+                for i in range(self._model.item(0).rowCount())
+            ]
+        except Exception as e:
+            initialCellNames = []
+            print(f'No libraries could be found.')
         self.cellNamesCB.addItems(initialCellNames)
         layout.addRow(edf.boldLabel("Cell:"), self.cellNamesCB)
         self.vaViewName = edf.longLineEdit()

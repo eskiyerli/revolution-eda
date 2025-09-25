@@ -29,6 +29,7 @@ class baseInst():
     def __init__(self, labels_dict: dict):
         self._labelsDict = labels_dict
 
+
 class res(baseInst):
     def __init__(self,labels_dict:dict):
         super().__init__(labels_dict)
@@ -38,6 +39,7 @@ class res(baseInst):
         if Rvalue.isalnum():
             return str(2*Quantity(Rvalue))
         return '?'
+
 
 class nmos(baseInst):
     def __init__(self,labels_dict:dict):
@@ -51,12 +53,3 @@ class nmos(baseInst):
 
     def asparm(self):
         return self.sourceDiffs(self.nf)*(self.w/self.nf)*self.sd1p8v
-
-
-class cap_mim_1f0fF(baseInst):
-    def __init__(self, labels_dict:dict):
-        super().__init__(labels_dict)
-        self.W = Quantity(self._labelsDict['@W'].labelValue)
-        self.L = Quantity(self._labelsDict['@L'].labelValue)
-        self.m = Quantity(self._labelsDict['@m'].labelValue)
-

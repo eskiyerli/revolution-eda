@@ -25,19 +25,23 @@ import pathlib
 import re
 from pathlib import Path
 
-from PySide6.QtCore import (QPoint, QRect, )
-from PySide6.QtWidgets import (QMainWindow, )
-
+from PySide6.QtCore import (
+    QPoint,
+    QRect,
+)
+from PySide6.QtWidgets import (
+    QMainWindow,
+)
+import revedaEditor.common.labels as lbl
 import revedaEditor.backend.libBackEnd as scb
 import revedaEditor.backend.libraryMethods as libm
 import revedaEditor.backend.libraryModelView as lmview
-import revedaEditor.common.labels as lbl
 import revedaEditor.common.shapes as shp
 import revedaEditor.fileio.symbolEncoder as symenc
 import revedaEditor.gui.symbolEditor as symed
 from revedaEditor.backend.pdkPaths import importPDKModule
 
-cb = importPDKModule('callbacks')
+cb = importPDKModule("callbacks")
 
 
 class importXschemSym:
@@ -45,8 +49,13 @@ class importXschemSym:
     Imports a xschem sym file
     """
 
-    def __init__(self, parent: QMainWindow, filePathObj: Path,
-            libraryView: lmview.BaseDesignLibrariesView, libraryName: str, ):
+    def __init__(
+        self,
+        parent: QMainWindow,
+        filePathObj: Path,
+        libraryView: lmview.BaseDesignLibrariesView,
+        libraryName: str,
+    ):
         self.parent = parent
         self.filePathObj = filePathObj
         self.libraryView = libraryView
@@ -54,119 +63,141 @@ class importXschemSym:
         self._scaleFactor = 4.0
         self._labelHeight = 16
         self._labelXOffset = 40
-        self._labelYOffset = 16
+        self._labelYOffset = 8
         self._labelList = []
         self._functions = []
         self._pins = []
         self._tclExpressLines = []
-        self._expressionDict = {}
+        self._expressionDict = dict()
+
         self.cellName = self.filePathObj.stem
         libItem = libm.getLibItem(self.libraryView.libraryModel, self.libraryName)
 
-        cellItem = scb.createCell(self.parent, libItem,
-            self.cellName)
+        cellItem = scb.createCell(self.parent, libItem, self.cellName)
         symbolViewItem = scb.createCellView(self.parent, "symbol", cellItem)
-        self.symbolWindow = symed.symbolEditor(symbolViewItem, self.parent.libraryDict,
-            self.libraryView)
+        self.symbolWindow = symed.symbolEditor(
+            symbolViewItem, self.parent.libraryDict, self.libraryView
+        )
         self.symbolScene = self.symbolWindow.centralW.scene
 
-    def importSymFile(self):
-        with self.filePathObj.open("r") as file:
-            for line in file.readlines():
-                lineTokens = line.split()
-                if line[0] == "L" and len(lineTokens) > 4:
-                    self.symbolScene.lineDraw(
-                        QPoint(self._scaleFactor * float(lineTokens[2]),
-                               self._scaleFactor * float(lineTokens[3]), ),
-                        QPoint(self._scaleFactor * float(lineTokens[4]),
-                               self._scaleFactor * float(lineTokens[5]), ), )
-                elif line[0] == "B" and len(lineTokens) > 4:
-                    properties = self.findProperties(line)
-                    if "name" in properties.keys():
-                        pin = shp.symbolPin(QPoint(0, 0), properties.get("name", ""),
-                            properties.get("dir", "input").capitalize(),
-                            shp.symbolPin.pinTypes[0], )
-                        pin.rect = QRect(QPoint(self._scaleFactor * float(lineTokens[2]),
-                                                self._scaleFactor * float(lineTokens[3]), ),
-                            QPoint(self._scaleFactor * float(lineTokens[4]),
-                                   self._scaleFactor * float(lineTokens[5]), ), )
-                        self.symbolScene.addItem(pin)
-                        self._pins.append(pin)
-                    else:
-                        self.symbolScene.rectDraw(
-                            QPoint(self._scaleFactor * float(lineTokens[2]),
-                                   self._scaleFactor * float(lineTokens[3]), ),
-                            QPoint(self._scaleFactor * float(lineTokens[4]),
-                                   self._scaleFactor * float(lineTokens[5]), ), )
-                elif line[0] == "P" and len(lineTokens) > 4:
-                    numberPoints = int(float(lineTokens[2]))
-                    points = []
-                    for i in range(numberPoints):
-                        points.append(
-                            QPoint(self._scaleFactor * float(lineTokens[2 * i + 3]),
-                                   self._scaleFactor * float(lineTokens[2 * i + 4]), ))
-                    polygon = shp.symbolPolygon(points)
-                    self.symbolScene.addItem(polygon)
-                elif line[0] == "T" and len(lineTokens) > 4:
-                    if "tcleval" in line:
-                        # self._functions.append(line)  # just a reminder
-                        self._tclExpressLines.append(line)
+        self.clbPathObj = pathlib.Path(cb.__file__)
+        with self.clbPathObj.open("a") as clbFile:
+            clbFile.write("\n\n")
+            clbFile.write(f"class {self.cellName}(baseInst):\n")
+            clbFile.write("    def __init__(self, labels_dict:dict):\n")
+            clbFile.write("        super().__init__(labels_dict)\n")
 
+    def _createScaledPoint(self, x_token, y_token):
+        """Helper to create scaled QPoint from string tokens"""
+        return QPoint(
+            int(self._scaleFactor * float(x_token)), int(self._scaleFactor *
+                                                         float(y_token))
+        )
+
+    def importSymFile(self):
+        # Read file once and process both line-by-line and pattern matching
         with self.filePathObj.open("r") as file:
             fileContent = file.read()
-            pattern = re.compile(r"K\s*{[^}]+}")
-            formatStringMatch = pattern.search(fileContent)
-            if formatStringMatch:
-                formatString = formatStringMatch.group()
-                formatDict = self.processFormatString(formatString)
-                self.symbolScene.attributeList = list()
-                templateDict = formatDict.get("template")
-                textLocation = (self._labelXOffset, self._labelYOffset)
-                if templateDict:
-                    if templateDict.get("model"):
-                        self.symbolScene.attributeList.append(
-                            symenc.symbolAttribute("modelName", templateDict["model"]))
-                        templateDict.pop("model")
-                    if templateDict.get("spiceprefix"):
-                        self.symbolScene.attributeList.append(
-                            symenc.symbolAttribute("spiceprefix",
-                                templateDict["spiceprefix"]))
-                        templateDict.pop("spiceprefix")
-                    if templateDict.get("name"):
-                        templateDict.pop("name")
-                    for key, value in templateDict.items():
-                        label = lbl.symbolLabel(QPoint(textLocation[0], textLocation[1]),
-                            f"[@{key}:{key.lower()}=%:{key.lower()}={value}]",
-                            lbl.symbolLabel.labelTypes[1], self._labelHeight,
-                            lbl.symbolLabel.labelAlignments[0],
-                            lbl.symbolLabel.labelOrients[0], lbl.symbolLabel.labelUses[1], )
-                        textLocation = (textLocation[0], textLocation[
-                            1] - self._labelHeight - self._labelYOffset,)
-                        label.labelDefs()
-                        label.labelVisible = True
-                        label.setOpacity(1)
-                        self.symbolScene.addItem(label)
-                        self._labelList.append(label.labelName)
-                    label = lbl.symbolLabel(QPoint(textLocation[0], textLocation[1]),
-                        "[@instName]", lbl.symbolLabel.labelTypes[1], self._labelHeight,
-                        lbl.symbolLabel.labelAlignments[0], lbl.symbolLabel.labelOrients[0],
-                        lbl.symbolLabel.labelUses[1], )
-                    label.labelDefs()
-                    label.labelVisible = True
-                    label.setOpacity(1)
-                    self.symbolScene.addItem(label)
 
-                if formatDict.get("format"):
+        # Process lines
+        lines = fileContent.splitlines()
+        processed_lines = []
+
+        for line in lines:
+            if not line or len(line) < 1 or line.startswith("*"):
+                continue
+            if line.startswith("+") and processed_lines:
+                processed_lines[-1] += line[1:]  # Append without the '+'
+            else:
+                if line[0] in "LBPTVGKSE" and line[1] == " ":
+                    processed_lines.append(line)
+                elif processed_lines:
+                    processed_lines[-1] += " " + line
+
+        for line in processed_lines:
+            lineTokens = line.split()
+            line_type = line[0]
+            #
+            if line_type == "L" and len(lineTokens) > 4:
+                self.symbolScene.lineDraw(
+                    self._createScaledPoint(lineTokens[2], lineTokens[3]),
+                    self._createScaledPoint(lineTokens[4], lineTokens[5]),
+                )
+            elif line_type == "B" and len(lineTokens) > 4:
+                properties = self.parseLineLine(line)
+                point1 = self._createScaledPoint(lineTokens[2], lineTokens[3])
+                point2 = self._createScaledPoint(lineTokens[4], lineTokens[5])
+
+                if "name" in properties:
+                    pin = shp.symbolPin(
+                        QPoint(0, 0),
+                        properties.get("name", ""),
+                        properties.get("dir", "input").capitalize(),
+                        shp.symbolPin.pinTypes[0],
+                    )
+                    pin.rect = QRect(point1, point2)
+                    pin.start = pin.rect.center()
+                    self.symbolScene.addItem(pin)
+                    self._pins.append(pin)
+                else:
+                    self.symbolScene.rectDraw(point1, point2)
+            elif line_type == "P" and len(lineTokens) > 4:
+                numberPoints = int(float(lineTokens[2]))
+                points = [
+                    self._createScaledPoint(
+                        lineTokens[2 * i + 3], lineTokens[2 * i + 4]
+                    )
+                    for i in range(numberPoints)
+                ]
+                self.symbolScene.addItem(shp.symbolPolygon(points))
+
+            elif line_type == "K":
+                self._expressionDict = self.processFormatString(line)
+
+                if self._expressionDict.get("format"):
                     netlistLine = (
-                        formatDict["format"].replace("@name", "@instName").replace("@model",
-                                                                                   "%modelName").replace(
-                            "@spiceprefix", "%spiceprefix").replace("@pinlist", "@pinList"))
+                        self._expressionDict["format"]
+                        .replace("@name", "@instName")
+                        .replace("@model", "%modelName")
+                        .replace("@spiceprefix", "%spiceprefix")
+                        .replace("@pinlist", "@pinList")
+                    )
+
                     self.symbolScene.attributeList.append(
-                        symenc.symbolAttribute("XyceSymbolNetlistLine", netlistLine))
-            pinNames = [pin.pinName for pin in self._pins]
-            self.symbolScene.attributeList.append(
-                symenc.symbolAttribute("pinOrder", ", ".join(pinNames)))
-        self.processTclEval(self._tclExpressLines)
+                        symenc.symbolAttribute("XyceSymbolNetlistLine", netlistLine)
+                    )
+
+                templateString = self._expressionDict.get("template")
+                textLocation = [self._labelXOffset, self._labelYOffset]
+                if templateString:
+                    pairs = re.findall(r"(\w+)=([^\s]+)", templateString)
+                    templateDict = dict((k, v.strip()) for k, v in pairs)
+                    if templateDict:
+                        print(templateDict)
+                        if templateDict.get("name"):
+                            templateDict.pop("name")  # we don't use this
+                        if templateDict.get("model"):
+                            self.symbolScene.attributeList.append(
+                                symenc.symbolAttribute(
+                                    "modelName", templateDict.pop("model")
+                                )
+                            )
+                        if templateDict.get("spiceprefix"):
+                            self.symbolScene.attributeList.append(
+                                symenc.symbolAttribute(
+                                    "spiceprefix", templateDict.pop("spiceprefix")
+                                )
+                            )
+
+                    # Add instance name label
+                    self._createNLPLabel(textLocation, "[@instName]")
+
+        # Add pin order attribute
+        pinNames = [pin.pinName for pin in self._pins]
+        self.symbolScene.attributeList.append(
+            symenc.symbolAttribute("pinOrder", ", ".join(pinNames))
+        )
+
         self.symbolWindow.checkSaveCell()
 
     @property
@@ -178,18 +209,14 @@ class importXschemSym:
         self._scaleFactor = value
 
     @staticmethod
-    def findProperties(line: str):
-        properties = {}
-        # Remove curly braces from the string
-        propertiesStr = line.split("{")[1].split("}")[0]
-        # Split the string by commas to separate key-value pairs
-        pairs = propertiesStr.split()
-        for pair in pairs:
-            key, value = pair.split("=")
-            key = key.strip()
-            value = value.strip()
-            properties[key] = value
-        return properties
+    def parseLineLine(line: str):
+        start = line.find("{")
+        end = line.find("}", start)
+        if start == -1 or end == -1:
+            return {}
+        return dict(
+            pair.split("=", 1) for pair in line[start + 1 : end].split() if "=" in pair
+        )
 
     def parseTextLine(self, line: str):
         text = line.split("{")[1].split("}")[0]
@@ -203,76 +230,53 @@ class importXschemSym:
             textProperties[key] = value
         restList = line.split("{")[1].split("}")[1].split()
 
-        textLocation = [self._scaleFactor * float(restList[0]),
-                        self._scaleFactor * float(restList[1]), ]
+        textLocation = [
+            self._scaleFactor * float(restList[0]),
+            self._scaleFactor * float(restList[1]),
+        ]
         rotationAngle = float(restList[2])
         return text, textProperties, textLocation, rotationAngle
 
     @staticmethod
-    def processFormatString(formatString: str):
-        lines = " ".join([line.strip() for line in formatString.strip().split("\n")])
-        # print(lines)
-        joinedLines = lines.split("{")[1].split("}")[0]
-        startIndex = 0
-        indexes = []
-        while True:
-            startIndex = joinedLines.find('="', startIndex)
-            if startIndex == -1:
-                break
-            startIndex += 2
-            indexes.append(startIndex)
-        startIndex = 0
-        # print(f'Keys: {keys}')
-        values = []
-        for index in indexes:
-            endIndex = joinedLines.find('"', index)
-            values.append(joinedLines[index:endIndex])
+    def processFormatString(inputText: str) -> dict:
+        # this is an adhoc list
+        keys = {
+            "format=": "format",
+            "lvs_format=": "lvs",
+            "template=": "template",
+            "drc=": "drc",
+        }
+        text = inputText.replace('\\\\"', "").replace("'", "")
 
-        for valueItem in values:
-            joinedLines = joinedLines.replace(valueItem, "")
+        result = {}
+        for key_str, key in keys.items():
+            pos = text.find(key_str)
+            if pos != -1:
+                start = pos + len(key_str)
+                if start < len(text) and text[start] == '"':
+                    start += 1
+                    end = text.find('"', start)
+                    if end != -1:
+                        result[key] = text[start:end]
+                else:
+                    end = start
+                    while end < len(text) and text[end] not in " \n":
+                        end += 1
+                    result[key] = text[start:end]
 
-        keys = [item.replace('=""', "") for item in joinedLines.split()[1:]]
-        formatDict = {key: value for key, value in zip(keys, values)}
-        templateDict = {item.split("=")[0]: item.split("=")[1] for item in
-            formatDict["template"].split()}
-        formatDict["template"] = templateDict
-        return formatDict
+        return result
 
-    def processTclEval(self, inputLines: list[str]):
-        tclEvalMatches = []
-        parameterMatches = []
-        tclPattern = r"\\{(.*?)\\}"
-        parameterPattern = r"tcleval\((.*?)=\["
-        for lineItem in inputLines:
-            tclEvalMatches.append(re.findall(tclPattern, lineItem)[0])
-            parameterMatches.append(re.findall(parameterPattern, lineItem)[0])
-
-        for key, value in zip(parameterMatches, tclEvalMatches):
-            self._expressionDict[key] = value
-
-        clbPathObj = pathlib.Path(cb.__file__)
-        with clbPathObj.open("a") as clbFile:
-            clbFile.write("\n\n")
-            clbFile.write(f"class {self.cellName}(baseInst):\n")
-            clbFile.write(f"    def __init__(self, labels_dict:dict):\n")
-            clbFile.write(f"        super().__init__(labels_dict)\n")
-            for labelName in self._labelList:
-                clbFile.write(f"        self.{labelName[1:]} = Quantity(self._labelsDict["
-                              f"'{labelName}'].labelValue)\n")
-
-            for key, value in self._expressionDict.items():
-                for labelName in self._labelList:
-                    value = value.replace(labelName, f"self.{labelName[1:]}")
-                clbFile.write("\n")
-                clbFile.write(f"    def {key}parm(self):\n")
-                clbFile.write(f"       returnValue = {value}\n")
-                clbFile.write(f"       return returnValue\n")
-                label = lbl.symbolLabel(QPoint(0, 0), f"{key} = {key}parm()",
-                    lbl.symbolLabel.labelTypes[2], self._labelHeight,
-                    lbl.symbolLabel.labelAlignments[0], lbl.symbolLabel.labelOrients[0],
-                    lbl.symbolLabel.labelUses[1], )
-                label.labelDefs()
-                label.labelVisible = True
-                label.setOpacity(1)
-                self.symbolScene.addItem(label)
-            clbFile.write("\n")
+    def _createNLPLabel(self, location: list[int], text: str, add_to_scene=True):
+        '''
+        Helper method to create and configure NLPLabels with common settings.
+        '''
+        label = lbl.symbolLabel(QPoint(location[0], location[1]), text,
+            lbl.symbolLabel.labelTypes[0], self._labelHeight,
+            lbl.symbolLabel.labelAlignments[0], lbl.symbolLabel.labelOrients[0],
+            lbl.symbolLabel.labelUses[0])
+        label.labelDefs()
+        label.labelVisible = True
+        label.setOpacity(1)
+        if add_to_scene:
+            self.symbolScene.addItem(label)
+        return label

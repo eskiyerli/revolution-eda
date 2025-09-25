@@ -29,13 +29,18 @@
 # nuitka-project: --enable-plugin=pyside6
 # nuitka-project: --include-data-dir=docs=docs
 # nuitka-project: --include-package=revedaEditor
-# nuitka-project: --output-dir=../dist
-# nuitka-project: --product-version="0.8.0"
+# nuitka-project: --include-package=defaultPDK
+# nuitka-project: --include-package=pygments
+# nuitka-project: --include-data-dir=defaultPDK/stipples=defaultPDK/stipples
+# nuitka-project: --include-data-files=.env=.env
+# nuitka-project: --output-dir=/home/eskiyerli/dist
+# nuitka-project: --product-name="Revolution EDA"
+# nuitka-project: --product-version="0.8.1"
 # nuitka-project: --linux-icon=logo-color.png
 # nuitka-project: --windows-icon-from-ico=logo-color.ico
 # nuitka-project: --company-name="Revolution EDA"
 # nuitka-project: --file-description="Electronic Design Automation Software for Professional Custom IC Design Engineers"
-
+# nuitka-project: --copyright="Revolution Semiconductor (C) 2025"
 # import time
 import importlib
 import os

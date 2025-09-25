@@ -1,18 +1,53 @@
 # Revolution EDA Main Window
 
-Revolution EDA window is the first window an user interacts. At the moment, `Tools`, `Options`
-and `Help` menus are usable. Revolution EDA main window also includes a Python REPL interpreter.
-Python statements can be input at `>` prompt. Revolution EDA API is not yet stable
-but the user can still access all the power of a Python interpreter.
+The Revolution EDA main window is the primary interface for the application. It features a clean, professional layout with menu-driven access to all major functions and includes an integrated Python REPL console for advanced scripting and automation.
 
 <img src="assets/revedaMainWindow.png" class="image fit" />
 
+## Core Features
+
+- **Integrated Python Console**: Full Python REPL with access to Revolution EDA APIs
+- **Multi-threaded Architecture**: Efficient background processing with configurable thread pool
+- **Persistent Configuration**: Automatic saving and restoration of user preferences
+- **Plugin Architecture**: Extensible design supporting custom plugins
+- **Environment Integration**: Smart path resolution and configuration management
+
+## Menu Structure
+
+The main window provides four primary menus:
+
+### File Menu
+- **Exit**: Close the application with confirmation dialog
+
+### Tools Menu
+- **Library Browser**: Access the comprehensive library management interface
+- **Create Stipple**: Generate custom fill patterns for layout visualization
+- **Import Submenu**: Various import utilities for external file formats
+
+### Options Menu
+- **Options...**: Configure application settings, paths, and preferences
+
+### Help Menu
+- **Help...**: Access integrated documentation browser
+- **About**: Application information and version details
+
 ## Environment Configuration
 
-Revolution EDA supports environment-based configuration through environment variables:
-- **REVEDA_PDK_PATH**: Specifies the Process Design Kit (PDK) path for technology files
-- **REVEDA_PLUGIN_PATH**: Defines the location for custom plugins
-- **Path Resolution**: Automatic canonical path resolution for both relative and absolute paths
+Revolution EDA supports flexible configuration through multiple mechanisms:
+
+### Environment Variables
+- **REVEDA_PDK_PATH**: Process Design Kit location for technology files
+- **REVEDA_PLUGIN_PATH**: Custom plugin directory location
+
+### Configuration Persistence
+- Automatic saving of window geometry, thread pool settings, and user preferences
+- JSON-based configuration file (`reveda.conf`) for easy editing
+- Library definitions stored in `library.json` for session restoration
+
+### Path Management
+- Intelligent path resolution supporting both relative and absolute paths
+- Automatic creation of required directories
+- Cross-platform compatibility for Windows, macOS, and Linux
 
 ### Tools Menu
 
@@ -179,10 +214,51 @@ Library Browser now supports multiple view modes:
 
 #### Contextual Menus
 
-There are also contextual menus defined for library, cell and cellview items in the Library
-Browser. Selecting an item and clicking right mouse button will display the relevant menu:
+## Python Console Integration
 
-<img src="assets/Screenshot_20230214_213352.png"  class="small-image" />
+The integrated Python console provides:
+- Full access to Revolution EDA's internal APIs
+- Real-time feedback and logging integration
+- Support for custom automation scripts
+- Interactive debugging capabilities
+
+## Thread Pool Management
+
+Revolution EDA uses a sophisticated threading system:
+- Configurable maximum thread count (defaults to CPU core count)
+- 30-second expiry timeout for efficient resource management
+- Background processing for import/export operations
+- Graceful shutdown with proper thread cleanup
+
+## Import Tools
+
+The Import submenu provides comprehensive support for external file formats:
+
+### Verilog-A Import
+- Import Verilog-A modules with automatic symbol generation
+- Support for model and instance parameters
+- Integrated with Xyce simulator netlisting
+
+### SPICE Import
+- Import SPICE subcircuits with symbol creation
+- Automatic pin order detection and netlisting templates
+- Support for hierarchical designs
+
+### Layout Import
+- **KLayout Layer Properties**: Import layer definition files
+- **Xschem Symbols**: Convert Xschem symbol files
+- **GDS Import**: Import GDSII layout files with configurable units
+
+## Configuration Management
+
+The Options dialog provides comprehensive configuration:
+- **Path Settings**: Configure PDK, output, and plugin paths
+- **View Lists**: Define switch and stop view hierarchies for netlisting
+- **Thread Pool**: Adjust maximum thread count for performance tuning
+- **Persistence**: Option to save settings automatically
+
+There are also contextual menus defined for library, cell and cellview items in the Library
+Browser. Selecting an item and clicking right mouse button will display the relevant menu.ets/Screenshot_20230214_213352.png"  class="small-image" />
 
 <img src="assets/Screenshot_20230214_213448.png" class="small-image" />
 

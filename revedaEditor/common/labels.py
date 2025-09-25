@@ -388,7 +388,7 @@ class symbolLabel(QGraphicsSimpleTextItem):
 
             case "@modelName":
                 # Set label name to "modelName" and value and text to parent item's "modelName" attribute
-                labelValue = self.parentItem().attr.get("modelName", "")
+                labelValue = self.parentItem().symattrs.get("modelName", "")
 
             case "@elementNum":
                 # Set label name to "elementNum" and value and text to parent item's counter

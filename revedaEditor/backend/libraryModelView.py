@@ -378,12 +378,11 @@ class designLibrariesColumnView(BaseDesignLibrariesView):
 
     def deleteCell(self, selectedCloneCellItem: libb.cellItem):
         try:
-            cellPath = selectedCloneCellItem.data(Qt.UserRole + 2)
-            shutil.rmtree(cellPath)
             originalCell = selectedCloneCellItem.data(Qt.UserRole + 10)
+            shutil.rmtree(selectedCloneCellItem.data(Qt.UserRole + 2))
             self.libraryModel.removeRow(originalCell.row())
-            # Remove from model
-            self.cellsListView.model().removeRow(selectedCloneCellItem.row())
+            if self.cellsListView.model():
+                self.cellsListView.model().removeRow(selectedCloneCellItem.row())
             self.logger.info(f"Cell {originalCell.cellName} deleted.")
 
         except OSError as e:

@@ -362,7 +362,7 @@ class MainWindow(QMainWindow):
         self.importVerilogaModule(ddef.viewTuple("", "", ""), "")
 
     def importVerilogaModule(self, viewT: ddef.viewTuple, filePath: str):
-        library_model = self.libraryBrowser.libraryModel
+        library_model = self.libraryBrowser.designView.libraryModel
         # Open the import dialog
         importDlg = fd.importVerilogaCellDialogue(library_model, self)
         importDlg.vaFileEdit.setText(filePath)
@@ -418,7 +418,7 @@ class MainWindow(QMainWindow):
 
     def importXschSymClick(self):
         importDlg = fd.xschemSymIimportDialogue(self,
-                                                self.libraryBrowser.libraryModel)
+                                                self.libraryBrowser.designView.libraryModel)
 
         if importDlg.exec() == QDialog.Accepted:
             symbolFiles = importDlg.symFileEdit.text().split(",")
@@ -439,7 +439,7 @@ class MainWindow(QMainWindow):
 
     def importSpiceSubckt(self, viewT: ddef.viewTuple, filePath: str):
         # Get the library model
-        library_model = self.libraryBrowser.libraryModel
+        library_model = self.libraryBrowser.designView.libraryModel
         # Open the import dialog
         importDlg = fd.importSpiceCellDialogue(library_model, self)
         importDlg.spiceFileEdit.setText(filePath)
@@ -487,12 +487,12 @@ class MainWindow(QMainWindow):
                 if gdsImportLibDirObj.exists():
                     shutil.rmtree(gdsImportLibDirObj, ignore_errors=True)
 
-                libItem = libm.getLibItem(self.libraryBrowser.libraryModel,
+                libItem = libm.getLibItem(self.libraryBrowser.designView.libraryModel,
                                           gdsImportLibName)
                 if libItem:
-                    self.libraryBrowser.libraryModel.removeLibraryFromModel(
+                    self.libraryBrowser.designView.libraryModel.removeLibraryFromModel(
                         libItem)
-                gdsImportLibItem = self.libraryBrowser.libraryModel.addLibraryToModel(
+                gdsImportLibItem = self.libraryBrowser.designView.libraryModel.addLibraryToModel(
                     gdsImportLibDirObj)
                 gdsImportLibDirObj.mkdir(parents=True, exist_ok=True)
                 gdsImportLibDirObj.joinpath("reveda.lib").touch(exist_ok=True)
@@ -530,7 +530,7 @@ class MainWindow(QMainWindow):
                 libraryPath.mkdir(parents=True, exist_ok=True)
                 libraryPath.joinpath("reveda.lib").touch(exist_ok=True)
                 self.libraryDict[libraryName] = libraryPath
-                libraryItem = self.libraryBrowser.libraryModel.addLibraryToModel(
+                libraryItem = self.libraryBrowser.designView.libraryModel.addLibraryToModel(
                     libraryPath)
                 return libraryPath, libraryItem
         else:
