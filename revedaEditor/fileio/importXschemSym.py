@@ -65,9 +65,7 @@ class importXschemSym:
         self._labelXOffset = 40
         self._labelYOffset = 8
         self._labelList = []
-        self._functions = []
         self._pins = []
-        self._tclExpressLines = []
         self._expressionDict = dict()
 
         self.cellName = self.filePathObj.stem
@@ -123,6 +121,7 @@ class importXschemSym:
                     self._createScaledPoint(lineTokens[2], lineTokens[3]),
                     self._createScaledPoint(lineTokens[4], lineTokens[5]),
                 )
+
             elif line_type == "B" and len(lineTokens) > 4:
                 properties = self.parseLineLine(line)
                 point1 = self._createScaledPoint(lineTokens[2], lineTokens[3])
@@ -141,6 +140,7 @@ class importXschemSym:
                     self._pins.append(pin)
                 else:
                     self.symbolScene.rectDraw(point1, point2)
+
             elif line_type == "P" and len(lineTokens) > 4:
                 numberPoints = int(float(lineTokens[2]))
                 points = [
@@ -199,6 +199,7 @@ class importXschemSym:
         )
 
         self.symbolWindow.checkSaveCell()
+
 
     @property
     def scaleFactor(self) -> float:

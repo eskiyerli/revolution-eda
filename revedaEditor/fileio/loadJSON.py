@@ -38,7 +38,7 @@ from PySide6.QtWidgets import (
     QGraphicsScene,
     QGraphicsItem,
     QGraphicsRectItem,
-    QGraphicsTextItem,
+    QGraphicsSimpleTextItem,
 )
 # from methodtools import lru_cache
 
@@ -87,8 +87,8 @@ class symbolItems:
                     return self.createTextItem(item)
                 case "polygon":
                     return self.createPolygonItem(item)
-                case _:
-                    return self.unknownItem()
+            
+
 
     @staticmethod
     def createRectItem(item: dict):
@@ -195,6 +195,16 @@ class symbolItems:
     @staticmethod
     def createSymbolAttribute(item: dict):
         return se.symbolAttribute(item["nam"], item["def"])
+
+    def createSimpleTextItem(self, item: dict):
+        text = QGraphicsSimpleTextItem(item["text"])
+        text.setPos(QPoint(item["pos"][0], item["pos"][1]))
+        return text
+
+    def createQRectItem(self, item: dict):
+        rect = QGraphicsRectItem(QRect(*item["rect"]))
+        rect.setPos(QPoint(item["pos"][0], item["pos"][1]))
+        return rect
 
     def unknownItem(self):
         rectItem = QGraphicsRectItem(QRect(0, 0, *self.snapTuple))

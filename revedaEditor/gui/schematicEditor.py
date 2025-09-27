@@ -609,24 +609,6 @@ class schematicEditor(edw.editorWindow):
         self.centralW.scene.deleteErrors()
         self.logger.info("Schematic Errors checked.")
 
-    # def _collectRelatedEditors(self, editor, visited=None) -> set["schematicEditor"]:
-    #     app = QApplication.instance()
-    #     related = set()
-    #     schematicEditorWindows = {
-    #         w for w in app.topLevelWidgets() if isinstance(w, schematicEditor)
-    #     } - {self}
-    #     while schematicEditorWindows:
-    #         editorWindow = schematicEditorWindows.pop()
-    #         if (self == editorWindow.parentEditor or editorWindow ==
-    #                 self.parentEditor):
-    #             related.add(editorWindow)
-    #         if editorWindow.parentEditor in related:
-    #             related.add(editorWindow)
-    #         for relatedEditor in related:
-    #             if relatedEditor.parentEditor == editorWindow:
-    #                 related.add(editorWindow)
-    #
-    #     return related
 
     def findRelated(self, editor, visited, openWindows):
         if editor in visited or editor not in openWindows:

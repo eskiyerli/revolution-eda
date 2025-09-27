@@ -49,6 +49,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QGraphicsLineItem,
     QGraphicsRectItem,
+    QGraphicsSimpleTextItem,
     QGraphicsSceneMouseEvent,
 )
 
@@ -677,33 +678,27 @@ class symbolScene(editorScene):
         Returns:
             bool: True if save successful, False otherwise
         """
+
         try:
-            # Get all items and process labels in one pass
-            scene_items = self.items()
+            # Filter items and process labels in one pass
+            sceneItems = []
+            for item in self.items():
+                # if isinstance(item, (QGraphicsSimpleTextItem, QGraphicsRectItem)):
+                #     continue
+                if item.parentItem() is not None:
+                    continue
+                sceneItems.append(item)
+            # Build save data
             save_data = [
                 {"cellView": "symbol"},
-                {"snapGrid": self.snapTuple}
+                {"snapGrid": self.snapTuple},
+                *sceneItems,
+                *getattr(self, "attributeList", [])
             ]
 
-            # Process items and labels
-            for item in scene_items:
-                if isinstance(item, lbl.symbolLabel):
-                    item.labelDefs()
-
-            save_data.extend(scene_items)
-
-            # Add attributes if they exist
-            if hasattr(self, "attributeList"):
-                save_data.extend(self.attributeList)
-
             # Write to file
-            with fileName.open(mode="w") as f:
-                json.dump(
-                    save_data,
-                    f,
-                    cls=symenc.symbolEncoder,
-                    indent=4
-                )
+            with fileName.open("w") as f:
+                json.dump(save_data, f, cls=symenc.symbolEncoder, indent=4)
 
             self.undoStack.clear()
             return True

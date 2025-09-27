@@ -104,6 +104,7 @@ class designLibrariesColumnView(BaseDesignLibrariesView):
 
         # Create three list views with labels
         self.libsListView = QListView()
+
         self.libsListView.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.libsListView.customContextMenuRequested.connect(self.libsListContextMenuEvent)
         self.cellsListView = QListView()
@@ -384,6 +385,7 @@ class designLibrariesColumnView(BaseDesignLibrariesView):
             if self.cellsListView.model():
                 self.cellsListView.model().removeRow(selectedCloneCellItem.row())
             self.logger.info(f"Cell {originalCell.cellName} deleted.")
+            self.reworkDesignLibrariesView(self.libraryModel.libraryDict)
 
         except OSError as e:
             self.logger.warning(f"Error deleting cell: {e}")
@@ -507,6 +509,7 @@ class designLibrariesColumnView(BaseDesignLibrariesView):
             viewsModel = self.createViewsListModel(cellItem)
             self.viewsListView.setModel(viewsModel)
             self.logger.info(f"View {selectedViewItem.viewName} deleted.")
+            self.reworkDesignLibrariesView(self.libraryModel.libraryDict)
         except FileNotFoundError:
             self.logger.warning("View file not found.")
         except PermissionError:
