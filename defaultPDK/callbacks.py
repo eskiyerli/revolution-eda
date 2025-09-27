@@ -53,3 +53,13 @@ class nmos(baseInst):
 
     def asparm(self):
         return self.sourceDiffs(self.nf)*(self.w/self.nf)*self.sd1p8v
+
+
+class dnwpw(baseInst):
+    def __init__(self, labels_dict:dict):
+        super().__init__(labels_dict)
+
+
+class npolyf_u(baseInst):
+    def __init__(self, labels_dict:dict):
+        super().__init__(labels_dict)

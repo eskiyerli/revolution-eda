@@ -70,7 +70,7 @@ class createCellDialog(QDialog):
         self.layout.addRow(edf.boldLabel("Library:"), self.libNamesCB)
         self.cellCB = QComboBox()
         libItem = libm.getLibItem(self.model, self.libNamesCB.currentText())
-        self.cellList = [libItem.child(i).cellName for i in range(libItem.rowCount())]
+        self.cellList = sorted([libItem.child(i).cellName for i in range(libItem.rowCount())])
         self.cellCB.addItems(self.cellList)
         self.cellCB.setEditable(True)
         self.layout.addRow(edf.boldLabel("Cell Name:"), self.cellCB)
@@ -83,7 +83,7 @@ class createCellDialog(QDialog):
 
     def selectLibrary(self):
         libItem = libm.getLibItem(self.model, self.libNamesCB.currentText())
-        cellList = [libItem.child(i).cellName for i in range(libItem.rowCount())]
+        cellList = sorted([libItem.child(i).cellName for i in range(libItem.rowCount())])
         self.cellCB.clear()
         self.cellCB.addItems(cellList)
 
@@ -118,8 +118,11 @@ class selectCellViewDialog(createCellDialog):
         self.cellCB.currentTextChanged.connect(self.cellNameChanged)
         self.viewCB = QComboBox()
         cellItem = libm.getCellItem(libItem, self.cellCB.currentText())
+        # self.viewCB.addItems(
+        #     [cellItem.child(i).text() for i in range(cellItem.rowCount())]
+        # )
         self.viewCB.addItems(
-            [cellItem.child(i).text() for i in range(cellItem.rowCount())]
+            sorted([cellItem.child(i).text() for i in range(cellItem.rowCount())])
         )
         self.layout.addRow(edf.boldLabel("View Name:"), self.viewCB)
         self.layout.setSpacing(10)

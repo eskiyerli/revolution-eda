@@ -1384,61 +1384,65 @@ class schematicScene(editorScene):
         """
         Go down the hierarchy, opening the selected view.
         """
-        selectedSymbol = [
-            item
-            for item in self.selectedItems()
-            if isinstance(item, shp.schematicSymbol)
-        ][0]
-        if isinstance(selectedSymbol, shp.schematicSymbol):
-            dlg = fd.goDownHierDialogue(self.editorWindow)
-            libItem = libm.getLibItem(
-                self.editorWindow.libraryView.libraryModel,
-                selectedSymbol.libraryName,
-            )
-            cellItem = libm.getCellItem(libItem, selectedSymbol.cellName)
-            viewNames = [
-                cellItem.child(i).text()
-                for i in range(cellItem.rowCount())
-                if "schematic" in cellItem.child(i).text()
-                or "symbol" in cellItem.child(i).text()
-            ]
-            dlg.viewListCB.addItems(viewNames)
-            if dlg.exec() == QDialog.Accepted:
-                selectedSymbol.setSelected(False)
+        try:
+            selectedSymbol = [
+                item
+                for item in self.selectedItems()
+                if isinstance(item, shp.schematicSymbol)
+            ][0]
+
+            if isinstance(selectedSymbol, shp.schematicSymbol):
+                dlg = fd.goDownHierDialogue(self.editorWindow)
                 libItem = libm.getLibItem(
                     self.editorWindow.libraryView.libraryModel,
                     selectedSymbol.libraryName,
                 )
                 cellItem = libm.getCellItem(libItem, selectedSymbol.cellName)
-                viewItem = libm.getViewItem(cellItem, dlg.viewListCB.currentText())
-
-                openViewTuple = self.editorWindow.libraryView.libBrowsW.openCellView(
-                    viewItem, cellItem, libItem
-                )
-                if viewItem.viewType == "schematic":
-                    parentInstanceName = [
-                        labelItem.labelValue
-                        for labelItem in selectedSymbol.labels.values()
-                        if labelItem.labelType == "NLPLabel"
-                        and labelItem.labelDefinition == "[@instName]"
-                    ][0]
-                    self.editorWindow.appMainW.openViews[
-                        openViewTuple
-                    ].centralW.scene.hierarchyTrail = (
-                        f"{self.hierarchyTrail}{parentInstanceName}."
+                viewNames = [
+                    cellItem.child(i).text()
+                    for i in range(cellItem.rowCount())
+                    if "schematic" in cellItem.child(i).text()
+                    or "symbol" in cellItem.child(i).text()
+                ]
+                dlg.viewListCB.addItems(viewNames)
+                if dlg.exec() == QDialog.Accepted:
+                    selectedSymbol.setSelected(False)
+                    libItem = libm.getLibItem(
+                        self.editorWindow.libraryView.libraryModel,
+                        selectedSymbol.libraryName,
                     )
-                if self.editorWindow.appMainW.openViews[openViewTuple]:
-                    childWindow = self.editorWindow.appMainW.openViews[openViewTuple]
-                    childWindow.parentEditor = self.editorWindow
-                    childWindow.parentObj = selectedSymbol
-                    childWindowType = self.findEditorTypeString(childWindow)
+                    cellItem = libm.getCellItem(libItem, selectedSymbol.cellName)
+                    viewItem = libm.getViewItem(cellItem, dlg.viewListCB.currentText())
 
-                    if childWindowType == "symbolEditor":
-                        childWindow.symbolToolbar.addAction(childWindow.goUpAction)
-                    elif childWindowType == "schematicEditor":
-                        childWindow.schematicToolbar.addAction(childWindow.goUpAction)
-                    if dlg.buttonId == 2:
-                        childWindow.centralW.scene.readOnly = True
+                    openViewTuple = self.editorWindow.libraryView.libBrowsW.openCellView(
+                        viewItem, cellItem, libItem
+                    )
+                    if viewItem.viewType == "schematic":
+                        parentInstanceName = [
+                            labelItem.labelValue
+                            for labelItem in selectedSymbol.labels.values()
+                            if labelItem.labelType == "NLPLabel"
+                            and labelItem.labelDefinition == "[@instName]"
+                        ][0]
+                        self.editorWindow.appMainW.openViews[
+                            openViewTuple
+                        ].centralW.scene.hierarchyTrail = (
+                            f"{self.hierarchyTrail}{parentInstanceName}."
+                        )
+                    if self.editorWindow.appMainW.openViews[openViewTuple]:
+                        childWindow = self.editorWindow.appMainW.openViews[openViewTuple]
+                        childWindow.parentEditor = self.editorWindow
+                        childWindow.parentObj = selectedSymbol
+                        childWindowType = self.findEditorTypeString(childWindow)
+
+                        if childWindowType == "symbolEditor":
+                            childWindow.symbolToolbar.addAction(childWindow.goUpAction)
+                        elif childWindowType == "schematicEditor":
+                            childWindow.schematicToolbar.addAction(childWindow.goUpAction)
+                        if dlg.buttonId == 2:
+                            childWindow.centralW.scene.readOnly = True
+        except IndexError:
+            pass
 
     def ignoreSymbol(self):
         if self.selectedItems() is not None:

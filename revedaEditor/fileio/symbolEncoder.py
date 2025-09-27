@@ -78,8 +78,6 @@ class symbolEncoder(json.JSONEncoder):
             shp.text: lambda i: {"type": "text", "st": i.start.toTuple(), "tc": i.textContent, "ff": i.fontFamily, "fs": i.fontStyle, "th": i.textHeight, "ta": i.textAlignment, "to": i.textOrient, **self._get_common_fields(i)},
             lbl.symbolLabel: lambda i: {"type": "label", "st": i.start.toTuple(), "nam": i.labelName, "def": i.labelDefinition, "txt": i.labelText, "val": i.labelValue, "vis": i.labelVisible, "lt": i.labelType, "ht": i.labelHeight, "al": i.labelAlign, "or": i.labelOrient, "use": i.labelUse, "loc": (i.scenePos() - i.scene().origin).toTuple(), "fl": i.flipTuple},
             symbolAttribute: lambda i: {"type": "attr", "nam": i.name, "def": i.definition},
-            QGraphicsSimpleTextItem: lambda i: {"type": "simpletext", "text": i.text(), "pos": (i.pos().x(), i.pos().y())},
-            QGraphicsRectItem: lambda i: {"type": "qrect", "rect": (i.rect().x(), i.rect().y(), i.rect().width(), i.rect().height()), "pos": (i.pos().x(), i.pos().y())},
         }
         
         handler = type_handlers.get(type(item))

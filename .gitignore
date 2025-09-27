@@ -20,6 +20,6 @@ reveda.log
 library.json
 *.prn
 *.raw
-
 .env
-.env
+.gitignore
+reveda.conf

@@ -424,10 +424,9 @@ class MainWindow(QMainWindow):
             symbolFiles = importDlg.symFileEdit.text().split(",")
             importLibraryName = importDlg.libNamesCB.currentText()
             scaleFactor = float(importDlg.scaleEdit.text().strip())
-            symbolFileObjList = []
+
             for symbolFile in symbolFiles:
-                symbolFileObjList.append(pathlib.Path(symbolFile.strip()))
-            for symbolFileObj in symbolFileObjList:
+                symbolFileObj = pathlib.Path(symbolFile.strip())
                 importObj = impxsym.importXschemSym(
                     self,
                     symbolFileObj,
@@ -436,6 +435,22 @@ class MainWindow(QMainWindow):
                 )
                 importObj.scaleFactor = scaleFactor
                 importObj.importSymFile()
+
+            # symbolFiles = importDlg.symFileEdit.text().split(",")
+            # importLibraryName = importDlg.libNamesCB.currentText()
+            # scaleFactor = float(importDlg.scaleEdit.text().strip())
+            # symbolFileObjList = []
+            # for symbolFile in symbolFiles:
+            #     symbolFileObjList.append(pathlib.Path(symbolFile.strip()))
+            # for symbolFileObj in symbolFileObjList:
+            #     importObj = impxsym.importXschemSym(
+            #         self,
+            #         symbolFileObj,
+            #         self.libraryBrowser.designView,
+            #         importLibraryName,
+            #     )
+            #     importObj.scaleFactor = scaleFactor
+            #     importObj.importSymFile()
 
     def importSpiceSubckt(self, viewT: ddef.viewTuple, filePath: str):
         # Get the library model

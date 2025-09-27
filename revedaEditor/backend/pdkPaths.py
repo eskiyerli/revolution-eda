@@ -30,10 +30,20 @@ load_dotenv()
 
 def importPDKModule(moduleName):
     pdkPath = os.environ.get("REVEDA_PDK_PATH",'./defaultPDK')
-    pdkPathObj = pathlib.Path(pdkPath)
-    pdkPathParentObj = pdkPathObj.resolve().parent
-    pdkPathParentStr = str(pdkPathParentObj)
-    if pdkPathParentStr not in sys.path:
+    pdkPathObj = pathlib.Path(pdkPath).resolve()
+    if pdkPathObj.exists():
+        pdkPathParentObj = pdkPathObj.resolve().parent
+        pdkPathParentStr = str(pdkPathParentObj)
+        if pdkPathParentStr not in sys.path:
+            sys.path.append(pdkPathParentStr)
+        fullModuleName = f"{pdkPathObj.name}.{moduleName}"
+        return importlib.import_module(fullModuleName)
+    else:
+        pdkPath = "./defaultPDK"
+        pdkPathObj = pathlib.Path(pdkPath).resolve()
+        pdkPathParentObj = pdkPathObj.resolve().parent
+        pdkPathParentStr = str(pdkPathParentObj)
         sys.path.append(pdkPathParentStr)
-    fullModuleName = f"{pdkPathObj.name}.{moduleName}"
-    return importlib.import_module(fullModuleName)
+        fullModuleName = f"{pdkPathObj.name}.{moduleName}"
+        return importlib.import_module(fullModuleName)
+
