@@ -327,6 +327,7 @@ class designLibrariesColumnView(BaseDesignLibrariesView):
             if dlg.exec() == QDialog.Accepted:
                 cellName = dlg.cellCB.currentText()
                 if cellName.strip() != "":
+                    selectedLib = libm.getLibItem(self.libraryModel, dlg.libNamesCB.currentText())
                     newCellItem = libb.createCell(self, selectedLib, cellName)
                     if newCellItem:
                         # add now a clone of newCellItem to temporary cellListModel
@@ -793,12 +794,12 @@ class designLibrariesModel(QStandardItemModel):
         shutil.rmtree(libraryItem.data(Qt.UserRole + 2), ignore_errors=True)
         self.invisibleRootItem().removeRow(libraryItem.row())
 
-    def addCellToModel(self, cellPath, parentItem) -> libb.cellItem:
+    def addCellToModel(self, cellPath: pathlib.Path, parentItem: libb.libraryItem) -> libb.cellItem:
         cellEntry = libb.cellItem(cellPath)
         parentItem.appendRow(cellEntry)
         return cellEntry
 
-    def addViewToModel(self, viewPath, parentItem) -> libb.viewItem:
+    def addViewToModel(self, viewPath:pathlib.Path, parentItem: libb.cellItem) -> libb.viewItem:
         viewEntry = libb.viewItem(viewPath)
         parentItem.appendRow(viewEntry)
         return viewEntry

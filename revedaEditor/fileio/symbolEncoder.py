@@ -23,7 +23,6 @@
 #
 
 import json
-from PySide6.QtWidgets import QGraphicsSimpleTextItem, QGraphicsRectItem
 
 import revedaEditor.common.shapes as shp
 import revedaEditor.common.labels as lbl
@@ -72,7 +71,12 @@ class symbolEncoder(json.JSONEncoder):
             shp.symbolRectangle: lambda i: {"type": "rect", "rect": i.rect.getCoords(), **self._get_common_fields(i)},
             shp.symbolLine: lambda i: {"type": "line", "st": i.start.toTuple(), "end": i.end.toTuple(), **self._get_common_fields(i)},
             shp.symbolCircle: lambda i: {"type": "circle", "cen": i.centre.toTuple(), "end": i.end.toTuple(), **self._get_common_fields(i)},
-            shp.symbolArc: lambda i: {"type": "arc", "st": i.start.toTuple(), "end": i.end.toTuple(), **self._get_common_fields(i)},
+            shp.symbolArc: lambda i: {"type": "arc", "st": i.start.toTuple(),
+                                      "end": i.end.toTuple(),
+                                      **self._get_common_fields(i),
+                                      "at":
+                                          shp.symbolArc.arcTypes.index(
+                                              i.arcType)},
             shp.symbolPolygon: lambda i: {"type": "polygon", "ps": [i.mapToScene(p).toTuple() for p in i.points], "fl": i.flipTuple},
             shp.symbolPin: lambda i: {"type": "pin", "st": i.start.toTuple(), "nam": i.pinName, "pd": i.pinDir, "pt": i.pinType, **self._get_common_fields(i)},
             shp.text: lambda i: {"type": "text", "st": i.start.toTuple(), "tc": i.textContent, "ff": i.fontFamily, "fs": i.fontStyle, "th": i.textHeight, "ta": i.textAlignment, "to": i.textOrient, **self._get_common_fields(i)},

@@ -117,7 +117,7 @@ class textureCache:
     def getCachedPixmap(cls, texturePath, color):
         cache_key = (str(texturePath), color.name())
         if cache_key not in cls._pixmap_cache:
-            image = cls.createImage(texturePath, color, 4)
+            image = cls.createImage(texturePath, color, 1)
             pixmap = QPixmap.fromImage(image)
             cls._pixmap_cache[cache_key] = pixmap
         return cls._pixmap_cache[cache_key]
@@ -129,48 +129,78 @@ class textureCache:
 
 
 class layoutShape(QGraphicsItem):
+    # Class-level color cache
+    _color_cache = {}
+    # Class-level pen/brush lookup table
+    _pen_brush_cache = {}
+    
     def __init__(self) -> None:
         super().__init__()
-        self.setFlag(QGraphicsItem.ItemIsMovable, False)
-        self.setFlag(QGraphicsItem.ItemIsSelectable, True)
-        self.setFlag(QGraphicsItem.ItemSendsGeometryChanges, True)
-        self.setFlag(QGraphicsItem.ItemIsFocusable, True)
+        
+        # Batch flag operations for better performance
+        flags = (QGraphicsItem.ItemIsSelectable | 
+                QGraphicsItem.ItemSendsGeometryChanges |
+                QGraphicsItem.ItemIsFocusable |
+                QGraphicsItem.ItemUsesExtendedStyleOption)
+        self.setFlags(flags)
+        
+        # Single method calls
         self.setAcceptHoverEvents(True)
-        self._pen = None
-        self._brush = None
-        self._angle = 0  # rotation angle
-        self._stretch: bool = False
         self.setCacheMode(QGraphicsItem.DeviceCoordinateCache)
-        self.setFlag(QGraphicsItem.ItemUsesExtendedStyleOption)
+        
+        # Direct attribute initialization (faster than individual assignments)
+        self._pen = self._brush = None
+        self._angle = 0
+        self._stretch = False
         self._offset = QPoint(0, 0)
         self._flipTuple = (1, 1)
-        # Initialize brush-related attributes
-        self._transformedBrush = None
-        self._lastScale = None
+        self._transformedBrush = self._lastScale = None
+    
+    @classmethod
+    def _get_cached_color(cls, color_name):
+        if color_name not in cls._color_cache:
+            cls._color_cache[color_name] = QColor(color_name)
+        return cls._color_cache[color_name]
 
     def __repr__(self):
         return "layoutShape()"
 
     def itemChange(self, change, value):
-        if self.scene():
-            match change:
-                case QGraphicsItem.ItemSelectedHasChanged:
-                    if value:
-                        self.setZValue(self.zValue() + 10)
-                    else:
-                        self.setZValue(self.zValue() - 10)
+        if change == QGraphicsItem.ItemSelectedHasChanged and self.scene():
+            # Direct z-value calculation without conditional
+            self.setZValue(self.zValue() + (20 * value - 10))
         return super().itemChange(change, value)
 
     def _definePensBrushes(self, layer):
-        # Assuming 'layer' is your layer object:
-        self._pen = QPen(layer.pcolor, layer.pwidth, layer.pstyle)
-        texturePath = Path(laylyr.__file__).parent.joinpath(layer.btexture)
-        _pixmap = textureCache.getCachedPixmap(texturePath, layer.bcolor)
-        self._brush = QBrush(layer.bcolor, _pixmap)
-        self._selectedPen = QPen(QColor("yellow"), layer.pwidth, Qt.DashLine)
-        self._selectedBrush = QBrush(QColor("yellow"), _pixmap)
-        self._stretchPen = QPen(QColor("red"), layer.pwidth, Qt.SolidLine)
-        self._stretchBrush = QBrush(QColor("red"), _pixmap)
+        # Create cache key from layer properties
+        cache_key = (layer.name, layer.purpose, layer.pcolor.name(), 
+                    layer.pwidth, layer.pstyle, layer.bcolor.name(), layer.btexture)
+        
+        if cache_key not in self._pen_brush_cache:
+            # Create objects only once per unique layer configuration
+            texturePath = Path(laylyr.__file__).parent.joinpath(layer.btexture)
+            _pixmap = textureCache.getCachedPixmap(texturePath, layer.bcolor)
+            
+            yellow = self._get_cached_color("yellow")
+            red = self._get_cached_color("red")
+            
+            self._pen_brush_cache[cache_key] = {
+                'pen': QPen(layer.pcolor, layer.pwidth, layer.pstyle),
+                'brush': QBrush(layer.bcolor, _pixmap),
+                'selectedPen': QPen(yellow, layer.pwidth, Qt.DashLine),
+                'selectedBrush': QBrush(yellow, _pixmap),
+                'stretchPen': QPen(red, layer.pwidth, Qt.SolidLine),
+                'stretchBrush': QBrush(red, _pixmap)
+            }
+        
+        # Assign from cache
+        cached = self._pen_brush_cache[cache_key]
+        self._pen = cached['pen']
+        self._brush = cached['brush']
+        self._selectedPen = cached['selectedPen']
+        self._selectedBrush = cached['selectedBrush']
+        self._stretchPen = cached['stretchPen']
+        self._stretchBrush = cached['stretchBrush']
 
     def _updateTransformedBrush(self, brush: QBrush, scale: float):
         """Update transformed brush only when needed"""
@@ -180,7 +210,7 @@ class layoutShape(QGraphicsItem):
 
         if self._lastScale != scale:
             self._lastScale = scale
-            self._transformedBrush.setTransform(QTransform().scale(1 / scale, 1 / scale))
+            self._transformedBrush.setTransform(QTransform().scale(0.5 / scale, 0.5 / scale))
 
     @property
     def pen(self):
@@ -286,16 +316,22 @@ class layoutShape(QGraphicsItem):
 
     @flipTuple.setter
     def flipTuple(self, flipState: Tuple[int, int]):
-        # Get the current transformation
-        transform = self.transform()
-        centre = self.boundingRect().center()
-        transform.translate(centre.x(), centre.y())
-        # Apply the scaling
-        transform.scale(*flipState)
-        transform.translate(-centre.x(), -centre.y())
-        # Set the new transformation
+        # Early exit if no change
+        if self._flipTuple == flipState:
+            return
+        
+        # Cache center calculation
+        if not hasattr(self, '_cached_center'):
+            self._cached_center = self.boundingRect().center()
+        center = self._cached_center
+        
+        # Direct transform creation is faster than modifying existing
+        cx, cy = center.x(), center.y()
+        sx, sy = flipState
+        
+        transform = QTransform(sx, 0, 0, sy, cx - sx * cx, cy - sy * cy)
         self.setTransform(transform)
-        self._flipTuple = (transform.m11(), transform.m22())
+        self._flipTuple = flipState
 
     @property
     def layer(self):
@@ -535,36 +571,42 @@ class layoutRect(layoutShape):
 class layoutInstance(layoutShape):
     def __init__(self, shapes: list[layoutShape]):
         super().__init__()
-        # List of shapes in the symbol
+        
+        # Direct attribute initialization
         self._shapes = shapes
-        # Flag to indicate if the symbol is in draft mode
         self._draft = False
-        # Name of the library
-        self._libraryName: str = ""
-        # Name of the cell
-        self._cellName: str = ""
-        # Name of the view
-        self._viewName: str = ""
-        # Name of the instance
-        self._instanceName = ""
-        # Pen used for selection
-        self._selectedPen = QPen(QColor("yellow"), 4, Qt.DashLine)
-        self._selectedPen.setCosmetic(True)
-        # Set the shapes for the symbol
-        self.setShapes()
-        # Enable child event filtering for filters and handles
+        self._libraryName = self._cellName = self._viewName = self._instanceName = ""
+        
+        # Cache pen creation
+        self._selectedPen = self._get_cached_color("yellow")
+        pen = QPen(self._selectedPen, 4, Qt.DashLine)
+        pen.setCosmetic(True)
+        self._selectedPen = pen
+        
+        # Batch flag operations
         self.setFiltersChildEvents(True)
         self.setHandlesChildEvents(True)
-        # Enable flag to indicate that the item contains children in shape
         self.setFlag(QGraphicsItem.ItemContainsChildrenInShape, True)
-        # Set the top left position of the symbol
-        self._start = self.childrenBoundingRect().bottomLeft()
+        
+        # Defer expensive operations
+        self._start = None
+        self._shapes_set = False
+        
+        # Set shapes only if not empty
+        if shapes:
+            self.setShapes()
 
     def setShapes(self):
+        if self._shapes_set or not self._shapes:
+            return
+
+        # Batch process all shapes
         for item in self._shapes:
+            item.setFlags(QGraphicsItem.ItemStacksBehindParent)
             item.setFlag(QGraphicsItem.ItemIsSelectable, False)
-            item.setFlag(QGraphicsItem.ItemStacksBehindParent, True)
             item.setParentItem(self)
+        
+        self._shapes_set = True
 
     def removeShapes(self):
         self.prepareGeometryChange()
@@ -644,6 +686,8 @@ class layoutInstance(layoutShape):
 
     @property
     def start(self):
+        if self._start is None:
+            self._start = self.childrenBoundingRect().bottomLeft()
         return self._start.toPoint()
 
     def addShape(self, shape: layoutShape):
@@ -1901,40 +1945,51 @@ class layoutViaArray(layoutShape):
 
 
 class layoutPolygon(layoutShape):
+    __slots__ = ('_points', '_layer', '_polygon', '_selectedCorner', '_selectedCornerIndex')
+    
     def __init__(self, points: list, layer: ddef.layLayer):
         super().__init__()
         self._points = points
         self._layer = layer
-        self._definePensBrushes(self._layer)
-        self._polygon = QPolygonF(self._points)
         self._selectedCorner = QPoint(99999, 99999)
         self._selectedCornerIndex = 999
+        
+        # Defer expensive operations
+        self._polygon = None
+        self._definePensBrushes(self._layer)
         self.setZValue(self._layer.z)
-        self.flipTuple = (1, 1)
+        self._flipTuple = (1, 1)  # Direct assignment instead of property
 
     def __repr__(self):
         return f"layoutPolygon({self._points}, {self._layer})"
 
     def paint(self, painter, option, widget):
+        # Cache frequently accessed values
+        selected = self.isSelected()
         scale = self.scene().views()[0].transform().m11()
-        if self.isSelected():
+        
+        # Set pen and brush based on selection state
+        if selected:
             painter.setPen(self._selectedPen)
             self._updateTransformedBrush(self._selectedBrush, scale)
-
-            if self._stretch and self._selectedCorner != QPoint(99999, 99999):
+            # Use cached corner coordinates (avoid QPoint creation)
+            if self._stretch and self._selectedCorner.x() != 99999:
                 painter.drawEllipse(self._selectedCorner, 5, 5)
         else:
             painter.setPen(self._pen)
             self._updateTransformedBrush(self._brush, scale)
+        
         painter.setBrush(self._transformedBrush)
-        painter.drawPolygon(self._polygon)
+        painter.drawPolygon(self.polygon)
 
 
     def boundingRect(self) -> QRectF:
-        return self._polygon.boundingRect()
+        return self.polygon.boundingRect()
 
     @property
     def polygon(self):
+        if self._polygon is None:
+            self._polygon = QPolygonF(self._points)
         return self._polygon
 
     @property
@@ -1945,12 +2000,12 @@ class layoutPolygon(layoutShape):
     def points(self, value: list):
         self.prepareGeometryChange()
         self._points = value
-        self._polygon = QPolygonF(self._points)
+        self._polygon = None  # Invalidate cache
 
     def addPoint(self, point: QPoint):
         self.prepareGeometryChange()
         self._points.append(point)
-        self._polygon = QPolygonF(self._points)
+        self._polygon = None  # Invalidate cache
 
     @property
     def tempLastPoint(self):

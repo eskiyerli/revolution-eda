@@ -27,6 +27,7 @@ from typing import List
 import pathlib
 import datetime
 from copy import deepcopy
+import re
 
 from PySide6.QtCore import (QPoint, Qt, QThreadPool, )
 from PySide6.QtGui import (QAction, QIcon, )
@@ -49,6 +50,8 @@ from revedaEditor.gui.startThread import startThread
 
 
 class schematicEditor(edw.editorWindow):
+    MAJOR_GRID_DEFAULT = 20
+    SNAP_GRID_DEFAULT = 10
     def __init__(self, viewItem: libb.viewItem, libraryDict: dict, libraryView) -> None:
         super().__init__(viewItem, libraryDict, libraryView)
         self.setWindowTitle(f"Schematic Editor - {self.cellName} - {self.viewName}")
@@ -56,6 +59,9 @@ class schematicEditor(edw.editorWindow):
         self.configDict = dict()
         self.processedCells = set()  # cells included in config view
         self.symbolChooser = None
+        self.majorGrid = self.MAJOR_GRID_DEFAULT  # dot/line grid spacing
+        self.snapGrid = self.SNAP_GRID_DEFAULT  # snapping grid size
+        self.snapTuple = (self.snapGrid, self.snapGrid)
         self.symbolViews = [
             "symbol"]  # only symbol can be instantiated in the schematic window.
         self._schematicContextMenu()
@@ -125,7 +131,7 @@ class schematicEditor(edw.editorWindow):
         self.simulationMenu.addAction(self.netlistAction)
         self.editorMenuBar.insertMenu(self.menuHelp.menuAction(), self.simulationMenu)
         # self.menuHelp = self.editorMenuBar.addMenu("&Help")
-        if self._app.plugins.get('plugins.revedasim'):
+        if self._app.plugins.get('revedasim'):
             self.simulationMenu.addAction(self.simulateAction)
 
     def _createTriggers(self):
@@ -243,7 +249,7 @@ class schematicEditor(edw.editorWindow):
 
     def startSimClick(self, s):
         try:
-            simdlg = self._app.plugins.get('plugins.revedasim').dialogueWindows
+            simdlg = self._app.plugins.get('revedasim').dialogueWindows
             revbenchdlg = simdlg.createRevbenchDialogue(self, self.libraryView.libraryModel,
                                                         self.cellItem)
             revbenchdlg.libNamesCB.setCurrentText(self.libName)
@@ -282,7 +288,7 @@ class schematicEditor(edw.editorWindow):
                     # simmwModule = importlib.import_module("revedasim.simMainWindow",
                     #                                       str(self._app.revedasim_pathObj))
             
-                simmwModule = self._app.plugins.get('plugins.revedasim')
+                simmwModule = self._app.plugins.get('revedasim')
                 if simmwModule:
                     cellViewTuple = ddef.viewTuple(self.libItem.libraryName,
                                                    self.cellItem.cellName,
@@ -808,14 +814,14 @@ class xyceNetlist:
                 xyceNetlistFormatLine = xyceNetlistFormatLine.replace(labelItem.labelName,
                                                                       labelItem.labelValue)
 
-            # Process attributes
-            for attrb, value in elementSymbol.symattrs.items():
-                xyceNetlistFormatLine = xyceNetlistFormatLine.replace(f"%{attrb}", value)
             # Add pin list
             pinList = " ".join(elementSymbol.pinNetMap.values())
             xyceNetlistFormatLine = (
-                    xyceNetlistFormatLine.replace("@pinList", pinList) + "\n")
-
+                    xyceNetlistFormatLine.replace("%pinOrder", pinList) + "\n")
+            # Process other attributes
+            for attrb, value in elementSymbol.symattrs.items():
+                xyceNetlistFormatLine = xyceNetlistFormatLine.replace(f"%{attrb}", value)
+            xyceNetlistFormatLine = re.sub(r'\s+\w+\s*=(?=\s|$)', '', xyceNetlistFormatLine)
             return xyceNetlistFormatLine
 
         except Exception as e:

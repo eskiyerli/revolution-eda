@@ -22,13 +22,12 @@
 #    Licensor: Revolution Semiconductor (Registered in the Netherlands)
 #
 
-import itertools as itt
+
 import json
 import os
 import pathlib
 from collections import Counter
 
-import re
 from typing import Union, Set, Dict, Tuple, List
 from PySide6.QtCore import (
     QPoint,
@@ -951,9 +950,9 @@ class schematicScene(editorScene):
                     items = json.load(temp)
                     self._symbolCache[viewPath] = items
 
-            if items[0]["cellView"] != "symbol":
-                self.logger.error("Not a symbol!")
-                return None
+            # if (items[0].get("viewType", "") != "symbol" or items[0].get("cellView", "") != "symbol"):
+            #     self.logger.error("Not a symbol!")
+            #     return None
 
             # Use comprehensions for better performance
             itemAttributes = {
@@ -1017,8 +1016,8 @@ class schematicScene(editorScene):
                     # shift position by four grid units to right and down
                     shape.setPos(
                         QPoint(
-                            int(item.pos().x() + 4 * self.snapTuple[0]),
-                            int(item.pos().y() + 4 * self.snapTuple[1]),
+                            int(item.x() + 4 * self.snapTuple[0]),
+                            int(item.y() + 4 * self.snapTuple[1]),
                         )
                     )
                     if isinstance(shape, shp.schematicSymbol):
@@ -1052,7 +1051,6 @@ class schematicScene(editorScene):
                     # Start array
                     f.write("[\n")
 
-                    # Write header items as a single JSON dump to reduce I/O operations
                     header_items = [
                         {"viewType": "schematic"},
                         {"snapGrid": self.snapTuple},
@@ -1136,7 +1134,7 @@ class schematicScene(editorScene):
                 if viewDict.get("viewType") != "schematic":
                     self.logger.error("Not a schematic file!")
                     return
-                self._configure_grid_settings(gridSettings)
+                self.configureGridSettings(gridSettings)
                 self.createSchematicItems(itemData)
                 # self._snapPointRect = self.defineSnapRect()
                 # self.addItem(self._snapPointRect)
@@ -1149,20 +1147,6 @@ class schematicScene(editorScene):
         except Exception as e:
             self.logger.error(f"Unexpected error loading schematic: {e}")
             return
-
-    def _configure_grid_settings(self, gridSettings: dict) -> None:
-        """Configure grid settings from decoded data."""
-        snap_grid = gridSettings.get("snapGrid", [20, 10])
-
-        self.majorGrid, self.snapGrid = snap_grid
-        self.snapTuple = (self.snapGrid, self.snapGrid)
-        self.snapDistance = 2 * self.snapGrid
-        self.editorWindow.snapGrid = self.snapGrid
-        self.editorWindow.majorGrid = self.majorGrid
-        self.editorWindow.snapTuple = self.snapTuple
-        self.editorWindow.centralW.view.snapGrid = self.snapGrid
-        self.editorWindow.centralW.view.majorGrid = self.majorGrid
-        self.editorWindow.centralW.view.snapTuple = self.snapTuple
 
     def createSchematicItems(self, itemsList: List[Dict]):
         for itemDict in itemsList:
@@ -1407,6 +1391,7 @@ class schematicScene(editorScene):
                 dlg.viewListCB.addItems(viewNames)
                 if dlg.exec() == QDialog.Accepted:
                     selectedSymbol.setSelected(False)
+                    self.saveSchematic(self.editorWindow.file)
                     libItem = libm.getLibItem(
                         self.editorWindow.libraryView.libraryModel,
                         selectedSymbol.libraryName,

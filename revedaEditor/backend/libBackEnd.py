@@ -244,13 +244,10 @@ def createCellviewItem(viewName, viewPath):
     items = list()
     if "schematic" in viewName:
         items.insert(0, {"viewType": "schematic"})
-        items.insert(1, {"snapGrid": (10, 5)})
     elif "symbol" in viewName:
         items.insert(0, {"viewType": "symbol"})
-        items.insert(1, {"snapGrid": (10, 5)})
     elif "layout" in viewName:
         items.insert(0, {"viewType": "layout"})
-        items.insert(1, {"snapGrid": (10, 5)})
     elif "pcell" in viewName:
         items.insert(0, {"viewType": "pcell"})
     elif "spice" in viewName:

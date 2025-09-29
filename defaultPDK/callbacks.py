@@ -63,3 +63,8 @@ class dnwpw(baseInst):
 class npolyf_u(baseInst):
     def __init__(self, labels_dict:dict):
         super().__init__(labels_dict)
+
+
+class ind(baseInst):
+    def __init__(self, labels_dict:dict):
+        super().__init__(labels_dict)

@@ -23,19 +23,22 @@
 #
 
 
+import functools
 import inspect
 import json
+import orjson
 import pathlib
-import time
-from typing import List, Dict, Any, Union, Generator
+# import time
+from typing import List, Dict, Any, Union
 
-from contextlib import contextmanager
+# from contextlib import contextmanager
 
 from PySide6.QtCore import (QPoint, QPointF, QRect, QRectF, Qt, QLineF,)
 from PySide6.QtGui import (QColor, QGuiApplication, QTransform, QPen, QFontDatabase,
                            QFont, )
 from PySide6.QtWidgets import (QDialog, QGraphicsSceneMouseEvent, QGraphicsLineItem,
-                               QCompleter, QGraphicsRectItem, QGraphicsItem)
+                               QCompleter, QGraphicsRectItem, QGraphicsItem,
+                               QGraphicsScene)
 
 import revedaEditor.backend.dataDefinitions as ddef
 import revedaEditor.backend.libraryMethods as libm
@@ -104,6 +107,7 @@ class layoutScene(editorScene):
         self.rulerTickGap = fabproc.dbu
         self.rulerTickLength = 10
         self.rulerWidth = 2
+        self.setItemIndexMethod(QGraphicsScene.BspTreeIndex)
 
     @property
     def drawMode(self):
@@ -144,6 +148,7 @@ class layoutScene(editorScene):
         """
         point *= fabproc.dbu
         return point
+
 
     def mousePressEvent(self, event: QGraphicsSceneMouseEvent) -> None:
 
@@ -354,10 +359,13 @@ class layoutScene(editorScene):
     def addNewInstance(self) -> Union[lshp.layoutInstance, lshp.layoutPcell]:
         newInstance = self.instLayout(self.layoutInstanceTuple)
         dlg = ldlg.layoutInstanceDialogue(self.editorWindow)
+        dlg.instanceLibName.setText(newInstance.libraryName)
+        dlg.instanceCellName.setText(newInstance.cellName)
+        dlg.instanceViewName.setText(newInstance.viewName)
         if isinstance(newInstance, pcells.baseCell):
-            dlg.instanceLibName.setText(newInstance.libraryName)
-            dlg.instanceCellName.setText(newInstance.cellName)
-            dlg.instanceViewName.setText(newInstance.viewName)
+            # dlg.instanceLibName.setText(newInstance.libraryName)
+            # dlg.instanceCellName.setText(newInstance.cellName)
+            # dlg.instanceViewName.setText(newInstance.viewName)
             lineEditDict = self.extractPcellInstanceParameters(newInstance)
             if lineEditDict:
                 dlg.pcellParamsGroup.show()
@@ -373,57 +381,36 @@ class layoutScene(editorScene):
 
     def instLayout(self, layoutInstanceTuple: ddef.viewItemTuple) -> Union[
         lshp.layoutInstance, lshp.layoutPcell]:
-        """
-        Read a layout file and create layoutShape objects from it.
-        """
-        match layoutInstanceTuple.viewItem.viewType:
-            case "layout":
-                with layoutInstanceTuple.viewItem.viewPath.open("r") as temp:
-                    try:
-                        decodedData = json.load(temp)
-                        if decodedData[0]["viewType"] != "layout":
-                            self.logger.error("Not a layout cell")
-                        else:
-                            instanceShapes = [lj.layoutItems(self).create(item) for item in
-                                              decodedData[2:] if
-                                              item.get("type") in self.layoutShapes]
-                            layoutInstance = lshp.layoutInstance(instanceShapes)
-                            layoutInstance.libraryName = (
-                                layoutInstanceTuple.libraryItem.libraryName)
-                            layoutInstance.cellName = (
-                                layoutInstanceTuple.cellItem.cellName)
-                            layoutInstance.viewName = (
-                                layoutInstanceTuple.viewItem.viewName)
-                            self.itemCounter += 1
-                            layoutInstance.counter = self.itemCounter
-                            layoutInstance.instanceName = f"I{layoutInstance.counter}"
-                            # For each instance assign a counter number from the scene
-                            return layoutInstance
-                    except json.JSONDecodeError:
-                        self.logger.warning("Invalid JSON File")
-            case "pcell":
-                with open(layoutInstanceTuple.viewItem.viewPath, "r") as temp:
-                    try:
-                        pcellRefDict = json.load(temp)
-                        if pcellRefDict[0]["cellView"] != "pcell":
-                            self.logger.error("Not a pcell cell")
-                        else:
-                            # create a pcell instance with default parameters.
-                            pcellInstance = eval(f"pcells.{pcellRefDict[1]['reference']}()")
-                            # now evaluate pcell
-
-                            pcellInstance.libraryName = (
-                                layoutInstanceTuple.libraryItem.libraryName)
-                            pcellInstance.cellName = (layoutInstanceTuple.cellItem.cellName)
-                            pcellInstance.viewName = (layoutInstanceTuple.viewItem.viewName)
-                            self.itemCounter += 1
-                            pcellInstance.counter = self.itemCounter
-                            # This needs to become more sophisticated.
-                            pcellInstance.instanceName = f"I{pcellInstance.counter}"
-
-                            return pcellInstance
-                    except Exception as e:
-                        self.logger.error(f"Cannot read pcell: {e}")
+        """Read a layout file and create layoutShape objects from it."""
+        try:
+            with layoutInstanceTuple.viewItem.viewPath.open("r") as temp:
+                decodedData = json.load(temp)
+            
+            # Common instance setup
+            def setup_instance(instance):
+                instance.libraryName = layoutInstanceTuple.libraryItem.libraryName
+                instance.cellName = layoutInstanceTuple.cellItem.cellName
+                instance.viewName = layoutInstanceTuple.viewItem.viewName
+                self.itemCounter += 1
+                instance.counter = self.itemCounter
+                instance.instanceName = f"I{self.itemCounter}"
+                return instance
+            
+            viewType = layoutInstanceTuple.viewItem.viewType
+            
+            if viewType == "layout" and decodedData and decodedData[0].get("viewType") == "layout":
+                factory = lj.layoutItems(self)
+                layoutShapes = set(self.layoutShapes)
+                instanceShapes = [factory.create(item) for item in decodedData[2:] 
+                                if isinstance(item, dict) and item.get("type") in layoutShapes]
+                return setup_instance(lshp.layoutInstance(instanceShapes))
+            
+            elif viewType == "pcell" and len(decodedData) > 1 and decodedData[0].get("cellView") == "pcell":
+                pcellInstance = eval(f"pcells.{decodedData[1]['reference']}()")
+                return setup_instance(pcellInstance)
+                
+        except Exception:
+            pass
 
     def findScenelayoutCellSet(self) -> set[lshp.layoutInstance]:
         """
@@ -523,149 +510,64 @@ class layoutScene(editorScene):
             raise
 
 
+    # def loadDesign(self, filePathObj: pathlib.Path) -> None:
+    #     """Load the layout cell from the given JSON file."""
+    #     try:
+    #         with filePathObj.open("r", buffering=65536) as file:
+    #             decodedData = json.load(file)
+    #         with self.measureDuration():
+    #             if len(decodedData) < 2 or decodedData[0].get("viewType") != "layout":
+    #                 return
+
+    #             self.configureGridSettings(decodedData[1])
+    #             if len(decodedData) > 2:
+    #                 self.createLayoutItems(decodedData[2:])
+    #     except Exception:
+    #         return
+
     def loadDesign(self, filePathObj: pathlib.Path) -> None:
-        """Load the layout cell from the given JSON file.
-
-        Args:
-            filePathObj (pathlib.Path): Path to the layout cell file.
-
-        Raises:
-            IOError: If there are issues reading the file
-            json.JSONDecodeError: If the file contains invalid JSON
-            ValueError: If the file structure is invalid
-            KeyError: If required grid settings are missing
-        """
-        CHUNK_SIZE = 65536  # 64KB chunks for reading
-
-        def setup_grid_settings(grid_settings: dict) -> None:
-            """Configure grid-related attributes from settings."""
-            try:
-                snap_grid = grid_settings["snapGrid"]
-                if len(snap_grid) != 2 or not all(isinstance(x, (int, float)) for x in snap_grid):
-                    raise ValueError("Invalid snap grid values")
-
-                self.majorGrid, self.snapGrid = snap_grid
-                self.snapTuple = (self.snapGrid, self.snapGrid)
-                self.snapDistance = 2 * self.snapGrid
-
-            except (KeyError, TypeError, IndexError) as e:
-                raise ValueError(f"Invalid grid settings: {e}")
-
-        def validate_header(data: list) -> tuple:
-            """Validate header and return processed data.
-
-            Returns:
-                tuple: (view_type, grid_settings, remaining_data)
-            """
-            if len(data) < 2:
-                raise ValueError("Insufficient data in layout file")
-
-            view_type, grid_settings, *item_data = data
-
-            if not isinstance(view_type, dict):
-                raise ValueError("Invalid view type format")
-            if view_type.get("viewType") != "layout":
-                raise ValueError("Unsupported view type")
-            if not isinstance(grid_settings, dict):
-                raise ValueError("Invalid grid settings format")
-
-            return view_type, grid_settings, item_data
-
-        def stream_load_json(file_path: pathlib.Path) -> dict:
-            """Load JSON file in streaming mode for large files."""
-            with file_path.open('rb') as f:
-                raw_data = f.read(CHUNK_SIZE)
-                decoder = json.JSONDecoder()
-                buffer = ''
-
-                while raw_data:
-                    buffer += raw_data.decode('utf-8')
-                    raw_data = f.read(CHUNK_SIZE)
-
-                try:
-                    return decoder.decode(buffer)
-                except json.JSONDecodeError as e:
-                    raise ValueError(f"Invalid JSON format: {e}")
-
+        """Load the layout cell from the given JSON file."""
         try:
+            with filePathObj.open("rb") as file:
+                decodedData = orjson.loads(file.read())
             with self.measureDuration():
-                # Validate file existence and size
-                if not filePathObj.exists():
-                    raise FileNotFoundError(f"Layout file not found: {filePathObj}")
+                if len(decodedData) < 2 or decodedData[0].get("viewType") != "layout":
+                    self.logger.error("Invalid file type.")
+                    return
 
-                file_size = filePathObj.stat().st_size
-                self.logger.debug(f"Loading layout file of size: {file_size/1024:.2f}KB")
+                self.configureGridSettings(decodedData[1])
+                if len(decodedData) > 2:
+                    self.createLayoutItems(decodedData[2:])
+        except orjson.JSONDecodeError:
+            self.logger.error("Invalid file format.")
+            return
+        except Exception:
+            return
 
-                # Load and validate data
-                decoded_data = stream_load_json(filePathObj)
-                if not isinstance(decoded_data, list):
-                    raise ValueError("Invalid layout file format")
-
-                # Process header and setup grid
-                view_type, grid_settings, item_data = validate_header(decoded_data)
-                setup_grid_settings(grid_settings)
-
-                # Clear existing items if any
-                self.clear()
-
-                self.createLayoutItems(item_data)
-
-
-        except (json.JSONDecodeError, IOError) as e:
-            self.logger.error(f"File operation error: {str(e)}")
-            raise
-
-        except ValueError as e:
-            self.logger.error(f"Invalid layout data: {str(e)}")
-            raise
-
-        except Exception as e:
-            self.logger.error(f"Unexpected error: {str(e)}")
-            raise
+    @functools.lru_cache(maxsize=1)
+    def getLayoutShapesSet(self, shapes_tuple):
+        """Cached conversion of layoutShapes to set for O(1) lookup."""
+        return set(shapes_tuple)
 
     def createLayoutItems(self, decoded_data: List[Dict[str, Any]]) -> None:
-        """Create layout items from decoded data and add them to the undo stack.
-
-        Args:
-            decoded_data (List[Dict[str, Any]]): List of item data dictionaries containing
-                shape information and properties.
-        """
-        if not isinstance(decoded_data, list):
-            self.logger.error("Invalid input: decoded_data must be a list")
-            return
-
+        """Create layout items from decoded data and add them to the undo stack."""
         if not decoded_data:
-            self.logger.debug("No layout items to create")
             return
 
-        def create_valid_items() -> List[Any]:
-            layout_factory = lj.layoutItems(self)
-            valid_items = []
-
-            for item in decoded_data:
+        valid_items = []
+        layoutShapes = self.getLayoutShapesSet(tuple(self.layoutShapes))
+        factory_create = lj.layoutItems(self).create  # Cache method lookup
+        
+        for item in decoded_data:
+            item_type = item.get("type") if isinstance(item, dict) else None
+            if item_type in layoutShapes:
                 try:
-                    if _is_valid_shape(item):
-                        valid_items.append(layout_factory.create(item))
-                    else:
-                        self.logger.warning(f"Skipping invalid shape type: {item.get('type')}")
-                except Exception as e:
-                    self.logger.error(f"Error creating layout item: {str(e)}")
-                    continue
+                    valid_items.append(factory_create(item))
+                except Exception:
+                    pass
 
-            return valid_items
-
-        def _is_valid_shape(item: Dict[str, Any]) -> bool:
-            return isinstance(item, dict) and item.get("type") in self.layoutShapes
-
-        try:
-            loaded_items = create_valid_items()
-            if loaded_items:
-                self.undoStack.push(us.loadShapesUndo(self, loaded_items))
-            else:
-                self.logger.warning("No valid layout items were created")
-
-        except Exception as e:
-            self.logger.error(f"Failed to create layout items: {str(e)}")
+        if valid_items:
+            self.undoStack.push(us.loadShapesUndo(self, valid_items))
 
     def deleteSelectedItems(self):
         for item in self.selectedItems():

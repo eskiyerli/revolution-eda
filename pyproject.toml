@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "revolution-eda"
-version = "0.8.1"
+version = "0.8.2"
 description = "Custom IC Design Environment for Professionals"
 authors = ["Revolution Semiconductor <48187772+eskiyerli@users.noreply.github.com>"]
 license = "Mozilla Public License v2 modified by Commons Clause"
@@ -17,7 +17,7 @@ documentation = "https://github.com/eskiyerli/revolution-eda/tree/master/docs"
 keywords = ["EDA", "IC Design", "Semiconductor", "Layout", "Schematic"]
 classifiers = [
 	"Programming Language :: Python :: 3",
-	"License :: OSI Approved :: Mozilla Public License 2.0 (MPL 2.0)",
+	"License :: Other/Proprietary License",
 	"Operating System :: OS Independent",
 	"Intended Audience :: Science/Research",
 	"Topic :: Scientific/Engineering :: Electronic Design Automation (EDA)"
@@ -30,15 +30,14 @@ quantiphy = "~2.20"
 python-dotenv = "~1.1.0"
 numpy = "~2.3.1"
 gdstk = "~0.9.60"
-markdown = "^3.9"
-black = "==25.9.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "~8.4.1"
-pyqtgraph = "~0.14.0.dev0"
+pyqtgraph = {git = "https://github.com/pyqtgraph/pyqtgraph.git", branch = "master"}
 polars = "~1.33.0"
 nuitka = "=2.7.13"
-black = "^25.1.0"
+black = "==25.9.0"
+markdown = "^3.9"
 
 [tool.poetry.scripts]
 reveda = "reveda:main"

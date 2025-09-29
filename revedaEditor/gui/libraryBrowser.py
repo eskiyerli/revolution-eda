@@ -29,7 +29,7 @@ import logging
 import pathlib
 
 from copy import deepcopy
-
+from logging import exception
 
 # import numpy as np
 from PySide6.QtCore import (
@@ -271,11 +271,12 @@ class libraryBrowser(QMainWindow):
     def newCellClick(self, s):
         try:
             self.designView.libraryModel = self.designView.libraryModel
-            firstLibName = self.libraryDict.keys().__iter__().__next__()
-            firstLibItem = libm.getLibItem(self.designView.libraryModel, firstLibName)
-            self.libBrowserCont.designView.createCell(firstLibItem)
+            self.libBrowserCont.designView.createCell(self.selectedLib)
         except Exception as e:
             self.logger.error(f"Error in creating new cell: {e}")
+
+
+
 
     def deleteCellClick(self, s):
         dlg = fd.deleteCellDialog(self, self.designView.libraryModel)
@@ -292,7 +293,7 @@ class libraryBrowser(QMainWindow):
     def newCellViewClick(self, s):
         dlg = fd.newCellViewDialog(self, self.designView.libraryModel)
         dlg.viewType.addItems(self.cellViews)
-
+        dlg.viewName.setText(self.cellViews[0])
         if dlg.exec() != QDialog.Accepted:
             return
         libItem = libm.getLibItem(
@@ -315,10 +316,6 @@ class libraryBrowser(QMainWindow):
             window.loadSymbol()
             window.show()
         elif viewItem.viewType == "layout":
-            # Initialize empty layout file if it doesn't exist
-            if not viewItem.data(Qt.UserRole + 2).exists():
-                with viewItem.data(Qt.UserRole + 2).open(mode="w") as f:
-                    json.dump([{"viewType": "layout"}, {"snapGrid": [5, 5]}, {}], f, indent=4)
             window = layoutEditor(viewItem, self.libraryDict, self.libBrowserCont.designView)
             self.appMainW.openViews[viewTuple] = window
             window.loadLayout()
@@ -428,34 +425,38 @@ class libraryBrowser(QMainWindow):
         return configWindow
 
     def openRevbenchWindow(self, libItem, cellItem, viewItem):
-        if self._app.plugins.get("plugins.revedasim"):
-            simdlg = self._app.plugins["plugins.revedasim"].dialogueWindows
-            # simdlg = importlib.import_module("revedasim.dialogueWindows",
-            #     str(self._app.revedasim_pathObj), )
-            revbenchdlg = simdlg.createRevbenchDialogue(
-                self, self.designView.libraryModel, cellItem, viewItem
-            )
-            # hide view name dialog not to confuse the user.
-            revbenchdlg.benchBox.setVisible(False)
-            revbenchdlg.mainLayout.update()
-            if revbenchdlg.exec() == QDialog.Accepted:
-                items = []
-                libraryName = libItem.data(Qt.UserRole + 2).name
-                cellName = cellItem.data(Qt.UserRole + 2).name
-                items.append({"viewType": "revbench"})
-                items.append({"lib": libraryName})
-                items.append({"cell": cellName})
-                items.append({"view": revbenchdlg.viewCB.currentText()})
-                items.append({"settings": []})
-                with viewItem.data(Qt.UserRole + 2).open(mode="w") as benchFile:
-                    json.dump(items, benchFile, indent=4)
-                simmwModule = self._app.plugins["plugins.revedasim"]
-                simmw = simmwModule.SimMainWindow(
-                    viewItem, self.designView.libraryModel, self.designView
+        try:
+            if self._app.plugins.get("revedasim"):
+                simdlg = self._app.plugins["revedasim"].dialogueWindows
+
+                # simdlg = importlib.import_module("revedasim.dialogueWindows",
+                #     str(self._app.revedasim_pathObj), )
+                revbenchdlg = simdlg.createRevbenchDialogue(
+                    self, self.designView.libraryModel, cellItem, viewItem
                 )
-                simmw.show()
-        else:
-            self.logger.error("Reveda SAE is not installed.")
+                # hide view name dialog not to confuse the user.
+                revbenchdlg.benchBox.setVisible(False)
+                revbenchdlg.mainLayout.update()
+                if revbenchdlg.exec() == QDialog.Accepted:
+                    items = []
+                    libraryName = libItem.data(Qt.UserRole + 2).name
+                    cellName = cellItem.data(Qt.UserRole + 2).name
+                    items.append({"viewType": "revbench"})
+                    items.append({"lib": libraryName})
+                    items.append({"cell": cellName})
+                    items.append({"view": revbenchdlg.viewCB.currentText()})
+                    items.append({"settings": []})
+                    with viewItem.data(Qt.UserRole + 2).open(mode="w") as benchFile:
+                        json.dump(items, benchFile, indent=4)
+                    simmwModule = self._app.plugins["plugins.revedasim"]
+                    simmw = simmwModule.SimMainWindow(
+                        viewItem, self.designView.libraryModel, self.designView
+                    )
+                    simmw.show()
+            else:
+                self.logger.error("Reveda SAE is not installed.")
+        except Exception as e:
+            self.logger.error(f"Error opening Revbench window: {e}")
 
     def selectCellView(self, libModel) -> libb.viewItem:
         dlg = fd.selectCellViewDialog(self, libModel)
@@ -567,9 +568,8 @@ class libraryBrowser(QMainWindow):
                     configWindow.show()
                 case "revbench":
 
-                    if self._app.plugins.get("plugins.revedasim"):
-                        SimMainW = self._app.plugins["plugins.revedasim"].SimMainWindow
-                        simmw = SimMainW(
+                    if self._app.plugins.get("revedasim"):
+                        simmw = self._app.plugins["revedasim"].SimMainWindow(
                             viewItem, self.designView.libraryModel, self.designView
                         )
                         self.appMainW.openViews[openCellViewTuple] = simmw

@@ -53,11 +53,19 @@ To use the preliminary IHP PDK:
 git clone https://github.com/eskiyerli/ihp_pdk.git
 ```
 
-Set the `REVEDA_PDK_PATH` environment variable in your `.env` file:
+Set the `REVEDA_PDK_PATH` environment variable in your `.env` file depending on where you installed it.
+For example if it is installed in `/home/UserName/ihp_pdk`, you would need to set it to 
 
 ```
-REVEDA_PDK_PATH=../ihp_pdk
+REVEDA_PDK_PATH=/home/UserName/ihp_pdk
 ```
+
+Alternatively, you could use *Revolution EDA Options* dialog by choosing *Options* menu
+from *Revolution EDA* main window and selecting the directory where the PDK installed. 
+
+![](/home/eskiyerli/onedrive_reveda/Projects/design_software/revolution-eda/docs/assets/revedaOptionsDialogue.png)
+
+IHP PDK installation directory also has schematic symbols under sg132_pr directory that can be used with There is also a preliminary GF_180 pdk
 
 ## Example Libraries
 

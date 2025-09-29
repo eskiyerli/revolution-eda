@@ -2,8 +2,13 @@ from PySide6.QtWidgets import (
     QMainWindow,
 )
 from PySide6.QtCore import (
-    QPoint, QLineF
+    QPoint,
 )
+import pathlib
+import json
+import revedaEditor.fileio.layoutEncoder as layenc
+from numpy import pi
+
 import gdstk
 import revedaEditor.common.layoutShapes as lshp
 import revedaEditor.backend.libBackEnd as libb
@@ -12,10 +17,6 @@ from revedaEditor.backend.pdkPaths import importPDKModule
 
 fabproc = importPDKModule("process")
 laylyr = importPDKModule("layoutLayers")
-import pathlib
-import json
-import revedaEditor.fileio.layoutEncoder as layenc
-from numpy import pi
 
 
 class gdsImporter:
@@ -29,13 +30,13 @@ class gdsImporter:
         self.inputFile = inputFile
         self._gdsLibrary = gdstk.read_gds(str(inputFile))
         self._gdsLibrary.set_property("name", str(inputFile.stem))
-        self._libraryModel = self._parent.libraryBrowser.libraryModel
+        self._libraryModel = self._parent.libraryBrowser.designView.libraryModel
         self._libItem = importLibItem
 
         self._topCells = self._gdsLibrary.top_level()
         self._unit = 1
 
-    def gdsImporter(self):
+    def importGDS(self):
 
         for cell in self._topCells:
             cellPath = self._libItem.libraryPath.joinpath(cell.name)
@@ -43,14 +44,17 @@ class gdsImporter:
             viewPath = cellItem.cellPath.joinpath("layout.json")
             viewItem = libb.createCellviewItem("layout", viewPath)
             self._processInstance(cell, viewItem)
+        self._parent.logger.info(f"Imported {self.inputFile.stem} GDS File")
+        self._parent.libraryBrowser.designView.reworkDesignLibrariesView(self._parent.libraryBrowser.designView.libraryModel.libraryDict)
 
     def _processInstance(self, cell: gdstk.Cell, viewItem: libb.viewItem):
         # Open file in context manager and write header
         with viewItem.viewPath.open("w") as file:
             file.write("[\n")
             file.write('    {"viewType": "layout"},\n')
-            file.write('    {"snapGrid": [10, 10]},\n')
-            
+            gridString = f"[{fabproc.majorGrid}, {fabproc.snapGrid}]"
+            snapGridLine = '    {"snapGrid": ' + gridString + '},\n'
+            file.write(snapGridLine)
             # Track if we need to write comma between items
             need_comma = False
             
@@ -82,7 +86,7 @@ class gdsImporter:
             layoutInstance.viewName = viewItem.viewName
             layoutInstance.counter = 1
             layoutInstance.instanceName = 'I1'
-            layoutInstance.setPos(0,0)
+            layoutInstance.setPos(ref.origin[0]*fabproc.dbu, ref.origin[1]*fabproc.dbu)
             layoutInstance.angle = ref.rotation * 180 / pi
             layoutInstance.flipTuple = (1,1)
             yield layoutInstance
@@ -93,7 +97,7 @@ class gdsImporter:
                 laylyr.pdkAllLayers, polygon.layer, polygon.datatype
             )
             if layoutLayer:
-                points = [QPoint(point[0], point[1]) for point in polygon.points]
+                points = [QPoint(point[0]*fabproc.dbu, point[1]*fabproc.dbu) for point in polygon.points]
                 yield lshp.layoutPolygon(points, layoutLayer)
 
         # Process paths
@@ -102,17 +106,18 @@ class gdsImporter:
                 layoutLayer = ddef.layLayer.filterByGDSLayer(
                     laylyr.pdkAllLayers, polygon.layer, polygon.datatype
                 )
-                points = [QPoint(point[0], point[1]) for point in polygon.points]
-                yield lshp.layoutPolygon(points, layoutLayer)
-
-        for label in cell.labels:
-            textLayer= ddef.layLayer.filterByGDSLayer(
-                    laylyr.pdkAllLayers, label.layer,0)
+                if layoutLayer:
+                    points = [QPoint(point[0]*fabproc.dbu, point[1]*fabproc.dbu) for point in polygon.points]
+                    yield lshp.layoutPolygon(points, layoutLayer)
+        # Process labels
+        for gds_label in cell.labels:
+            textLayer = ddef.layLayer.filterByGDSLayer(
+                laylyr.pdkAllLayers, gds_label.layer, 0)
             if not textLayer:
                 continue
-            origin = QPoint(label.origin[0], label.origin[1])
-            angle = label.rotation * 180 / pi
-            label = lshp.layoutLabel(origin, label.text, "Arial", "Regular", "10", "Center", "R0", layoutLayer)
-            label.angle = angle
-            yield label
+            origin = QPoint(gds_label.origin[0]*fabproc.dbu, gds_label.origin[1]*fabproc.dbu)
+            angle = gds_label.rotation * 180 / pi
+            layout_label = lshp.layoutLabel(origin, gds_label.text, "Arial", "Regular", "10", "Center", "R0", textLayer)
+            layout_label.angle = angle
+            yield layout_label
 

@@ -22,8 +22,6 @@
 #    Licensor: Revolution Semiconductor (Registered in the Netherlands)
 #
 
-import json
-
 # import numpy as np
 from PySide6.QtCore import (
     Qt,
@@ -174,7 +172,7 @@ class symbolEditor(edw.editorWindow):
         """
         symbol is loaded to the scene.
         """
-        self.centralW.scene.loadDesign()
+        self.centralW.scene.loadDesign(self.file)
 
     def createLabelClick(self):
         createLabelDlg = pdlg.createSymbolLabelDialog(self)

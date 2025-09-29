@@ -115,31 +115,46 @@ class schematicNet(QGraphicsItem):
 
     @draftLine.setter
     def draftLine(self, line: QLineF):
+        # self.prepareGeometryChange()
+        # # Invalidate cached hash when line changes
+        # if hasattr(self, '_hash_value'):
+        #     del self._hash_value
+        # self._draftLine = line
+        # self._transformOriginPoint = line.p1()
+        # match self._mode:
+        #     case 0:
+        #         self._angle = 90 * math.floor(
+        #             ((self._draftLine.angle() + 45) % 360) / 90
+        #         )
+        #     case 1:
+        #         self._angle = 45 * math.floor(
+        #             ((self._draftLine.angle() + 22.5) % 360) / 45
+        #         )
+        #     case 2:
+        #         self._angle = self._draftLine.angle()
+        # self._draftLine.setAngle(0)
+        # self.setTransformOriginPoint(self._transformOriginPoint)
         self.prepareGeometryChange()
-        # Invalidate cached hash when line changes
-        if hasattr(self, '_hash_value'):
-            del self._hash_value
+        self.__dict__.pop('_hash_value', None)
         self._draftLine = line
-        self._transformOriginPoint = line.p1()
-        match self._mode:
-            case 0:
-                self._angle = 90 * math.floor(
-                    ((self._draftLine.angle() + 45) % 360) / 90
-                )
-            case 1:
-                self._angle = 45 * math.floor(
-                    ((self._draftLine.angle() + 22.5) % 360) / 45
-                )
-            case 2:
-                self._angle = self._draftLine.angle()
+        origin_point = line.p1()
+        line_angle = line.angle()
+
+        if self._mode == 0:
+            self._angle = 90 * ((line_angle + 45) // 90)
+        elif self._mode == 1:
+            self._angle = 45 * ((line_angle + 22.5) // 45)
+        else:
+            self._angle = line_angle
+
         self._draftLine.setAngle(0)
-        self.setTransformOriginPoint(self._transformOriginPoint)
+        self.setTransformOriginPoint(origin_point)
 
         # Clear the cached _extractRect
-        if '_extractRect' in self.__dict__:
-            del self.__dict__['_extractRect']
-        self._shapeRect = self._extractRect
-        self._boundingRect = self._shapeRect.adjusted(-8, -8, 8, 8)
+        self.__dict__.pop('_extractRect', None)
+        extract_rect = self._extractRect
+        self._shapeRect = extract_rect.adjusted(-2, -2, 2, 2)
+        self._boundingRect = extract_rect.adjusted(-10, -10, 10, 10)
 
         self.setRotation(-self._angle)
 

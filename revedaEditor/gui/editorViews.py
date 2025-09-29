@@ -30,6 +30,7 @@ from PySide6.QtCore import (QPoint, QRect, Qt, Signal, QLine,)
 from PySide6.QtGui import (QColor, QKeyEvent, QPainter, QWheelEvent, QPolygon, )
 from PySide6.QtWidgets import (QGraphicsView, )
 from PySide6.QtPrintSupport import (QPrinter,)
+from PySide6.QtOpenGLWidgets import QOpenGLWidget
 from revedaEditor.backend.pdkPaths import importPDKModule
 
 schlyr = importPDKModule('schLayers')
@@ -45,44 +46,51 @@ class editorView(QGraphicsView):
     # zoomFactorChanged = Signal(float)
     def __init__(self, scene, parent):
         super().__init__(scene, parent)
+        
+        # Cache parent references
         self.parent = parent
-        self.editor = self.parent.parent
+        self.editor = parent.parent
         self.scene = scene
-        self.logger = self.scene.logger
-        self.majorGrid = self.editor.majorGrid
-        self.snapGrid = self.editor.snapGrid
-        self.snapTuple = self.editor.snapTuple
+        self.logger = scene.logger
+        
+        # Cache editor properties
+        editor = self.editor
+        self.majorGrid = editor.majorGrid
+        self.snapGrid = editor.snapGrid
+        self.snapTuple = editor.snapTuple
+        
+        # Direct attribute initialization
         self.gridbackg = True
-        self.linebackg = False
-        self._transparent = False
-        self._left: QPoint = QPoint()
-        self._right: QPoint = QPoint()
-        self._top: QPoint = QPoint()
-        self._bottom: QPoint = QPoint()
-        self.viewRect = QRect()
+        self.linebackg = self._transparent = False
         self.zoomFactor = 1.0
+        
+        # Initialize coordinate cache as integers (faster than QPoint)
+        self._left = self._right = self._top = self._bottom = 0
+        
+        # Defer expensive operations
+        self.viewRect = None
         self.init_UI()
 
     def init_UI(self):
         """
         Initializes the user interface.
-
-        This function sets up various properties of the QGraphicsView object, such as rendering hints,
-        mouse tracking, transformation anchors, and cursor shape.
-
-        Returns:
-            None
         """
+        # Cache constants
+        anchor = QGraphicsView.AnchorUnderMouse
+        render_hints = QPainter.Antialiasing | QPainter.TextAntialiasing
+        
+        # Batch all settings in sequence to minimize Qt overhead
         self.setViewportUpdateMode(QGraphicsView.FullViewportUpdate)
-        # self.setCacheMode(QGraphicsView.CacheBackground)
+        self.setCacheMode(QGraphicsView.CacheBackground)
         self.setMouseTracking(True)
-        self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
-        self.setResizeAnchor(QGraphicsView.AnchorUnderMouse)
+        self.setTransformationAnchor(anchor)
+        self.setResizeAnchor(anchor)
         self.setInteractive(True)
         self.setCursor(Qt.CrossCursor)
-        self.setRenderHint(QPainter.Antialiasing, True)
-        self.setRenderHint(QPainter.TextAntialiasing, True)
-        self.viewRect = self.mapToScene(self.rect()).boundingRect().toRect()
+        self.setRenderHints(render_hints)
+        
+        # Single flag for deferred calculation
+        self._viewRect_cached = False
 
     def wheelEvent(self, event: QWheelEvent) -> None:
         """
@@ -104,8 +112,9 @@ class editorView(QGraphicsView):
         # Calculate the delta and adjust the scene position
         delta = newPos - oldPos
         self.translate(delta.x(), delta.y())
-        self.viewRect = self.mapToScene(
-            self.rect()).boundingRect().toRect()  # self.zoomFactorChanged.emit(self.zoomFactor)
+        if not self._viewRect_cached:
+            self.viewRect = self.mapToScene(self.rect()).boundingRect().toRect()
+            self._viewRect_cached = True
 
 
 
@@ -196,8 +205,8 @@ class editorView(QGraphicsView):
             x_coords = range(self._left, self._right, self.majorGrid * 16)
             y_coords = range(self._top, self._bottom, self.majorGrid * 16)
         elif len(x_coords) >= 2560:  # grid dots are too small to see
-            x_coords = range(self._left, self._right, self.majorGrid * 1000)
-            y_coords = range(self._top, self._bottom, self.majorGrid * 1000)
+            x_coords = range(self._left, self._right, self.majorGrid * 10000)
+            y_coords = range(self._top, self._bottom, self.majorGrid * 10000)
 
         return x_coords, y_coords
 
@@ -279,13 +288,15 @@ class symbolView(editorView):
         match event.key():
             case Qt.Key_Escape:
                 if self.scene._polygonGuideLine:
-                    self.scene.finishPolygon()
+                    self.scene.finishPolygon(event)
                 self.scene._newLine = None
                 self.scene._newCircle = None
                 self.scene._newPin = None
                 self.scene._newRect = None
                 self.scene._newArc = None
                 self.scene._newLabel = None
+                if self.scene._polygonGuideLine:
+                    self.scene.removeItem(self.scene._polygonGuideLine)
                 self.scene.editModes.setMode('selectItem')
 
 
@@ -341,7 +352,7 @@ class schematicView(editorView):
         yextend = self._bottom - self._top
         netsInView = [netItem for netItem in self.scene.items(rect) if
             isinstance(netItem, net.schematicNet)]
-        if xextend <= 1000 or yextend <= 1000:
+        if xextend <= 2000 or yextend <= 2000:
             netEndPoints = []
             for netItem in netsInView:
                 netEndPoints.extend(netItem.sceneEndPoints)
@@ -385,10 +396,15 @@ class layoutView(editorView):
         self.scene = scene
         self.parent = parent
         super().__init__(self.scene, self.parent)
-
+        self.setOptimizationFlag(QGraphicsView.DontAdjustForAntialiasing)
+        self.setOptimizationFlag(QGraphicsView.DontSavePainterState)
+        # Create and set OpenGL widget as viewport
+        glWidget = QOpenGLWidget()
+        self.setViewport(glWidget)
 
     def keyPressEvent(self, event: QKeyEvent):
         if event.key() == Qt.Key_Escape:
+
             if self.scene._newPath is not None:
                 self.scene._newPath = None
             elif self.scene._newRect:

@@ -22,7 +22,6 @@
 #    Licensor: Revolution Semiconductor (Registered in the Netherlands)
 #
 import json
-import time
 
 import pathlib
 
@@ -43,11 +42,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from revedaEditor.backend.dataDefinitions import layLayer
-from revedaEditor.gui.editorViews import layoutView
-from revedaEditor.backend.pdkPaths import importPDKModule
-fabproc = importPDKModule('process')
-laylyr = importPDKModule('layoutLayers')
 from quantiphy import Quantity
 
 
@@ -66,8 +60,15 @@ import revedaEditor.gui.lsw as lsw
 from revedaEditor.scenes.layoutScene import layoutScene
 from revedaEditor.gui.startThread import startThread
 
+# from revedaEditor.backend.dataDefinitions import layLayer
+# from revedaEditor.gui.editorViews import layoutView
+from revedaEditor.backend.pdkPaths import importPDKModule
+fabproc = importPDKModule('process')
+laylyr = importPDKModule('layoutLayers')
+
 
 class layoutEditor(edw.editorWindow):
+    
     def __init__(self, viewItem: libb.viewItem, libraryDict: dict, libraryView) -> None:
         super().__init__(viewItem, libraryDict, libraryView)
         self.setWindowTitle(f"Layout Editor - {self.cellName} - {self.viewName}")
@@ -390,7 +391,19 @@ class layoutEditor(edw.editorWindow):
         self.centralW.scene.saveLayoutCell(self.file)
 
     def loadLayout(self):
+        # import cProfile
+        # import pstats
+        # import io
+        # pr = cProfile.Profile()
+        # pr.enable()
+        self.logger.info(f'Loading layout from {self.file.name}')
         self.centralW.scene.loadDesign(self.file)
+        # pr.disable()
+        
+        # s = io.StringIO()
+        # ps = pstats.Stats(pr, stream=s).sort_stats('cumulative')
+        # ps.print_stats()
+        # print(s.getvalue())
 
     def createInstClick(self, s):
         # create a designLibrariesView

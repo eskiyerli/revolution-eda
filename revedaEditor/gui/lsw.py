@@ -31,7 +31,6 @@ from PySide6.QtGui import (
     QStandardItem,
     QBrush,
     QColor,
-    QBitmap,
     QPixmap,
     QImage,
 )
@@ -207,23 +206,21 @@ class layerViewTable(QTableView):
 
     def updateAllLayers(self, visible: bool = None, selectable: bool = None):
         """Helper method to update all layers' visibility or selectability"""
-        state = Qt.Checked if (visible or selectable) else Qt.Unchecked
-        column = self.columnVisible if visible is not None else self.columnSelectable
-
-        for layer in laylyr.pdkAllLayers:
-            if visible is not None:
+        if visible is not None:
+            state, column = Qt.Checked if visible else Qt.Unchecked, self.columnVisible
+            for layer in laylyr.pdkAllLayers:
                 layer.visible = visible
-            if selectable is not None:
+        else:
+            state, column = Qt.Checked if selectable else Qt.Unchecked, self.columnSelectable
+            for layer in laylyr.pdkAllLayers:
                 layer.selectable = selectable
-
-        for row in range(self._model.rowCount()):
-            self._model.item(row, column).setCheckState(state)
-
-        # Update item selectability if needed
-        if selectable is not None:
+            # Update scene items selectability
             for item in self.layoutScene.items():
                 if item.parentItem() is None and hasattr(item, 'layer'):
                     item.setEnabled(selectable)
+
+        for row in range(self._model.rowCount()):
+            self._model.item(row, column).setCheckState(state)
 
     def noLayersVisible(self):
         self.updateAllLayers(visible=False)

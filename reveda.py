@@ -30,12 +30,19 @@
 # nuitka-project: --include-data-dir=docs=docs
 # nuitka-project: --include-package=revedaEditor
 # nuitka-project: --include-package=defaultPDK
-# nuitka-project: --include-package=pygments
+# nuitka-project: --include-package=markdown
+# nuitka-project: --include-package=polars
+# nuitka-project: --include-module=PySide6.QtWebEngineWidgets
+# nuitka-project: --follow-imports
+# nuitka-project: --nofollow-import-to=unittest
+# nuitka-project: --nofollow-import-to=pytest
+# nuitka-project: --nofollow-import-to=revedasim
+# nuitka-project: --nofollow-import-to=revedaPlot
 # nuitka-project: --include-data-dir=defaultPDK/stipples=defaultPDK/stipples
 # nuitka-project: --include-data-files=.env=.env
 # nuitka-project: --output-dir=/home/eskiyerli/dist
 # nuitka-project: --product-name="Revolution EDA"
-# nuitka-project: --product-version="0.8.1"
+# nuitka-project: --product-version="0.8.2"
 # nuitka-project: --linux-icon=logo-color.png
 # nuitka-project: --windows-icon-from-ico=logo-color.ico
 # nuitka-project: --company-name="Revolution EDA"
@@ -49,9 +56,8 @@ import platform
 import sys
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
-from typing import Optional
 import logging
-from dotenv import load_dotenv, set_key
+from dotenv import load_dotenv
 from PySide6.QtWidgets import QApplication
 
 import revedaEditor.gui.pythonConsole as pcon
@@ -107,15 +113,15 @@ class revedaApp(QApplication):
                 self.logger.info(f"Found plugin: {name}")
                 try:
                     module = importlib.import_module(name)
-                    self.plugins[f"plugins.{name}"] = module
+                    self.plugins[f"{name}"] = module
                 except ImportError as e:
                     self.logger.error(f"Failed to load plugin {name}: {e}")
             self.logger.info(f"Loaded plugins: {list(self.plugins.keys())}")
 
 
-    def update_pdk_path(self, new_path: str):
+    def update_pdk_path(self, new_path: Path):
         """Update PDK path and persist to .env file"""
-        self.revedaPdkPathObj = Path(new_path).resolve()
+        self.revedaPdkPathObj = new_path.resolve()
         
         # Update environment variable
         os.environ["REVEDA_PDK_PATH"] = str(self.revedaPdkPathObj)

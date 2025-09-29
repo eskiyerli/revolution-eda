@@ -965,7 +965,7 @@ class symbolPin(symbolShape):
 
     PIN_HEIGHT = 10
     PIN_WIDTH = 10
-    TEXT_MARGIN = 5
+    TEXT_MARGIN = 10
 
     pinDirs = ["Input", "Output", "Inout"]
     pinTypes = ["Signal", "Ground", "Power", "Clock", "Digital", "Analog"]

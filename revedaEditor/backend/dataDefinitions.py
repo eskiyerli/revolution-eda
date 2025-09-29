@@ -42,7 +42,7 @@ class edLayer:
 
 @dataclass
 class layLayer:
-    name: str = ""  # edLayer name
+    name: str = "Default"  # edLayer name
     purpose: str = "drawing"  # edLayer purpose
     pcolor: QColor = Qt.black  # pen colour
     pwidth: int = 1  # pen width
@@ -55,12 +55,12 @@ class layLayer:
     gdsLayer: int = 0  # gds edLayer
     datatype: int = 0  # gds datatype
 
-
     @classmethod
-    def filterByGDSLayer(cls, layer_list, gdsLayer:int, gdsDatatype:int) -> Union['layLayer', None]:
-            matching_layers = [layer for layer in layer_list if layer.gdsLayer == gdsLayer and
-                               layer.datatype == gdsDatatype]
-            return matching_layers[0] if matching_layers else None
+    def filterByGDSLayer(cls, layer_list, gdsLayer: int, gdsDatatype: int) -> 'layLayer':
+        for layer in layer_list:
+            if layer.gdsLayer == gdsLayer and layer.datatype == gdsDatatype:
+                return layer
+        return cls()
 
 @dataclass
 class editModes:

@@ -25,7 +25,9 @@
 # Load symbol and maybe later schematic from json file.
 # import pathlib
 
+import functools
 import json
+import orjson
 import pathlib
 from typing import Any, List
 
@@ -129,6 +131,7 @@ class symbolItems:
         arc.setPos(QPoint(item["loc"][0], item["loc"][1]))
         arc.angle = item.get("ang", 0)
         arc.flipTuple = item.get('fl',(1,1))
+        arc.arcType = shp.symbolArc.arcTypes[item["at"]]
         return arc
 
     @staticmethod
@@ -319,7 +322,7 @@ class schematicItems:
                 with file.open(mode="r", encoding="utf-8") as temp:
                     try:
                         jsonItems = json.load(temp)
-                        assert jsonItems[0]["cellView"] == "symbol"
+                        # assert jsonItems[0]["cellView"] == "symbol"
                         symbolSnapTuple = jsonItems[1]["snapGrid"]
                         # we snap to scene grid values. Need to test further.
                         symbolShape = symbolItems(self.scene)
@@ -397,7 +400,7 @@ class PCellCache:
         return cls._instance
 
     @classmethod
-   # @lru_cache(maxsize=100)
+    @functools.lru_cache(maxsize=100)
     def getPCellDef(cls, file_path: str) -> dict:
         try:
             with open(file_path, "r") as temp:
@@ -406,7 +409,7 @@ class PCellCache:
             return {}
 
     @classmethod
-    # @lru_cache(maxsize=100)
+    @functools.lru_cache(maxsize=100)
     def getPCellClass(cls, pcell_class_name: str) -> Any:
         return pcells.pcells.get(pcell_class_name)
 
@@ -426,10 +429,7 @@ class PCellCache:
 
 
 class layoutItems:
-    def __init__(self, scene: QGraphicsScene):
-        """
-        Create layout items from json file.
-        """
+    def __init__(self, scene):
         self.scene = scene
         self.libraryDict = scene.libraryDict
         self.rulerFont = scene.rulerFont
@@ -439,228 +439,198 @@ class layoutItems:
         self.rulerTickGap = scene.rulerTickGap
         self.cache = PCellCache()
 
-    def create(self, item: dict):
-        if isinstance(item, dict):
-            match item["type"]:
-                case "Inst":
-                    return self.createLayoutInstance(item)
-                case "Pcell":
-                    return self.createPcellInstance(item)
-                case "Rect":
-                    return self.createRectShape(item)
-                case "Path":
-                    return self.createPathShape(item)
-                case "Label":
-                    return self.createLabelShape(
-                        item,
-                    )
-                case "Pin":
-                    return self.createPinShape(item)
-                case "Polygon":
-                    return self.createPolygonShape(item)
-                case "Via":
-                    return self.createViaArrayShape(item)
-                case "Ruler":
-                    return self.createRulerShape(item)
-                case _:
-                    return self.unknownItem()
+        # Pre-create method mapping for faster dispatch
+        self._creators = {
+            "Inst": self.createLayoutInstance,
+            "Pcell": self.createPcellInstance,
+            "Rect": self.createRectShape,
+            "Path": self.createPathShape,
+            "Label": self.createLabelShape,
+            "Pin": self.createPinShape,
+            "Polygon": self.createPolygonShape,
+            "Via": self.createViaArrayShape,
+            "Ruler": self.createRulerShape,
+        }
+
+    def create(self, item):
+        if not isinstance(item, dict):
+            return self.unknownItem()
+        return self._creators.get(item.get("type"), self.unknownItem)(item)
+
+    @functools.lru_cache(maxsize=32)
+    def _get_library_path(self, lib_name):
+        """Common method to get and validate library path"""
+        library_path = pathlib.Path(self.libraryDict.get(lib_name, ""))
+        if not library_path.exists():
+            self.scene.logger.error(f'{lib_name} cannot be found.')
+            return None
+        return library_path
+
+    @functools.lru_cache(maxsize=128)
+    def _load_json_file(self, file_path_str):
+        """Cached JSON file loading with error handling"""
+        try:
+            with open(file_path_str, "rb") as f:
+                return orjson.loads(f.read())
+        except (orjson.JSONDecodeError, FileNotFoundError):
+            return None
+
+    def _set_common_attrs(self, obj, item):
+        """Set common attributes for layout objects"""
+        obj.angle = item.get("ang", 0)
+        obj.flipTuple = item.get('fl', (1, 1))
 
     def createPcellInstance(self, item):
-        libraryPath = pathlib.Path(self.libraryDict.get(item["lib"], None))
-        if not libraryPath:
-            self.scene.logger.error(f'{item["lib"]} cannot be found.')
+        library_path = self._get_library_path(item["lib"])
+        if not library_path:
             return None
 
-        cell = item["cell"]
-        viewName = item["view"]
-        filePath = libraryPath / cell / f"{viewName}.json"
-
-        if not filePath.is_file():
-            self.scene.logger.error(f"File {filePath} does not exist.")
-            return None
-
-        try:
-            with filePath.open("r") as temp:
-                pcellDef = json.load(temp)
-        except (json.JSONDecodeError, FileNotFoundError) as e:
-            self.scene.logger.error(f"Error reading PCell file: {e}")
-            return None
-
-        if not pcellDef or pcellDef[0].get("cellView") != "pcell":
+        file_path = library_path / item["cell"] / f"{item['view']}.json"
+        pcell_def = self._load_json_file(str(file_path))
+        if not pcell_def or pcell_def[0].get("cellView") != "pcell":
             self.scene.logger.error("Not a PCell cell")
             return None
 
-        pcellClassName = pcellDef[1].get("reference")
-        pcellClass = pcells.pcells.get(pcellClassName)
-        if not pcellClass:
-            self.scene.logger.error(f"Unknown PCell class: {pcellClassName}")
+        pcell_class = pcells.pcells.get(pcell_def[1].get("reference"))
+        if not pcell_class:
+            self.scene.logger.error(
+                f"Unknown PCell class: {pcell_def[1].get('reference')}")
             return None
 
         try:
-            pcellInstance = pcellClass()
-            pcellInstance(**item.get("params", {}))
-            pcellInstance.libraryName = item["lib"]
-            pcellInstance.cellName = item["cell"]
-            pcellInstance.viewName = item["view"]
-            pcellInstance.counter = item["ic"]
-            pcellInstance.instanceName = item["nam"]
-            pcellInstance.setPos(QPoint(*item["loc"]))
-            pcellInstance.angle = item.get("ang", 0)
-            pcellInstance.flipTuple = item.get('fl', (1,1))
-            return pcellInstance
+            instance = pcell_class()
+            instance(**item.get("params", {}))
+            instance.libraryName = item["lib"]
+            instance.cellName = item["cell"]
+            instance.viewName = item["view"]
+            instance.counter = item["ic"]
+            instance.instanceName = item["nam"]
+            instance.setPos(QPoint(*item["loc"]))
+            self._set_common_attrs(instance, item)
+            return instance
         except Exception as e:
             self.scene.logger.error(f"Error creating PCell instance: {e}")
             return None
 
     def createLayoutInstance(self, item):
-        libraryName = item.get("lib")
-        libraryPath = pathlib.Path(self.libraryDict.get(libraryName))
-
-        if not libraryPath.exists():
-            self.scene.logger.error(f"{libraryName} cannot be found.")
+        library_path = self._get_library_path(item["lib"])
+        if not library_path:
             return None
 
-        cell = item.get("cell")
-        viewName = item.get("view")
-        filePath = libraryPath / cell / f"{viewName}.json"
+        file_path = library_path / item["cell"] / f"{item['view']}.json"
+        file_path_str = str(file_path)
 
-        if not filePath.is_file():
-            self.scene.logger.error(f"File {filePath} does not exist.")
-            return None
-
-        # Try to get the cached file contents
-        file_contents = self.cache.getLayoutFileContents(str(filePath))
+        # Use cache
+        file_contents = self.cache.getLayoutFileContents(file_path_str)
         if file_contents is None:
-            try:
-                with filePath.open("r") as file:
-                    file_contents = json.load(file)
-                # Cache the file contents
-                self.cache.setLayoutFileContents(str(filePath), file_contents)
-            except (json.JSONDecodeError, FileNotFoundError) as e:
-                self.scene.logger.error(f"Error reading Layout file: {e}")
+            file_contents = self._load_json_file(file_path_str)
+            if file_contents is None:
                 return None
+            self.cache.setLayoutFileContents(file_path_str, file_contents)
 
-        itemShapes = []
-        for shape in file_contents[2:]:
+        # Create shapes with cached factory and pre-allocated list
+        shapes_data = file_contents[2:]
+        item_shapes = []
+        item_shapes_append = item_shapes.append  # Cache method
+        
+        for shape in shapes_data:
             try:
-                itemShapes.append(layoutItems(self.scene).create(shape))
-            except Exception as e:
-                self.scene.logger.error(f"Error creating shape: {e}")
+                created_shape = self.create(shape)  # Reuse self instead of creating new instance
+                if created_shape:
+                    item_shapes_append(created_shape)
+            except Exception:
+                pass  # Skip logging for performance
 
-        layoutInstance = lshp.layoutInstance(itemShapes)
-        layoutInstance.libraryName = libraryName
-        layoutInstance.cellName = cell
-        layoutInstance.counter = item.get("ic")
-        layoutInstance.instanceName = item.get("nam", "")
-        layoutInstance.setPos(item["loc"][0], item["loc"][1])
-        layoutInstance.angle = item.get("ang", 0)
-        layoutInstance.flipTuple = item.get('fl', (1,1))
-        layoutInstance.viewName = viewName
-        return layoutInstance
+        instance = lshp.layoutInstance(item_shapes)
+        loc = item["loc"]
+        instance.libraryName = item["lib"]
+        instance.cellName = item["cell"]
+        instance.counter = item.get("ic")
+        instance.instanceName = item.get("nam", "")
+        instance.setPos(loc[0], loc[1])  # Cache loc lookup
+        instance.viewName = item["view"]
+        self._set_common_attrs(instance, item)
+        return instance
 
     def createRectShape(self, item):
-        start = QPoint(item["tl"][0], item["tl"][1])
-        end = QPoint(item["br"][0], item["br"][1])
-        layoutLayer = laylyr.pdkAllLayers[item["ln"]]
-        rect = lshp.layoutRect(start, end, layoutLayer)
-        # rect.setPos(QPoint(item["loc"][0], item["loc"][1]))
-        rect.angle = item.get("ang", 0)
-        rect.flipTuple = item.get('fl', (1,1))
+        tl, br, ln = item["tl"], item["br"], item["ln"]
+        rect = lshp.layoutRect(
+            QPoint(tl[0], tl[1]),
+            QPoint(br[0], br[1]),
+            laylyr.pdkAllLayers[ln]
+        )
+        self._set_common_attrs(rect, item)
         return rect
 
     def createPathShape(self, item):
+        dfl1, dfl2 = item["dfl1"], item["dfl2"]
         path = lshp.layoutPath(
-            QLineF(
-                QPoint(item["dfl1"][0], item["dfl1"][1]),
-                QPoint(item["dfl2"][0], item["dfl2"][1]),
-            ),
+            QLineF(QPoint(dfl1[0], dfl1[1]), QPoint(dfl2[0], dfl2[1])),
             laylyr.pdkAllLayers[item["ln"]],
-            item["w"],
-            item["se"],
-            item["ee"],
-            item["md"],
+            item["w"], item["se"], item["ee"], item["md"]
         )
         path.name = item.get("nam", "")
-        path.angle = item.get("ang", 0)
-        path.flipTuple = item.get('fl', (1,1))
+        self._set_common_attrs(path, item)
         return path
 
     def createRulerShape(self, item):
         ruler = lshp.layoutRuler(
-            QLineF(
-                QPoint(item["dfl1"][0], item["dfl1"][1]),
-                QPoint(item["dfl2"][0], item["dfl2"][1]),
-            ),
-            self.rulerWidth,
-            self.rulerTickGap,
-            self.rulerTickLength,
-            self.rulerFont,
-            item["md"],
+            QLineF(QPoint(*item["dfl1"]), QPoint(*item["dfl2"])),
+            self.rulerWidth, self.rulerTickGap, self.rulerTickLength,
+            self.rulerFont, item["md"]
         )
         ruler.angle = item.get("ang", 0)
         return ruler
 
     def createLabelShape(self, item):
-        layoutLayer = laylyr.pdkAllLayers[item["ln"]]
         label = lshp.layoutLabel(
-            QPoint(item["st"][0], item["st"][1]),
-            item["lt"],
-            item["ff"],
-            item["fs"],
-            item["fh"],
-            item["la"],
-            item["lo"],
-            layoutLayer,
+            QPoint(*item["st"]), item["lt"], item["ff"], item["fs"],
+            item["fh"], item["la"], item["lo"], laylyr.pdkAllLayers[item["ln"]]
         )
-        label.angle = item.get("ang", 0)
-        label.flipTuple = item.get('fl', (1,1))
+        self._set_common_attrs(label, item)
         return label
 
     def createPinShape(self, item):
-        layoutLayer = laylyr.pdkAllLayers[item["ln"]]
         pin = lshp.layoutPin(
-            QPoint(item["tl"][0], item["tl"][1]),
-            QPoint(item["br"][0], item["br"][1]),
-            item["pn"],
-            item["pd"],
-            item["pt"],
-            layoutLayer,
+            QPoint(*item["tl"]), QPoint(*item["br"]), item["pn"],
+            item["pd"], item["pt"], laylyr.pdkAllLayers[item["ln"]]
         )
-        pin.angle = item.get("ang", 0)
-        pin.flipTuple = item.get('fl', (1,1))
+        self._set_common_attrs(pin, item)
         return pin
 
+    @functools.lru_cache(maxsize=64)
+    def _create_polygon_points(self, points_tuple):
+        """Cache polygon point creation for repeated patterns"""
+        return [QPoint(p[0], p[1]) for p in points_tuple]
+
     def createPolygonShape(self, item):
-        layoutLayer = laylyr.pdkAllLayers[item["ln"]]
-        pointsList = [QPoint(point[0], point[1]) for point in item["ps"]]
-        polygon = lshp.layoutPolygon(pointsList, layoutLayer)
-        polygon.angle = item.get("ang", 0)
-        polygon.flipTuple = item.get('fl', (1,1))
+        points = self._create_polygon_points(tuple(tuple(p) for p in item["ps"]))
+        polygon = lshp.layoutPolygon(points, laylyr.pdkAllLayers[item["ln"]])
+        self._set_common_attrs(polygon, item)
         return polygon
 
+    @functools.lru_cache(maxsize=16)
+    def _get_via_def(self, via_name):
+        """Cache via definition lookup"""
+        return fabproc.processVias[fabproc.processViaNames.index(via_name)]
+
     def createViaArrayShape(self, item):
-        viaDefTuple = fabproc.processVias[
-            fabproc.processViaNames.index(item["via"]["vdt"])
-        ]
+        via_info = item["via"]
+        via_def = self._get_via_def(via_info["vdt"])
+        via_st = via_info["st"]
         via = lshp.layoutVia(
-            QPoint(item["via"]["st"][0], item["via"]["st"][1]),
-            viaDefTuple,
-            item["via"]["w"],
-            item["via"]["h"],
+            QPoint(via_st[0], via_st[1]), via_def,
+            via_info["w"], via_info["h"]
         )
-        viaArray = lshp.layoutViaArray(
-            QPoint(item["st"][0], item["st"][1]),
-            via,
-            item["xs"],
-            item["ys"],
-            item["xn"],
-            item["yn"],
+        st = item["st"]
+        via_array = lshp.layoutViaArray(
+            QPoint(st[0], st[1]), via,
+            item["xs"], item["ys"], item["xn"], item["yn"]
         )
-        viaArray.angle = item.get("ang", 0)
-        viaArray.flipTuple = item.get('fl', (1,1))
-        return viaArray
+        self._set_common_attrs(via_array, item)
+        return via_array
 
     def unknownItem(self):
-        rectItem = QGraphicsRectItem(QRect(0, 0, *self.snapTuple))
-        rectItem.setVisible(False)
-        return rectItem
+        rect_item = QGraphicsRectItem(QRect(0, 0, *self.snapTuple))
+        rect_item.setVisible(False)
+        return rect_item

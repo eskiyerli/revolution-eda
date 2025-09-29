@@ -35,14 +35,12 @@ import revedaEditor.gui.propertyDialogues as pdlg
 
 
 class editorScene(QGraphicsScene):
-    # Class-level constants for quick access
-    DEFAULT_GRID = (20, 10)
+
     def __init__(self, parent):
         super().__init__(parent)
         self.parent = parent
         self.editorWindow = parent.parent
 
-        # Group related window attributes in a single access
         self.majorGrid = self.editorWindow.majorGrid
         self.snapTuple = self.editorWindow.snapTuple
         self._snapDistance = int(self.majorGrid * 0.5)
@@ -292,6 +290,19 @@ class editorScene(QGraphicsScene):
         """
         pass
 
+    def configureGridSettings(self, gridSettings: dict) -> None:
+        """Configure grid settings from decoded data."""
+        self.majorGrid, self.snapGrid = gridSettings.get("snapGrid",
+                                                         [self.majorGrid,
+                                                          self.snapGrid])
+        self.snapTuple = (self.snapGrid, self.snapGrid)
+        self.snapDistance = 2 * self.snapGrid
+        self.editorWindow.snapGrid = self.snapGrid
+        self.editorWindow.majorGrid = self.majorGrid
+        self.editorWindow.snapTuple = self.snapTuple
+        self.editorWindow.centralW.view.snapGrid = self.snapGrid
+        self.editorWindow.centralW.view.majorGrid = self.majorGrid
+        self.editorWindow.centralW.view.snapTuple = self.snapTuple
 
     def fitItemsInView(self) -> None:
         self.setSceneRect(self.itemsBoundingRect().adjusted(-40, -40, 40, 40))

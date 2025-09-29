@@ -160,7 +160,7 @@ class importXschemSym:
                         .replace("@name", "@instName")
                         .replace("@model", "%modelName")
                         .replace("@spiceprefix", "%spiceprefix")
-                        .replace("@pinlist", "@pinList")
+                        .replace("@pinlist", "%pinOrder")
                     )
 
                     self.symbolScene.attributeList.append(
@@ -272,7 +272,7 @@ class importXschemSym:
         Helper method to create and configure NLPLabels with common settings.
         '''
         label = lbl.symbolLabel(QPoint(location[0], location[1]), text,
-            lbl.symbolLabel.labelTypes[0], self._labelHeight,
+            lbl.symbolLabel.labelTypes[1], self._labelHeight,
             lbl.symbolLabel.labelAlignments[0], lbl.symbolLabel.labelOrients[0],
             lbl.symbolLabel.labelUses[0])
         label.labelDefs()

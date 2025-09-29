@@ -25,11 +25,10 @@
 # from hashlib import new
 import json
 
-from functools import lru_cache
 # from hashlib import new
 import pathlib
 from copy import deepcopy
-from typing import List
+
 
 # import numpy as np
 from PySide6.QtCore import (
@@ -49,7 +48,6 @@ from PySide6.QtWidgets import (
     QDialog,
     QGraphicsLineItem,
     QGraphicsRectItem,
-    QGraphicsSimpleTextItem,
     QGraphicsSceneMouseEvent,
 )
 
@@ -62,6 +60,7 @@ import revedaEditor.fileio.symbolEncoder as symenc
 import revedaEditor.gui.propertyDialogues as pdlg
 from revedaEditor.backend.pdkPaths import importPDKModule
 from revedaEditor.scenes.editorScene import editorScene
+from typing import List, Dict
 
 symlyr = importPDKModule('symLayers')
 
@@ -392,7 +391,7 @@ class symbolScene(editorScene):
         return newPolygon,polygonGuideLine
 
     def finishPolygon(self, event):
-        if event.button() == Qt.LeftButton and self.editModes.drawPolygon and self._newPolygon:
+        if hasattr(event, 'button') and event.button() == Qt.LeftButton and self.editModes.drawPolygon and self._newPolygon:
             self._newPolygon.polygon.remove(0)
             self._newPolygon.points.pop(0)
             self.editModes.setMode("selectItem")
@@ -618,55 +617,100 @@ class symbolScene(editorScene):
             newPolygon = shp.symbolPolygon(tempPoints)
             self.undoStack.push(us.addDeleteShapeUndo(self, newPolygon, item))
 
-    def loadDesign(self) -> None:
-        """Ultra-fast load implementation without caching"""
+    def loadDesign(self, filePathObj: pathlib.Path) -> None:
         try:
-            # Load file contents
-            with open(self.editorWindow.file) as file:
-                itemsList = json.load(file)
-
-            # Disable updates
+            with filePathObj.open("r") as file:
+                decodedData = json.load(file)
             self.blockSignals(True)
-
-            # Fast grid setup
-            grid_data = itemsList[1].get("snapGrid", self.DEFAULT_GRID)
-            self.majorGrid, self.snapGrid = grid_data
-            self.snapTuple = (self.snapGrid, self.snapGrid)
-            self.snapDistance = self.snapGrid << 1
-
-            # Create factory once
-            factory = lj.symbolItems(self)
-
-            # Reset attribute list
+            with self.measureDuration():
+                viewDict, gridSettings, *itemData = decodedData
+                # if viewDict.get("viewType") != "symbol":
+                #     self.logger.error("Not a symbol file!")
+                #     return
+                self.configureGridSettings(gridSettings)
+                self.attributeList = []
+                self.createSymbolItems(itemData)
+        except (json.JSONDecodeError, FileNotFoundError) as e:
+            self.logger.error(f"File error while loading symbol: {e}")
             self.attributeList = []
-
-            # Process items directly
-            for item in itemsList[2:]:
-                if not item:
-                    continue
-
-                itemType = item.get("type")
-
-                if itemType in self.symbolShapes:
-                    shape = factory.create(item)
-                    if isinstance(shape, lbl.symbolLabel):
-                        shape.setOpacity(1)
-                    self.addItem(shape)
-                elif itemType == "attr":
-                    self.attributeList.append(
-                        factory.createSymbolAttribute(item)
-                    )
-
-        except Exception as e:
-            self.logger.error(f"Load failed: {e}")
-            # Optionally reset scene state
             self.clear()
+            return
+        except KeyError as e:
+            self.logger.error(f"Invalid symbol format - missing key: {e}")
             self.attributeList = []
-            raise
-
+            self.clear()
+            return
+        except Exception as e:
+            self.logger.error(f"Unexpected error loading symbol: {e}")
+            self.attributeList = []
+            self.clear()
+            return
         finally:
             self.blockSignals(False)
             self.update()
+
+
+        # try:
+        #     # Load file contents
+        #     with open(self.editorWindow.file) as file:
+        #         itemsList = json.load(file)
+        #
+        #     # Disable updates
+        #     self.blockSignals(True)
+        #
+        #     # Fast grid setup
+        #     if (len(itemsList) > 1) and (itemsList[1].get("snapGrid") is not None):
+        #         self.snapGrid = itemsList[1].get("snapGrid")
+        #         self.snapTuple = (self.snapGrid, self.snapGrid)
+        #         self.snapDistance = self.snapGrid << 1
+        #
+        #
+        #     # Create factory once
+        #     factory = lj.symbolItems(self)
+        #
+        #     # Reset attribute list
+        #     self.attributeList = []
+        #
+        #     # Process items directly
+        #     for item in itemsList[2:]:
+        #         if not item:
+        #             continue
+        #
+        #         itemType = item.get("type")
+        #
+        #         if itemType in self.symbolShapes:
+        #             shape = factory.create(item)
+        #             if isinstance(shape, lbl.symbolLabel):
+        #                 shape.setOpacity(1)
+        #             self.addItem(shape)
+        #         elif itemType == "attr":
+        #             self.attributeList.append(
+        #                 factory.createSymbolAttribute(item)
+        #             )
+        #
+        # except Exception as e:
+        #     self.logger.error(f"Load failed: {e}")
+        #     # Optionally reset scene state
+        #     self.clear()
+        #     self.attributeList = []
+        #     raise
+
+        # finally:
+        #     self.blockSignals(False)
+        #     self.update()
+
+
+    def createSymbolItems(self, itemsList: List[Dict]):
+        factory = lj.symbolItems(self)
+        for itemDict in itemsList:
+            if itemDict:
+                itemType = itemDict.get("type", None)
+                if itemType in self.symbolShapes:
+                    itemShape = factory.create(itemDict)
+                    self.addItem(itemShape)
+                    continue
+                if itemType == "attr":
+                    self.attributeList.append(factory.createSymbolAttribute(itemDict))
 
     def saveSymbolCell(self, fileName: pathlib.Path) -> bool:
         """
@@ -681,16 +725,11 @@ class symbolScene(editorScene):
 
         try:
             # Filter items and process labels in one pass
-            sceneItems = []
-            for item in self.items():
-                # if isinstance(item, (QGraphicsSimpleTextItem, QGraphicsRectItem)):
-                #     continue
-                if item.parentItem() is not None:
-                    continue
-                sceneItems.append(item)
+            sceneItems = [item for item in self.items() 
+                         if isinstance(item, shp.symbolPolygon) or item.parentItem() is None]
             # Build save data
             save_data = [
-                {"cellView": "symbol"},
+                {"viewType": "symbol"},
                 {"snapGrid": self.snapTuple},
                 *sceneItems,
                 *getattr(self, "attributeList", [])

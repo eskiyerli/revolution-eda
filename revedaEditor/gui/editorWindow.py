@@ -27,18 +27,18 @@ import pathlib
 from contextlib import contextmanager
 import time
 from logging import getLogger
-from PySide6.QtCore import (Qt, QSize, Signal,)
-from PySide6.QtGui import (QAction, QIcon, QImage, QKeySequence, QPainter,)
+from PySide6.QtCore import (Qt, QSize,)
+from PySide6.QtGui import (QAction, QIcon, QImage, QKeySequence)
 from PySide6.QtPrintSupport import QPrintDialog, QPrinter, QPrintPreviewDialog
 from PySide6.QtWidgets import (QApplication, QDialog, QFileDialog, QLabel, QMainWindow,
-                               QMenu, QToolBar, QGraphicsItem)
+                               QMenu, QToolBar)
 
 import revedaEditor.backend.dataDefinitions as ddef
 import revedaEditor.backend.libraryModelView as lmview
 import revedaEditor.backend.libBackEnd as libb
 import revedaEditor.gui.helpBrowser as hlp
 import revedaEditor.gui.propertyDialogues as pdlg
-import revedaEditor.resources.resources
+import revedaEditor.resources.resources # this imports the Qt resources file
 from revedaEditor.gui.startThread import startThread
 
 
@@ -47,7 +47,8 @@ class editorWindow(QMainWindow):
     Base class for editor windows.
     """
     MAIN_LOGGER = "reveda"
-
+    MAJOR_GRID_DEFAULT = 20
+    SNAP_GRID_DEFAULT = 10
 
     def __init__(self, viewItem: libb.viewItem, libraryDict: dict,
                  libraryView: lmview.BaseDesignLibrariesView, ):
@@ -73,8 +74,8 @@ class editorWindow(QMainWindow):
         self.statusLine = self.statusBar()
         self.messageLine = QLabel()  # message line
         self.statusLine.insertPermanentWidget(0,self.messageLine)
-        self.majorGrid = 20  # dot/line grid spacing
-        self.snapGrid = 10  # snapping grid size
+        self.majorGrid = self.MAJOR_GRID_DEFAULT  # dot/line grid spacing
+        self.snapGrid = self.SNAP_GRID_DEFAULT  # snapping grid size
         self.snapTuple = (self.snapGrid, self.snapGrid)
         self.init_UI()
         self._createSignalConnections()
@@ -527,16 +528,10 @@ class editorWindow(QMainWindow):
         dcd.majorGridEntry.setText(str(self.majorGrid))
         dcd.snapGridEdit.setText(str(self.snapGrid))
         if dcd.exec() == QDialog.Accepted:
-            self.majorGrid = int(float(dcd.majorGridEntry.text()))
-            self.snapGrid = int(float(dcd.snapGridEdit.text()))
-            self.snapTuple = (self.majorGrid, self.majorGrid)
-            self.centralW.view.majorGrid = self.majorGrid
-            self.centralW.view.snapGrid = self.snapGrid
-            self.centralW.view.snapTuple = self.snapTuple
-            self.centralW.scene.majorGrid = self.majorGrid
-            self.centralW.scene.snapGrid = self.snapGrid
-            self.centralW.scene.snapTuple = self.snapTuple
-
+            majorGrid = int(dcd.majorGridEntry.text())
+            snapGrid = int(dcd.snapGridEdit.text())
+            gridDict = {"snapGrid": [majorGrid, snapGrid]}
+            self.centralW.scene.configureGridSettings(gridDict)
             if dcd.dotType.isChecked():
                 self.centralW.view.gridbackg = True
                 self.centralW.view.linebackg = False
