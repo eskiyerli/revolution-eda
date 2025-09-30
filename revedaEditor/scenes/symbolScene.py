@@ -392,7 +392,7 @@ class symbolScene(editorScene):
         return newPolygon,polygonGuideLine
 
     def finishPolygon(self, event):
-        if event.button() == Qt.LeftButton and self.editModes.drawPolygon and self._newPolygon:
+        if hasattr(event, 'button') and event.button() == Qt.LeftButton and self.editModes.drawPolygon and self._newPolygon:
             self._newPolygon.polygon.remove(0)
             self._newPolygon.points.pop(0)
             self.editModes.setMode("selectItem")
@@ -681,13 +681,8 @@ class symbolScene(editorScene):
 
         try:
             # Filter items and process labels in one pass
-            sceneItems = []
-            for item in self.items():
-                # if isinstance(item, (QGraphicsSimpleTextItem, QGraphicsRectItem)):
-                #     continue
-                if item.parentItem() is not None:
-                    continue
-                sceneItems.append(item)
+            sceneItems = [item for item in self.items() 
+                         if isinstance(item, shp.symbolPolygon) or item.parentItem() is None]
             # Build save data
             save_data = [
                 {"cellView": "symbol"},

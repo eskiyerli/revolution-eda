@@ -129,6 +129,7 @@ class symbolItems:
         arc.setPos(QPoint(item["loc"][0], item["loc"][1]))
         arc.angle = item.get("ang", 0)
         arc.flipTuple = item.get('fl',(1,1))
+        arc.arcType = shp.symbolArc.arcTypes[item["at"]]
         return arc
 
     @staticmethod

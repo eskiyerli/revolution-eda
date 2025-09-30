@@ -22,8 +22,6 @@
 #    Licensor: Revolution Semiconductor (Registered in the Netherlands)
 #
 
-import json
-
 # import numpy as np
 from PySide6.QtCore import (
     Qt,

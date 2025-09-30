@@ -279,13 +279,15 @@ class symbolView(editorView):
         match event.key():
             case Qt.Key_Escape:
                 if self.scene._polygonGuideLine:
-                    self.scene.finishPolygon()
+                    self.scene.finishPolygon(event)
                 self.scene._newLine = None
                 self.scene._newCircle = None
                 self.scene._newPin = None
                 self.scene._newRect = None
                 self.scene._newArc = None
                 self.scene._newLabel = None
+                if self.scene._polygonGuideLine:
+                    self.scene.removeItem(self.scene._polygonGuideLine)
                 self.scene.editModes.setMode('selectItem')
 
 
