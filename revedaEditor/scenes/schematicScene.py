@@ -1017,8 +1017,8 @@ class schematicScene(editorScene):
                     # shift position by four grid units to right and down
                     shape.setPos(
                         QPoint(
-                            int(item.pos().x() + 4 * self.snapTuple[0]),
-                            int(item.pos().y() + 4 * self.snapTuple[1]),
+                            int(item.x() + 4 * self.snapTuple[0]),
+                            int(item.y() + 4 * self.snapTuple[1]),
                         )
                     )
                     if isinstance(shape, shp.schematicSymbol):

@@ -327,6 +327,7 @@ class designLibrariesColumnView(BaseDesignLibrariesView):
             if dlg.exec() == QDialog.Accepted:
                 cellName = dlg.cellCB.currentText()
                 if cellName.strip() != "":
+                    selectedLib = libm.getLibItem(self.libraryModel, dlg.libNamesCB.currentText())
                     newCellItem = libb.createCell(self, selectedLib, cellName)
                     if newCellItem:
                         # add now a clone of newCellItem to temporary cellListModel
