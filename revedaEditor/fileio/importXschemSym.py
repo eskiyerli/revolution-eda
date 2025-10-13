@@ -173,7 +173,6 @@ class importXschemSym:
                     pairs = re.findall(r"(\w+)=([^\s]+)", templateString)
                     templateDict = dict((k, v.strip()) for k, v in pairs)
                     if templateDict:
-                        print(templateDict)
                         if templateDict.get("name"):
                             templateDict.pop("name")  # we don't use this
                         if templateDict.get("model"):

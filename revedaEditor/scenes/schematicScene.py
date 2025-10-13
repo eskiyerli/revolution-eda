@@ -1130,11 +1130,21 @@ class schematicScene(editorScene):
             with filePathObj.open("r") as file:
                 decodedData = json.load(file)
             with self.measureDuration():
-                viewDict, gridSettings, *itemData = decodedData
+                if len(decodedData) < 2:
+                    viewDict = decodedData[0] if decodedData else {}
+                    gridSettings = None
+                    itemData = []
+                else:
+                    viewDict, gridSettings, *itemData = decodedData
+                
                 if viewDict.get("viewType") != "schematic":
                     self.logger.error("Not a schematic file!")
                     return
-                self.configureGridSettings(gridSettings)
+                
+                if gridSettings and gridSettings.get("snapGrid"):
+                    self.configureGridSettings(gridSettings)
+                else:
+                    self.configureGridSettings({'snapGrid': [self.editorWindow.MAJOR_GRID_DEFAULT, self.editorWindow.SNAP_GRID_DEFAULT]})
                 self.createSchematicItems(itemData)
                 # self._snapPointRect = self.defineSnapRect()
                 # self.addItem(self._snapPointRect)
