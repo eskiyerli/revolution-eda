@@ -33,7 +33,7 @@ from dotenv import load_dotenv
 from quantiphy import Quantity
 
 load_dotenv()
-from revedaEditor.backend.pdkPaths import importPDKModule
+from revedaEditor.backend.pdkPaths import importPDKModule # noqa: E402
 
 schlyr = importPDKModule("schLayers")
 symlyr = importPDKModule("symLayers")

@@ -707,6 +707,8 @@ class symbolScene(editorScene):
                 itemType = itemDict.get("type", None)
                 if itemType in self.symbolShapes:
                     itemShape = factory.create(itemDict)
+                    if itemType == "label":
+                        itemShape.setOpacity(1)
                     self.addItem(itemShape)
                     continue
                 if itemType == "attr":

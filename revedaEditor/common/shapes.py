@@ -1353,15 +1353,28 @@ class schematicSymbol(symbolShape):
 
         return path
 
+    # def itemChange(self, change: QGraphicsItem.GraphicsItemChange, value):
+    #     scene = self.scene()
+    #     if scene:
+    #         if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange:
+    #             return self._handlePositionChange(value)
+    #         elif change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
+    #             self._updateSnapLines()
+    #         elif change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
+    #             scene.selectedSymbol = self if value else None
+    #     return super().itemChange(change, value)
+
     def itemChange(self, change: QGraphicsItem.GraphicsItemChange, value):
-        scene = self.scene()
-        if scene:
-            if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange:
-                return self._handlePositionChange(value)
-            elif change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
-                self._updateSnapLines()
-            elif change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
-                scene.selectedSymbol = self if value else None
+        if not (scene := self.scene()):
+            return super().itemChange(change, value)
+
+        if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange:
+            return self._handlePositionChange(value)
+        elif change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
+            self._updateSnapLines()
+        elif change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
+            scene.selectedSymbol = self if value else None
+
         return super().itemChange(change, value)
 
     def _handlePositionChange(self, newPos: QPointF) -> QPointF:

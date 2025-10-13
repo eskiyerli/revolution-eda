@@ -165,10 +165,10 @@ class designLibrariesColumnView(BaseDesignLibrariesView):
         cellsModel.setSortRole(Qt.UserRole + 3)
 
         # Get the selected item and its children
-        selectedLib = self.libraryModel.itemFromIndex(indexes[0])
+        self.selectedLib = self.libraryModel.itemFromIndex(indexes[0])
 
-        children = [selectedLib.child(i) for i in range(selectedLib.rowCount())]
-        if selectedLib and selectedLib.hasChildren():
+        children = [self.selectedLib.child(i) for i in range(self.selectedLib.rowCount())]
+        if self.selectedLib and self.selectedLib.hasChildren():
             for cellItem in children:
                 clonedCellItem = cellItem.clone()
                 cellsModel.appendRow(clonedCellItem)

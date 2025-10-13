@@ -270,8 +270,7 @@ class libraryBrowser(QMainWindow):
 
     def newCellClick(self, s):
         try:
-            self.designView.libraryModel = self.designView.libraryModel
-            self.libBrowserCont.designView.createCell(self.selectedLib)
+            self.libBrowserCont.designView.createCell(self.libBrowserCont.designView.selectedLib)
         except Exception as e:
             self.logger.error(f"Error in creating new cell: {e}")
 
@@ -321,7 +320,7 @@ class libraryBrowser(QMainWindow):
             window.loadLayout()
             window.show()
         elif viewItem.viewType == "veriloga":
-            editor = ted.verilogaEditor(viewItem.viewPath)
+            editor = ted.verilogaEditor(viewItem.viewPath.parent / f"{cellItem.cellName}.va")
             editor.cellViewTuple = viewTuple
             editor.closedSignal.connect(self.verilogaEditFinished)
             self.appMainW.openViews[viewTuple] = editor
