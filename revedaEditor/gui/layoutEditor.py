@@ -396,6 +396,7 @@ class layoutEditor(edw.editorWindow):
         QApplication.setOverrideCursor(Qt.WaitCursor)
         QApplication.processEvents()
         try:
+            
             self.centralW.scene.loadDesign(self.file)
         finally:
             QApplication.restoreOverrideCursor()
@@ -453,10 +454,12 @@ class layoutEditor(edw.editorWindow):
             gdsExportObj = gdse.gdsExporter(self.cellName, layoutItems, gdsExportPath)
             gdsExportObj.unit = Quantity(dlg.unitEdit.text().strip()).real
             gdsExportObj.precision = Quantity(dlg.precisionEdit.text().strip()).real
-
-            gdsExportRunner = startThread(gdsExportObj.gdsExport)
-            self.appMainW.threadPool.start(gdsExportRunner)
             self.logger.info("GDS Export started")
+            gdsExportRunner = startThread(gdsExportObj.gdsExport)
+            gdsExportRunner.signals.finished.connect(
+                lambda: self.logger.info("GDS Export finished"))
+            self.appMainW.threadPool.start(gdsExportRunner)
+
 
     def _createSignalConnections(self):
         super()._createSignalConnections()

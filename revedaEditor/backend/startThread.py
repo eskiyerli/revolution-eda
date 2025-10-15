@@ -23,9 +23,18 @@
 #
 
 from PySide6.QtCore import (
+    QObject,
     QRunnable,
-    Slot,
+    Slot, 
+    Signal
 )
+
+
+class workerSignals(QObject):
+    finished = Signal()
+    error = Signal(tuple)
+    result = Signal(object)
+
 
 
 class startThread(QRunnable):
@@ -34,10 +43,13 @@ class startThread(QRunnable):
     def __init__(self, fn):
         super().__init__()
         self.fn = fn
+        self.signals = workerSignals()
 
     @Slot()
     def run(self) -> None:
         try:
             self.fn
         except Exception as e:
-            print(e)
+            self.signals.error.emit(e)
+        finally:
+            self.signals.finished.emit()

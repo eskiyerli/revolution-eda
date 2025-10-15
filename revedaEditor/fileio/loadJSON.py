@@ -237,7 +237,7 @@ class schematicItems:
                     # return self.unknownItem()
 
     def _createText(self, item):
-        start = QPoint(item["st"][0], item["st"][1])
+        start = QPoint(0,0)
         text = shp.text(
                         start,
                         item["tc"],
@@ -247,12 +247,14 @@ class schematicItems:
                         item["ta"],
                         item["to"],
                     )
+        text.setPos(QPoint(item["st"][0], item["st"][1]))
         text.flipTuple = item.get('fl', (1,1))
+        text.angle = item.get('ang', 0)
 
         return text
 
     def _createPin(self, item):
-        start = QPoint(item["st"][0], item["st"][1])
+        start = QPoint(0,0)
         pinName = item["pn"]
         pinDir = item["pd"]
         pinType = item["pt"]
@@ -262,6 +264,7 @@ class schematicItems:
                         pinDir,
                         pinType,
                     )
+        pinItem.setPos(QPoint(item["st"][0], item["st"][1]))
         pinItem.angle = item.get('ang', 0)
         pinItem.flipTuple = item.get('fl', (1,1))
         return pinItem

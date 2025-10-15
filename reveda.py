@@ -77,6 +77,7 @@ class revedaApp(QApplication):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.base_path = Path(__file__).resolve().parent
+        self.appMainW = rvm.MainWindow()
         load_dotenv()
         self._setup_paths()
         self._setup_logger()

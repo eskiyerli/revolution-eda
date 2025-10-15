@@ -1059,6 +1059,10 @@ class symbolPin(symbolShape):
             self._pinName = pinName
 
     @property
+    def pinNameItem(self):
+        return self._pinNameItem
+
+    @property
     def pinDir(self):
         return self._pinDir
 
@@ -1097,6 +1101,24 @@ class symbolPin(symbolShape):
     def toSchematicPin(self, start: QPoint):
         return schematicPin(start, self.pinName, self.pinDir, self.pinType)
 
+    @property
+    def flipTuple(self):
+        return self._flipTuple
+
+    @flipTuple.setter
+    def flipTuple(self, flipState: Tuple[int, int]):
+        self.prepareGeometryChange()
+        # Get the current transformation
+        transform = self.transform()
+        # Apply the scaling
+        transform.scale(*flipState)
+        # Set the new transformation
+        self.setTransform(transform)
+        self._flipTuple = (transform.m11(), transform.m22())
+        pinNameTransform, invertible = transform.inverted()
+        if invertible:
+            self._pinNameItem.setTransform(pinNameTransform)
+        self.update()
 
 class text(symbolShape):
     """
@@ -1566,9 +1588,9 @@ class schematicSymbol(symbolShape):
     @angle.setter
     def angle(self, value: float):
         self.setRotation(value)
-        self._angle = (value
-                       # for label in self.labels.values():  #     label.angle = -value
-                       )
+        self._angle = (value)
+        # for label in self.labels.values():
+        #     label.angle = -value
 
     @property
     def labels(self):
@@ -1629,18 +1651,53 @@ class schematicSymbol(symbolShape):
     @flipTuple.setter
     def flipTuple(self, flipState: Tuple[int, int]):
         self.prepareGeometryChange()
-        # Get the current transformation
+
         transform = self.transform()
-        # Apply the scaling
         transform.scale(*flipState)
-        # Set the new transformation
         self.setTransform(transform)
         self._flipTuple = (transform.m11(), transform.m22())
-        labelTransform, invertible = transform.inverted()
-        if invertible:
-            for label in self.labels.values():
-                label.setTransform(labelTransform)
-        self.update()
+        inverseTransform, invertible = transform.inverted()
+
+        if not invertible:
+            return
+        if self.flipTuple[0]<0: # Only shift if horizontally flipped
+            inverseTransform.translate(-10,0)
+        for pin in self._pins.values():
+            pin.pinNameItem.setTransform(inverseTransform)
+        if self.flipTuple[0] < 0:  # Only shift if horizontally flipped
+            inverseTransform.translate(-20, 0)
+        for label in self.labels.values():
+            label.setTransform(inverseTransform)
+
+
+
+
+    #
+    # @flipTuple.setter
+    # def flipTuple(self, flipState: Tuple[int, int]):
+    #     self.prepareGeometryChange()
+    #     # Get the current transformation
+    #     transform = self.transform()
+    #     # Apply the scaling
+    #     transform.scale(*flipState)
+    #     # Set the new transformation
+    #     self.setTransform(transform)
+    #     self._flipTuple = (transform.m11(), transform.m22())
+    #     inverseTransform, invertible = transform.inverted()
+    #     if invertible:
+    #         for label in self.labels.values():
+    #             label.setTransform(inverseTransform)
+    #             if self.flipTuple[0] < 0:  # Only shift if horizontally flipped
+    #                 textWidth = label.boundingRect().width()
+    #                 label.moveBy(textWidth, 0)
+    #
+    #         for pin in self._pins.values():
+    #             pin.pinNameItem.setTransform(inverseTransform)
+    #             if self.flipTuple[0] < 0:  # Only shift if horizontally flipped
+    #                 textWidth = pin.pinNameItem.boundingRect().width()
+    #                 pin.pinNameItem.moveBy(textWidth, 0)
+    #
+    #     self.update()
 
     @property
     def start(self):
@@ -1678,6 +1735,7 @@ class schematicPin(symbolShape):
     def __init__(self, start: QPoint, pinName: str, pinDir: str, pinType: str, ):
         super().__init__()
         self._start = start
+        # self.setPos(start)
         self._pinName = pinName
         self._pinDir = pinDir
         self._pinType = pinType
@@ -1696,6 +1754,7 @@ class schematicPin(symbolShape):
         self.setHandlesChildEvents(True)
         self.setFlag(QGraphicsItem.ItemContainsChildrenInShape, True)
         self.flipTuple = (1, 1)
+
 
     def _updateTextMetrics(self):
         self.metrics = QFontMetrics(
@@ -1718,42 +1777,57 @@ class schematicPin(symbolShape):
 
     @property
     def pinPolygon(self):
-        match self.pinDir:
-            case "Input":
-                return QPolygonF([QPoint(self._start.x() - self.PIN_HEIGHT / 2,
-                                         self._start.y() - self.PIN_HEIGHT / 2, ),
-                                  QPoint(self._start.x() + self.PIN_HEIGHT / 2,
-                                         self._start.y() - self.PIN_HEIGHT / 2, ),
-                                  QPoint(self._start.x() + self.PIN_WIDTH / 2,
-                                         self._start.y()),
-                                  QPoint(self._start.x() + self.PIN_HEIGHT / 2,
-                                         self._start.y() + self.PIN_HEIGHT / 2, ),
-                                  QPoint(self._start.x() - self.PIN_HEIGHT / 2,
-                                         self._start.y() + self.PIN_HEIGHT / 2, ), ])
-            case "Output":
-                return QPolygonF([QPoint(self._start.x() - self.PIN_WIDTH / 2,
-                                         self._start.y()),
-                                  QPoint(self._start.x() - self.PIN_HEIGHT / 2,
-                                         self._start.y() - self.PIN_HEIGHT / 2, ),
-                                  QPoint(self._start.x() + self.PIN_HEIGHT / 2,
-                                         self._start.y() - self.PIN_HEIGHT / 2, ),
-                                  QPoint(self._start.x() + self.PIN_HEIGHT / 2,
-                                         self._start.y() + self.PIN_HEIGHT / 2, ),
-                                  QPoint(self._start.x() - self.PIN_HEIGHT / 2,
-                                         self._start.y() + self.PIN_HEIGHT / 2, ), ])
-            case "Inout":
-                return QPolygonF([QPoint(self._start.x() - self.PIN_WIDTH / 2,
-                                         self._start.y()),
-                                  QPoint(self._start.x() - self.PIN_HEIGHT / 2,
-                                         self._start.y() - self.PIN_HEIGHT / 2, ),
-                                  QPoint(self._start.x() + self.PIN_HEIGHT / 2,
-                                         self._start.y() - self.PIN_HEIGHT / 2, ),
-                                  QPoint(self._start.x() + self.PIN_WIDTH / 2,
-                                         self._start.y()),
-                                  QPoint(self._start.x() + self.PIN_HEIGHT / 2,
-                                         self._start.y() + self.PIN_HEIGHT / 2, ),
-                                  QPoint(self._start.x() - self.PIN_HEIGHT / 2,
-                                         self._start.y() + self.PIN_HEIGHT / 2, ), ])
+        x, y = self._start.x(), self._start.y()
+        hw, hh = self.PIN_WIDTH / 2, self.PIN_HEIGHT / 2
+
+        polygons = {
+            "Input": [(-hh, -hh), (hh, -hh), (hw, 0), (hh, hh), (-hh, hh)],
+            "Output": [(-hw, 0), (-hh, -hh), (hh, -hh), (hh, hh), (-hh, hh)],
+            "Inout": [(-hw, 0), (-hh, -hh), (hh, -hh), (hw, 0), (hh, hh),
+                      (-hh, hh)]
+        }
+
+        return QPolygonF(
+            [QPoint(x + dx, y + dy) for dx, dy in polygons[self.pinDir]])
+
+    # @property
+    # def pinPolygon(self):
+    #     match self.pinDir:
+    #         case "Input":
+    #             return QPolygonF([QPoint(self._start.x() - self.PIN_HEIGHT / 2,
+    #                                      self._start.y() - self.PIN_HEIGHT / 2, ),
+    #                               QPoint(self._start.x() + self.PIN_HEIGHT / 2,
+    #                                      self._start.y() - self.PIN_HEIGHT / 2, ),
+    #                               QPoint(self._start.x() + self.PIN_WIDTH / 2,
+    #                                      self._start.y()),
+    #                               QPoint(self._start.x() + self.PIN_HEIGHT / 2,
+    #                                      self._start.y() + self.PIN_HEIGHT / 2, ),
+    #                               QPoint(self._start.x() - self.PIN_HEIGHT / 2,
+    #                                      self._start.y() + self.PIN_HEIGHT / 2, ), ])
+    #         case "Output":
+    #             return QPolygonF([QPoint(self._start.x() - self.PIN_WIDTH / 2,
+    #                                      self._start.y()),
+    #                               QPoint(self._start.x() - self.PIN_HEIGHT / 2,
+    #                                      self._start.y() - self.PIN_HEIGHT / 2, ),
+    #                               QPoint(self._start.x() + self.PIN_HEIGHT / 2,
+    #                                      self._start.y() - self.PIN_HEIGHT / 2, ),
+    #                               QPoint(self._start.x() + self.PIN_HEIGHT / 2,
+    #                                      self._start.y() + self.PIN_HEIGHT / 2, ),
+    #                               QPoint(self._start.x() - self.PIN_HEIGHT / 2,
+    #                                      self._start.y() + self.PIN_HEIGHT / 2, ), ])
+    #         case "Inout":
+    #             return QPolygonF([QPoint(self._start.x() - self.PIN_WIDTH / 2,
+    #                                      self._start.y()),
+    #                               QPoint(self._start.x() - self.PIN_HEIGHT / 2,
+    #                                      self._start.y() - self.PIN_HEIGHT / 2, ),
+    #                               QPoint(self._start.x() + self.PIN_HEIGHT / 2,
+    #                                      self._start.y() - self.PIN_HEIGHT / 2, ),
+    #                               QPoint(self._start.x() + self.PIN_WIDTH / 2,
+    #                                      self._start.y()),
+    #                               QPoint(self._start.x() + self.PIN_HEIGHT / 2,
+    #                                      self._start.y() + self.PIN_HEIGHT / 2, ),
+    #                               QPoint(self._start.x() - self.PIN_HEIGHT / 2,
+    #                                      self._start.y() + self.PIN_HEIGHT / 2, ), ])
 
     def itemChange(self, change, value):
         if change == QGraphicsItem.ItemSelectedHasChanged:
@@ -1849,6 +1923,9 @@ class schematicPin(symbolShape):
 
     @start.setter
     def start(self, start):
+        self.prepareGeometryChange()
+        self._pinItem.setPos(self.mapToScene(start).toPoint())
+        self._textItem.setPos(start.x(), start.y())
         self._start = start
 
     @property
