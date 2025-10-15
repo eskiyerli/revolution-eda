@@ -1361,7 +1361,8 @@ class schematicScene(editorScene):
             )
             start = self.snapToGrid(itemStartPos - self.origin, self.snapTuple)
             angle = float(dlg.angleEdit.text().strip())
-            newPin = shp.schematicPin(start, pinName, pinDir, pinType)
+            newPin = shp.schematicPin(QPoint(0,0), pinName, pinDir, pinType)
+            newPin.setPos(start)
             newPin.angle = angle
             self.undoStack.push(us.addDeleteShapeUndo(self, newPin, item))
 

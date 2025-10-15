@@ -1,4 +1,4 @@
-# Revolution EDA Schematic/Symbol Editors
+# Revolution EDA Schematic/Symbol/Layout Editors and Simulation and Analysis Environment
 
 ## Introduction
 

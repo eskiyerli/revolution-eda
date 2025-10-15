@@ -595,8 +595,11 @@ class schematicEditor(edw.editorWindow):
                         bottomPinLocs[i]))  # symbol attribute generation for netlisting.
             symbolScene.attributeList = list()  # empty attribute list
 
-            symbolScene.attributeList.append(symenc.symbolAttribute("XyceSymbolNetlistLine",
-                                                                    "X@instName @pinList @cellName"))
+            symbolScene.attributeList.append(symenc.symbolAttribute(
+                "XyceSymbolNetlistLine","X@instName %pinOrder @cellName"))
+            symbolScene.attributeList.append(
+                symenc.symbolAttribute("VacaskSymbolNetlistLine",
+                                    "X@instName  ( %pinOrder ) @cellName"))
             symbolScene.attributeList.append(
                 symenc.symbolAttribute("pinOrder", ", ".join(schematicPinNames)))
 
