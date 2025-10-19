@@ -446,7 +446,7 @@ class libraryBrowser(QMainWindow):
                     items.append({"settings": []})
                     with viewItem.data(Qt.UserRole + 2).open(mode="w") as benchFile:
                         json.dump(items, benchFile, indent=4)
-                    simmwModule = self._app.plugins["plugins.revedasim"]
+                    simmwModule = self._app.plugins["revedasim"]
                     simmw = simmwModule.SimMainWindow(
                         viewItem, self.designView.libraryModel, self.designView
                     )
@@ -456,25 +456,51 @@ class libraryBrowser(QMainWindow):
         except Exception as e:
             self.logger.error(f"Error opening Revbench window: {e}")
 
-    def selectCellView(self, libModel) -> libb.viewItem:
+    def selectCellView(self, libModel:lmview.designLibrariesModel) -> libb.viewItem:
         dlg = fd.selectCellViewDialog(self, libModel)
         if dlg.exec() == QDialog.Accepted:
             libItem = libm.getLibItem(libModel, dlg.libNamesCB.currentText())
+            if not libItem:
+                self.logger.error("Invalid library selected")
+                return None
+            
             try:
                 cellItem = libm.getCellItem(libItem, dlg.cellCB.currentText())
+                if not cellItem:
+                    self.logger.error("Invalid cell selected")
+                    return None
             except IndexError:
-                cellItem = libItem.child(0)
+                self.logger.error("Cell not found")
+                return None
+                
             try:
                 viewItem = libm.getViewItem(cellItem, dlg.viewCB.currentText())
+                if not viewItem:
+                    self.logger.error("Invalid view selected") 
+                    return None
                 return viewItem
             except IndexError:
-                viewItem = cellItem.child(0)
+                self.logger.error("View not found")
                 return None
+                
+        return None
+
+    # def openCellViewClick(self):
+    #     viewItem = self.selectCellView(self.designView.libraryModel)
+    #     cellItem = viewItem.parent()
+    #     libItem = cellItem.parent()
+    #     self.openCellView(viewItem, cellItem, libItem)
 
     def openCellViewClick(self):
         viewItem = self.selectCellView(self.designView.libraryModel)
+        if not viewItem:
+            return
         cellItem = viewItem.parent()
+        if not cellItem:
+            return
         libItem = cellItem.parent()
+        if not libItem:
+            return
         self.openCellView(viewItem, cellItem, libItem)
 
     def openCellView(

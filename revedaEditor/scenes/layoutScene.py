@@ -554,13 +554,12 @@ class layoutScene(editorScene):
         if not decoded_data:
             return
 
-        valid_items = []
         layoutShapes = self.getLayoutShapesSet(tuple(self.layoutShapes))
-        factory_create = lj.layoutItems(self).create  # Cache method lookup
-        
+        factory_create = lj.layoutItems(self).create
+
+        valid_items = []
         for item in decoded_data:
-            item_type = item.get("type") if isinstance(item, dict) else None
-            if item_type in layoutShapes:
+            if isinstance(item, dict) and item.get("type") in layoutShapes:
                 try:
                     valid_items.append(factory_create(item))
                 except Exception:
@@ -568,6 +567,26 @@ class layoutScene(editorScene):
 
         if valid_items:
             self.undoStack.push(us.loadShapesUndo(self, valid_items))
+
+    # def createLayoutItems(self, decoded_data: List[Dict[str, Any]]) -> None:
+    #     """Create layout items from decoded data and add them to the undo stack."""
+    #     if not decoded_data:
+    #         return
+    #
+    #     valid_items = []
+    #     layoutShapes = self.getLayoutShapesSet(tuple(self.layoutShapes))
+    #     factory_create = lj.layoutItems(self).create  # Cache method lookup
+    #
+    #     for item in decoded_data:
+    #         item_type = item.get("type") if isinstance(item, dict) else None
+    #         if item_type in layoutShapes:
+    #             try:
+    #                 valid_items.append(factory_create(item))
+    #             except Exception:
+    #                 pass
+    #
+    #     if valid_items:
+    #         self.undoStack.push(us.loadShapesUndo(self, valid_items))
 
     def deleteSelectedItems(self):
         for item in self.selectedItems():
