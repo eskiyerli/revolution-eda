@@ -1669,9 +1669,6 @@ class schematicSymbol(symbolShape):
         for label in self.labels.values():
             label.setTransform(inverseTransform)
 
-
-
-
     #
     # @flipTuple.setter
     # def flipTuple(self, flipState: Tuple[int, int]):

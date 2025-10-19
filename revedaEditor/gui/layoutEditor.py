@@ -59,11 +59,9 @@ import revedaEditor.gui.fileDialogues as fd
 import revedaEditor.gui.layoutDialogues as ldlg
 import revedaEditor.gui.lsw as lsw
 from revedaEditor.scenes.layoutScene import layoutScene
-from revedaEditor.gui.startThread import startThread
-
-# from revedaEditor.backend.dataDefinitions import layLayer
-# from revedaEditor.gui.editorViews import layoutView
 from revedaEditor.backend.pdkPaths import importPDKModule
+
+
 fabproc = importPDKModule('process')
 laylyr = importPDKModule('layoutLayers')
 
@@ -393,6 +391,7 @@ class layoutEditor(edw.editorWindow):
 
     def loadLayout(self):
         self.logger.info(f'Loading layout from {self.cellName} - {self.viewName}')
+
         QApplication.setOverrideCursor(Qt.WaitCursor)
         QApplication.processEvents()
         try:
@@ -440,25 +439,18 @@ class layoutEditor(edw.editorWindow):
                 for item in decodedData
                 if item.get("type") in self.centralW.scene.layoutShapes
             ]
-            # gdsExportObj = gdse.gdsExporter(self.cellName, layoutItems, gdsExportPath)
-            # gdsExportObj.unit = Quantity(dlg.unitEdit.text().strip()).real
-            # gdsExportObj.precision = Quantity(dlg.precisionEdit.text().strip()).real
-            # if gdsExportObj:
-            #
-            #     start_time = time.time()
-            #     gdsExportRunner = startThread(gdsExportObj.gdsExport())
-            #     self.appMainW.threadPool.start(gdsExportRunner)
-            #     elapsed_time = time.time() - start_time
-            #     self.logger.info(f"GDS Export completed in {elapsed_time:.4f} seconds")
 
             gdsExportObj = gdse.gdsExporter(self.cellName, layoutItems, gdsExportPath)
             gdsExportObj.unit = Quantity(dlg.unitEdit.text().strip()).real
             gdsExportObj.precision = Quantity(dlg.precisionEdit.text().strip()).real
             self.logger.info("GDS Export started")
-            gdsExportRunner = startThread(gdsExportObj.gdsExport)
-            gdsExportRunner.signals.finished.connect(
-                lambda: self.logger.info("GDS Export finished"))
-            self.appMainW.threadPool.start(gdsExportRunner)
+            with measureDuration():
+                gdsExportObj.gdsExport()
+            self.logger.info("GDS Export finished")
+            # gdsExportRunner = startThread(gdsExportObj.gdsExport)
+            # gdsExportRunner.signals.finished.connect(
+            #     lambda: self.logger.info("GDS Export finished"))
+            # self.appMainW.threadPool.start(gdsExportRunner)
 
 
     def _createSignalConnections(self):

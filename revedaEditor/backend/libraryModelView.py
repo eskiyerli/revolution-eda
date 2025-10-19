@@ -710,10 +710,16 @@ class designLibrariesTreeView(BaseDesignLibrariesView):
         dlg.exec()
 
     # context menu
+    # def contextMenuEvent(self, event):
+    #     menu = QMenu(self)
+    #     pos = event.pos()
+    #     # Use self directly instead of self.sender()
+    #     index = self.treeView.indexAt(pos)
+    #     if index.isValid():
+    #         selectedItem = self.libraryModel.itemFromIndex(index)
     def contextMenuEvent(self, event):
         menu = QMenu(self)
-        pos = event.pos()
-        # Use self directly instead of self.sender()
+        pos = self.treeView.mapFromGlobal(event.globalPos())
         index = self.treeView.indexAt(pos)
         if index.isValid():
             selectedItem = self.libraryModel.itemFromIndex(index)
