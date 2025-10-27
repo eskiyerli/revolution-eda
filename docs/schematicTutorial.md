@@ -143,19 +143,21 @@ We have already explained which attributes are necessary for netlisting a symbol
 
 ## Simulation Integration
 
-The schematic editor now provides seamless integration with the simulation environment:
+The schematic editor provides seamless integration with the simulation environment through the **revedasim** plugin:
 
 ### Direct Simulation Access
-- **Revbench Integration**: Create simulation testbenches directly from schematics
+- **Revbench Integration**: Create simulation testbenches directly from schematics using the `revbench` cellview type
 - **Analysis Setup**: Configure DC, AC, transient, noise, and harmonic balance analyses
 - **Parameter Sweeps**: Set up multi-dimensional parameter variations
 - **Interactive Selection**: Click on nets and components to auto-populate simulation fields
+- **Plugin-Based**: Requires the `revedasim` plugin to be installed
 
 ### Enhanced Netlisting
-- **Hierarchical Processing**: Full support for complex design hierarchies
+- **Hierarchical Processing**: Full support for complex design hierarchies with proper view selection
 - **View Selection**: Intelligent view selection based on switch/stop view lists
-- **Config View Support**: Advanced configuration management for large designs
-- **Non-blocking Operation**: Netlisting runs in background without blocking the editor
+- **Config View Support**: Advanced configuration management for large designs through config cellviews
+- **Background Operation**: Netlisting runs in background thread pool without blocking the editor
+- **Xyce Simulator Support**: Native support for Xyce circuit simulator netlisting format
 
 ## Creating Netlists
 
@@ -183,11 +185,12 @@ in the Revolution EDA configuration file unlike the entries in *Options* dialogu
 When `OK` button is clicked, Revolution EDA performs a full hierarchical netlisting of the circuit with the following enhancements:
 
 ### Advanced Netlisting Features
-- **Non-blocking Operation**: Netlisting runs in background, allowing continued work
+- **Background Operation**: Netlisting runs in background thread pool, allowing continued work
 - **Hierarchical Processing**: Full support for complex design hierarchies with proper view selection
 - **Configuration Support**: Integration with config views for advanced design management
-- **Output Management**: Organized output structure under `SimulationPath/cellName/viewName`
+- **Output Management**: Organized output structure under simulation path directory
 - **File Naming**: Consistent naming convention `cellName_viewName.cir`
+- **Thread Pool**: Uses configurable thread pool for efficient processing
 
 ### Configuration Views
 Config views provide advanced control over netlisting:
@@ -248,7 +251,7 @@ VI2 net0 gnd! PULSE( 1 1m 1k 0 0 0  )
 .END
 ```
 
-Now the resistor is netlisted as a symbol using the attributes relevant to symbol netlisting, i.e. `XyceSymbolNetlistLine` and `pinOrder`.
+Now the resistor is netlisted as a symbol using the attributes relevant to symbol netlisting, i.e. `SpiceNetlistLine` and `pinOrder`.
 
 ### Ignoring Instances
 
@@ -282,7 +285,7 @@ CI5 net1 net0 1p 0
 
 ## Hierarchy Traversing
 
-Another functionality provided by Revolution EDA is the hierarchy traversing up and down. For example a design engineer can start editing a schematic and decide to edit the schematic of one of the symbols and in the schematic. By using *hierarchy traversing* function, it is very easy. At the moment, this function is only available for *schematic* and *symbol* views but it will be expanded to other cellviews shortly.
+Revolution EDA provides convenient hierarchy traversal functionality. A design engineer can start editing a schematic and easily navigate to edit the schematic or symbol of an instantiated component. This hierarchy traversal maintains the design context and allows seamless navigation through the design hierarchy. The function is available for schematic, symbol, and layout views.
 
 Select a symbol, and do one of these:
 
@@ -293,8 +296,8 @@ Select a symbol, and do one of these:
 
 <img src="assets/goDownHier.png" class="image fit" />
 
-A dialogue titled `Go Down Hieararchy` will pop up. Depending on the cell, you could choose `Symbol` or `Schematic` view to open either in *edit* or *read-only* mode. 
+A dialogue titled `Go Down Hierarchy` will pop up. Depending on the cell, you can choose `Symbol` or `Schematic` view to open in either *edit* or *read-only* mode.
 
 <img src="assets/goDownDialogue.png" class="image fit" />
 
-Assuming the symbol is opened for editing, the designer could save the symbol after finishing the edits and now choose `Go Up` button on the toolbar to close the window. The changes in the symbol will be reflected in the original schematic.
+After opening a symbol for editing, the designer can save the symbol after finishing the edits and then choose the `Go Up` button on the toolbar to close the window and return to the parent schematic. The changes in the symbol will be automatically reflected in the original schematic.

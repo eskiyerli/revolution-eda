@@ -227,9 +227,9 @@ class spiceC:
         )
         if instParamString.strip():
             # Create the netlist line string with the formatted values
-            self._netlistLine = f'X@instName @pinList {self.subcktParams["name"]} PARAM: {instParamString}'
+            self._netlistLine = f'X@instName %pinOrder {self.subcktParams["name"]} PARAM: {instParamString}'
         else:
-            self._netlistLine = f'X@instName @pinList {self.subcktParams["name"]}'
+            self._netlistLine = f'X@instName %pinOrder {self.subcktParams["name"]}'
 
         # Return the netlist line
         return self._netlistLine

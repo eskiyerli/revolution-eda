@@ -81,7 +81,7 @@ class editorView(QGraphicsView):
         
         # Batch all settings in sequence to minimize Qt overhead
         self.setViewportUpdateMode(QGraphicsView.FullViewportUpdate)
-        self.setCacheMode(QGraphicsView.CacheBackground)
+        # self.setCacheMode(QGraphicsView.CacheBackground)
         self.setMouseTracking(True)
         self.setTransformationAnchor(anchor)
         self.setResizeAnchor(anchor)

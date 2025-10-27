@@ -34,8 +34,7 @@
 # nuitka-project: --include-package=polars
 # nuitka-project: --include-module=pydoc
 # nuitka-project: --include-package=xml
-# nuitka-project: --include-module=_lsprof
-# nuitka-project: --include-module=_json
+# nuitka-project: --include-package=pyqtgraph
 # nuitka-project: --include-module=PySide6.QtWebEngineWidgets
 # nuitka-project: --include-module=PySide6.QtOpenGL
 # nuitka-project: --nofollow-import-to=unittest
@@ -77,6 +76,7 @@ class revedaApp(QApplication):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.base_path = Path(__file__).resolve().parent
+        print(f"Revolution EDA base path: {self.base_path}")
         self.appMainW = rvm.MainWindow()
         load_dotenv()
         self._setup_paths()
@@ -86,12 +86,12 @@ class revedaApp(QApplication):
     def _setup_logger(self):
         """Initialize application logger."""
         self.logger = logging.getLogger("reveda")
-        if not self.logger.handlers:
-            handler = logging.FileHandler("reveda.log")
-            handler.setLevel(logging.INFO)
-            handler.setFormatter(logging.Formatter(
-                "%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
-            self.logger.addHandler(handler)
+        log_file_path = self.base_path / "reveda.log"
+        handler = logging.FileHandler(log_file_path)
+        handler.setLevel(logging.INFO)
+        handler.setFormatter(logging.Formatter(
+            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
+        self.logger.addHandler(handler)
 
     def _setup_paths(self):
         pdk_path = os.environ.get("REVEDA_PDK_PATH")

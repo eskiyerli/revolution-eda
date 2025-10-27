@@ -85,6 +85,19 @@ class cellItem(QStandardItem):
     def __repr__(self):
         return f"{type(self).__name__}({self.cellPath})"
 
+
+    def delete(self):
+        """
+        delete the cell file and remove the row.
+        """
+        self.cellPath.unlink()
+        cellRow = self.row()
+        self.parent().removeRow(cellRow)
+        # delete the cell's views
+        for view in self.cellPath.parent.glob("*"):
+            if view.is_file():
+                view.unlink()
+
     @property
     def cellName(self):
         return self._cellName
@@ -118,6 +131,7 @@ class viewItem(QStandardItem):
 
     def __repr__(self):
         return f"{type(self).__name__}(pathlib.Path({self.viewPath}))"
+
 
     def delete(self):
         """
@@ -163,7 +177,25 @@ class viewItem(QStandardItem):
         return newViewItem
 
 
-def createLibrary(parent, model, libraryDir: str, libraryName: str) -> libraryItem:
+# def createLibrary(parent, model, libraryDir: str, libraryName: str) -> libraryItem:
+#     """
+#     Create a library item with the given parameters and add it to the model.
+#     If the library name is empty, show a warning message.
+#     If the library already exists, show a warning message.
+#     Log the creation of the library item.
+#     Return the newly created library item.
+#     """
+#     if libraryName.strip() == "":
+#         QMessageBox.warning(parent, "Error", "Please enter a library name")
+#     else:
+#         libraryPath = Path(libraryDir).joinpath(libraryName)
+#         if libraryPath.exists():
+#             QMessageBox.warning(parent, "Error", "Library already exits.")
+#         else:
+#             newLibraryItem = createNewLibraryItem(model, libraryPath)
+#             parent.logger.info(f"Created {libraryPath}")
+#     return newLibraryItem
+def createLibrary(parent, model, libraryDir: str, libraryName: str) -> Union[libraryItem, None]:
     """
     Create a library item with the given parameters and add it to the model.
     If the library name is empty, show a warning message.
@@ -171,15 +203,17 @@ def createLibrary(parent, model, libraryDir: str, libraryName: str) -> libraryIt
     Log the creation of the library item.
     Return the newly created library item.
     """
-    if libraryName.strip() == "":
+    if not libraryName.strip():
         QMessageBox.warning(parent, "Error", "Please enter a library name")
-    else:
-        libraryPath = Path(libraryDir).joinpath(libraryName)
-        if libraryPath.exists():
-            QMessageBox.warning(parent, "Error", "Library already exits.")
-        else:
-            newLibraryItem = createNewLibraryItem(model, libraryPath)
-            parent.logger.info(f"Created {libraryPath}")
+        return None
+
+    libraryPath = Path(libraryDir).joinpath(libraryName)
+    if libraryPath.exists():
+        QMessageBox.warning(parent, "Error", "Library already exits.")
+        return None
+
+    newLibraryItem = createNewLibraryItem(model, libraryPath)
+    parent.logger.info(f"Created {libraryPath}")
     return newLibraryItem
 
 

@@ -18,7 +18,7 @@
 #    License: Mozilla Public License 2.0
 #    Licensor: Revolution Semiconductor (Registered in the Netherlands)
 
-from typing import NamedTuple, Union, List
+from typing import NamedTuple, Union
 from dataclasses import dataclass
 from PySide6.QtCore import Qt, QPoint, QPointF
 from PySide6.QtGui import QColor

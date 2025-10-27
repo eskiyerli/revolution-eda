@@ -164,7 +164,7 @@ class importXschemSym:
                     )
 
                     self.symbolScene.attributeList.append(
-                        symenc.symbolAttribute("XyceSymbolNetlistLine", netlistLine)
+                        symenc.symbolAttribute("SpiceNetlistLine", netlistLine)
                     )
 
                 templateString = self._expressionDict.get("template")

@@ -1596,22 +1596,34 @@ class schematicSymbol(symbolShape):
     def labels(self):
         return self._labels  # dictionary
 
-    @cached_property
+    @property
     def pins(self):
         """
         Returns a dictionary of pins, ordered by the pinOrder attribute if it exists.
         """
-
         pinOrder = self.symattrs.get("pinOrder")
         if not pinOrder:
             return self._pins
-        outputDict = OrderedDict()
-        for key in pinOrder.split(", "):
-            key = key.strip()
-            if key in pinOrder:
-                if key in self._pins:
-                    outputDict[key] = self._pins[key]
-        return outputDict
+
+        return OrderedDict((key.strip(), self._pins[key.strip()])
+                           for key in pinOrder.split(",")
+                           if key.strip() in self._pins)
+
+    # @property
+    # def pins(self):
+    #     """
+    #     Returns a dictionary of pins, ordered by the pinOrder attribute if it exists.
+    #     """
+    #     pinOrder = self.symattrs.get("pinOrder")
+    #     if not pinOrder:
+    #         return self._pins
+    #     outputDict = OrderedDict()
+    #     for key in pinOrder.split(","):
+    #         key = key.strip()
+    #         if key in pinOrder:
+    #             if key in self._pins:
+    #                 outputDict[key] = self._pins[key]
+    #     return outputDict
 
     @property
     def shapes(self):

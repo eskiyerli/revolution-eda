@@ -21,7 +21,7 @@
 #    License: Mozilla Public License 2.0
 #    Licensor: Revolution Semiconductor (Registered in the Netherlands)
 #
-
+import pathlib
 import sys
 
 from PySide6.QtCore import QObject
@@ -181,7 +181,7 @@ class textEditor(QMainWindow):
 
     def __init__(self, filePathObj: Path):
         super().__init__()
-        self.filePathObj = filePathObj
+        self.filePathObj = filePathObj if filePathObj.exists() else pathlib.Path.cwd()
         self.textEdit = QTextEdit()
         self.setCentralWidget(self.textEdit)
 
@@ -207,55 +207,66 @@ class textEditor(QMainWindow):
         documentOpenIcon = QIcon(":/icons/document-task.png")
         self.openAction = QAction(documentOpenIcon, "&Open", self)
         self.openAction.setShortcut("Ctrl+O")
+        self.openAction.setStatusTip("Open File")
         self.openAction.triggered.connect(self.openFile)
         
         reloadIcon = QIcon(":/icons/arrow-circle.png")
         self.reloadAction = QAction(reloadIcon, "&Reload", self)
         self.reloadAction.setShortcut("F5")
+        self.reloadAction.setStatusTip("Reload File")
         self.reloadAction.triggered.connect(self.reloadFile)
 
         saveIcon = QIcon(":/icons/document.png")
         self.saveAction = QAction(saveIcon, "&Save", self)
         self.saveAction.setShortcut("Ctrl+S")
+        self.saveAction.setStatusTip("Save File")
         self.saveAction.triggered.connect(self.saveFile)
 
         saveAsIcon = QIcon(":/icons/document--plus.png")
         self.saveAsAction = QAction(saveAsIcon, "Save &As", self)
+        self.saveAsAction.setStatusTip("Save File As...")
         self.saveAsAction.triggered.connect(self.saveAsFile)
 
         quitIcon = QIcon(":/icons/external.png")
         self.quitAction = QAction(quitIcon, "&Quit", self)
         self.quitAction.setShortcut("Ctrl+Q")
+        self.quitAction.setStatusTip("Quit")
         self.quitAction.triggered.connect(self.close)
 
         fontIcon = QIcon(":icons/ui-label.png")
         self.fontAction = QAction(fontIcon, "&Font", self)
         self.fontAction.setShortcut("Ctrl+F")
+        self.fontAction.setStatusTip("Select Font")
         self.fontAction.triggered.connect(self.changeFont)
 
         cutIcon = QIcon(":/icons/cutter.png")
         self.cutAction = QAction(cutIcon, "&Cut", self)
         self.cutAction.setShortcut("Ctrl+X")
+        self.cutAction.setStatusTip("Cut Text")
         self.cutAction.triggered.connect(self.textEdit.cut)
 
         copyIcon = QIcon(":/icons/document-copy.png")
         self.copyAction = QAction(copyIcon, "&Copy", self)
         self.copyAction.setShortcut("Ctrl+C")
+        self.copyAction.setStatusTip("Copy Text")
         self.copyAction.triggered.connect(self.textEdit.copy)
 
         pasteIcon = QIcon(":/icons/clipboard-paste.png")
         self.pasteAction = QAction(pasteIcon, "&Paste", self)
         self.pasteAction.setShortcut("Ctrl+V")
+        self.pasteAction.setStatusTip("Paste Text")
         self.pasteAction.triggered.connect(self.textEdit.paste)
 
         findIcon = QIcon(":/icons/clipboard--pencil.png")
         self.findAction = QAction(findIcon, "&Find", self)
         self.findAction.setShortcut("Ctrl+F")
+        self.findAction.setStatusTip("Find Text")
         self.findAction.triggered.connect(self.findText)
 
         replaceIcon = QIcon(":/icons/clipboard-search-result.png")
         self.replaceAction = QAction(replaceIcon, "&Replace", self)
         self.replaceAction.setShortcut("Ctrl+H")
+        self.replaceAction.setStatusTip("Replace Text")
         self.replaceAction.triggered.connect(self.replaceText)
 
     def createMenus(self):
@@ -298,13 +309,14 @@ class textEditor(QMainWindow):
         toolbar.addAction(self.replaceAction)
 
     def openFile(self):
-        (fileName, _) = QFileDialog.getOpenFileName(self, "Open File", "",
+        (fileName, _) = QFileDialog.getOpenFileName(self, "Open File", str(self.filePathObj),
                                                          "JSON Files (*.json);;All Files (*)")
-        self.filePathObj = Path(fileName)
-        if self.filePathObj.exists():
-            with self.filePathObj.open("r") as file:
-                text = file.read()
-                self.textEdit.setPlainText(text)
+        if fileName:
+            self.filePathObj = Path(fileName)
+            if self.filePathObj.exists():
+                with self.filePathObj.open("r") as file:
+                    text = file.read()
+                    self.textEdit.setPlainText(text)
 
     def saveFile(self):
         if self.filePathObj.exists():
@@ -315,13 +327,14 @@ class textEditor(QMainWindow):
             self.saveAsFile()
 
     def saveAsFile(self):
-        (fileName, _) = QFileDialog.getSaveFileName(self, "Save File", "",
-                                                         "JSON Files (*.json);;All Files (*)")
-        self.filePathObj = Path(fileName)
-        if self.filePathObj.exists():
-            with self.filePathObj.open("w") as file:
-                text = self.textEdit.toPlainText()
-                file.write(text)
+        (fileName, _) = QFileDialog.getSaveFileName(self, "Save File", str(self.filePathObj),
+                                                    "JSON Files (*.json);;All Files (*)")
+        if fileName:
+            self.filePathObj = Path(fileName)
+            if self.filePathObj.exists():
+                with self.filePathObj.open("w") as file:
+                    text = self.textEdit.toPlainText()
+                    file.write(text)
                 
     def reloadFile(self):
         if self.filePathObj.exists():
@@ -399,24 +412,26 @@ class verilogaEditor(textEditor):
     def openFile(self):
         (fileName, _) = QFileDialog.getOpenFileName(self, "Open File", "",
                                                          "Verilog-A Files (*.va);;All Files (*)")
-        self.filePathObj = Path(fileName)
-        if self.filePathObj.exists():
-            with self.filePathObj.open("rw") as file:
-                text = file.read()
-                self.textEdit.setPlainText(text)
+        if fileName:
+            self.filePathObj = Path(fileName)
+            if self.filePathObj.exists():
+                with self.filePathObj.open("rw") as file:
+                    text = file.read()
+                    self.textEdit.setPlainText(text)
 
 
     def saveAsFile(self):
-        (fileName, _) = QFileDialog.getSaveFileName(self, "Save File", "",
+        (fileName, _) = QFileDialog.getSaveFileName(self, "Save File", str(self.filePathObj),
                                                          "Verilog-A Files (*.va);;All Files (*)")
-        self.filePathObj = Path(fileName)
-        if self.filePathObj.exists():
-            with self.filePathObj.open("w") as file:
-                text = self.textEdit.toPlainText()
-                file.write(text)
+        if fileName:
+            self.filePathObj = Path(fileName)
+            if self.filePathObj.exists():
+                with self.filePathObj.open("w") as file:
+                    text = self.textEdit.toPlainText()
+                    file.write(text)
 
 
-class xyceEditor(textEditor):
+class spiceEditor(textEditor):
     def __init__(self, filePathObj:Path):
         super().__init__(filePathObj)
         self.initEditor()
@@ -429,20 +444,23 @@ class xyceEditor(textEditor):
     def openFile(self):
         (fileName, _) = QFileDialog.getOpenFileName(self, "Open File", "",
                                                          "Xyce Files (*.sp);;All Files (*)")
-        self.filePathObj = Path(fileName)
-        if self.filePathObj.exists():
-            with self.filePathObj.open("r") as file:
-                text = file.read()
-                self.textEdit.setPlainText(text)
+        if fileName:
+            self.filePathObj = Path(fileName)
+            if self.filePathObj.exists():
+                with self.filePathObj.open("r") as file:
+                    text = file.read()
+                    self.textEdit.setPlainText(text)
 
     def saveAsFile(self):
-        (fileName, _) = QFileDialog.getSaveFileName(self, "Save File", "",
+
+        (fileName, _) = QFileDialog.getSaveFileName(self, "Save File", str(self.filePathObj),
                                                          "Xyce Files (*.sp);;All Files (*)")
-        self.filePathObj = Path(fileName)
-        if self.filePathObj:
-            with open("w") as file:
-                text = self.textEdit.toPlainText()
-                file.write(text)
+        if fileName:
+            self.filePathObj = Path(fileName)
+            if self.filePathObj:
+                with self.filePathObj.open("w") as file:
+                    text = self.textEdit.toPlainText()
+                    file.write(text)
 
 
 def main():

@@ -41,10 +41,11 @@ A process design kit for the physical layout of an integrated circuit requires e
 5. Layout extraction rules for layout-versus-schematic checks (LVS).
 6. Layout parasitics extraction, i.e. resistive, capacitive and inductive parasitic elements due to physical layout.  
 
-At the moment, **Revolution EDA* only includes the infrastructure first three items. The DRC and LVS could be done on exported GDS netlists using either a commercial tool, or GDS editor such [kLayout](https://www.klayout.de 'kLayout') with DRC and LVS scripts for a particular technology.
+At the moment, Revolution EDA only includes the infrastructure for the first three items. DRC and LVS can be performed on exported GDS netlists using either commercial tools or open-source tools such as [KLayout](https://www.klayout.de 'KLayout') with DRC and LVS scripts for a particular technology.
 
-Revolution EDA does not yet provide a commercial PDK. As the layout editor is still very new, its PDK format is subject to change. The PDK is currently structured in a few distinct files which are a part of `pdk` module.
-PDK module folder should be named `pdk`. However this folder can be placed anywhere in the file system as its path is determined with `REVEDA_PDK_PATH` environment variable. If PDK administrator does not want to bother with setting the PDK paths in the user environment, a convenient mechanism using `.env` file at the root path of *Revolution EDA* executable is provided. For example, the example `.env` provided includes the following variables:
+Revolution EDA does not yet provide a commercial PDK. As the layout editor is relatively new, its PDK format may evolve. The PDK is currently structured in several distinct Python modules that are part of the `pdk` package.
+
+The PDK module folder should be named `pdk`. However, this folder can be placed anywhere in the file system as its path is determined by the `REVEDA_PDK_PATH` environment variable. If you don't want to set environment variables in your system, a convenient mechanism using a `.env` file at the root path of the Revolution EDA installation is provided. For example, the `.env` file can include the following variables:
 
 ```bash
 # development settings
@@ -53,7 +54,7 @@ REVEDAEDIT_PATH = ./revedaEditor
 REVEDA_PDK_PATH = ./pdk
 ```
 
-Note that `REVEDA_PDK_PATH` is set to `./pdk`. However, it could be well set to any other path. Thus, it is very easy to provide users with different PDK paths depending on the project.
+Note that `REVEDA_PDK_PATH` is set to `./pdk`. However, it can be set to any other path (absolute or relative). This makes it easy to support multiple PDKs or project-specific PDK configurations.
 
 The example `pdk` module is currently organised as below:
 

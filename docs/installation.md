@@ -39,11 +39,13 @@ poetry run reveda
 
 ## Binary Releases
 
-Pre-compiled binaries are available for Windows and Linux, created using [Nuitka](https://nuitka.net). These executables run without requiring a separate Python installation.
+Pre-compiled binaries are available for Windows and Linux, created using [Nuitka](https://nuitka.net). These standalone executables run without requiring a separate Python installation.
 
 Download from [Revolution EDA Releases](https://github.com/eskiyerli/revolution-eda/releases):
-- Windows: `reveda.exe`
-- Linux: `reveda.bin` (make executable with `chmod +x reveda.bin`)
+- **Windows**: `reveda.exe`
+- **Linux**: `reveda.bin` (make executable with `chmod +x reveda.bin`)
+
+The binary releases consists of all files that need to start experimenting with Revolution EDA including a preliminary Global Foundries 180 MCU PDK for Revolution EDA. 
 
 ## PDK Installation
 
@@ -54,18 +56,24 @@ git clone https://github.com/eskiyerli/ihp_pdk.git
 ```
 
 Set the `REVEDA_PDK_PATH` environment variable in your `.env` file depending on where you installed it.
-For example if it is installed in `/home/UserName/ihp_pdk`, you would need to set it to 
+For example, if it is installed in `/home/UserName/ihp_pdk`, you would need to set it to:
 
 ```
 REVEDA_PDK_PATH=/home/UserName/ihp_pdk
 ```
 
-Alternatively, you could use *Revolution EDA Options* dialog by choosing *Options* menu
-from *Revolution EDA* main window and selecting the directory where the PDK installed. 
+On Windows, the path would be something like:
 
-![](/home/eskiyerli/onedrive_reveda/Projects/design_software/revolution-eda/docs/assets/revedaOptionsDialogue.png)
+```
+REVEDA_PDK_PATH=C:\Users\UserName\ihp_pdk
+```
 
-IHP PDK installation directory also has schematic symbols under sg132_pr directory that can be used with There is also a preliminary GF_180 pdk
+Alternatively, you can use the *Revolution EDA Options* dialog by choosing *Options* menu
+from the *Revolution EDA* main window and selecting the directory where the PDK is installed. 
+
+![](assets/revedaOptionsDialogue.png)
+
+The IHP PDK installation directory also has schematic symbols under the `sg13g2_pr` directory that can be used in your designs. There is also a preliminary GF 180 PDK available.
 
 ## Example Libraries
 

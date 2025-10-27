@@ -32,11 +32,11 @@ from PySide6.QtWidgets import (QGraphicsScene, QApplication, QDialog, QMainWindo
                                QFileDialog, )
 
 import revedaEditor.backend.dataDefinitions as ddef
-import revedaEditor.backend.hdlBackEnd as hdl
-import revedaEditor.backend.importViews as imv
 import revedaEditor.backend.libraryMethods as libm
 import revedaEditor.fileio.importGDS as igds
 import revedaEditor.fileio.importLayp as imlyp
+import revedaEditor.fileio.importSpice as impspice
+import revedaEditor.fileio.importVeriloga as impvlga
 import revedaEditor.fileio.importXschemSym as impxsym
 import revedaEditor.gui.fileDialogues as fd
 import revedaEditor.gui.helpBrowser as hlp
@@ -322,34 +322,9 @@ class MainWindow(QMainWindow):
         """
         Import a Verilog-A view and add it to a design library.
         """
-        self.importVerilogaModule(ddef.viewTuple("", "", ""), "")
+        impvlga.importVerilogaModule(ddef.viewTuple("", "", ""), "")
 
-    def importVerilogaModule(self, viewT: ddef.viewTuple, filePath: str):
-        library_model = self.libraryBrowser.designView.libraryModel
-        # Open the import dialog
-        importDlg = fd.importVerilogaCellDialogue(library_model, self)
-        importDlg.vaFileEdit.setText(filePath)
-        if viewT.libraryName:
-            importDlg.libNamesCB.setCurrentText(viewT.libraryName)
-        if viewT.cellName:
-            importDlg.cellNamesCB.setCurrentText(viewT.cellName)
-        if viewT.viewName:
-            importDlg.vaViewName.setText(viewT.viewName)
-        else:
-            # Set the default view name in the dialog
-            importDlg.vaViewName.setText("veriloga")
-        # Execute the import dialog and check if it was accepted
-        if importDlg.exec() == QDialog.Accepted:
-            # Create the Verilog-A object from the file path
-            imported_va_obj = hdl.verilogaC(pathlib.Path(importDlg.vaFileEdit.text()))
 
-            # Create the Verilog-A view item tuple
-            vaViewItemTuple = imv.createVaView(self, importDlg, library_model, imported_va_obj)
-
-            # Check if the symbol checkbox is checked
-            if importDlg.symbolCheckBox.isChecked():
-                # Create the Verilog-A symbol
-                imv.createVaSymbol(self, vaViewItemTuple, self.libraryDict, self.libraryBrowser, imported_va_obj, )
 
     def importSpiceClick(self):
         """
@@ -361,7 +336,7 @@ class MainWindow(QMainWindow):
         Returns:
             None
         """
-        self.importSpiceSubckt(ddef.viewTuple("", "", ""), "")
+        impspice.importSpiceSubckt(ddef.viewTuple("", "", ""), "")
 
     def importLaypClick(self):
         importDlg = fd.klayoutLaypImportDialogue(self)
@@ -384,35 +359,6 @@ class MainWindow(QMainWindow):
                     importLibraryName, )
                 importObj.scaleFactor = scaleFactor
                 importObj.importSymFile()
-
-    def importSpiceSubckt(self, viewT: ddef.viewTuple, filePath: str):
-        # Get the library model
-        library_model = self.libraryBrowser.designView.libraryModel
-        # Open the import dialog
-        importDlg = fd.importSpiceCellDialogue(library_model, self)
-        importDlg.spiceFileEdit.setText(filePath)
-        # Set the default view name in the dialog
-        if viewT.libraryName:
-            importDlg.libNamesCB.setCurrentText(viewT.libraryName)
-        if viewT.cellName:
-            importDlg.cellNamesCB.setCurrentText(viewT.cellName)
-        if viewT.viewName:
-            importDlg.spiceViewName.setText(viewT.viewName)
-        else:
-            importDlg.spiceViewName.setText("spice")
-        # Execute the import dialog and check if it was accepted
-        if importDlg.exec() == QDialog.Accepted:
-            # Create the Verilog-A object from the file path
-            importedSpiceObj = hdl.spiceC(pathlib.Path(importDlg.spiceFileEdit.text()))
-
-            # Create the Verilog-A view item tuple
-            spiceViewItemTuple = imv.createSpiceView(self, importDlg, library_model, importedSpiceObj)
-
-            # Check if the symbol checkbox is checked
-            if importDlg.symbolCheckBox.isChecked():
-                # Create the spice symbol
-                imv.createSpiceSymbol(self, spiceViewItemTuple, self.libraryDict, self.libraryBrowser,
-                    importedSpiceObj, )
 
     def importGDSClick(self):
         dlg = fd.gdsImportDialogue(self)
@@ -537,19 +483,22 @@ class MainWindow(QMainWindow):
         if reply == QMessageBox.Yes:
             if not self.threadPool.waitForDone(5000):
                 self.threadPool.clear()
-            for item in self.app.topLevelWidgets():
-                item.close()  # self.app.closeAllWindows()
+            # for item in self.app.topLevelWidgets():
+            self.app.closeAllWindows()
         else:
             event.ignore()
 
     def exitApp(self):
-        reply = QMessageBox.question(self, "Confirm Exit", "Are you sure you want to exit?",
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.No, )
-        if reply == QMessageBox.Yes:
-            if not self.threadPool.waitForDone(5000):
-                self.threadPool.clear()
-            for item in self.app.topLevelWidgets():
-                item.close()  # self.app.closeAllWindows()
+        self.close()
+
+    # def exitApp(self):
+    #     reply = QMessageBox.question(self, "Confirm Exit", "Are you sure you want to exit?",
+    #         QMessageBox.Yes | QMessageBox.No, QMessageBox.No, )
+    #     if reply == QMessageBox.Yes:
+    #         if not self.threadPool.waitForDone(5000):
+    #             self.threadPool.clear()
+    #         for item in self.app.topLevelWidgets():
+    #             item.close()  # self.app.closeAllWindows()
 
     @Slot()
     def selectionChangedScene(self):
