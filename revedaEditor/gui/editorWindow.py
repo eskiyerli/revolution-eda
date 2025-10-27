@@ -692,7 +692,6 @@ class editorWindow(QMainWindow):
         self.centralW.scene.selectionChanged.connect(self.appMainW.selectionChangedScene)
         self.centralW.view.keyPressedSignal.connect(self.appMainW.viewKeyPressed)
 
-
     @contextmanager
     def measureDuration(self):
         start_time = time.perf_counter()
@@ -700,4 +699,5 @@ class editorWindow(QMainWindow):
             yield
         finally:
             end_time = time.perf_counter()
-            self.logger.info(f"Total processing time: {end_time - start_time:.3f} seconds")
+            self.logger.info(f"Total processing time: {(end_time - start_time) * 1000:.3f} milliseconds")
+

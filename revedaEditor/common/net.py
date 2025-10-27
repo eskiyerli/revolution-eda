@@ -277,10 +277,12 @@ class schematicNet(QGraphicsItem):
         # Check if highlightNets flag is set in the scene
         if self.scene().highlightNets:
             self._highlighted = True
-            sceneNetsSet = self.scene().findSceneNetsSet() - {self}
-            self._connectedNetsSet = self.scene().findConnectedNets(
-                self, sceneNetsSet
-            )
+            self.scene().nameSceneNets() # first name all the nets in the scene.
+            sceneNetsSet = self.scene().findSceneNetsSet()
+            self._connectedNetsSet = {
+                net for net in sceneNetsSet if net.name == self.name
+            }
+
 
             # Highlight the connected netItems
             for netItem in self._connectedNetsSet:

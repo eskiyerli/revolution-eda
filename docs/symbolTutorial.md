@@ -110,7 +110,7 @@ views at the moment.
 
 ## Labels
 
-Labels carry all the relevant information for an instance of a cellview. Thus the labels may
+Labels carry all the relevant information for an instance of a cellview. Thus labels may have
 different values (texts) for each instance.
 
 There are three types of labels:
@@ -144,10 +144,10 @@ There are three types of labels:
    NLP labels can be referred by their the first part of the label definition. For example, if the label definition
    is `[@w:w=%:w=1u]`, then the label can be referred in the symbol attributes as `@w`.
 
-3. **Python Label** : Python labels allow the label values to be determined depending on the
+3. **Python Label**: Python labels allow the label values to be determined dynamically based on the
    values of other labels or any other values defined in the process design kit (PDK). The
-   ==relevant functions that can be used in the Python labels are defined in `PDK/callbacks.py`
-   file==. Each symbol should have a class defined in `callbacks.py` file. A few sample
+   relevant functions that can be used in Python labels are defined in the `PDK/callbacks.py`
+   file. Each symbol should have a corresponding class defined in `callbacks.py`. A few sample
    definitions are shown in the included `PDK/callbacks.py` file:
 
    ```python
@@ -181,10 +181,10 @@ There are three types of labels:
            return self.sourceDiffs(self.nf) * (self.w / self.nf) * self.sd1p8v
    ```
 
-   For example, an `nmos` symbol has a `asparm()` function defined. We can use it to define the value of a label
-   for `nmos` symbol. When this symbol is instantiated in a schematic, the value of `as` label will determined
-   by `asparm()` function defined in the `callbacks.py` file. This means that instance callbacks can now use the all the
-   facilities of Python, even conceivably ==machine learning== libraries to optimise designs.
+   For example, an `nmos` symbol has an `asparm()` function defined. We can use it to define the value of a label
+   for the `nmos` symbol. When this symbol is instantiated in a schematic, the value of the `as` label will be determined
+   by the `asparm()` function defined in the `callbacks.py` file. This means that instance callbacks can use all the
+   facilities of Python, including advanced libraries, to calculate parameters dynamically.
 
    <img src="assets/Screenshot_20230214_221911.png" class="image fit" />
 
@@ -196,7 +196,7 @@ There are three types of labels:
 ## Attributes
 
 Attributes are properties that are common to all instances of a symbol. They could denote for example, how a particular
-symbol would be netlisted in Xyce circuit simulator netlist using `XyceSymbolNetlistLine` attribute. *NLPDeviceFormat*
+symbol would be netlisted in Xyce circuit simulator netlist using `SpiceNetlistLine` attribute. *NLPDeviceFormat*
 expressions was originally created for Glade by Peardrop Design Systems. It consists of string constants and NLP
 Expressions.
 
@@ -204,7 +204,7 @@ Some of the important attributes for a symbol are summarized below:
 
 | Attribute Name          | Attribute Use                                           | Example                                                      |
 | ----------------------- | ------------------------------------------------------- | ------------------------------------------------------------ |
-| XyceSymbolNetlistLine   | Symbol cellview  used in netlisting                     | `M@instName @pinList %modelName w=@w l=@l nf=@nf  as=@as m=@m` |
+| SpiceNetlistLine   | Symbol cellview  used in netlisting                     | `M@instName @pinList %modelName w=@w l=@l nf=@nf  as=@as m=@m` |
 | XyceVerilogaNetlistLine | Veriloga cellview used in netlisting                    | `Yres @instName @pinList  resModel @R`                       |
 | XyceSpiceNetlistLine    | Spice cellview used in netlisting                       | `X@instName @pinList newckt`                                 |
 | vaModelLine             | Used as a model line for Veriloga netlisting            | `.MODEL resModel res R = 1`                                  |
@@ -214,7 +214,7 @@ Some of the important attributes for a symbol are summarized below:
 
 Note that the labels are referred by their names prefixed by `@` in the attributes of a symbol. If a symbol attribute
 should be referred in another symbol attribute, it should be prefixed by `%`, see the example
-for `XyceSymbolNetlistLine` in the table above where `modelName` attribute is referred as `%modelName`.  `pinOrder`
+for `SpiceNetlistLine` in the table above where `modelName` attribute is referred as `%modelName`.  `pinOrder`
 attribute is important to synchronise the various formats for netlisting. It should list all symbol pins separated by
 commas in the order required for the netlisting. This string will replace `@pinList` string in the attributes.
 
@@ -230,7 +230,7 @@ in the schematic view.
 
 Depending on how symbol is created not all the attributes needed to use various cellviews for netlisting are not
 available on the same symbol. For example, a designer creates a symbol from the schematic, but there is also a Verilog-a
-view for that cell. In that case, the symbol will have `XyceSymbolNetlistLine` needed for the use of the Symbol View in
+view for that cell. In that case, the symbol will have `SpiceNetlistLine` needed for the use of the Symbol View in
 the netlisting but not the attributes to have veriloga cellview to be used in the netlisting. In that case, the user
 should add those attributes manually in the symbol editor window.
 
@@ -243,7 +243,7 @@ symbol.
 
 | Attribute Name        | Example                                                      |
 | --------------------- | ------------------------------------------------------------ |
-| XyceSymbolNetlistLine | `M@instName @pinList %modelName w=@w l=@l nf=@nf  as=@as m=@m` |
+| SpiceNetlistLine | `M@instName @pinList %modelName w=@w l=@l nf=@nf  as=@as m=@m` |
 | pinOrder              | `D, G, B, S`                                                 |
 
 Note that another attribute `modelName` needs to be defined for the example in the table.

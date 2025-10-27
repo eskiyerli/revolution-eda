@@ -1,4 +1,4 @@
-# Revolution EA Config Editor
+# Revolution EDA Config Editor
 
 Revolution EDA also offers the ability to create a *config* view to control the netlisting
 process. Using a config view, the designer can decide which view will be used in the netlist

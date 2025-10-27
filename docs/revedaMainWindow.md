@@ -17,12 +17,17 @@ The Revolution EDA main window is the primary interface for the application. It 
 The main window provides four primary menus:
 
 ### File Menu
-- **Exit**: Close the application with confirmation dialog
+- **Exit** (`Ctrl+Q`): Close the application
 
 ### Tools Menu
 - **Library Browser**: Access the comprehensive library management interface
 - **Create Stipple**: Generate custom fill patterns for layout visualization
 - **Import Submenu**: Various import utilities for external file formats
+  - **Import Verilog-A file...**: Import Verilog-A modules
+  - **Import Spice file...**: Import SPICE subcircuits
+  - **Import KLayout Layer Prop. File...**: Import layer properties from KLayout
+  - **Import Xschem Symbols...**: Import symbols from Xschem
+  - **Import GDS...**: Import GDSII layout files
 
 ### Options Menu
 - **Options...**: Configure application settings, paths, and preferences
@@ -39,10 +44,13 @@ Revolution EDA supports flexible configuration through multiple mechanisms:
 - **REVEDA_PDK_PATH**: Process Design Kit location for technology files
 - **REVEDA_PLUGIN_PATH**: Custom plugin directory location
 
+These can be set in a `.env` file in the Revolution EDA root directory for convenience.
+
 ### Configuration Persistence
 - Automatic saving of window geometry, thread pool settings, and user preferences
 - JSON-based configuration file (`reveda.conf`) for easy editing
 - Library definitions stored in `library.json` for session restoration
+- Switch view lists and stop view lists are persisted between sessions
 
 ### Path Management
 - Intelligent path resolution supporting both relative and absolute paths
@@ -107,8 +115,10 @@ the symbol editor section.
 
 that is needed for the inclusion of a spice subcircuit in SPICE-like netlist:
 
-1. **XyceSpiceNetlistLine**: This attribute is checked when netlisting the symbol in a
+1. **SpiceNetlistLine**: This attribute is checked when netlisting the symbol in a
    schematic. It defines the template for the netlisting.
+2. **SpectreSymbolNetlistLine**: This attribute is used as a template for netlisting when 
+   Spectre/Vacask type circuit simulators.
 2. **pinOrder**: Pin order defines the order of the pins so that they can replace `@pinList`
    field in `XyceSpiceNetlistLine` in the correct order.
 3. **incLine**: The include line is needed so that the simulator can add the subcircuit in the
@@ -187,16 +197,16 @@ Library Browser menubar includes four menus:
 
       The following cellviews are functional at the moment:
 
-      | Cellview   | Tool                              |
-      |------------|-----------------------------------|
-      | schematic  | Schematic Editor                  |
-      | symbol     | Symbol Editor                     |
-      | config     | Config Editor                     |
-      | veriloga   | Text Editor                       |
-      | pcell      | Text Editor                       |
-      | spice      | Text Editor                       |
-      | layout     | Layout Editor                     |
-      | revbench   | Simulation & Analysis Environment |
+      | Cellview   | Tool                                               |
+      |------------|----------------------------------------------------||
+      | schematic  | Schematic Editor                                   |
+      | symbol     | Symbol Editor                                      |
+      | config     | Config Editor                                      |
+      | veriloga   | Text Editor (opens associated Verilog-A file)      |
+      | pcell      | Text Editor (JSON-based parametric cell reference) |
+      | spice      | Text Editor (opens associated SPICE file)          |
+      | layout     | Layout Editor                                      |
+      | revbench   | Simulation & Analysis Environment (requires revedasim plugin) |
 
    2. `Open CellView...` menu item is used to the start the relevant tool for a cellview.
 
@@ -249,13 +259,26 @@ The Import submenu provides comprehensive support for external file formats:
 - **Xschem Symbols**: Convert Xschem symbol files
 - **GDS Import**: Import GDSII layout files with configurable units
 
+## Plugin Architecture
+
+Revolution EDA features a modular plugin architecture that enables extensible functionality:
+
+### Available Plugins
+- **revedasim**: Simulation and Analysis Environment with Xyce integration
+- **revedaplot**: High-performance waveform viewer and plotter
+
+### Plugin Configuration
+- Plugins are automatically discovered from the `REVEDA_PLUGIN_PATH` directory
+- Set the plugin path via environment variable or the Options dialog
+- Plugins extend menus and functionality dynamically when loaded
+
 ## Configuration Management
 
 The Options dialog provides comprehensive configuration:
 - **Path Settings**: Configure PDK, output, and plugin paths
 - **View Lists**: Define switch and stop view hierarchies for netlisting
-- **Thread Pool**: Adjust maximum thread count for performance tuning
-- **Persistence**: Option to save settings automatically
+- **Thread Pool**: Adjust maximum thread count for performance tuning (defaults to CPU core count)
+- **Persistence**: Option to save settings automatically in `reveda.conf`
 
 There are also contextual menus defined for library, cell and cellview items in the Library
 Browser. Selecting an item and clicking right mouse button will display the relevant menu.ets/Screenshot_20230214_213352.png"  class="small-image" />

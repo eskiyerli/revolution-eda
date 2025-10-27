@@ -77,6 +77,7 @@ schlyr = importPDKModule("schLayers")
 class schematicScene(editorScene):
     wireEditFinished = Signal(snet.schematicNet)
     stretchNet = Signal(snet.schematicNet, str)
+    SCHEMATIC_SHAPES = (snet.schematicNet, shp.schematicPin, shp.text, shp.schematicSymbol)
 
     def __init__(self, parent):
         super().__init__(parent)
@@ -728,13 +729,11 @@ class schematicScene(editorScene):
     def genSymbolPinNetMap(self, symbolItem: shp.schematicSymbol):
         # Process connected pins and collect unconnected ones in single pass
         unconnectedPins = []
-
         for pinName, pinItem in symbolItem.pins.items():
             netsConnectedToPin = [
                 netItem for netItem in pinItem.collidingItems(Qt.IntersectsItemBoundingRect)
                 if isinstance(netItem, snet.schematicNet)
             ]
-
             if netsConnectedToPin:
                 netName = netsConnectedToPin[0].name
                 pinBaseName, pinIndices = snet.parseBusNotation(pinName)
@@ -757,7 +756,8 @@ class schematicScene(editorScene):
         pinOrder = symbolItem.symattrs.get("pinOrder")
         if pinOrder:
             ordered_map = {}
-            for pinName in (item.strip() for item in pinOrder.split(",")):
+            pinNames = (item.strip() for item in pinOrder.split(","))
+            for pinName in pinNames:
                 baseName, indices = snet.parseBusNotation(pinName)
                 if indices[0] == indices[1] == 0:
                     ordered_map[baseName] = symbolItem.pinNetMap[baseName]
@@ -766,63 +766,6 @@ class schematicScene(editorScene):
                         expandedPin = f"{baseName}<{pinIndex}>"
                         ordered_map[expandedPin] = symbolItem.pinNetMap[expandedPin]
             symbolItem.pinNetMap = ordered_map
-
-    #
-    # def genSymbolPinNetMap(self, symbolItem: shp.schematicSymbol):
-    #     for pinName, pinItem in symbolItem.pins.items():
-    #         pinItem.connected = False
-    #         pinBaseName, pinIndices = snet.parseBusNotation(pinName)
-    #         netsConnectedToPin = {
-    #             netItem
-    #             for netItem in pinItem.collidingItems(
-    #                 mode=Qt.IntersectsItemBoundingRect
-    #             )
-    #             if isinstance(netItem, snet.schematicNet)
-    #         }
-    #
-    #         if (
-    #                 netsConnectedToPin
-    #         ):  # because all nets connected to pin has the same name
-    #             netName = netsConnectedToPin.pop().name
-    #             netBaseName, netIndices = snet.parseBusNotation(netName)
-    #             matchedPairs, self.netCounter = self.matchPinToBus(
-    #                 pinBaseName,
-    #                 pinIndices,
-    #                 netBaseName,
-    #                 netIndices,
-    #                 self.netCounter,
-    #             )
-    #             for pinName, net in matchedPairs:
-    #                 symbolItem.pinNetMap[pinName] = net
-    #             pinItem.connected = True
-    #     unconnectedPins = {
-    #         pinItem.pinName
-    #         for pinItem in symbolItem.pins.values()
-    #         if pinItem.connected is False
-    #     }
-    #     if unconnectedPins:
-    #         for pin in unconnectedPins:
-    #             symbolItem.pinNetMap[pin] = f"dnet{self.netCounter}"
-    #             self.netCounter += 1
-    #     # Handle pin ordering with bus notation
-    #     if symbolItem.symattrs.get("pinOrder"):
-    #         pinOrderList = [
-    #             item.strip()
-    #             for item in symbolItem.symattrs.get("pinOrder").split(",")
-    #         ]
-    #
-    #         # Create new ordered pinNetMap
-    #         ordered_map = {}
-    #         for pinName in pinOrderList:
-    #             baseName, indices = snet.parseBusNotation(pinName)
-    #             if indices[0] == indices[1] == 0:
-    #                 ordered_map[baseName] = symbolItem.pinNetMap[baseName]
-    #             else:
-    #                 busRange = self.createBusRanges(*indices)
-    #                 for pinIndex in busRange:
-    #                     pinName = f"{baseName}<{pinIndex}>"
-    #                     ordered_map[pinName] = symbolItem.pinNetMap[pinName]
-    #         symbolItem.pinNetMap = ordered_map
 
     def findSceneSymbolSet(self) -> set[shp.schematicSymbol]:
         """
@@ -1059,9 +1002,10 @@ class schematicScene(editorScene):
                     f.write(",\n")
                     json.dump(header_items[1], f)
                     # Get top-level items more efficiently
-                    topLevelItems = {
-                        item for item in self.items() if item.parentItem() is None
-                    }
+                    # topLevelItems = {
+                    #     item for item in self.items() if item.parentItem() is None
+                    # }
+                    topLevelItems = filter(lambda item: isinstance(item, self.SCHEMATIC_SHAPES), self.items())
                     self.addItem(self._snapPointRect)
                     # Stream items
                     for item in list(topLevelItems):

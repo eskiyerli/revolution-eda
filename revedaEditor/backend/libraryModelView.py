@@ -96,6 +96,12 @@ class BaseDesignLibrariesView(QWidget):
             self.libBrowsW.openCellView(selectedViewItem, cellItem, libItem)
         except Exception as e:
             self.logger.error(f"Error opening view: {e}")
+    
+    def reworkDesignLibrariesView(self, libraryDict: dict):
+        """
+        To be implemented by child classes.
+        """
+        pass
 
 
 class designLibrariesColumnView(BaseDesignLibrariesView):
@@ -344,7 +350,7 @@ class designLibrariesColumnView(BaseDesignLibrariesView):
             dlg = fd.copyCellDialog(self)
             dlg.libraryCB.setModel(self.libraryModel)
             dlg.libraryCB.setCurrentText(parentLib.libraryName)
-
+            pass
             if dlg.exec() == QDialog.Accepted:
                 success, newCellItem = libb.copyCell(self, self.libraryModel,
                                                      selectedCellItem, dlg.copyName.text(),

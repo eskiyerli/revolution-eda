@@ -198,7 +198,6 @@ class copyCellDialog(QDialog):
             self.libraryCB.currentIndex(), Qt.UserRole + 2
         )
 
-
 class copyViewDialog(createCellDialog):
     def __init__(self, parent, model):
         super().__init__(parent=parent, model=model)

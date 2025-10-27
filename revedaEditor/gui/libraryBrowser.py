@@ -56,6 +56,7 @@ import revedaEditor.backend.dataDefinitions as ddef
 import revedaEditor.backend.libraryMethods as libm
 import revedaEditor.backend.libraryModelView as lmview
 import revedaEditor.backend.libBackEnd as libb
+import revedaEditor.fileio.importSpice as imsp
 import revedaEditor.gui.fileDialogues as fd
 import revedaEditor.gui.layoutDialogues as ldlg
 import revedaEditor.gui.textEditor as ted
@@ -326,7 +327,7 @@ class libraryBrowser(QMainWindow):
             self.appMainW.openViews[viewTuple] = editor
             editor.show()
         elif viewItem.viewType == "spice":
-            editor = ted.xyceEditor(viewItem.viewPath)
+            editor = ted.spiceEditor(viewItem.viewPath)
             editor.cellViewTuple = viewTuple
             editor.closedSignal.connect(self.spiceEditFinished)
             self.appMainW.openViews[viewTuple] = editor
@@ -569,7 +570,7 @@ class libraryBrowser(QMainWindow):
                             .data(Qt.UserRole + 2)
                             .joinpath(items[1]["filePath"])
                         )
-                        xyceEditor = ted.xyceEditor(spicefilePathObj)
+                        xyceEditor = ted.spiceEditor(spicefilePathObj)
                         self.appMainW.openViews[openCellViewTuple] = xyceEditor
                         xyceEditor.cellViewTuple = openCellViewTuple
                         xyceEditor.closedSignal.connect(self.spiceEditFinished)
@@ -613,8 +614,8 @@ class libraryBrowser(QMainWindow):
         self.appMainW.importVerilogaModule(editor.cellViewTuple, str(editor.filePathObj))
         self.appMainW.openViews.pop(editor.cellViewTuple)
 
-    def spiceEditFinished(self, editor: ted.xyceEditor):
-        self.appMainW.importSpiceSubckt(editor.cellViewTuple, str(editor.filePathObj))
+    def spiceEditFinished(self, editor: ted.spiceEditor):
+        imsp.importSpiceSubckt(editor.cellViewTuple, str(editor.filePathObj))
         self.appMainW.openViews.pop(editor.cellViewTuple)
 
 
