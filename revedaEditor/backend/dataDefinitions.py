@@ -113,6 +113,7 @@ class layoutModes(editModes):
     drawCircle: bool
     drawRuler: bool
     addInstance: bool
+    chopShape:bool
 
 
 @dataclass

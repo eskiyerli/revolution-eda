@@ -133,32 +133,7 @@ class symbolScene(editorScene):
     def mousePressEvent(self, mouse_event: QGraphicsSceneMouseEvent) -> None:
         """Handle mouse press events in the scene."""
         super().mousePressEvent(mouse_event)
-        modifiers = QGuiApplication.keyboardModifiers()
-        if mouse_event.button() != Qt.LeftButton:
-            return
 
-        try:
-            # Get snapped position once
-            self.mousePressLoc = self.snapToGrid(
-                mouse_event.scenePos().toPoint(),
-                self.snapTuple)
-            if self.editModes.selectItem:
-                self.clearSelection()
-                if self._groupItems:
-                    for item in self._groupItems:
-                        item.setSelected(False)
-                    self._groupItems.clear()
-                    self.messageLine.setText('Unselected item(s)')
-                if (modifiers == Qt.KeyboardModifier.ShiftModifier or modifiers ==
-                        Qt.KeyboardModifier.ControlModifier):
-                    self._selectionRectItem = QGraphicsRectItem()
-                    self._selectionRectItem.setRect(QRectF(self.mousePressLoc.x(),
-                                                           self.mousePressLoc.y(),0,0))
-                    self._selectionRectItem.setPen(symlyr.draftPen)
-                    self.addItem(self._selectionRectItem)
-
-        except Exception as e:
-            self.logger.error(f"Error in mousePressEvent: {e}")
 
 
     def mouseMoveEvent(self, mouse_event: QGraphicsSceneMouseEvent) -> None:
@@ -196,11 +171,7 @@ class symbolScene(editorScene):
             self._polygonGuideLine.setLine(
                 QLineF(self._newPolygon.points[-1], self.mouseMoveLoc)
             )
-        elif self.editModes.selectItem and self._selectionRectItem:
-            message = "Select items"
-            self._selectionRectItem.setRect(
-                QRectF(self.mousePressLoc, self.mouseMoveLoc).normalized()
-            )
+
         if message:
             self.editorWindow.messageLine.setText(message)
 
@@ -277,22 +248,6 @@ class symbolScene(editorScene):
                 elif self.editModes.rotateItem:
                     self.editorWindow.messageLine.setText("Rotate item")
                     self.rotateSelectedItems(self.mousePressLoc)
-                elif self.editModes.selectItem and self._selectionRectItem:
-                    selectionMode = (Qt.ItemSelectionMode.IntersectsItemShape if
-                                     self.partialSelection else Qt.ItemSelectionMode.ContainsItemShape)
-                    selectionPath = QPainterPath()
-                    selectionPath.addRect(self._selectionRectItem.sceneBoundingRect())
-                    match modifiers:
-                        case Qt.KeyboardModifier.ShiftModifier:
-                            self.setSelectionArea(selectionPath,
-                                                  mode = selectionMode)
-                            self.removeItem(self._selectionRectItem)
-                            self._selectionRectItem = None
-                        case Qt.KeyboardModifier.ControlModifier:
-                            for item in (self.items(selectionPath, mode=selectionMode)):
-                                item.setSelected(not item.isSelected())
-                    self.removeItem(self._selectionRectItem)
-                    self._selectionRectItem = None
 
         except Exception as e:
             self.logger.error(f"Error in Mouse Release Event: {e} ")
@@ -850,3 +805,4 @@ class symbolScene(editorScene):
             if itemType in creators:
                 new_item = creators[itemType](item)
                 self.addUndoStack(new_item)
+

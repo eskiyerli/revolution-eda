@@ -319,8 +319,10 @@ class schematicView(editorView):
         self.viewRect = self.mapToScene(self.rect()).boundingRect().toRect()
         viewSnapLinesSet = {guideLineItem for guideLineItem in
             self.scene.items(self.viewRect) if isinstance(guideLineItem, net.guideLine)}
+
         self.removeSnapLines(viewSnapLinesSet)
         self.mergeSplitViewNets()
+
         super().mouseReleaseEvent(event)
 
 
@@ -388,6 +390,7 @@ class schematicView(editorView):
             self.scene._newText = None
             # Set the edit mode to select item
             self.scene.editModes.setMode("selectItem")
+
         super().keyPressEvent(event)
 
 

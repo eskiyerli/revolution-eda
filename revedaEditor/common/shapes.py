@@ -1356,46 +1356,39 @@ class schematicSymbol(symbolShape):
     def __repr__(self):
         return f"schematicSymbol({self._instanceName})"
 
-    def shape(self):
-        path = QPainterPath()
-        validTypes = (symbolRectangle, symbolLine, symbolArc, symbolCircle,
-                      symbolPolygon,)
-        shapes = [shapeItem for shapeItem in self.childItems() if
-                  isinstance(shapeItem, validTypes)]
-        # If there are shapes, create a bounding rectangle
-        if not shapes:
-            return path
+    # def shape(self):
+    #     path = QPainterPath()
+    #     validTypes = (symbolRectangle, symbolLine, symbolArc, symbolCircle,
+    #                   symbolPolygon,)
+    #     shapes = [shapeItem for shapeItem in self.childItems() if
+    #               isinstance(shapeItem, validTypes)]
+    #     # If there are shapes, create a bounding rectangle
+    #     if not shapes:
+    #         return path
 
-        bounding_rect = QRectF()
-        for shape in shapes:
-            bounding_rect = bounding_rect.united(shape.sceneBoundingRect())
+    #     bounding_rect = QRectF()
+    #     for shape in shapes:
+    #         bounding_rect = bounding_rect.united(shape.sceneBoundingRect())
 
-        # Add the rectangle to the path
-        path.addRect(self.mapRectFromScene(bounding_rect))
+    #     # Add the rectangle to the path
+    #     path.addRect(self.mapRectFromScene(bounding_rect))
 
-        return path
+    #     return path
 
-    # def itemChange(self, change: QGraphicsItem.GraphicsItemChange, value):
-    #     scene = self.scene()
-    #     if scene:
-    #         if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange:
-    #             return self._handlePositionChange(value)
-    #         elif change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
-    #             self._updateSnapLines()
-    #         elif change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
-    #             scene.selectedSymbol = self if value else None
-    #     return super().itemChange(change, value)
+
+
 
     def itemChange(self, change: QGraphicsItem.GraphicsItemChange, value):
         if not (scene := self.scene()):
             return super().itemChange(change, value)
-
-        if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange:
-            return self._handlePositionChange(value)
-        elif change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
-            self._updateSnapLines()
-        elif change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
+        if change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
             scene.selectedSymbol = self if value else None
+        elif change == QGraphicsItem.GraphicsItemChange.ItemPositionChange:
+            print('item position change')
+        #     return self._handlePositionChange(value)
+        # elif change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
+            print('item position has changed.')
+            self._updateSnapLines()
 
         return super().itemChange(change, value)
 
@@ -1467,7 +1460,8 @@ class schematicSymbol(symbolShape):
     def paint(self, painter, option, widget):
         if option.state & QStyle.State_Selected:
             painter.setPen(symlyr.selectedSymbolPen)
-            painter.drawRect(self.shape().boundingRect().toRect())
+            painter.drawRect(self.boundingRect())
+            self.setZValue(symlyr.selectedSymbolLayer.z)
         elif self._draft:
             painter.setPen(symlyr.draftPen)
 
@@ -1479,7 +1473,7 @@ class schematicSymbol(symbolShape):
                              self.boundingRect().bottomRight())
 
     def boundingRect(self):
-        return self.childrenBoundingRect()
+        return self.childrenBoundingRect().toRect()
 
     def findPinNetIndexTuples(self):
         """
@@ -1518,6 +1512,7 @@ class schematicSymbol(symbolShape):
         return pinNetTuples
 
     def mousePressEvent(self, event: QGraphicsSceneMouseEvent) -> None:
+
         # Check if the click is on any of the pins
         for pin in self._pins.values():
             if pin.contains(self.mapToItem(pin, event.pos())):
@@ -1528,7 +1523,7 @@ class schematicSymbol(symbolShape):
                 return  # Stop processing after handling pin click
         self._snapLines = None
         # If not on a pin, handle as normal
-        super().mousePressEvent(event)
+
 
     def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         super().mouseReleaseEvent(event)
@@ -1609,21 +1604,6 @@ class schematicSymbol(symbolShape):
                            for key in pinOrder.split(",")
                            if key.strip() in self._pins)
 
-    # @property
-    # def pins(self):
-    #     """
-    #     Returns a dictionary of pins, ordered by the pinOrder attribute if it exists.
-    #     """
-    #     pinOrder = self.symattrs.get("pinOrder")
-    #     if not pinOrder:
-    #         return self._pins
-    #     outputDict = OrderedDict()
-    #     for key in pinOrder.split(","):
-    #         key = key.strip()
-    #         if key in pinOrder:
-    #             if key in self._pins:
-    #                 outputDict[key] = self._pins[key]
-    #     return outputDict
 
     @property
     def shapes(self):
@@ -1681,32 +1661,7 @@ class schematicSymbol(symbolShape):
         for label in self.labels.values():
             label.setTransform(inverseTransform)
 
-    #
-    # @flipTuple.setter
-    # def flipTuple(self, flipState: Tuple[int, int]):
-    #     self.prepareGeometryChange()
-    #     # Get the current transformation
-    #     transform = self.transform()
-    #     # Apply the scaling
-    #     transform.scale(*flipState)
-    #     # Set the new transformation
-    #     self.setTransform(transform)
-    #     self._flipTuple = (transform.m11(), transform.m22())
-    #     inverseTransform, invertible = transform.inverted()
-    #     if invertible:
-    #         for label in self.labels.values():
-    #             label.setTransform(inverseTransform)
-    #             if self.flipTuple[0] < 0:  # Only shift if horizontally flipped
-    #                 textWidth = label.boundingRect().width()
-    #                 label.moveBy(textWidth, 0)
-    #
-    #         for pin in self._pins.values():
-    #             pin.pinNameItem.setTransform(inverseTransform)
-    #             if self.flipTuple[0] < 0:  # Only shift if horizontally flipped
-    #                 textWidth = pin.pinNameItem.boundingRect().width()
-    #                 pin.pinNameItem.moveBy(textWidth, 0)
-    #
-    #     self.update()
+
 
     @property
     def start(self):

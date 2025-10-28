@@ -22,10 +22,10 @@
 #    Licensor: Revolution Semiconductor (Registered in the Netherlands)
 
 from typing import List, Sequence
-from PySide6.QtCore import (QEvent, QPoint, QRectF, Qt, )
-from PySide6.QtGui import (QGuiApplication, QTransform,)
+from PySide6.QtCore import (QEvent, QPoint, QRectF, Qt )
+from PySide6.QtGui import (QGuiApplication, QTransform, QPainterPath, QPen, QColor)
 from PySide6.QtWidgets import (QGraphicsScene, QMenu, QGraphicsItem,
-                               QDialog,
+                               QDialog, QGraphicsRectItem,
                                QCompleter)
 from contextlib import contextmanager
 import time
@@ -71,6 +71,9 @@ class editorScene(QGraphicsScene):
         self._selectedItems = []
         self._selectedItemGroup = None
         self._groupItems = []
+        self._draftPen = QPen(Qt.DashLine)
+        self._draftPen.setColor(QColor(0, 150, 0))
+        self._draftPen.setWidth(self._snapDistance)
 
         # Initialize UI elements
         self.origin = QPoint(0, 0)
@@ -89,6 +92,7 @@ class editorScene(QGraphicsScene):
         self.readOnly = False
         self.installEventFilter(self)
         self.setMinimumRenderSize(2)
+
 
 
     def contextMenuEvent(self, event):
@@ -115,16 +119,67 @@ class editorScene(QGraphicsScene):
             elif self.editModes.panView:
                 self.centerViewOnPoint(self.mousePressLoc)
                 self.messageLine.setText("Pan View at mouse press position")
+                
+            elif self.editModes.selectItem:
+
+                self.clearSelection()
+                if (modifiers == Qt.KeyboardModifier.ShiftModifier or 
+                    modifiers == Qt.KeyboardModifier.ControlModifier):
+                    self._selectionRectItem = QGraphicsRectItem()
+                    self._selectionRectItem.setRect(
+                        QRectF(self.mousePressLoc.x(), self.mousePressLoc.y(), 0, 0)
+                    )
+                    self._selectionRectItem.setPen(self.draftPen)  # Use property
+                    self._selectionRectItem.setZValue(100)
+                    self.addItem(self._selectionRectItem)
+                else:
+                    selectedItems = self.items(self.mousePressLoc)
+                    for item in selectedItems:
+                        item.setSelected(True)
+                
+
+    def mouseMoveEvent(self, event):
+        super().mouseMoveEvent(event)
+        if self.editModes.selectItem and self._selectionRectItem:
+            self._selectionRectItem.setRect(
+                QRectF(self.mousePressLoc, self.mouseMoveLoc)
+            )
 
     def mouseReleaseEvent(self, event):
         super().mouseReleaseEvent(event)
         if event.button() == Qt.MouseButton.LeftButton:
+            modifiers = QGuiApplication.keyboardModifiers()
             self.mouseReleaseLoc = event.scenePos().toPoint()
             # modifiers = QGuiApplication.keyboardModifiers()
             if self.editModes.moveItem and self._selectedItemGroup:
                 self._groupItems = self._selectedItemGroup.childItems()
                 self.destroyItemGroup(self._selectedItemGroup)
                 self._selectedItemGroup = None
+            elif self.editModes.selectItem and self._selectionRectItem:
+                self._handleSelectionRect(modifiers)
+
+
+    def _handleSelectionRect(self, modifiers):
+        # default implementation of selection rectangle
+        self.clearSelection()
+        selectionMode = (
+            Qt.ItemSelectionMode.IntersectsItemShape
+            if self.partialSelection
+            else Qt.ItemSelectionMode.ContainsItemShape
+        )
+        selectionPath = QPainterPath()
+        selectionPath.addRect(self._selectionRectItem.sceneBoundingRect())
+        match modifiers:
+            case Qt.KeyboardModifier.ShiftModifier:
+                self.setSelectionArea(selectionPath, mode=selectionMode)
+            case Qt.KeyboardModifier.ControlModifier:
+                for item in self.items(selectionPath, mode=selectionMode):
+                    item.setSelected(not item.isSelected())
+            case _:
+                for item in self.items(selectionPath, mode=selectionMode):
+                    item.setSelected(True)
+        self.removeItem(self._selectionRectItem)
+        self._selectionRectItem = None
 
 
     def snapToBase(self, number, base):
@@ -401,3 +456,7 @@ class editorScene(QGraphicsScene):
         finally:
             end_time = time.perf_counter()
             self.logger.info(f"Total processing time: {end_time - start_time:.3f} seconds")
+
+    @property
+    def draftPen(self):
+        return self._draftPen
