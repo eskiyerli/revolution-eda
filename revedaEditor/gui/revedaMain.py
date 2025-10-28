@@ -114,9 +114,9 @@ class MainWindow(QMainWindow):
             # Set window size
             self.resize(self.WINDOW_SIZE)
 
-            # Position window at bottom of screen
-            screen = QApplication.primaryScreen().availableGeometry()
-            self.move(screen.x(), screen.bottom() - self.height())
+            # # Position window at bottom of screen
+            # screen = QApplication.primaryScreen().availableGeometry()
+            # self.move(screen.x(), screen.bottom() - self.height())
 
             # Create UI elements
             self._createActions()
@@ -502,8 +502,7 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def selectionChangedScene(self):
-        sender = self.sender()
-        self.sceneSelectionChanged.emit(sender)
+        self.sceneSelectionChanged.emit(self.sender())
 
     @Slot()
     def viewKeyPressed(self, key: int):

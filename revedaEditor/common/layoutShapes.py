@@ -101,7 +101,7 @@ class textureCache:
         # painter.setBrush(QBrush(color))
         # Create semi-transparent color (50% opacity)
         transparent_color = QColor(color)
-        transparent_color.setAlpha(64)  # 128 is 50% opacity (range is 0-255)
+        transparent_color.setAlpha(230)  # 220 is 90% opacity (range is 0-255)
         painter.setBrush(QBrush(transparent_color))
 
         # Draw solid rectangles for each pixel that should be colored
@@ -202,15 +202,31 @@ class layoutShape(QGraphicsItem):
         self._stretchPen = cached['stretchPen']
         self._stretchBrush = cached['stretchBrush']
 
+    # def _updateTransformedBrush(self, brush: QBrush, scale: float):
+    #     """Update transformed brush only when needed"""
+    #     # Round scale to reduce cache misses and artifacts
+    #     rounded_scale = round(scale, 2)
+    #
+    #     if self._transformedBrush is None or self._lastScale != rounded_scale:
+    #         self._transformedBrush = QBrush(brush)
+    #         # Use smooth scaling with proper filtering
+    #         transform = QTransform().scale(1 / rounded_scale,
+    #                                        1 / rounded_scale)
+    #         self._transformedBrush.setTransform(transform)
+    #         self._lastScale = rounded_scale
     def _updateTransformedBrush(self, brush: QBrush, scale: float):
         """Update transformed brush only when needed"""
-        if self._transformedBrush is None:
-            self._transformedBrush = QBrush(brush.color())
-            self._transformedBrush.setTexture(brush.texture())
+        rounded_scale = round(scale, 2)
 
-        if self._lastScale != scale:
-            self._lastScale = scale
-            self._transformedBrush.setTransform(QTransform().scale(0.5 / scale, 0.5 / scale))
+        if self._transformedBrush is None or self._lastScale != rounded_scale:
+            if self._transformedBrush is None:
+                self._transformedBrush = QBrush(brush)
+            else:
+                self._transformedBrush = brush
+
+            transform = QTransform().scale(1 / rounded_scale, 1 / rounded_scale)
+            self._transformedBrush.setTransform(transform)
+            self._lastScale = rounded_scale
 
     @property
     def pen(self):
