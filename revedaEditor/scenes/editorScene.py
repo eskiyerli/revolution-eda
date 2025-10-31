@@ -113,6 +113,7 @@ class editorScene(QGraphicsScene):
             self.mousePressLoc = event.scenePos().toPoint()
             selectedItems = self.selectedItems()
             if self.editModes.moveItem and selectedItems:
+                # store initial positions for undo
                 self._selectedItemGroup = self.createItemGroup(selectedItems)
                 self._selectedItemGroup.setFlag(QGraphicsItem.ItemIsMovable)
                 self.messageLine.setText("Move Item(s)")
@@ -155,6 +156,11 @@ class editorScene(QGraphicsScene):
                 self._groupItems = self._selectedItemGroup.childItems()
                 self.destroyItemGroup(self._selectedItemGroup)
                 self._selectedItemGroup = None
+                # # Add undo command
+                # if hasattr(self, '_initialPositions'):
+                #     self.moveShapesUndoStack(self._groupItems, self._initialPositions, self._finalPositions)
+                #     del self._initialPositions
+                #     del self._finalPositions
             elif self.editModes.selectItem and self._selectionRectItem:
                 self._handleSelectionRect(modifiers)
 
@@ -244,32 +250,6 @@ class editorScene(QGraphicsScene):
             return False
 
         return super().eventFilter(source, event)
-    # def eventFilter(self, source, event):
-    #     """
-    #     Filter mouse events to snap them to background grid points.
-    #
-    #     Args:
-    #         source: The object that triggered the event
-    #         event: The event to be filtered
-    #
-    #     Returns:
-    #         bool: True if event should be filtered out, False if it should be processed
-    #     """
-    #     if self.readOnly:
-    #         return True
-    #
-    #     MOUSE_EVENTS = {
-    #         QEvent.GraphicsSceneMouseMove,
-    #         QEvent.GraphicsSceneMousePress,
-    #         QEvent.GraphicsSceneMouseRelease
-    #     }
-    #
-    #     if event.type() in MOUSE_EVENTS:
-    #         snappedPos = self.snapToGrid(event.scenePos(), self.snapTuple)
-    #         event.setScenePos(snappedPos.toPointF())
-    #         return False
-    #
-    #     return super().eventFilter(source, event)
 
     def copySelectedItems(self):
         '''

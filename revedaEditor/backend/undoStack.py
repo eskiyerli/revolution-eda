@@ -225,12 +225,12 @@ class undoMoveShapesCommand(QUndoCommand):
 
     def undo(self) -> None:
         for shape in self._shapes:
-            shape.setPos(self._startPos + shape.offset)
+            shape.setPos(self._startPos[shape])
 
 
     def redo(self) -> None:
         for shape in self._shapes:
-            shape.setPos(self._endPos + shape.offset)
+            shape.setPos(self._endPos[shape])
 
 
 class undoMoveByCommand(QUndoCommand):
