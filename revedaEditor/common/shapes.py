@@ -1329,10 +1329,10 @@ class schematicSymbol(symbolShape):
             str, Union[QRect, QRectF]] = dict()  # pinName: pinRect
         self.pinNetMap: dict[str, str] = dict()  # pinName: netName
         self._pinNetIndexTupleSet: set[pinNetIndexTuple] = set()
-        self._snapLines: dict[symbolPin, set[net.schematicNet]] = dict()
-        self._shapeRectF = QRectF(0, 0, 0, 0)
-        self._borderRect = QRect(0, 0, 0, 0)
-
+        self._snapLines: dict[symbolPin, set[net.guideLine]] = dict()
+        # self._shapeRectF = QRectF(0, 0, 0, 0)
+        # self._borderRect = QRect(0, 0, 0, 0)
+        self._pinNetMapDict: dict[symbolPin, set[net.schematicNet]]=dict()
         self._setup_graphics()
         self.addShapes()
         self._start = self.childrenBoundingRect().bottomLeft()
@@ -1356,90 +1356,77 @@ class schematicSymbol(symbolShape):
     def __repr__(self):
         return f"schematicSymbol({self._instanceName})"
 
-    # def shape(self):
-    #     path = QPainterPath()
-    #     validTypes = (symbolRectangle, symbolLine, symbolArc, symbolCircle,
-    #                   symbolPolygon,)
-    #     shapes = [shapeItem for shapeItem in self.childItems() if
-    #               isinstance(shapeItem, validTypes)]
-    #     # If there are shapes, create a bounding rectangle
-    #     if not shapes:
-    #         return path
+    def shape(self):
+        path = QPainterPath()
+        validTypes = (symbolRectangle, symbolLine, symbolArc, symbolCircle,
+                      symbolPolygon)
 
-    #     bounding_rect = QRectF()
-    #     for shape in shapes:
-    #         bounding_rect = bounding_rect.united(shape.sceneBoundingRect())
+        bounding_rect = QRectF()
+        for item in self.childItems():
+            if isinstance(item, validTypes):
+                bounding_rect = bounding_rect.united(item.sceneBoundingRect())
 
-    #     # Add the rectangle to the path
-    #     path.addRect(self.mapRectFromScene(bounding_rect))
+        if not bounding_rect.isNull():
+            path.addRect(self.mapRectFromScene(bounding_rect))
 
-    #     return path
-
-
+        return path
 
 
     def itemChange(self, change: QGraphicsItem.GraphicsItemChange, value):
         if not (scene := self.scene()):
             return super().itemChange(change, value)
-        if change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
-            scene.selectedSymbol = self if value else None
-        elif change == QGraphicsItem.GraphicsItemChange.ItemPositionChange:
-            print('item position change')
-        #     return self._handlePositionChange(value)
-        # elif change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
-            print('item position has changed.')
+
+        if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange:
+            return self._handlePositionChange(value)
+        elif change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
             self._updateSnapLines()
+        elif change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
+            scene.selectedSymbol = self if value else None
 
         return super().itemChange(change, value)
 
     def _handlePositionChange(self, newPos: QPointF) -> QPointF:
-        if self._snapLines is None:
+        if self._snapLines == dict():
             self._initializeSnapLines()
         else:
             self._updateSnapLines()
         return newPos
 
     def _initializeSnapLines(self):
-        self._snapLines: Dict[QGraphicsItem, Set[net.guideLine]] = {}
-        pin_net_tuples = self.findPinNetIndexTuples()
+        self._snapLines: dict[symbolPin, set[net.guideLine]] = dict()
+        scene = self.scene()
+        if scene:
+            sceneGrid = scene.snapTuple[0]
+            for pinItem, netSet in self._pinNetMapDict.items():
+                if not netSet:
+                    continue
+                snapLinesSet: set[net.guideLine] = set()  # Move outside the loop
+                startPoint = pinItem.mapToScene(pinItem.start).toPoint()
+                for netItem in netSet:
+                    endPoint = None
+                    for point in netItem.sceneEndPoints:
+                        if (startPoint - point).manhattanLength() < sceneGrid / 2:
+                            endPoint = netItem.sceneOtherEnd(point)
+                            break
+                    if endPoint:
+                        snapLine = net.guideLine(startPoint, endPoint)
+                        snapLine.inherit(netItem)
+                        snapLinesSet.add(snapLine)
+                        scene.removeItem(netItem)
+                        scene.addItem(snapLine)
 
-        if not pin_net_tuples:
-            return None
+                self._snapLines[pinItem] = snapLinesSet
 
-        scene = self.scene()  # Cache scene reference
-
-        # Pre-allocate sets for all pins
-        uniquePins = {item.pin for item in pin_net_tuples}
-        self._snapLines.update({pin: set() for pin in uniquePins})
-
-        # Batch process all items
-        for item in pin_net_tuples:
-            startPoint = item.pin.mapToScene(item.pin.start).toPoint()
-            endPoint = item.net.sceneEndPoints[item.netEndIndex - 1]
-
-            if startPoint == endPoint:
-                scene.removeItem(item.net)
-                continue
-
-            # Create and configure snap line
-            snapLine = net.guideLine(startPoint, endPoint)
-            snapLine.inherit(item.net)
-
-            # Batch scene operations
-            scene.addItem(snapLine)
-            scene.removeItem(item.net)
-
-            # Add to existing set
-            self._snapLines[item.pin].add(snapLine)
 
     def _updateSnapLines(self):
-        if self._snapLines is None:
+        pass
+        if self._snapLines == dict():
             return
-
         for pin, snapLinesSet in self._snapLines.items():
             pin_start = pin.mapToScene(pin.start)
-            for snapLine in list(
-                    snapLinesSet):  # Create a copy to safely modify during iteration
+            if not snapLinesSet:
+                continue
+            for snapLine in list(snapLinesSet):
                 current_end = snapLine.line().p2()
                 new_line = QLineF(pin_start, current_end)
 
@@ -1453,15 +1440,11 @@ class schematicSymbol(symbolShape):
                     self.scene().removeItem(snapLine)
                     snapLinesSet.remove(snapLine)
 
-        # Clean up empty sets
-        self._snapLines = {pin: lines for pin, lines in self._snapLines.items() if
-                           lines}
 
     def paint(self, painter, option, widget):
         if option.state & QStyle.State_Selected:
             painter.setPen(symlyr.selectedSymbolPen)
-            painter.drawRect(self.boundingRect())
-            self.setZValue(symlyr.selectedSymbolLayer.z)
+            painter.drawRect(self.shape().boundingRect().toRect())
         elif self._draft:
             painter.setPen(symlyr.draftPen)
 
@@ -1473,60 +1456,44 @@ class schematicSymbol(symbolShape):
                              self.boundingRect().bottomRight())
 
     def boundingRect(self):
-        return self.childrenBoundingRect().toRect()
+        return self.childrenBoundingRect()
 
-    def findPinNetIndexTuples(self):
-        """
-        Find all pin-net-index tuples in the schematic.
-
-        Returns:
-            set: A set of pinNetIndexTuple objects representing pin-net connections.
-        """
-
-        def findConnectionIndex(pinRect, netEndpoints):
-            """Helper function to find the connection index between a pin and net endpoints."""
-            for index, endpoint in enumerate(netEndpoints):
-                if pinRect.contains(endpoint):
-                    return index
-            return None
-
-        pinNetTuples = set()
-        scene = self.scene()
-
-        for pin in self._pins.values():
-            pinRect = pin.sceneBoundingRect()
-
-            # Get all schematic nets in pin's area
-            netItems = [item for item in scene.items(pinRect) if
-                        isinstance(item, net.schematicNet)]
-
-            # Process each net
-            for netItem in netItems:
-                connectionIndex = findConnectionIndex(pinRect,
-                                                      netItem.sceneEndPoints)
-
-                if connectionIndex is not None:
-                    pinNetTuples.add(
-                        pinNetIndexTuple(pin, netItem, connectionIndex))
-
-        return pinNetTuples
 
     def mousePressEvent(self, event: QGraphicsSceneMouseEvent) -> None:
+        self._pinNetMapDict: dict[symbolPin, set[net.schematicNet]] = dict()
+        for pinItem in self._pins.values():
+            if pinItem.contains(self.mapToItem(pinItem, event.pos())):
+                self.scene().selectedSymbolPin = pinItem
+                pinItem.highlighted = True
+                pinItem.mousePressEvent(event)
+                return
+            self._pinNetMapDict[pinItem] = {
+                netItem for netItem in
+                pinItem.collidingItems(Qt.IntersectsItemBoundingRect)
+                if isinstance(netItem, net.schematicNet)
+            }
 
-        # Check if the click is on any of the pins
-        for pin in self._pins.values():
-            if pin.contains(self.mapToItem(pin, event.pos())):
-                self.scene().selectedSymbolPin = pin
-                pin.highlighted = True
-                # You can handle the pin click here, or pass the event to the pin
-                pin.mousePressEvent(event)
-                return  # Stop processing after handling pin click
-        self._snapLines = None
         # If not on a pin, handle as normal
-
+        super().mousePressEvent(event)
 
     def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         super().mouseReleaseEvent(event)
+        if self._snapLines and self.scene():
+            try:
+                scene = self.scene()
+                for guideLinesSet in self._snapLines.values():
+                    for guideLine in guideLinesSet:
+                        newNets = scene.addStretchWires(guideLine.line().p1().toPoint(),
+                                                        guideLine.line().p2().toPoint())
+                        for netItem in newNets:
+                            scene.addItem(netItem)
+                            netItem.inherit(guideLine)
+                        scene.removeItem(guideLine)
+                self._snapLines = dict()
+            except Exception as e:
+                # Log error but continue processing other guidelines
+                scene.logger.error(f"Error processing snap lines: {e}")
+
 
     @property
     def libraryName(self):
@@ -1591,19 +1558,22 @@ class schematicSymbol(symbolShape):
     def labels(self):
         return self._labels  # dictionary
 
-    @property
+    @cached_property
     def pins(self):
         """
         Returns a dictionary of pins, ordered by the pinOrder attribute if it exists.
         """
+
         pinOrder = self.symattrs.get("pinOrder")
         if not pinOrder:
             return self._pins
-
-        return OrderedDict((key.strip(), self._pins[key.strip()])
-                           for key in pinOrder.split(",")
-                           if key.strip() in self._pins)
-
+        outputDict = OrderedDict()
+        for key in pinOrder.split(", "):
+            key = key.strip()
+            if key in pinOrder:
+                if key in self._pins:
+                    outputDict[key] = self._pins[key]
+        return outputDict
 
     @property
     def shapes(self):
@@ -1661,7 +1631,32 @@ class schematicSymbol(symbolShape):
         for label in self.labels.values():
             label.setTransform(inverseTransform)
 
-
+    #
+    # @flipTuple.setter
+    # def flipTuple(self, flipState: Tuple[int, int]):
+    #     self.prepareGeometryChange()
+    #     # Get the current transformation
+    #     transform = self.transform()
+    #     # Apply the scaling
+    #     transform.scale(*flipState)
+    #     # Set the new transformation
+    #     self.setTransform(transform)
+    #     self._flipTuple = (transform.m11(), transform.m22())
+    #     inverseTransform, invertible = transform.inverted()
+    #     if invertible:
+    #         for label in self.labels.values():
+    #             label.setTransform(inverseTransform)
+    #             if self.flipTuple[0] < 0:  # Only shift if horizontally flipped
+    #                 textWidth = label.boundingRect().width()
+    #                 label.moveBy(textWidth, 0)
+    #
+    #         for pin in self._pins.values():
+    #             pin.pinNameItem.setTransform(inverseTransform)
+    #             if self.flipTuple[0] < 0:  # Only shift if horizontally flipped
+    #                 textWidth = pin.pinNameItem.boundingRect().width()
+    #                 pin.pinNameItem.moveBy(textWidth, 0)
+    #
+    #     self.update()
 
     @property
     def start(self):
@@ -1865,7 +1860,7 @@ class schematicPin(symbolShape):
                     snapLine.mapToScene(snapLine.line().p2()).toPoint(), )
                 if lines:
                     for line in lines:
-                        line.inheritGuideLine(snapLine)
+                        line.inherit(snapLine)
                     self.scene().addListUndoStack(lines)
                 self.scene().removeItem(snapLine)
         self._snapLines = dict()

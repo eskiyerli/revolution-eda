@@ -827,15 +827,6 @@ class xyceNetlist:
         """
         try:
             spiceNetlistLine = self.createXyceSymbolLine(elementSymbol)
-            # spiceNetlistLine = elementSymbol.symattrs["SpiceNetlistLine"].strip()
-            # for labelItem in elementSymbol.labels.values():
-            #     if labelItem.labelName in spiceNetlistLine:
-            #         spiceNetlistLine = spiceNetlistLine.replace(labelItem.labelName, labelItem.labelValue)
-            # pinList = elementSymbol.symattrs.get("pinOrder", ", ").replace(",", " ")
-            # spiceNetlistLine = (spiceNetlistLine.replace("%pinOrder", pinList) + "\n")
-            # for attrb, value in elementSymbol.symattrs.items():
-            #     if f"%{attrb}" in spiceNetlistLine:
-            #         spiceNetlistLine = spiceNetlistLine.replace(f"%{attrb}", value)
 
             self.includeLines.add(
                 elementSymbol.symattrs.get("incLine", "* no include line is found for {item.cellName}").strip())

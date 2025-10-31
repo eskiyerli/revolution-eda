@@ -317,10 +317,10 @@ class schematicView(editorView):
 
     def mouseReleaseEvent(self, event):
         self.viewRect = self.mapToScene(self.rect()).boundingRect().toRect()
-        viewSnapLinesSet = {guideLineItem for guideLineItem in
-            self.scene.items(self.viewRect) if isinstance(guideLineItem, net.guideLine)}
-
-        self.removeSnapLines(viewSnapLinesSet)
+        # viewSnapLinesSet = {guideLineItem for guideLineItem in
+        #     self.scene.items(self.viewRect) if isinstance(guideLineItem, net.guideLine)}
+        #
+        # self.removeSnapLines(viewSnapLinesSet)
         self.mergeSplitViewNets()
 
         super().mouseReleaseEvent(event)
@@ -342,7 +342,7 @@ class schematicView(editorView):
 
             if lines != []:
                 for line in lines:
-                    line.inheritGuideLine(snapLine)
+                    line.inherit(snapLine)
                     undoCommandList.append(us.addShapeUndo(self.scene, line))
                 self.scene.addUndoMacroStack(undoCommandList,
                                              "Stretch Wires")  # undoCommandList.append(us.addShapesUndo(self.scene, lines))

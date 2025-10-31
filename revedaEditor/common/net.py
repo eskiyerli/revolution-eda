@@ -115,25 +115,6 @@ class schematicNet(QGraphicsItem):
 
     @draftLine.setter
     def draftLine(self, line: QLineF):
-        # self.prepareGeometryChange()
-        # # Invalidate cached hash when line changes
-        # if hasattr(self, '_hash_value'):
-        #     del self._hash_value
-        # self._draftLine = line
-        # self._transformOriginPoint = line.p1()
-        # match self._mode:
-        #     case 0:
-        #         self._angle = 90 * math.floor(
-        #             ((self._draftLine.angle() + 45) % 360) / 90
-        #         )
-        #     case 1:
-        #         self._angle = 45 * math.floor(
-        #             ((self._draftLine.angle() + 22.5) % 360) / 45
-        #         )
-        #     case 2:
-        #         self._angle = self._draftLine.angle()
-        # self._draftLine.setAngle(0)
-        # self.setTransformOriginPoint(self._transformOriginPoint)
         self.prepareGeometryChange()
         self.__dict__.pop('_hash_value', None)
         self._draftLine = line
@@ -155,7 +136,6 @@ class schematicNet(QGraphicsItem):
         extract_rect = self._extractRect
         self._shapeRect = extract_rect.adjusted(-2, -2, 2, 2)
         self._boundingRect = extract_rect.adjusted(-10, -10, 10, 10)
-
         self.setRotation(-self._angle)
 
     @cached_property
@@ -184,7 +164,6 @@ class schematicNet(QGraphicsItem):
         perp_x = -direction_y * half_width
         perp_y = direction_x * half_width
 
-        # Create points in a more direct way
         point1 = QPoint(
             round(p1.x() + perp_x),  # Using round() instead of int() for better precision
             round(p1.y() + perp_y)
@@ -424,7 +403,7 @@ class schematicNet(QGraphicsItem):
             self.nameStrength = netNameStrengthEnum.NONAME
 
 
-    def inheritGuideLine(self, otherNet: Type["guideLine"]):
+    def inherit(self, otherNet):
         self.name = otherNet.name
         self.nameStrength = otherNet.nameStrength
 
@@ -464,6 +443,15 @@ class schematicNet(QGraphicsItem):
     @property
     def endPoints(self):
         return [self._draftLine.p1().toPoint(), self._draftLine.p2().toPoint()]
+
+    def otherEnd(self, point: QPoint) -> QPoint:
+        if point == self._draftLine.p1().toPoint():
+            return self._draftLine.p2().toPoint()
+        else:
+            return self._draftLine.p1().toPoint()
+
+    def sceneOtherEnd(self, point: QPoint) -> QPoint:
+        return self.mapToScene(self.otherEnd(point)).toPoint()
 
     @property
     def sceneEndPoints(self) -> List[QPoint]:
@@ -782,7 +770,7 @@ class guideLine(QGraphicsLineItem):
         assert isinstance(value, netNameStrengthEnum)
         self._nameStrength = value
 
-    def inherit(self, otherNet: List[schematicNet]):
+    def inherit(self, otherNet: schematicNet):
         """
         This method is used to carry the name information of the original net
         to stretch net.

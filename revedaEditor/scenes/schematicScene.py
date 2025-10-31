@@ -189,15 +189,15 @@ class schematicScene(editorScene):
     def mousePressEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         super().mousePressEvent(event)
 
-    def mouseMoveEvent(self, mouseEvent: QGraphicsSceneMouseEvent) -> None:
+    def mouseMoveEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         """
         Handle mouse move event.
 
         :param mouseEvent: QGraphicsSceneMouseEvent instance
         """
-        super().mouseMoveEvent(mouseEvent)
+        super().mouseMoveEvent(event)
         message = ""
-        self.mouseMoveLoc = mouseEvent.scenePos().toPoint()
+        self.mouseMoveLoc = event.scenePos().toPoint()
         if self._newInstance and self.editModes.addInstance:
             message = "Place instance"
             self._newInstance.setPos(self.mouseMoveLoc)
@@ -244,18 +244,18 @@ class schematicScene(editorScene):
         if message:
             self.messageLine.setText(message)
 
-    def mouseReleaseEvent(self, mouseEvent: QGraphicsSceneMouseEvent) -> None:
+    def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         """
         Handle mouse release event.
 
         :param mouseEvent: QGraphicsSceneMouseEvent instance
         """
         try:
-            self.mouseReleaseLoc = mouseEvent.scenePos().toPoint()
-            self._handleMouseRelease(self.mouseReleaseLoc, mouseEvent.button())
+            self.mouseReleaseLoc = event.scenePos().toPoint()
+            self._handleMouseRelease(self.mouseReleaseLoc, event.button())
         except Exception as e:
             self.logger.error(f"Mouse release error: {e}")
-        super().mouseReleaseEvent(mouseEvent)
+        super().mouseReleaseEvent(event)
 
     def _handleMouseRelease(
         self, mouseReleaseLoc: QPoint, button: Qt.MouseButton
@@ -458,33 +458,6 @@ class schematicScene(editorScene):
             if splitDone:
                 self._updateNets({inputNet} - splitOutputNets,
                                  splitOutputNets - {inputNet}, inputNet)
-
-    # def mergeSplitNets(self, inputNet: snet.schematicNet):
-    #     merged, outputNet, processedNets = self.mergeNets(inputNet)
-    #     if merged:
-    #         splitDone, splitOutputNets = self.splitInputNet(outputNet)
-    #         if splitDone:
-    #             changedNetsSet = processedNets - splitOutputNets
-    #             for netItem in changedNetsSet:
-    #                 self.removeItem(netItem)
-    #             newNetsSet = splitOutputNets - processedNets
-    #             for netItem in newNetsSet:
-    #                 self.addItem(netItem)
-    #                 netItem.mergeNetName(outputNet)
-    #         else:
-    #             for netItem in processedNets:
-    #                 self.removeItem(netItem)
-    #             self.addItem(outputNet)
-    #     else:  # nothing merged
-    #         splitDone, splitOutputNets = self.splitInputNet(inputNet)
-    #         if splitDone:
-    #             changedNetsSet = {inputNet} - splitOutputNets
-    #             for netItem in changedNetsSet:
-    #                 self.removeItem(netItem)
-    #             newNetsSet = splitOutputNets - {inputNet}
-    #             for netItem in newNetsSet:
-    #                 self.addItem(netItem)
-    #                 netItem.mergeNetName(inputNet)
 
     def mergeNets(
             self, inputNet: snet.schematicNet
