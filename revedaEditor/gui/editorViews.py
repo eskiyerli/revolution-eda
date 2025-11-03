@@ -34,8 +34,7 @@ from PySide6.QtOpenGLWidgets import QOpenGLWidget
 from revedaEditor.backend.pdkPaths import importPDKModule
 
 schlyr = importPDKModule('schLayers')
-
-
+fabproc = importPDKModule('process')
 
 class editorView(QGraphicsView):
     """
@@ -399,12 +398,40 @@ class layoutView(editorView):
         self.scene = scene
         self.parent = parent
         super().__init__(self.scene, self.parent)
-        self.setOptimizationFlag(QGraphicsView.DontAdjustForAntialiasing)
-        self.setOptimizationFlag(QGraphicsView.DontSavePainterState)
         # Create and set OpenGL widget as viewport
         glWidget = QOpenGLWidget()
         self.setViewport(glWidget)
 
+
+
+    def findCoords(self):
+        """
+        Calculate the coordinates for drawing lines or points on a grid.
+
+        Returns:
+            tuple: A tuple containing the x and y coordinates for drawing the lines or points.
+        """
+        x_coords = range(self._left, self._right, self.majorGrid)
+        y_coords = range(self._top, self._bottom, self.majorGrid)
+
+        if 160 <= len(x_coords) < 320:
+            # Create a range of x and y coordinates for drawing the lines
+            x_coords = range(self._left, self._right, int(self.majorGrid * fabproc.dbu * 0.5))
+            y_coords = range(self._top, self._bottom, int(self.majorGrid * fabproc.dbu * 0.5))
+        elif 320 <= len(x_coords) < 640:
+            x_coords = range(self._left, self._right, int(self.majorGrid * fabproc.dbu * 2))
+            y_coords = range(self._top, self._bottom, int(self.majorGrid * fabproc.dbu * 2))
+        elif 640 <= len(x_coords) < 1280:
+            x_coords = range(self._left, self._right, int(self.majorGrid * fabproc.dbu * 4))
+            y_coords = range(self._top, self._bottom, int(self.majorGrid * fabproc.dbu * 4))
+        elif 1280 <= len(x_coords) < 2560:
+            x_coords = range(self._left, self._right, int(self.majorGrid * fabproc.dbu * 4))
+            y_coords = range(self._top, self._bottom, int(self.majorGrid * fabproc.dbu * 4))
+        elif len(x_coords) >= 2560:  # grid dots are too small to see
+            x_coords = range(self._left, self._right, int(self.majorGrid * fabproc.dbu * 4))
+            y_coords = range(self._top, self._bottom, int(self.majorGrid * fabproc.dbu * 4))
+
+        return x_coords, y_coords
     def keyPressEvent(self, event: QKeyEvent):
         if event.key() == Qt.Key_Escape:
 

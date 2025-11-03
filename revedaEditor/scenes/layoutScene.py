@@ -86,6 +86,27 @@ class layoutScene(editorScene):
                                                   selectPin=False,
                                                   selectLabel=False,
                                                   selectText=False, )
+        self.messages = {'selectItem': 'Select Item',
+                         'deleteItem': 'Delete Item',
+                         'moveItem': 'Move Item',
+                         'copyItem': 'Copy Item',
+                         'rotateItem': 'Rotate Item',
+                         'changeOrigin': 'Change Origin',
+                         'panView': 'Pan View at mouse Press Position',
+                         'drawPath': 'Draw Path',
+                         'drawPin': 'Draw Pin',
+                         'drawArc': 'Draw Arc',
+                         'drawPolygon': 'Draw Polygon',
+                         'addLabel': 'Add Label',
+                         'addVia': 'Add Via',
+                         'drawRect': 'Draw Rect',
+                         'drawLine': 'Draw Line',
+                         'drawCircle': 'Draw Circle',
+                         'drawRuler': 'Draw Ruler',
+                         'addInstance': 'Add Instance',
+                         'chopShape': 'Chop Shape',
+                         'stretchItem': 'Stretch Item'
+                         }
         self.newInstance = None
         self.layoutInstanceTuple = None
         self._scale = fabproc.dbu
@@ -118,6 +139,7 @@ class layoutScene(editorScene):
         self._draftPen = QPen(Qt.DashLine)
         self._draftPen.setColor(QColor(0, 150, 0))
         self._draftPen.setWidth(int(fabproc.dbu/10))
+        self.setMinimumRenderSize(1)
 
     @property
     def drawMode(self):
@@ -178,8 +200,6 @@ class layoutScene(editorScene):
         self.mouseMoveLoc = mouse_event.scenePos().toPoint()
         # Call the parent class's mouseMoveEvent method
         super().mouseMoveEvent(mouse_event)
-        # Get the keyboard modifiers
-        # modifiers = QGuiApplication.keyboardModifiers()
 
         # Handle drawing path mode
         if self.editModes.drawPath and self._newPath is not None:
@@ -217,40 +237,44 @@ class layoutScene(editorScene):
         # Show the cursor position in the status line
         self.statusLine.showMessage(
             f"Cursor Position: ({cursorPosition.x():.3f}, {cursorPosition.y():.3f})")
+        self.messageLine.setText(self.messages[self.editModes.mode()])
 
     def mouseReleaseEvent(self, mouse_event: QGraphicsSceneMouseEvent) -> None:
         super().mouseReleaseEvent(mouse_event)
-        self.mouseReleaseLoc = mouse_event.scenePos().toPoint()
-        # modifiers = QGuiApplication.keyboardModifiers()
+        if mouse_event.button() == Qt.LeftButton:
+            self.mouseReleaseLoc = mouse_event.scenePos().toPoint()
+            modifiers = QGuiApplication.keyboardModifiers()
+            if self.editModes.selectItem and self._selectionRectItem:
+                self._handleSelectionRect(modifiers)
+            else:
+                self._handleMouseRelease(self.mouseReleaseLoc, mouse_event.button())
+
+    def _handleMouseRelease(self, mousePos: QPoint, button: Qt.MouseButton) -> None:
         try:
-            if mouse_event.button() == Qt.LeftButton:
-                if self.editModes.drawPath:
-                    self.drawLayoutPath()
-                elif self.editModes.drawRect:
-                    self.drawLayoutRect()
-                elif self.editModes.drawPin:
-                    self.drawLayoutPin()
-                elif self.editModes.addLabel:
-                    self.addLayoutLabel()
-                elif self.editModes.addInstance:
-                    self.addLayoutInstance()
-                elif self.editModes.drawPolygon:
-                    self.drawLayoutPolygon()
-                elif self.editModes.drawRuler:
-                    self.drawLayoutRuler()
-                elif self.editModes.addVia:
-                    self.addLayoutViaArray()
-                elif self.editModes.changeOrigin:
-                    self.origin = self.mouseReleaseLoc
-                elif self.editModes.chopShape:
-                    self.chopShape()
-                elif self.editModes.rotateItem:
-                    self.editorWindow.messageLine.setText("Rotate item")
-                    if self.selectedItems():
-                        # Rotate selected items
-                        self.rotateSelectedItems(self.mouseReleaseLoc)
-
-
+            if self.editModes.drawPath:
+                self.drawLayoutPath()
+            elif self.editModes.drawRect:
+                self.drawLayoutRect()
+            elif self.editModes.drawPin:
+                self.drawLayoutPin()
+            elif self.editModes.addLabel:
+                self.addLayoutLabel()
+            elif self.editModes.addInstance:
+                self.addLayoutInstance()
+            elif self.editModes.drawPolygon:
+                self.drawLayoutPolygon()
+            elif self.editModes.drawRuler:
+                self.drawLayoutRuler()
+            elif self.editModes.addVia:
+                self.addLayoutViaArray()
+            elif self.editModes.changeOrigin:
+                self.origin = mousePos
+            elif self.editModes.chopShape:
+                self.chopShape()
+            elif self.editModes.rotateItem:
+                self.editorWindow.messageLine.setText("Rotate item")
+                if self.selectedItems():
+                    self.rotateSelectedItems(mousePos)
         except Exception as e:
             self.logger.error(f"mouse release error: {e}")
 

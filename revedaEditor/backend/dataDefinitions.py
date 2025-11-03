@@ -78,6 +78,11 @@ class editModes:
             self.__dict__[key] = False
         self.__dict__[attribute] = True
 
+    def mode(self):
+        for key, value in self.__dict__.items():
+            if value:
+                return key
+
 
 @dataclass
 class symbolModes(editModes):

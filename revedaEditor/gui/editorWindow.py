@@ -38,7 +38,7 @@ import revedaEditor.backend.libraryModelView as lmview
 import revedaEditor.backend.libBackEnd as libb
 import revedaEditor.gui.helpBrowser as hlp
 import revedaEditor.gui.propertyDialogues as pdlg
-import revedaEditor.resources.resources # this imports the Qt resources file
+import revedaEditor.resources.resources # noqa: F401
 from revedaEditor.gui.startThread import startThread
 
 
@@ -593,6 +593,8 @@ class editorWindow(QMainWindow):
     def deleteClick(self, s):
         self.centralW.scene.editModes.setMode("deleteItem")
         self.centralW.scene.deleteSelectedItems()
+        self.messageLine.setText(self.centralW.scene.messages[
+                                     self.centralW.scene.editModes.mode()])
 
     def selectAllClick(self):
         self.centralW.scene.selectAll()
@@ -601,25 +603,31 @@ class editorWindow(QMainWindow):
         self.centralW.scene.deselectAll()
 
     def stretchClick(self, s):
-        self.centralW.scene.editModes.setMode("stretchItem")
-        self.centralW.scene.stretchSelectedItems()
+       self.centralW.scene.editModes.setMode("stretchItem")
+       self.messageLine.setText(self.centralW.scene.messages[
+                                    self.centralW.scene.editModes.mode()])
+       self.centralW.scene.stretchSelectedItems()
 
     def moveClick(self):
-        self.messageLine.setText('Move Selected Items')
         self.centralW.scene.editModes.setMode("moveItem")
+        self.messageLine.setText(self.centralW.scene.messages[
+                                     self.centralW.scene.editModes.mode()])
 
     def moveByClick(self):
         self.centralW.scene.editModes.setMode("moveItem")
-        self.messageLine.setText('Enter move distances.')
+        self.messageLine.setText(self.centralW.scene.messages[
+                                     self.centralW.scene.editModes.mode()])
         self.centralW.scene.moveBySelectedItems()
 
     def rotateClick(self):
-        self.messageLine.setText('Rotate Selected Items')
         self.centralW.scene.editModes.setMode("rotateItem")
+        self.messageLine.setText(self.centralW.scene.messages[
+                                     self.centralW.scene.editModes.mode()])
 
     def panView(self):
         self.centralW.scene.editModes.setMode("panView")
-        self.messageLine.setText("Click on the view to pan it")
+        self.messageLine.setText(self.centralW.scene.messages[
+                                     self.centralW.scene.editModes.mode()])
 
     def goUpHierarchy(self):
         self.saveCell()
@@ -630,9 +638,12 @@ class editorWindow(QMainWindow):
 
     def fitToWindow(self):
         self.centralW.scene.fitItemsInView()
+        self.messageLine.setText("Fitting to window")
 
     def copyClick(self, s):
         self.centralW.scene.editModes.setMode("copyItem")
+        self.messageLine.setText(self.centralW.scene.messages[
+                                     self.centralW.scene.editModes.mode()])
         self.centralW.scene.copySelectedItems()
 
     def horizontalFlipClick(self):
@@ -644,11 +655,13 @@ class editorWindow(QMainWindow):
         self.centralW.scene.flipVertical()
 
     def zoomIn(self):
+        self.messageLine.setText("Zooming in")
         self.centralW.view.scale(1.25, 1.25)
         self.centralW.view.viewRect = self.centralW.view.mapToScene(
             self.rect()).boundingRect().toRect()
 
     def zoomOut(self):
+        self.messageLine.setText("Zooming out")
         self.centralW.view.scale(0.8, 0.8)
         self.centralW.view.viewRect = self.centralW.view.mapToScene(
             self.rect()).boundingRect().toRect()

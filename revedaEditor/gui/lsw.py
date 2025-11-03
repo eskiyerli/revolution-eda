@@ -104,8 +104,15 @@ class layerDataModel(QStandardItemModel):
     @classmethod
     def readFileContent(cls, filePath):
         if filePath not in cls._file_content_cache:
-            with open(filePath, "r") as file:
-                cls._file_content_cache[filePath] = file.read()
+            try:
+                with open(filePath, "r") as file:
+                    cls._file_content_cache[filePath] = file.read()
+            except FileNotFoundError:
+                print(f"Error: Stipple not found: {filePath}")
+                return ""
+            except Exception as e:
+                print(f"Error reading Stipple file {filePath}: {e}")
+                return ""
         return cls._file_content_cache[filePath]
     
 

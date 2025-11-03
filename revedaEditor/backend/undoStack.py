@@ -28,7 +28,7 @@ from PySide6.QtGui import QUndoCommand, QUndoStack
 from PySide6.QtWidgets import QGraphicsScene, QGraphicsItem
 import revedaEditor.common.shapes as shp
 import revedaEditor.common.layoutShapes as lshp
-from typing import List, Tuple, Sequence, Union
+from typing import List, Tuple, Sequence, Union, Dict
 
 class undoStack(QUndoStack):
     def __init__(self):
@@ -214,24 +214,6 @@ class undoRotateShape(QUndoCommand):
         self._shape.setTransformOriginPoint(rotationOriginPoint)
         self._shape.angle += self._angle
 
-class undoMoveShapesCommand(QUndoCommand):
-    def __init__(self, shapes: Sequence[QGraphicsItem],
-                 startPos: QPoint, endPos: QPoint):
-        super().__init__()
-        self._shapes = shapes
-        self._startPos = startPos
-        self._endPos = endPos
-        self.setText('undo move shapes')
-
-    def undo(self) -> None:
-        for shape in self._shapes:
-            shape.setPos(self._startPos[shape])
-
-
-    def redo(self) -> None:
-        for shape in self._shapes:
-            shape.setPos(self._endPos[shape])
-
 
 class undoMoveByCommand(QUndoCommand):
     def __init__(self, scene, items: List, dx: float, dy: float, description: str = "Move Items"):
@@ -241,7 +223,7 @@ class undoMoveByCommand(QUndoCommand):
         self.dx = dx
         self.dy = dy
         self.oldPositions: List[Tuple[QPoint, QPoint]] = []
-        self.setText('undo move by command')
+        self.setText(description)
 
     def redo(self):
         for item in self.items:
@@ -252,4 +234,21 @@ class undoMoveByCommand(QUndoCommand):
 
     def undo(self):
         for item, oldPos in self.oldPositions:
+            item.setPos(oldPos)
+
+class undoGroupMove(QUndoCommand):
+    def __init__(self, scene, items: List, oldPosList: List[QPoint], posDiff: QPoint):
+        super().__init__()
+        self.scene = scene
+        self.items = items
+        self.oldPosList = oldPosList
+        self.posDiff = posDiff
+        self.setText("Undo Group Move")
+
+    def redo(self):
+        for item, oldPos in zip(self.items, self.oldPosList):
+            item.setPos(oldPos + self.posDiff)
+
+    def undo(self):
+        for item, oldPos in zip(self.items, self.oldPosList):
             item.setPos(oldPos)
