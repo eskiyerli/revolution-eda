@@ -105,6 +105,22 @@ class schematicScene(editorScene):
             stretchItem=False,
             nameNet=False,
         )
+        self.messages = {'selectItem': 'Select Item',
+                         'deleteItem': 'Delete Item',
+                         'moveItem': 'Move Item',
+                         'copyItem': 'Copy Item',
+                         'rotateItem': 'Rotate Item',
+                         'changeOrigin': 'Change Origin',
+                         'panView': 'Pan View at mouse Press Position',
+                         'stretchItem': 'Stretch Item',
+                         'drawPin': 'Draw Pin',
+                         'drawWire': 'Draw Wire',
+                         'drawBus': 'Draw Bus',
+                         'drawText': 'Draw Text',
+                         'addInstance': 'Add Instance',
+                         'nameNet': 'Name Net',
+                         'drawSymbol': 'Draw Symbol'
+                        }
 
         self.selectModes = ddef.schematicSelectModes(
             selectAll=True, selectDevice=False, selectNet=False, selectPin=False
@@ -186,77 +202,47 @@ class schematicScene(editorScene):
             (self.editModes.drawPin, self.editModes.drawWire, self.editModes.drawText)
         )
 
-    def mousePressEvent(self, event: QGraphicsSceneMouseEvent) -> None:
-        super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event: QGraphicsSceneMouseEvent) -> None:
-        """
-        Handle mouse move event.
-
-        :param mouseEvent: QGraphicsSceneMouseEvent instance
-        """
+        """Handle mouse move event."""
         super().mouseMoveEvent(event)
-        message = ""
         self.mouseMoveLoc = event.scenePos().toPoint()
+        
+        message = ""
+        
         if self._newInstance and self.editModes.addInstance:
-            message = "Place instance"
+
             self._newInstance.setPos(self.mouseMoveLoc)
         elif self._newPin and self.editModes.drawPin:
-            message = "Place pin"
+
             self._newPin.setPos(self.mouseMoveLoc - self._newPin.start)
-        elif self._newNet and self.editModes.drawWire:
-            message = "Extend wire"
+        elif self._newNet and (self.editModes.drawWire or self.editModes.drawBus):
             netEndPoint = self.findSnapPoint(self.mouseMoveLoc, set())
             self._snapPointRect.setPos(netEndPoint)
-            self._newNet.draftLine = QLineF(
-                self._newNet.draftLine.p1(),
-                netEndPoint,
-            )
-        elif self._newNet and self.editModes.drawBus:
-            message = "Extend Bus"
-            netEndPoint = self.findSnapPoint(self.mouseMoveLoc, set())
-            self._snapPointRect.setPos(netEndPoint)
-            self._newNet.draftLine = QLineF(
-                self._newNet.draftLine.p1(),
-                netEndPoint,
-            )
+            self._newNet.draftLine = QLineF(self._newNet.draftLine.p1(), netEndPoint)
         elif self._stretchNet and self.editModes.stretchItem:
-            message = "Stretch wire"
+
             netEndPoint = self.findSnapPoint(self.mouseMoveLoc, set())
             self._snapPointRect.setVisible(True)
             self._snapPointRect.setPos(netEndPoint)
-            self._stretchNet.draftLine = QLineF(
-                self._stretchNet.draftLine.p1(),
-                netEndPoint,
-            )
+            self._stretchNet.draftLine = QLineF(self._stretchNet.draftLine.p1(), netEndPoint)
         elif self._newText and self.editModes.drawText:
-            message = "Place text"
+
             self._newText.start = self.mouseMoveLoc
         elif self.editModes.nameNet and self._newNetNameObj:
             self._newNetNameObj.setPos(self.mouseMoveLoc)
-        cursorPosition = self.snapToGrid(
-            self.mouseMoveLoc - self.origin, self.snapTuple
-        )
-        # Show the cursor position in the status line
+        
+        cursorPosition = self.snapToGrid(self.mouseMoveLoc - self.origin, self.snapTuple)
         self.statusLine.showMessage(
             f"Cursor Position: ({cursorPosition.x()}, {cursorPosition.y()})"
         )
         if message:
-            self.messageLine.setText(message)
+            self.messageLine.setText(self.messages[self.editModes.mode()])
 
-    def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent) -> None:
-        """
-        Handle mouse release event.
+    def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent):
 
-        :param mouseEvent: QGraphicsSceneMouseEvent instance
-        """
-        try:
-            self.mouseReleaseLoc = event.scenePos().toPoint()
-            self._handleMouseRelease(self.mouseReleaseLoc, event.button())
-        except Exception as e:
-            self.logger.error(f"Mouse release error: {e}")
-        super().mouseReleaseEvent(event)
-
+        return super().mouseReleaseEvent(event)
+    
     def _handleMouseRelease(
         self, mouseReleaseLoc: QPoint, button: Qt.MouseButton
     ) -> None:

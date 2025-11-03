@@ -179,76 +179,79 @@ class symbolScene(editorScene):
 
     def mouseReleaseEvent(self, mouse_event: QGraphicsSceneMouseEvent) -> None:
         super().mouseReleaseEvent(mouse_event)
-        try:
+        if mouse_event.button() == Qt.LeftButton:
             self.mouseReleaseLoc = mouse_event.scenePos().toPoint()
             modifiers = QGuiApplication.keyboardModifiers()
-            if mouse_event.button() == Qt.LeftButton:
-                if self.editModes.changeOrigin:
-                    self.origin = self.mouseReleaseLoc
-                elif self.editModes.drawLine:
-                    self.editorWindow.messageLine.setText("Click for the first of line")
-                    if self._newLine:
-                        if self._newLine.length <= 1:
-                            self.undoStack.removeLastCommand()
-                        self._newLine = None
-                    self._newLine = self.lineDraw(self.mouseReleaseLoc, self.mouseReleaseLoc)
-                    self._newLine.setSelected(True)
+            if self.editModes.selectItem and self._selectionRectItem:
+                self._handleSelectionRect(modifiers)
+            else:
+                self._handleMouseRelease(self.mouseReleaseLoc, mouse_event.button())
 
-                elif self.editModes.drawCircle:
-                    if self._newCircle:
-                        if self._newCircle.radius <= 1:
-                            self.undoStack.removeLastCommand()
-                        self._newCircle = None
-                    self.editorWindow.messageLine.setText("Click for the centre of Circle")
-                    self._newCircle = self.circleDraw(self.mouseReleaseLoc, self.mouseReleaseLoc)
-                    self._newCircle.setSelected(True)
-
-                elif self.editModes.drawPin:
-                    if self._newPin:
-                        self._newPin = None
-                    self.editorWindow.messageLine.setText("Add a pin")
-                    self._newPin = self.pinDraw(self.mouseReleaseLoc)
-                    self._newPin.setSelected(True)
-                elif self.editModes.drawRect:
-                    if self._newRect:
-                        if self._newRect.width <= 1 or self._newRect.height <= 1:
-                            self.undoStack.removeLastCommand()
-                        self._newRect = None
-                    self.editorWindow.messageLine.setText("Click for the first point of Rectangle")
-                    self._newRect = self.rectDraw(self.mouseReleaseLoc, self.mouseReleaseLoc)
-                    self._newRect.setSelected(True)
-                elif self.editModes.drawArc:
-                    if self._newArc:
-                        if self._newArc.width <= 1 or self._newArc.height <= 1:
-                            self.undoStack.removeLastCommand()
-                        self._newArc = None
-                    self.editorWindow.messageLine.setText("Click for the first point of Arc")
-                    self._newArc = self.arcDraw(self.mouseReleaseLoc, self.mouseReleaseLoc)
-                    self._newArc.setSelected(True)
-                elif self.editModes.addLabel:
-                    if self._newLabel:
-                        self._newLabel = None
-                    self.editorWindow.messageLine.setText("Adding a label")
-                    self._newLabel = self.labelDraw(
-                        self.mouseReleaseLoc,
-                        self.labelDefinition,
-                        self.labelType,
-                        self.labelHeight,
-                        self.labelAlignment,
-                        self.labelOrient,
-                        self.labelUse,
-                    )
-                    self._newLabel.setSelected(True)
-                elif self.editModes.drawPolygon:
-                    if self._newPolygon:
-                        self._newPolygon.addPoint(self.mouseReleaseLoc)
-                    else:
-                        self._newPolygon, self._polygonGuideLine = self.startPolygon(self.mouseReleaseLoc)
-                        self.editorWindow.messageLine.setText("Click for the first point of Polygon.")
-                elif self.editModes.rotateItem:
-                    self.editorWindow.messageLine.setText("Rotate item")
-                    self.rotateSelectedItems(self.mousePressLoc)
-
+    def _handleMouseRelease(self, mousePos: QPoint, button: Qt.MouseButton) -> None:
+        try:
+            if self.editModes.changeOrigin:
+                self.origin = mousePos
+            elif self.editModes.drawLine:
+                self.editorWindow.messageLine.setText("Click for the first of line")
+                if self._newLine:
+                    if self._newLine.length <= 1:
+                        self.undoStack.removeLastCommand()
+                    self._newLine = None
+                self._newLine = self.lineDraw(mousePos, mousePos)
+                self._newLine.setSelected(True)
+            elif self.editModes.drawCircle:
+                if self._newCircle:
+                    if self._newCircle.radius <= 1:
+                        self.undoStack.removeLastCommand()
+                    self._newCircle = None
+                self.editorWindow.messageLine.setText("Click for the centre of Circle")
+                self._newCircle = self.circleDraw(mousePos, mousePos)
+                self._newCircle.setSelected(True)
+            elif self.editModes.drawPin:
+                if self._newPin:
+                    self._newPin = None
+                self.editorWindow.messageLine.setText("Add a pin")
+                self._newPin = self.pinDraw(mousePos)
+                self._newPin.setSelected(True)
+            elif self.editModes.drawRect:
+                if self._newRect:
+                    if self._newRect.width <= 1 or self._newRect.height <= 1:
+                        self.undoStack.removeLastCommand()
+                    self._newRect = None
+                self.editorWindow.messageLine.setText("Click for the first point of Rectangle")
+                self._newRect = self.rectDraw(mousePos, mousePos)
+                self._newRect.setSelected(True)
+            elif self.editModes.drawArc:
+                if self._newArc:
+                    if self._newArc.width <= 1 or self._newArc.height <= 1:
+                        self.undoStack.removeLastCommand()
+                    self._newArc = None
+                self.editorWindow.messageLine.setText("Click for the first point of Arc")
+                self._newArc = self.arcDraw(mousePos, mousePos)
+                self._newArc.setSelected(True)
+            elif self.editModes.addLabel:
+                if self._newLabel:
+                    self._newLabel = None
+                self.editorWindow.messageLine.setText("Adding a label")
+                self._newLabel = self.labelDraw(
+                    mousePos,
+                    self.labelDefinition,
+                    self.labelType,
+                    self.labelHeight,
+                    self.labelAlignment,
+                    self.labelOrient,
+                    self.labelUse,
+                )
+                self._newLabel.setSelected(True)
+            elif self.editModes.drawPolygon:
+                if self._newPolygon:
+                    self._newPolygon.addPoint(mousePos)
+                else:
+                    self._newPolygon, self._polygonGuideLine = self.startPolygon(mousePos)
+                    self.editorWindow.messageLine.setText("Click for the first point of Polygon.")
+            elif self.editModes.rotateItem:
+                self.editorWindow.messageLine.setText("Rotate item")
+                self.rotateSelectedItems(self.mousePressLoc)
         except Exception as e:
             self.logger.error(f"Error in Mouse Release Event: {e} ")
 

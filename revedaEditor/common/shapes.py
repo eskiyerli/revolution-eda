@@ -137,8 +137,8 @@ class symbolShape(QGraphicsItem):
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent) -> None:
-        super().mouseReleaseEvent(event)  # self.setSelected(False)
         self.setFlag(QGraphicsItem.ItemIsMovable, False)
+        super().mouseReleaseEvent(event)
 
     def hoverEnterEvent(self, event: QGraphicsSceneHoverEvent) -> None:
         self.setCursor(Qt.ArrowCursor)
@@ -1412,7 +1412,7 @@ class schematicSymbol(symbolShape):
                         snapLine = net.guideLine(startPoint, endPoint)
                         snapLine.inherit(netItem)
                         snapLinesSet.add(snapLine)
-                        scene.removeItem(netItem)
+                        scene.deleteUndoStack(netItem)
                         scene.addItem(snapLine)
 
                 self._snapLines[pinItem] = snapLinesSet
@@ -1485,9 +1485,10 @@ class schematicSymbol(symbolShape):
                     for guideLine in guideLinesSet:
                         newNets = scene.addStretchWires(guideLine.line().p1().toPoint(),
                                                         guideLine.line().p2().toPoint())
-                        for netItem in newNets:
-                            scene.addItem(netItem)
-                            netItem.inherit(guideLine)
+                        if newNets:
+                            for netItem in newNets:
+                                netItem.inherit(guideLine)
+                            scene.addListUndoStack(newNets)
                         scene.removeItem(guideLine)
                 self._snapLines = dict()
             except Exception as e:

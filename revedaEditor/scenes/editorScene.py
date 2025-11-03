@@ -21,12 +21,12 @@
 #    License: Mozilla Public License 2.0
 #    Licensor: Revolution Semiconductor (Registered in the Netherlands)
 
-from typing import List, Sequence
-from PySide6.QtCore import (QEvent, QPoint, QRectF, Qt )
+from typing import List
+from PySide6.QtCore import (QEvent, QPoint, QRectF, Qt, QSizeF )
 from PySide6.QtGui import (QGuiApplication, QTransform, QPainterPath, QPen, QColor)
 from PySide6.QtWidgets import (QGraphicsScene, QMenu, QGraphicsItem,
                                QDialog, QGraphicsRectItem,
-                               QCompleter)
+                               QCompleter,)
 from contextlib import contextmanager
 import time
 import revedaEditor.backend.dataDefinitions as ddef
@@ -61,6 +61,14 @@ class editorScene(QGraphicsScene):
             'stretchItem': False
         })
 
+        self.messages = {'selectItem': 'Select Item',
+                         'deleteItem': 'Delete Item',
+                         'moveItem': 'Move Item',
+                         'copyItem': 'Copy Item',
+                         'rotateItem': 'Rotate Item',
+                         'changeOrigin': 'Change Origin',
+                         'panView': 'Pan View at Mouse Press Position',
+                         'stretchItem': 'Stretch Item'}
         # Initialize undo stack with limit
         self.undoStack = us.undoStack()
         self.undoStack.setUndoLimit(99)
@@ -92,8 +100,9 @@ class editorScene(QGraphicsScene):
         self.readOnly = False
         self.installEventFilter(self)
         self.setMinimumRenderSize(2)
-
-
+        self._initialGroupPosList = []
+        self._initialGroupPos = QPoint(0,0)
+        self._finalGroupPosDiff = QPoint(0,0)
 
     def contextMenuEvent(self, event):
         clickedItem = self.itemAt(event.scenePos(), QTransform())
@@ -111,18 +120,7 @@ class editorScene(QGraphicsScene):
         modifiers = QGuiApplication.keyboardModifiers()
         if event.button() == Qt.MouseButton.LeftButton:
             self.mousePressLoc = event.scenePos().toPoint()
-            selectedItems = self.selectedItems()
-            if self.editModes.moveItem and selectedItems:
-                # store initial positions for undo
-                self._selectedItemGroup = self.createItemGroup(selectedItems)
-                self._selectedItemGroup.setFlag(QGraphicsItem.ItemIsMovable)
-                self.messageLine.setText("Move Item(s)")
-            elif self.editModes.panView:
-                self.centerViewOnPoint(self.mousePressLoc)
-                self.messageLine.setText("Pan View at mouse press position")
-                
-            elif self.editModes.selectItem:
-
+            if self.editModes.selectItem:
                 self.clearSelection()
                 if (modifiers == Qt.KeyboardModifier.ShiftModifier or 
                     modifiers == Qt.KeyboardModifier.ControlModifier):
@@ -137,33 +135,50 @@ class editorScene(QGraphicsScene):
                     selectedItems = self.items(self.mousePressLoc)
                     for item in selectedItems:
                         item.setSelected(True)
-                
+                    if not selectedItems:
+                        self.clearSelection()
+                        for item in self.items():
+                            item.setSelected(False)
+            if self.editModes.moveItem:
+                self._selectedItemGroup = self.createItemGroup(
+                    self.selectedItems())
+                self._selectedItemGroup.setFlag(QGraphicsItem.ItemIsMovable, True)
+                self._initialGroupPos = self._selectedItemGroup.pos().toPoint()
+                self._initialGroupPosList = [item.pos().toPoint() for item in self._selectedItemGroup.childItems()]
+            elif self.editModes.panView:
+                self.centerViewOnPoint(self.mousePressLoc)
+            self.messageLine.setText(self.messages[self.editModes.mode()])
 
     def mouseMoveEvent(self, event):
         super().mouseMoveEvent(event)
+        self.mouseMoveLoc = event.scenePos().toPoint()
         if self.editModes.selectItem and self._selectionRectItem:
             self._selectionRectItem.setRect(
-                QRectF(self.mousePressLoc, self.mouseMoveLoc)
+                QRectF(self.mousePressLoc, self.mouseMoveLoc).normalized()
             )
 
     def mouseReleaseEvent(self, event):
         super().mouseReleaseEvent(event)
-        if event.button() == Qt.MouseButton.LeftButton:
-            modifiers = QGuiApplication.keyboardModifiers()
-            self.mouseReleaseLoc = event.scenePos().toPoint()
-            # modifiers = QGuiApplication.keyboardModifiers()
-            if self.editModes.moveItem and self._selectedItemGroup:
-                self._groupItems = self._selectedItemGroup.childItems()
-                self.destroyItemGroup(self._selectedItemGroup)
-                self._selectedItemGroup = None
-                # # Add undo command
-                # if hasattr(self, '_initialPositions'):
-                #     self.moveShapesUndoStack(self._groupItems, self._initialPositions, self._finalPositions)
-                #     del self._initialPositions
-                #     del self._finalPositions
-            elif self.editModes.selectItem and self._selectionRectItem:
-                self._handleSelectionRect(modifiers)
+        if event.button() != Qt.MouseButton.LeftButton:
+            return
+        
+        modifiers = QGuiApplication.keyboardModifiers()
+        self.mouseReleaseLoc = event.scenePos().toPoint()
+        
+        if self.editModes.moveItem and self._selectedItemGroup:
+            _groupItems = self._selectedItemGroup.childItems()
+            self._finalGroupPosDiff = self._selectedItemGroup.pos().toPoint() - self._initialGroupPos
+            self.destroyItemGroup(self._selectedItemGroup)
+            self._selectedItemGroup = None
+            self.undoGroupMoveStack(_groupItems, self._initialGroupPosList, self._finalGroupPosDiff)
+            [item.setSelected(False) for item in _groupItems]
+            self.editModes.setMode("selectItem")
 
+        elif self.editModes.selectItem and self._selectionRectItem:
+            self._handleSelectionRect(modifiers)
+        else:
+            self._handleMouseRelease(self.mouseReleaseLoc, event.button())
+        self.messageLine.setText(self.messages[self.editModes.mode()])
 
     def _handleSelectionRect(self, modifiers):
         # default implementation of selection rectangle
@@ -187,6 +202,8 @@ class editorScene(QGraphicsScene):
         self.removeItem(self._selectionRectItem)
         self._selectionRectItem = None
 
+    def _handleMouseRelease(self, mousePos: QPoint, button: Qt.MouseButton):
+        pass
 
     def snapToBase(self, number, base):
         """
@@ -373,11 +390,11 @@ class editorScene(QGraphicsScene):
         self.setSceneRect(newSceneRect)
 
     def centerViewOnPoint(self, point: QPoint) -> None:
-        view = self.views()[0]
-        view_widget = view.viewport()
-        width = view_widget.width()
-        height = view_widget.height()
-        self.setSceneRect(point.x() - width / 2, point.y() - height / 2, width, height)
+        currentSceneRect = self.sceneRect()
+        size = QSizeF(currentSceneRect.width(), currentSceneRect.height())
+        newSceneRect = QRectF(point.x() - size.width() / 2, point.y() - size.height() / 2,
+                              size.width(), size.height())
+        self.setSceneRect(newSceneRect)
 
     def addUndoStack(self, item: QGraphicsItem):
         undoCommand = us.addShapeUndo(self, item)
@@ -391,10 +408,10 @@ class editorScene(QGraphicsScene):
         undoCommand = us.addShapesUndo(self, itemList)
         self.undoStack.push(undoCommand)
 
-    def moveShapesUndoStack(self, items: Sequence[QGraphicsItem],
-                         start: QPoint,
-                            end: QPoint) -> None:
-        undoCommand = us.undoMoveShapesCommand(items,  start, end)
+    def undoGroupMoveStack(self, items: List[QGraphicsItem],
+                         startPos: QPoint,endPos: QPoint) -> None:
+
+        undoCommand = us.undoGroupMove(self, items, startPos, endPos)
         self.undoStack.push(undoCommand)
 
     def addUndoMacroStack(self, undoCommands: list, macroName: str = "Macro"):
