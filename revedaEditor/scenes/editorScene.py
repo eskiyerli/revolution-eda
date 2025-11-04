@@ -142,6 +142,8 @@ class editorScene(QGraphicsScene):
             if self.editModes.moveItem:
                 self._selectedItemGroup = self.createItemGroup(
                     self.selectedItems())
+                _groupItems = self._selectedItemGroup.childItems()
+                
                 self._selectedItemGroup.setFlag(QGraphicsItem.ItemIsMovable, True)
                 self._initialGroupPos = self._selectedItemGroup.pos().toPoint()
                 self._initialGroupPosList = [item.pos().toPoint() for item in self._selectedItemGroup.childItems()]
@@ -409,7 +411,7 @@ class editorScene(QGraphicsScene):
         self.undoStack.push(undoCommand)
 
     def undoGroupMoveStack(self, items: List[QGraphicsItem],
-                         startPos: QPoint,endPos: QPoint) -> None:
+                         startPos: List[QPoint],endPos: QPoint) -> None:
 
         undoCommand = us.undoGroupMove(self, items, startPos, endPos)
         self.undoStack.push(undoCommand)

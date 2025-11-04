@@ -55,6 +55,7 @@ from PySide6.QtWidgets import (
     QGraphicsSceneMouseEvent,
     QGraphicsItem,
 )
+from numpy.ma import isin
 
 import revedaEditor.backend.dataDefinitions as ddef
 import revedaEditor.backend.libraryMethods as libm
@@ -202,16 +203,20 @@ class schematicScene(editorScene):
             (self.editModes.drawPin, self.editModes.drawWire, self.editModes.drawText)
         )
 
+    def mousePressEvent(self, event):
+        super().mousePressEvent(event)
+        if self._selectedItemGroup and self.editModes.moveItem:
+            for item in self._selectedItemGroup.childItems():
+                if isinstance(item, shp.schematicSymbol) or isinstance(item, shp.schematicPin):
+                    item.generatePinNetDict()
+                    item.initializeSnapLines(self)
 
     def mouseMoveEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         """Handle mouse move event."""
         super().mouseMoveEvent(event)
         self.mouseMoveLoc = event.scenePos().toPoint()
         
-        message = ""
-        
         if self._newInstance and self.editModes.addInstance:
-
             self._newInstance.setPos(self.mouseMoveLoc)
         elif self._newPin and self.editModes.drawPin:
 
@@ -231,20 +236,23 @@ class schematicScene(editorScene):
             self._newText.start = self.mouseMoveLoc
         elif self.editModes.nameNet and self._newNetNameObj:
             self._newNetNameObj.setPos(self.mouseMoveLoc)
+        elif self.editModes.moveItem and self._selectedItemGroup:
+            for item in self._selectedItemGroup.childItems():
+                if isinstance(item,shp.schematicSymbol) or isinstance(item, shp.schematicPin):
+                    item.updateSnapLines()
         
         cursorPosition = self.snapToGrid(self.mouseMoveLoc - self.origin, self.snapTuple)
         self.statusLine.showMessage(
             f"Cursor Position: ({cursorPosition.x()}, {cursorPosition.y()})"
         )
-        if message:
-            self.messageLine.setText(self.messages[self.editModes.mode()])
+        self.messageLine.setText(self.messages[self.editModes.mode()])
 
     def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent):
 
         return super().mouseReleaseEvent(event)
     
     def _handleMouseRelease(
-        self, mouseReleaseLoc: QPoint, button: Qt.MouseButton
+        self, mousePos: QPoint, button: Qt.MouseButton
     ) -> None:
         """
         Handle mouse release logic.
@@ -256,21 +264,21 @@ class schematicScene(editorScene):
         if button == Qt.LeftButton:
             modifiers = QGuiApplication.keyboardModifiers()
             if self.editModes.addInstance:
-                self._handleAddInstance(mouseReleaseLoc)
+                self._handleAddInstance(mousePos)
             elif self.editModes.drawPin:
-                self._handleDrawPin(mouseReleaseLoc)
+                self._handleDrawPin(mousePos)
             elif self.editModes.drawWire:
-                self._handleDrawWire(mouseReleaseLoc)
+                self._handleDrawWire(mousePos)
             elif self.editModes.drawBus:
-                self._handleDrawBus(mouseReleaseLoc)
+                self._handleDrawBus(mousePos)
             elif self.editModes.drawText:
-                self._handleDrawText(mouseReleaseLoc)
+                self._handleDrawText(mousePos)
             elif self.editModes.rotateItem:
-                self.rotateSelectedItems(mouseReleaseLoc)
+                self.rotateSelectedItems(mousePos)
             elif self.editModes.stretchItem:
                 self._handleStretchItem()
             elif self.editModes.nameNet:
-                self._handleNameNet(mouseReleaseLoc)
+                self._handleNameNet(mousePos)
 
 
     def _handleSelectionRect(self, modifiers):
@@ -459,7 +467,7 @@ class schematicScene(editorScene):
         if not parallelNets:
             return False, inputNet, set()
 
-        points = inputNet.sceneEndPoints
+        points = list(inputNet.sceneEndPoints)  # Create a copy
         busExists = int(any(net.width for net in parallelNets) or inputNet.width)
 
         for net in parallelNets:
@@ -473,90 +481,6 @@ class schematicScene(editorScene):
             mergedNet.mergeNetName(net)
 
         return True, mergedNet, processedNets
-
-    # def mergeNets(
-    #     self, inputNet: snet.schematicNet
-    # ) -> Tuple[bool, snet.schematicNet, Set[snet.schematicNet]]:
-    #     """
-    #     Merges overlapping nets and returns the merged net.
-    #
-    #     Returns:
-    #         Optional[schematicNet]: The merged net if there are overlapping nets, otherwise returns self.
-    #     """
-    #     # Find other nets that overlap with self
-    #     otherNets = inputNet.findOverlapNets()
-    #     processedNets = set()
-    #     parallelNets = set()
-    #     if otherNets:
-    #         parallelNets = {
-    #             netItem for netItem in otherNets if inputNet.isParallel(netItem)
-    #         }
-    #     points = inputNet.sceneEndPoints
-    #     # If there are parallel nets
-    #     if parallelNets:
-    #         busExists = int(
-    #             any([netItem.width for netItem in parallelNets]) or inputNet.width
-    #         )
-    #         for netItem in parallelNets:
-    #             points.extend(netItem.sceneEndPoints)
-    #             processedNets.add(netItem)
-    #         furthestPoints = self.findFurthestPoints(points)
-    #         mergedNet = snet.schematicNet(*furthestPoints, busExists)
-    #         processedNets.add(inputNet)
-    #         [mergedNet.mergeNetName(netItem) in processedNets]
-    #         return True, mergedNet, processedNets
-    #     else:
-    #         return False, inputNet, set()
-
-    # def splitInputNet(self, inputNet) -> tuple[bool, Set[snet.schematicNet]]:
-    #     # Cache frequently accessed properties
-    #     inputNetWidth = inputNet.width
-    #     sceneShapeRect = inputNet.sceneShapeRect
-    #     sceneItems = self.items(sceneShapeRect)
-    #
-    #     # Combine all point collection operations into a single pass
-    #     splitPointsSet = set()
-    #     orthoNets = []
-    #
-    #     # Single iteration through scene items to collect all relevant points
-    #     for item in sceneItems:
-    #         if isinstance(item, snet.schematicNet) and inputNet.isOrthogonal(item):
-    #             orthoNets.append(item)
-    #         elif isinstance(item, (shp.symbolPin, shp.schematicPin)):
-    #             splitPointsSet.add(item.mapToScene(item.start).toPoint())
-    #
-    #     # Process orthogonal nets
-    #     if orthoNets:
-    #         for netItem in orthoNets:
-    #             for netItemEnd in netItem.sceneEndPoints:
-    #                 if sceneShapeRect.contains(netItemEnd):
-    #                     splitPointsSet.add(netItemEnd)
-    #
-    #     if not splitPointsSet:
-    #         return False, set()
-    #
-    #     # Create and process split points
-    #     splitPointsList = [
-    #         inputNet.sceneEndPoints[0],
-    #         *splitPointsSet,
-    #         inputNet.sceneEndPoints[1],
-    #     ]
-    #     orderedPoints = list(Counter(self.orderPoints(splitPointsList)).keys())
-    #
-    #     # Create split nets
-    #     splitNetSet = set()
-    #     is_selected = inputNet.isSelected()
-    #
-    #     for i in range(len(orderedPoints) - 1):
-    #         splitNet = snet.schematicNet(
-    #             orderedPoints[i], orderedPoints[i + 1], inputNetWidth
-    #         )
-    #         if not splitNet.draftLine.isNull():
-    #             if is_selected:
-    #                 splitNet.setSelected(True)
-    #             splitNetSet.add(splitNet)
-    #
-    #     return True, splitNetSet
 
     def splitInputNet(self, inputNet) -> tuple[bool, Set[snet.schematicNet]]:
         sceneShapeRect = inputNet.sceneShapeRect
@@ -790,6 +714,7 @@ class schematicScene(editorScene):
                         expandedPin = f"{baseName}<{pinIndex}>"
                         ordered_map[expandedPin] = symbolItem.pinNetMap[expandedPin]
             symbolItem.pinNetMap = ordered_map
+            print(symbolItem.pinNetMap)
 
     def findSceneSymbolSet(self) -> set[shp.schematicSymbol]:
         """
@@ -1792,23 +1717,6 @@ class schematicScene(editorScene):
                     netCounter += 1
 
             return matched_pairs, netCounter
-
-    def pruneDuplicateNets(self, netItem: snet.schematicNet):
-        """
-        Check for duplicate nets in the scene and remove them.
-        Two nets are considered the same if they have identical endpoints and width.
-        """
-        overlappingNets = (
-            netItem
-            for netItem in netItem.collidingItems(Qt.IntersectsItemShape)
-            if isinstance(netItem, snet.schematicNet)
-        )
-        for otherNet in overlappingNets:
-            if netItem is otherNet:
-                continue
-            if netItem.endPoints == otherNet.endPoints and netItem.width == otherNet.width:
-                self.removeItem(otherNet)
-                self.logger.info(f"Removed duplicate net: {otherNet.name}")
 
 
     @staticmethod

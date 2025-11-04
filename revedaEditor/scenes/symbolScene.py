@@ -92,6 +92,24 @@ class symbolScene(editorScene):
             stretchItem=False,
         )
 
+        self.messages = {
+            "selectItem": "Select Item.",
+            "deleteItem": "Click on item to delete.",
+            "moveItem": "Click and drag to move item.",
+            "copyItem": "Click on item to copy.",
+            "rotateItem": "Click on item to rotate.",
+            "changeOrigin": "Click to set new origin.",
+            "panView": "Click and drag to pan view.",
+            "drawPin": "Add a pin.",
+            "drawArc": "Click for the first point of Arc.",
+            "drawRect": "Click for the first point of Rectangle.",
+            "drawLine": "Click for the first point of Line.",
+            "addLabel": "Adding a label.",
+            "drawCircle": "Click for the centre of Circle.",
+            "drawPolygon": "Click for the first point of Polygon.",
+            "stretchItem": "Click and drag to stretch item.",
+        }
+
         self.symbolShapes = ["line", "arc", "rect", "circle", "pin", "label", "polygon"]
         self.attributeList = [] # list of symbol attributes
         self.origin = QPoint(0, 0)
@@ -192,7 +210,7 @@ class symbolScene(editorScene):
             if self.editModes.changeOrigin:
                 self.origin = mousePos
             elif self.editModes.drawLine:
-                self.editorWindow.messageLine.setText("Click for the first of line")
+
                 if self._newLine:
                     if self._newLine.length <= 1:
                         self.undoStack.removeLastCommand()
@@ -204,13 +222,13 @@ class symbolScene(editorScene):
                     if self._newCircle.radius <= 1:
                         self.undoStack.removeLastCommand()
                     self._newCircle = None
-                self.editorWindow.messageLine.setText("Click for the centre of Circle")
+
                 self._newCircle = self.circleDraw(mousePos, mousePos)
                 self._newCircle.setSelected(True)
             elif self.editModes.drawPin:
                 if self._newPin:
                     self._newPin = None
-                self.editorWindow.messageLine.setText("Add a pin")
+
                 self._newPin = self.pinDraw(mousePos)
                 self._newPin.setSelected(True)
             elif self.editModes.drawRect:
@@ -218,7 +236,6 @@ class symbolScene(editorScene):
                     if self._newRect.width <= 1 or self._newRect.height <= 1:
                         self.undoStack.removeLastCommand()
                     self._newRect = None
-                self.editorWindow.messageLine.setText("Click for the first point of Rectangle")
                 self._newRect = self.rectDraw(mousePos, mousePos)
                 self._newRect.setSelected(True)
             elif self.editModes.drawArc:
@@ -226,13 +243,11 @@ class symbolScene(editorScene):
                     if self._newArc.width <= 1 or self._newArc.height <= 1:
                         self.undoStack.removeLastCommand()
                     self._newArc = None
-                self.editorWindow.messageLine.setText("Click for the first point of Arc")
                 self._newArc = self.arcDraw(mousePos, mousePos)
                 self._newArc.setSelected(True)
             elif self.editModes.addLabel:
                 if self._newLabel:
                     self._newLabel = None
-                self.editorWindow.messageLine.setText("Adding a label")
                 self._newLabel = self.labelDraw(
                     mousePos,
                     self.labelDefinition,
@@ -248,10 +263,10 @@ class symbolScene(editorScene):
                     self._newPolygon.addPoint(mousePos)
                 else:
                     self._newPolygon, self._polygonGuideLine = self.startPolygon(mousePos)
-                    self.editorWindow.messageLine.setText("Click for the first point of Polygon.")
+
             elif self.editModes.rotateItem:
-                self.editorWindow.messageLine.setText("Rotate item")
                 self.rotateSelectedItems(self.mousePressLoc)
+            self.messageLine.setText(self.messages.get(self.editModes.mode(), ""))
         except Exception as e:
             self.logger.error(f"Error in Mouse Release Event: {e} ")
 
