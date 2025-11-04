@@ -22,6 +22,7 @@
 #    Licensor: Revolution Semiconductor (Registered in the Netherlands)
 #
 
+import copy
 import math
 from collections import OrderedDict
 from functools import cached_property
@@ -59,7 +60,7 @@ class symbolShape(QGraphicsItem):
         self._brush: QBrush = schlyr.draftBrush
         self._flipTuple = (1, 1)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return "symbolShape()"
 
     @property
@@ -1328,11 +1329,9 @@ class schematicSymbol(symbolShape):
         self._pinLocations: dict[
             str, Union[QRect, QRectF]] = dict()  # pinName: pinRect
         self.pinNetMap: dict[str, str] = dict()  # pinName: netName
-        self._pinNetIndexTupleSet: set[pinNetIndexTuple] = set()
         self._snapLines: dict[symbolPin, set[net.guideLine]] = dict()
-        # self._shapeRectF = QRectF(0, 0, 0, 0)
-        # self._borderRect = QRect(0, 0, 0, 0)
-        self._pinNetMapDict: dict[symbolPin, set[net.schematicNet]]=dict()
+
+        self._pinNetDict: dict[symbolPin, set[net.schematicNet]]=dict()
         self._setup_graphics()
         self.addShapes()
         self._start = self.childrenBoundingRect().bottomLeft()
@@ -1376,57 +1375,57 @@ class schematicSymbol(symbolShape):
         if not (scene := self.scene()):
             return super().itemChange(change, value)
 
-        if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange:
-            return self._handlePositionChange(value)
-        elif change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
-            self._updateSnapLines()
+        # if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange:
+        #     print("Item position change")
+        #     # self._updateSnapLines()
+        if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
+            self._finishSnapLines()
+            self._snapLines = dict()
         elif change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
-            scene.selectedSymbol = self if value else None
+            if scene.editModes.selectItem:
+                scene.selectedSymbol = self if value else None
 
         return super().itemChange(change, value)
 
-    def _handlePositionChange(self, newPos: QPointF) -> QPointF:
-        if self._snapLines == dict():
-            self._initializeSnapLines()
-        else:
-            self._updateSnapLines()
-        return newPos
+    def generatePinNetDict(self):
+        self._pinNetDict = dict()
+        for pinItem in self._pins.values():
+            netSet: set[net.schematicNet] = set()
+            for netItem in pinItem.collidingItems(Qt.IntersectsItemBoundingRect):
+                if isinstance(netItem, net.schematicNet):
+                    netSet.add(netItem)
+            self._pinNetDict[pinItem] = netSet
 
-    def _initializeSnapLines(self):
-        self._snapLines: dict[symbolPin, set[net.guideLine]] = dict()
-        scene = self.scene()
-        if scene:
-            sceneGrid = scene.snapTuple[0]
-            for pinItem, netSet in self._pinNetMapDict.items():
-                if not netSet:
-                    continue
-                snapLinesSet: set[net.guideLine] = set()  # Move outside the loop
-                startPoint = pinItem.mapToScene(pinItem.start).toPoint()
-                for netItem in netSet:
-                    endPoint = None
-                    for point in netItem.sceneEndPoints:
-                        if (startPoint - point).manhattanLength() < sceneGrid / 2:
-                            endPoint = netItem.sceneOtherEnd(point)
-                            break
-                    if endPoint:
-                        snapLine = net.guideLine(startPoint, endPoint)
-                        snapLine.inherit(netItem)
-                        snapLinesSet.add(snapLine)
-                        scene.deleteUndoStack(netItem)
-                        scene.addItem(snapLine)
+    def initializeSnapLines(self, scene):
+        self._snapLines = dict()
+        sceneGrid = scene.snapTuple[0]
+        for pinItem, netSet in self._pinNetDict.items():
+            if not netSet:
+                continue
+            snapLinesSet: set[net.guideLine] = set()  # Move outside the loop
+            startPoint = pinItem.mapToScene(pinItem.start).toPoint()
+            for netItem in netSet:
+                endPoint = None
+                for point in netItem.sceneEndPoints:
+                    if (startPoint - point).manhattanLength() < sceneGrid / 2:
+                        endPoint = netItem.sceneOtherEnd(point)
+                        break
+                if endPoint:
+                    snapLine = net.guideLine(startPoint, endPoint)
+                    snapLine.inherit(netItem)
+                    snapLinesSet.add(snapLine)
+                    scene.deleteUndoStack(netItem)
+                    scene.addItem(snapLine)
+            self._snapLines[pinItem] = snapLinesSet
 
-                self._snapLines[pinItem] = snapLinesSet
+    def updateSnapLines(self):
 
-
-    def _updateSnapLines(self):
-        pass
-        if self._snapLines == dict():
-            return
+        # shape is not connected to any nets
         for pin, snapLinesSet in self._snapLines.items():
-            pin_start = pin.mapToScene(pin.start)
+            pin_start = pin.mapToScene(pin.start).toPoint()
             if not snapLinesSet:
                 continue
-            for snapLine in list(snapLinesSet):
+            for snapLine in snapLinesSet:
                 current_end = snapLine.line().p2()
                 new_line = QLineF(pin_start, current_end)
 
@@ -1440,6 +1439,23 @@ class schematicSymbol(symbolShape):
                     self.scene().removeItem(snapLine)
                     snapLinesSet.remove(snapLine)
 
+    def _finishSnapLines(self):
+        if self._snapLines:
+            try:
+                scene = self.scene()
+                for snapLinesSet in self._snapLines.values():
+                    for snapLine in snapLinesSet:
+                        newNets = scene.addStretchWires(snapLine.line().p1().toPoint(),
+                                                        snapLine.line().p2().toPoint())
+                        if newNets:
+                            for netItem in newNets:
+                                netItem.inherit(snapLine)
+                            scene.addListUndoStack(newNets)
+                        scene.removeItem(snapLine)
+                self._snapLines = dict()
+            except Exception as e:
+                # Log error but continue processing other guidelines
+                scene.logger.error(f"Error processing snap lines: {e}")
 
     def paint(self, painter, option, widget):
         if option.state & QStyle.State_Selected:
@@ -1460,41 +1476,14 @@ class schematicSymbol(symbolShape):
 
 
     def mousePressEvent(self, event: QGraphicsSceneMouseEvent) -> None:
-        self._pinNetMapDict: dict[symbolPin, set[net.schematicNet]] = dict()
+        super().mousePressEvent(event)
+
         for pinItem in self._pins.values():
             if pinItem.contains(self.mapToItem(pinItem, event.pos())):
                 self.scene().selectedSymbolPin = pinItem
                 pinItem.highlighted = True
                 pinItem.mousePressEvent(event)
                 return
-            self._pinNetMapDict[pinItem] = {
-                netItem for netItem in
-                pinItem.collidingItems(Qt.IntersectsItemBoundingRect)
-                if isinstance(netItem, net.schematicNet)
-            }
-
-        # If not on a pin, handle as normal
-        super().mousePressEvent(event)
-
-    def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent) -> None:
-        super().mouseReleaseEvent(event)
-        if self._snapLines and self.scene():
-            try:
-                scene = self.scene()
-                for guideLinesSet in self._snapLines.values():
-                    for guideLine in guideLinesSet:
-                        newNets = scene.addStretchWires(guideLine.line().p1().toPoint(),
-                                                        guideLine.line().p2().toPoint())
-                        if newNets:
-                            for netItem in newNets:
-                                netItem.inherit(guideLine)
-                            scene.addListUndoStack(newNets)
-                        scene.removeItem(guideLine)
-                self._snapLines = dict()
-            except Exception as e:
-                # Log error but continue processing other guidelines
-                scene.logger.error(f"Error processing snap lines: {e}")
-
 
     @property
     def libraryName(self):
@@ -1699,15 +1688,15 @@ class schematicPin(symbolShape):
         self._pinName = pinName
         self._pinDir = pinDir
         self._pinType = pinType
-        self._pinNetIndexTupleSet = set()
-        self._snapLines = dict()
+        self._pinNetSet: set[net.schematicNet] = set()
+        self._snapLines: set[net.guideLine] = set()
         self._font = QFont("Arial", 12)
         self._updateTextMetrics()
         self._pinItem = schematicPinPolygon(self.pinPolygon, self)
-        centre = self._pinItem.boundingRect().center()
+        self._centre = self._pinItem.boundingRect().center()
         self._textItem = QGraphicsSimpleTextItem(self._pinName, self)
         self._textItem.setFont(self._font)
-        self._textItem.setPos(centre.x(), centre.y())
+        self._textItem.setPos(self._centre.x(), self._centre.y())
         self._textItem.setBrush(QBrush(schlyr.schematicPinNameLayer.bcolor))
         self._textItem.setParentItem(self)
         self.setFiltersChildEvents(True)
@@ -1725,7 +1714,7 @@ class schematicPin(symbolShape):
         self._updateTextMetrics()
         self.prepareGeometryChange()
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return (f"schematicPin({self._start}, {self._pinName}, {self._pinDir}, "
                 f"{self._pinType})")
 
@@ -1750,44 +1739,6 @@ class schematicPin(symbolShape):
         return QPolygonF(
             [QPoint(x + dx, y + dy) for dx, dy in polygons[self.pinDir]])
 
-    # @property
-    # def pinPolygon(self):
-    #     match self.pinDir:
-    #         case "Input":
-    #             return QPolygonF([QPoint(self._start.x() - self.PIN_HEIGHT / 2,
-    #                                      self._start.y() - self.PIN_HEIGHT / 2, ),
-    #                               QPoint(self._start.x() + self.PIN_HEIGHT / 2,
-    #                                      self._start.y() - self.PIN_HEIGHT / 2, ),
-    #                               QPoint(self._start.x() + self.PIN_WIDTH / 2,
-    #                                      self._start.y()),
-    #                               QPoint(self._start.x() + self.PIN_HEIGHT / 2,
-    #                                      self._start.y() + self.PIN_HEIGHT / 2, ),
-    #                               QPoint(self._start.x() - self.PIN_HEIGHT / 2,
-    #                                      self._start.y() + self.PIN_HEIGHT / 2, ), ])
-    #         case "Output":
-    #             return QPolygonF([QPoint(self._start.x() - self.PIN_WIDTH / 2,
-    #                                      self._start.y()),
-    #                               QPoint(self._start.x() - self.PIN_HEIGHT / 2,
-    #                                      self._start.y() - self.PIN_HEIGHT / 2, ),
-    #                               QPoint(self._start.x() + self.PIN_HEIGHT / 2,
-    #                                      self._start.y() - self.PIN_HEIGHT / 2, ),
-    #                               QPoint(self._start.x() + self.PIN_HEIGHT / 2,
-    #                                      self._start.y() + self.PIN_HEIGHT / 2, ),
-    #                               QPoint(self._start.x() - self.PIN_HEIGHT / 2,
-    #                                      self._start.y() + self.PIN_HEIGHT / 2, ), ])
-    #         case "Inout":
-    #             return QPolygonF([QPoint(self._start.x() - self.PIN_WIDTH / 2,
-    #                                      self._start.y()),
-    #                               QPoint(self._start.x() - self.PIN_HEIGHT / 2,
-    #                                      self._start.y() - self.PIN_HEIGHT / 2, ),
-    #                               QPoint(self._start.x() + self.PIN_HEIGHT / 2,
-    #                                      self._start.y() - self.PIN_HEIGHT / 2, ),
-    #                               QPoint(self._start.x() + self.PIN_WIDTH / 2,
-    #                                      self._start.y()),
-    #                               QPoint(self._start.x() + self.PIN_HEIGHT / 2,
-    #                                      self._start.y() + self.PIN_HEIGHT / 2, ),
-    #                               QPoint(self._start.x() - self.PIN_HEIGHT / 2,
-    #                                      self._start.y() + self.PIN_HEIGHT / 2, ), ])
 
     def itemChange(self, change, value):
         if change == QGraphicsItem.ItemSelectedHasChanged:
@@ -1795,6 +1746,9 @@ class schematicPin(symbolShape):
                 self.scene().selectedPin = self
             else:
                 self.scene().selectedPin = None
+        elif change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
+            self._finishSnapLines()
+            self._snapLines = set()
         return super().itemChange(change, value)
 
     def boundingRect(self):
@@ -1810,46 +1764,112 @@ class schematicPin(symbolShape):
         path.addRect(pin_rect)
         return path
 
-    def findPinNetIndexTuples(self, ) -> List[
-        Tuple["schematicPin", "net.schematicNet", int]]:
-        # Use a list instead of a set for better performance if order doesn't matter
-        self._pinNetIndexTupleSet = []
 
-        # Create a slightly larger rectangle around the pin for collision detection
-        pin_rect = QRectF(self._start.x() - 5, self._start.y() - 5, 10, 10)
-        pin_scene_rect = self.mapRectToScene(pin_rect)
+    def generatePinNetDict(self):
+        # unfortunate choice of method name to be compatible with schematicSymbol
+        # implementation
+        self._pinNetSet = set()
 
-        # Use a QPainterPath for more accurate collision detection
-        pin_path = QPainterPath()
-        pin_path.addRect(pin_scene_rect)
+        for netItem in self.collidingItems(Qt.IntersectsItemBoundingRect):
+            if isinstance(netItem, net.schematicNet):
+                self._pinNetSet.add(netItem)
 
-        # Find all items that collide with the pin's path
-        colliding_items = self.scene().items(pin_path)
 
-        # Filter for SchematicNet items and process them
-        for item in colliding_items:
-            if isinstance(item, net.schematicNet):
-                for index, end_point in enumerate(item.sceneEndPoints):
-                    if pin_scene_rect.contains(end_point):
-                        self._pinNetIndexTupleSet.append(
-                            pinNetIndexTuple(self, item, index))
-                        break  # Assume only one end of a net can connect to a pin
+    def initializeSnapLines(self, scene):
+        self._snapLines = set()
 
-        return self._pinNetIndexTupleSet
+        if not self._pinNetSet:
+            return None
+        centrePoint = self.mapToScene(self._centre).toPoint()
+        for netItem in self._pinNetSet:
+            endPoint = None
+            for point in netItem.sceneEndPoints:
+                if (centrePoint - point).manhattanLength() < max(self.PIN_HEIGHT, self.PIN_WIDTH):
+                    endPoint = netItem.sceneOtherEnd(point)
+                    break
+            if endPoint:
+                snapLine = net.guideLine(centrePoint, endPoint)
+                snapLine.inherit(netItem)
+                self._snapLines.add(snapLine)
+                scene.deleteUndoStack(netItem)
+                scene.addItem(snapLine)
+
+
+    def updateSnapLines(self):
+        if not self._snapLines:
+            return None
+        pinCentre = self.mapToScene(self._centre).toPoint()
+        for snapLine in self._snapLines:
+            current_end = snapLine.line().p2()
+            new_line = QLineF(pinCentre, current_end)
+
+            # Only update if there's a significant change
+            if (new_line.length() > 1  # Avoid very short lines
+                    and (abs(new_line.dx()) > 1 or abs(
+                        new_line.dy()) > 1)):  # Avoid unnecessary updates
+                snapLine.setLine(new_line)
+            else:
+                # Remove unnecessary lines
+                self.scene().removeItem(snapLine)
+                self._snapLines.remove(snapLine)
+
+    def _finishSnapLines(self):
+        if self._snapLines:
+            try:
+                scene = self.scene()
+                for snapLine in self._snapLines:
+                    newNets = scene.addStretchWires(snapLine.line().p1().toPoint(),
+                                                    snapLine.line().p2().toPoint())
+                    if newNets:
+                        for netItem in newNets:
+                            netItem.inherit(snapLine)
+                        scene.addListUndoStack(newNets)
+                    scene.removeItem(snapLine)
+                self._snapLines = set()
+            except Exception as e:
+                # Log error but continue processing other guidelines
+                scene.logger.error(f"Error processing snap lines: {e}")
+
+    # def findPinNetIndexTuples(self, ) -> List[
+    #     Tuple["schematicPin", "net.schematicNet", int]]:
+    #     # Use a list instead of a set for better performance if order doesn't matter
+    #     self._pinNetIndexTupleSet = []
+    #
+    #     # Create a slightly larger rectangle around the pin for collision detection
+    #     pin_rect = QRectF(self._start.x() - 5, self._start.y() - 5, 10, 10)
+    #     pin_scene_rect = self.mapRectToScene(pin_rect)
+    #
+    #     # Use a QPainterPath for more accurate collision detection
+    #     pin_path = QPainterPath()
+    #     pin_path.addRect(pin_scene_rect)
+    #
+    #     # Find all items that collide with the pin's path
+    #     colliding_items = self.scene().items(pin_path)
+    #
+    #     # Filter for SchematicNet items and process them
+    #     for item in colliding_items:
+    #         if isinstance(item, net.schematicNet):
+    #             for index, end_point in enumerate(item.sceneEndPoints):
+    #                 if pin_scene_rect.contains(end_point):
+    #                     self._pinNetIndexTupleSet.append(
+    #                         pinNetIndexTuple(self, item, index))
+    #                     break  # Assume only one end of a net can connect to a pin
+    #
+    #     return self._pinNetIndexTupleSet
 
     def mousePressEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         super().mousePressEvent(event)
-        self.findPinNetIndexTuples()
-        for tupleItem in self._pinNetIndexTupleSet:
-            self._snapLines = set()
-            snapLine = net.guideLine(self.mapToScene(self.start),
-                                     tupleItem.net.sceneEndPoints[
-                                         tupleItem.netEndIndex - 1], )
-            snapLine.inherit(tupleItem.net)
-
-            self.scene().addItem(snapLine)
-            self._snapLines.add(snapLine)
-            self.scene().removeItem(tupleItem.net)
+        # self.findPinNetIndexTuples()
+        # for tupleItem in self._pinNetIndexTupleSet:
+        #     self._snapLines = set()
+        #     snapLine = net.guideLine(self.mapToScene(self.start),
+        #                              tupleItem.net.sceneEndPoints[
+        #                                  tupleItem.netEndIndex - 1], )
+        #     snapLine.inherit(tupleItem.net)
+        #
+        #     self.scene().addItem(snapLine)
+        #     self._snapLines.add(snapLine)
+        #     self.scene().removeItem(tupleItem.net)
 
     def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         super().mouseReleaseEvent(event)
