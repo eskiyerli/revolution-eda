@@ -684,12 +684,7 @@ class schematicScene(editorScene):
             ]
             if netsConnectedToPin:
                 netName = netsConnectedToPin[0].name
-                pinBaseName, pinIndices = snet.parseBusNotation(pinName)
-                netBaseName, netIndices = snet.parseBusNotation(netName)
-                matchedPairs, self.netCounter = self.matchPinToBus(
-                    pinBaseName, pinIndices, netBaseName, netIndices, self.netCounter
-                )
-                symbolItem.pinNetMap.update(matchedPairs)
+                symbolItem.pinNetMap[pinName] = netName
                 pinItem.connected = True
             else:
                 pinItem.connected = False
@@ -706,15 +701,8 @@ class schematicScene(editorScene):
             ordered_map = {}
             pinNames = (item.strip() for item in pinOrder.split(","))
             for pinName in pinNames:
-                baseName, indices = snet.parseBusNotation(pinName)
-                if indices[0] == indices[1] == 0:
-                    ordered_map[baseName] = symbolItem.pinNetMap[baseName]
-                else:
-                    for pinIndex in self.createBusRanges(*indices):
-                        expandedPin = f"{baseName}<{pinIndex}>"
-                        ordered_map[expandedPin] = symbolItem.pinNetMap[expandedPin]
+                ordered_map[pinName] = symbolItem.pinNetMap[pinName]
             symbolItem.pinNetMap = ordered_map
-            print(symbolItem.pinNetMap)
 
     def findSceneSymbolSet(self) -> set[shp.schematicSymbol]:
         """
@@ -798,7 +786,7 @@ class schematicScene(editorScene):
             self.logger.error(f"Error in addStretchWires: {e}", exc_info=True)
             return []
 
-    def addPin(self, pos: QPoint) -> shp.schematicPin:
+    def addPin(self, pos: QPoint) -> shp.schematicPin|None:
         try:
             pin = shp.schematicPin(pos, self.pinName, self.pinDir, self.pinType)
             self.addUndoStack(pin)
@@ -1524,21 +1512,6 @@ class schematicScene(editorScene):
             net.name = pinName
             net.nameStrength = snet.netNameStrengthEnum.SET
 
-    def _handleBusConnection(
-        self,
-        pin,
-        net,
-        pinBaseName: str,
-        pinIndices: tuple,
-        netBaseName: str,
-        netIndices: tuple,
-        resultSet: set,
-    ) -> None:
-        """Handle bus-to-net connections (placeholder for future implementation)."""
-        # TODO: Implement proper bus handling
-        self.logger.warning(
-            f"Bus connection not fully implemented: {pin.pinName} <-> {net.name}"
-        )
 
     def findSchPins(self, net:snet.schematicNet) -> set[shp.schematicPin]:
         return {pinItem for pinItem in net.collidingItems(
@@ -1556,27 +1529,28 @@ class schematicScene(editorScene):
                     for netItem in sceneSchemPin.collidingItems(Qt.IntersectsItemShape)
                     if isinstance(netItem, snet.schematicNet)
                 )
-
-                # Parse pin name once
-                pinBaseName, pinIndices = snet.parseBusNotation(sceneSchemPin.pinName)
-
                 for netItem in connectedNets:
-                    netBaseName, netIndices = snet.parseBusNotation(netItem.name)
+                    self._processNetPinConnection(netItem, sceneSchemPin.pinName, schemPinConNetsSet)
+                # # Parse pin name once
+                # pinBaseName, pinIndices = snet.parseBusNotation(sceneSchemPin.pinName)
 
-                    if pinIndices == (0, 0) and netIndices == (0, 0):  # Simple nets
-                        self._processNetPinConnection(
-                            netItem, sceneSchemPin.pinName, schemPinConNetsSet
-                        )
-                    else:  # Bus connections
-                        self._handleBusConnection(
-                            sceneSchemPin,
-                            netItem,
-                            pinBaseName,
-                            pinIndices,
-                            netBaseName,
-                            netIndices,
-                            schemPinConNetsSet,
-                        )
+                # for netItem in connectedNets:
+                #     netBaseName, netIndices = snet.parseBusNotation(netItem.name)
+
+                #     if pinIndices == (0, 0) and netIndices == (0, 0):  # Simple nets
+                #         self._processNetPinConnection(
+                #             netItem, sceneSchemPin.pinName, schemPinConNetsSet
+                #         )
+                #     else:  # Bus connections
+                #         self._handleBusConnection(
+                #             sceneSchemPin,
+                #             netItem,
+                #             pinBaseName,
+                #             pinIndices,
+                #             netBaseName,
+                #             netIndices,
+                #             schemPinConNetsSet,
+                #         )
 
             except (AttributeError, ValueError) as e:
                 self.logger.error(
@@ -1718,11 +1692,3 @@ class schematicScene(editorScene):
 
             return matched_pairs, netCounter
 
-
-    @staticmethod
-    def createBusRanges(start: int, end: int):
-        if start < end:
-            resultRange = range(start, end + 1)
-        else:
-            resultRange = range(start, end - 1, -1)
-        return resultRange

@@ -52,7 +52,7 @@ class LineEdit(QLineEdit):
         super().__init__()
         self.historymax = history
         self.clearhistory()
-        self.promptpattern = re.compile("^[>\.]")
+        self.promptpattern = re.compile("^[>.]")
 
     def clearhistory(self) -> None:
         """Clear history buffer"""
@@ -186,7 +186,7 @@ class pythonConsole(QWidget):
         else:
             lines = line.split("\n")
             for line in lines:
-                if re.match("^[\>\.] ", line):
+                if re.match("^[>.] ", line):
                     line = line[2:]
                 self.writeoutput(self.prompt + line, self.inpfmt)
                 self.setprompt(". ")
