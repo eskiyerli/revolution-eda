@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "revolution-eda"
-version = "0.8.5"
+version = "0.8.6"
 description = "Custom IC Design Environment for Professionals"
 authors = ["Revolution Semiconductor <48187772+eskiyerli@users.noreply.github.com>"]
 license = "Mozilla Public License v2 modified by Commons Clause"
@@ -40,16 +40,15 @@ quantiphy = "~2.20"
 python-dotenv = "~1.2.0"
 numpy = "~2.3.1"
 gdstk = "~0.9.60"
+markdown = "^3.9"
 
-
-nuitka = "==2.8.4"
 polars = "~1.35.0"
+orjson = "^3.11.4"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "~8.4.1"
-nuitka = "^2.7.16"
 black = "==25.9.0"
-markdown = "^3.9"
+nuitka = "~2.8.4"
 pyqtgraph = { git = "https://github.com/pyqtgraph/pyqtgraph.git", branch = "master" }
 
 [tool.poetry.scripts]

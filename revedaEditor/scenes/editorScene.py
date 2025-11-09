@@ -21,6 +21,7 @@
 #    License: Mozilla Public License 2.0
 #    Licensor: Revolution Semiconductor (Registered in the Netherlands)
 
+import pathlib
 from typing import List
 from PySide6.QtCore import (QEvent, QPoint, QRectF, Qt, QSizeF )
 from PySide6.QtGui import (QGuiApplication, QTransform, QPainterPath, QPen, QColor)
@@ -338,7 +339,7 @@ class editorScene(QGraphicsScene):
                 view.setUpdatesEnabled(True)
                 view.viewport().update()
 
-    def loadDesign(self, file):
+    def loadDesign(self, filePathObj:pathlib.Path):
         """
         implement in subclasses
         """
