@@ -150,7 +150,7 @@ class editorScene(QGraphicsScene):
                 self._initialGroupPosList = [item.pos().toPoint() for item in self._selectedItemGroup.childItems()]
             elif self.editModes.panView:
                 self.centerViewOnPoint(self.mousePressLoc)
-            self.messageLine.setText(self.messages[self.editModes.mode()])
+            self.messageLine.setText(self.messages.get(self.editModes.mode(), ""))
 
     def mouseMoveEvent(self, event):
         super().mouseMoveEvent(event)
@@ -181,7 +181,7 @@ class editorScene(QGraphicsScene):
             self._handleSelectionRect(modifiers)
         else:
             self._handleMouseRelease(self.mouseReleaseLoc, event.button())
-        self.messageLine.setText(self.messages[self.editModes.mode()])
+        self.messageLine.setText(self.messages.get(self.editModes.mode(), ""))
 
     def _handleSelectionRect(self, modifiers):
         # default implementation of selection rectangle

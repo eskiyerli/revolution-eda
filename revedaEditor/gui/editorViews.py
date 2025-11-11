@@ -316,14 +316,20 @@ class schematicView(editorView):
 
     def mouseReleaseEvent(self, event):
         self.viewRect = self.mapToScene(self.rect()).boundingRect().toRect()
-        # viewSnapLinesSet = {guideLineItem for guideLineItem in
-        #     self.scene.items(self.viewRect) if isinstance(guideLineItem, net.guideLine)}
-        #
-        # self.removeSnapLines(viewSnapLinesSet)
+        self.pruneShortNets()
         self.mergeSplitViewNets()
 
         super().mouseReleaseEvent(event)
 
+
+    def pruneShortNets(self):
+        """Remove nets shorter than snap spacing."""
+        snapSpacing = self.scene.snapTuple[0]
+        netsInView = [netItem for netItem in self.scene.items(self.viewRect) if
+                      isinstance(netItem, net.schematicNet)]
+        for netItem in netsInView:
+            if netItem.scene() and netItem.draftLine.length() < snapSpacing:
+                self.scene.removeItem(netItem)
 
     def mergeSplitViewNets(self):
         netsInView = (netItem for netItem in self.scene.items(self.viewRect) if
@@ -332,20 +338,6 @@ class schematicView(editorView):
             if netItem.scene():
                 self.scene.mergeSplitNets(netItem)
 
-
-    def removeSnapLines(self, viewSnapLinesSet):
-        undoCommandList = []
-        for snapLine in viewSnapLinesSet:
-            lines = self.scene.addStretchWires(snapLine.sceneEndPoints[0],
-                snapLine.sceneEndPoints[1])
-
-            if lines != []:
-                for line in lines:
-                    line.inherit(snapLine)
-                    undoCommandList.append(us.addShapeUndo(self.scene, line))
-                self.scene.addUndoMacroStack(undoCommandList,
-                                             "Stretch Wires")  # undoCommandList.append(us.addShapesUndo(self.scene, lines))
-            self.scene.removeItem(snapLine)
 
     def drawBackground(self, painter, rect):
         super().drawBackground(painter, rect)
@@ -384,6 +376,7 @@ class schematicView(editorView):
                 self.scene._stretchNet.setSelected(False)
                 self.scene._stretchNet.stretch = False
                 self.scene.mergeSplitNets(self.scene._stretchNet)
+                self.scene._stretchNet = None
             self.scene._newInstance = None
             self.scene._newPin = None
             self.scene._newText = None

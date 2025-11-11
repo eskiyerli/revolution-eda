@@ -1108,10 +1108,9 @@ class schematicScene(editorScene):
         # now list instance attributes
         for counter, name in enumerate(item.symattrs.keys()):
             dlg.instanceAttributesLayout.addWidget(edf.boldLabel(name, dlg), counter, 0)
-            labelType = edf.longLineEdit()
-            labelType.setReadOnly(True)
             labelNameEdit = edf.longLineEdit()
             labelNameEdit.setText(item.symattrs.get(name))
+            labelNameEdit.setReadOnly(True)
             labelNameEdit.setToolTip(f"{name} attribute (Read Only)")
             dlg.instanceAttributesLayout.addWidget(labelNameEdit, counter, 1)
         if dlg.exec() == QDialog.Accepted:
@@ -1123,7 +1122,7 @@ class schematicScene(editorScene):
                 int(float(dlg.xLocationEdit.text().strip())),
                 int(float(dlg.yLocationEdit.text().strip())),
             )
-            newInstance = self.instSymbol(instanceTuple, location)
+            newInstance = self.instSymbol(instanceTuple, location + self.origin)
 
             if newInstance:
                 newInstance.instanceName = dlg.instNameEdit.text().strip()
@@ -1132,32 +1131,26 @@ class schematicScene(editorScene):
 
                 tempDoc = QTextDocument()
                 for i in range(dlg.instanceLabelsLayout.rowCount()):
+                    labelNameItem = dlg.instanceLabelsLayout.itemAtPosition(i, 0)
+                    labelValueItem = dlg.instanceLabelsLayout.itemAtPosition(i, 1)
+                    labelVisibleItem = dlg.instanceLabelsLayout.itemAtPosition(i, 2)
+                    
+                    if not (labelNameItem and labelValueItem and labelVisibleItem):
+                        continue
+                    
                     # first create label name document with HTML annotations
-                    tempDoc.setHtml(
-                        dlg.instanceLabelsLayout.itemAtPosition(i, 0).widget().text()
-                    )
+                    tempDoc.setHtml(labelNameItem.widget().text())
                     # now strip html annotations
                     tempLabelName = f"@{tempDoc.toPlainText().strip()}"
                     # check if label name is in label dictionary of item.
                     if newInstance.labels.get(tempLabelName):
                         # this is where the label value is set.
-                        newInstance.labels[tempLabelName].labelValue = (
-                            dlg.instanceLabelsLayout.itemAtPosition(i, 1)
-                            .widget()
-                            .text()
-                        )
-                        visible = (
-                            dlg.instanceLabelsLayout.itemAtPosition(i, 2)
-                            .widget()
-                            .currentText()
-                        )
-                        if visible == "True":
-                            newInstance.labels[tempLabelName].labelVisible = True
-                        else:
-                            newInstance.labels[tempLabelName].labelVisible = False
+                        newInstance.labels[tempLabelName].labelValue = labelValueItem.widget().text()
+                        visible = labelVisibleItem.widget().currentText()
+                        newInstance.labels[tempLabelName].labelVisible = (visible == "True")
                 [labelItem.labelDefs() for labelItem in newInstance.labels.values()]
                 newInstance.setPos(
-                    self.snapToGrid(location - self.origin, self.snapTuple)
+                    self.snapToGrid(location, self.snapTuple) + self.origin
                 )
                 newInstance.flipTuple = item.flipTuple
                 self.undoStack.push(us.addDeleteShapeUndo(self, newInstance, item))
@@ -1531,26 +1524,7 @@ class schematicScene(editorScene):
                 )
                 for netItem in connectedNets:
                     self._processNetPinConnection(netItem, sceneSchemPin.pinName, schemPinConNetsSet)
-                # # Parse pin name once
-                # pinBaseName, pinIndices = snet.parseBusNotation(sceneSchemPin.pinName)
 
-                # for netItem in connectedNets:
-                #     netBaseName, netIndices = snet.parseBusNotation(netItem.name)
-
-                #     if pinIndices == (0, 0) and netIndices == (0, 0):  # Simple nets
-                #         self._processNetPinConnection(
-                #             netItem, sceneSchemPin.pinName, schemPinConNetsSet
-                #         )
-                #     else:  # Bus connections
-                #         self._handleBusConnection(
-                #             sceneSchemPin,
-                #             netItem,
-                #             pinBaseName,
-                #             pinIndices,
-                #             netBaseName,
-                #             netIndices,
-                #             schemPinConNetsSet,
-                #         )
 
             except (AttributeError, ValueError) as e:
                 self.logger.error(
@@ -1596,12 +1570,13 @@ class schematicScene(editorScene):
         """
         Validates if the string is either:
         1. A string without any < or > characters
-        2. A string ending with <int:int> where int is a positive integer
+        2. A string ending with <int> where int is a positive integer
+        3. A string ending with <int:int> where int is a positive integer
 
         Returns True if valid, False otherwise
         """
-        # Pattern for string ending with <int:int>
-        bus_pattern = QRegularExpression(r"^.*<(\d+):(\d+)>$")
+        # Pattern for string ending with <int> or <int:int>
+        bus_pattern = QRegularExpression(r"^.*<(\d+)(?::(\d+))?>$")
 
         # Pattern to detect any partial bus notation
         partial_pattern = QRegularExpression(r"[<>:]")
@@ -1615,80 +1590,4 @@ class schematicScene(editorScene):
         if match.hasMatch() and text.count("<") == 1 and text.count(">") == 1:
             return True
         return False
-
-    @staticmethod
-    def matchPinToBus(
-        pinBaseName: str,
-        pinIndexTuple: Tuple[int, int],
-        netBaseName: str,
-        netIndexTuple: Tuple[int, int],
-        netCounter: int,
-    ) -> Tuple[List[Tuple[str, str]], List[str]]:
-        """
-        Matches pins to nets based on their base names and index ranges, and generates a list of
-        matched pin-net pairs. Handles cases where pins and nets have different ranges or are
-        single entities.
-        Args:
-            pinBaseName (str): The base name of the pin.
-            pinIndexTuple (Tuple[int, int]): A tuple representing the start and end indices of the pin range.
-            netBaseName (str): The base name of the net.
-            netIndexTuple (Tuple[int, int]): A tuple representing the start and end indices of the net range.
-            netCounter (int): A counter used to generate unique names for dangling nets.
-        Returns:
-            Tuple[List[Tuple[str, str]], List[str]]:
-                - A list of tuples where each tuple contains a matched pin and net name.
-                - The updated net counter after processing.
-        Notes:
-            - If both pin and net ranges are single entities (0, 0), they are directly matched.
-            - If the pin range is a single entity and the net range is multiple, the single pin is matched
-                to the first each net in the range.
-            - If the net range is a single entity and the pin range is multiple, the single net is matched
-                to each pin in the range, and dangling nets are generated for unmatched pins.
-            - If both pin and net ranges are multiple, they are matched one-to-one, and dangling nets are
-                generated for unmatched pins if the pin range is longer than the net range.
-        """
-
-        def createBusRanges(start: int, end: int):
-            if start < end:
-                resultRange = range(start, end + 1)
-            else:
-                resultRange = range(start, end - 1, -1)
-            return resultRange
-
-        pinRangeStart = pinIndexTuple[0]
-        pinRangeEnd = pinIndexTuple[1]
-        netRangeStart = netIndexTuple[0]
-        netRangeEnd = netIndexTuple[1]
-        # Create the range based on direction
-        pinRange = createBusRanges(pinRangeStart, pinRangeEnd)
-        netRange = createBusRanges(netRangeStart, netRangeEnd)
-        # if both pin and net do not have range
-        if pinRangeStart == pinRangeEnd == netRangeStart == netRangeEnd == 0:
-            return [(pinBaseName, netBaseName)], netCounter
-        elif (
-            pinRangeStart == pinRangeEnd == 0 and netRangeStart != netRangeEnd
-        ):  # Single pin and multiple nets
-            # connect pin to first net in the net range
-            return [(pinBaseName, f"{netBaseName}<{netRangeStart}>")], netCounter
-        elif (
-            netRangeStart == netRangeEnd == 0 and pinRangeStart != pinRangeEnd
-        ):  # Multiple pins and single net
-            matched_pairs = [(f"{pinBaseName}<{pinRangeStart}>", netBaseName)]
-            for i in pinRange[1:]:
-                matched_pairs.append((f"{pinBaseName}<{i}>", f"dnet{netCounter}"))
-                netCounter += 1
-            return matched_pairs, netCounter
-        else:
-            # Create the list of tuples
-            matched_pairs = [
-                (f"{pinBaseName}<{i}>", f"{netBaseName}<{j}>")
-                for i, j in zip(pinRange, netRange)
-            ]
-
-            if len(pinRange) > len(netRange):
-                for i in pinRange[len(netRange) :]:
-                    matched_pairs.append((f"{pinBaseName}<{i}>", f"dnet{netCounter}"))
-                    netCounter += 1
-
-            return matched_pairs, netCounter
 
