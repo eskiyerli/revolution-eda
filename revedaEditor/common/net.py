@@ -98,6 +98,11 @@ class schematicNet(QGraphicsItem):
         self._flightLinesSet: Set["schematicNet"] = set()
         self._connectedNetsSet: Set["schematicNet"] = set()
         self._netSnapLines: dict = {}
+        
+        # Track nets connected at each endpoint for rubber-banding
+        # Key: endpoint index (0=p1/start, 1=p2/end)
+        # Value: dict mapping connected net to which of its endpoints connects
+        self._endpointConnections: dict[int, dict["schematicNet", int]] = {0: {}, 1: {}}
 
         # Line and name initialization
         self.draftLine = QLineF(start, end)
@@ -242,6 +247,57 @@ class schematicNet(QGraphicsItem):
             self.scene().wireEditFinished.emit(self)
         super().mouseReleaseEvent(event)
 
+    @staticmethod
+    def parseArrayNotation(name: str) -> tuple[str, tuple[int, int]]:
+        """Parse net/instance array notation like 'name<0:5>' into base name and index range.
+        Also handles single instance/net notation like 'name<0>' or 'name<1>'.
+        
+        Returns:
+            tuple[str, tuple[int, int]]: Base name and (start, end) indices.
+                                         Returns (-1, -1) if no bus notation.
+        """
+        if '<' not in name or '>' not in name:
+            return name, (-1, -1)
+        
+        baseName = name.split('<')[0]
+        indexRange = name.split('<')[1].split('>')[0]
+        
+        if ':' not in indexRange:
+            singleIndex = int(indexRange)
+            return baseName, (singleIndex, singleIndex)
+        
+        start, end = map(int, indexRange.split(':'))
+        return baseName, (start, end)
+
+    @staticmethod
+    def _namesMatch(name1: str, name2: str) -> bool:
+        """Check if two net names match, considering bus notation.
+        Examples: 
+        - 'inp' matches 'inp' (exact match)
+        - 'inp<7>' matches 'inp<7:0>' (index in range)
+        - 'data<3>' matches 'data<7:0>' (index in range)
+        """
+        if name1 == name2:
+            return True
+        
+        base1, (start1, end1) = schematicNet.parseArrayNotation(name1)
+        base2, (start2, end2) = schematicNet.parseArrayNotation(name2)
+        
+        # Base names must match
+        if base1 != base2:
+            return False
+        
+        # If both have no index (-1, -1), base names already matched above
+        # If only one has index, they don't match (e.g., 'inp' vs 'inp<7>')
+        if (start1 == -1) or (start2 == -1):
+            return False
+        
+        # Check if index/range overlaps
+        min1, max1 = min(start1, end1), max(start1, end1)
+        min2, max2 = min(start2, end2), max(start2, end2)
+        
+        return not (max1 < min2 or max2 < min1)
+
     def hoverEnterEvent(self, event: QGraphicsSceneHoverEvent) -> None:
         """
         Override the hoverEnterEvent method of QGraphicsItem.
@@ -259,9 +315,8 @@ class schematicNet(QGraphicsItem):
             self.scene().nameSceneNets() # first name all the nets in the scene.
             sceneNetsSet = self.scene().findSceneNetsSet()
             self._connectedNetsSet = {
-                net for net in sceneNetsSet if net.name == self.name
+                net for net in sceneNetsSet if self._namesMatch(net.name, self.name)
             }
-
 
             # Highlight the connected netItems
             for netItem in self._connectedNetsSet:
@@ -778,32 +833,3 @@ class guideLine(QGraphicsLineItem):
         assert isinstance(otherNet, schematicNet)
         self.name = otherNet.name
         self.nameStrength = otherNet.nameStrength
-
-
-def parseBusNotation(name: str) -> tuple[str, tuple[int, int]]:
-    """
-    Parse bus notation like 'name<0:5>' into base name and index range.
-    Also handles single net notation like 'name<0>' or 'name<1>'.
-
-    Args:
-    name (str): The net name with optional bus notation.
-
-    Returns:
-    tuple[str, tuple[int, int]]: A tuple containing the base name and a tuple of start and end indices.
-    """
-    # Check if the name does not contain bus notation
-    if '<' not in name or '>' not in name:
-        return name, (0, 0)
-
-    baseName = name.split('<')[0]  # Extract the base name before '<'
-    indexRange = name.split('<')[1].split('>')[0]  # Extract the content inside '<>'
-
-    # Check if it's a single index (e.g., 'name<0>')
-    if ':' not in indexRange:
-        singleIndex = int(indexRange)
-        return baseName, (singleIndex, singleIndex)
-
-    # Handle range notation (e.g., 'name<0:5>')
-    start, end = map(int, indexRange.split(':'))
-    return baseName, (start, end)
-

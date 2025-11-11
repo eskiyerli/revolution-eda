@@ -23,7 +23,6 @@
 #
 
 import datetime
-from email.mime import base
 import json
 import pathlib
 import re
@@ -699,7 +698,8 @@ class xyceNetlist:
                 netlistView = self.determineNetlistView(elementSymbol, cellItem)
                 
                 if "schematic" in netlistView:
-                    content.append(self.createXyceSymbolLine(elementSymbol))
+                    lines = self.createXyceSymbolLine(elementSymbol)
+                    content.extend(lines if isinstance(lines, list) else [lines])
                     schematicItem = libm.getViewItem(cellItem, netlistView)
                     if netlistView not in self._stopViewList:
                         schematicObj = schematicEditor(schematicItem, self.libraryDict, self.libraryView)
@@ -708,17 +708,20 @@ class xyceNetlist:
                         
                         if viewTuple not in self.netlistedViewsSet:
                             self.netlistedViewsSet.add(viewTuple)
-                            pinList = elementSymbol.symattrs.get("pinOrder", ", ").replace(",", " ")
+                            expandedPinsString = self.expandPinNames(list(elementSymbol.pinNetMap.keys()))
                             subcktContent = []
                             self.collectSubcircuitContent(schematicObj, subcktContent)
-                            subcktDef = f".SUBCKT {schematicObj.cellName} {pinList}\n" + ''.join(subcktContent) + ".ENDS\n"
+                            subcktDef = f".SUBCKT {schematicObj.cellName} {expandedPinsString}\n" + '\n'.join(subcktContent) + "\n.ENDS\n"
                             self.subcircuitDefs.append(subcktDef)
                 elif "symbol" in netlistView:
-                    content.append(self.createXyceSymbolLine(elementSymbol))
+                    lines = self.createXyceSymbolLine(elementSymbol)
+                    content.extend(lines if isinstance(lines, list) else [lines])
                 elif "spice" in netlistView:
-                    content.append(self.createSpiceLine(elementSymbol))
+                    lines = self.createSpiceLine(elementSymbol)
+                    content.extend(lines if isinstance(lines, list) else [lines])
                 elif "veriloga" in netlistView:
-                    content.append(self.createVerilogaLine(elementSymbol))
+                    lines = self.createVerilogaLine(elementSymbol)
+                    content.extend(lines if isinstance(lines, list) else [lines])
             elif elementSymbol.netlistIgnore:
                 content.append(f"*{elementSymbol.instanceName} is marked to be ignored\n")
             elif not elementSymbol.symattrs.get("XyceNetlistPass", False):
@@ -771,25 +774,27 @@ class xyceNetlist:
 
     def createItemLine(self, cirFile, elementSymbol: shp.schematicSymbol, cellItem: libb.cellItem, netlistView: str, ):
         if "schematic" in netlistView:
-            # First write subckt call in the netlist.
-            cirFile.write(self.createXyceSymbolLine(elementSymbol))
+            elementLines = self.createXyceSymbolLine(elementSymbol)
+            for line in elementLines:
+                cirFile.write(f"{line}\n")
+            
             schematicItem = libm.getViewItem(cellItem, netlistView)
             if netlistView not in self._stopViewList:
-                # now load the schematic
                 schematicObj = schematicEditor(schematicItem, self.libraryDict, self.libraryView)
                 schematicObj.loadSchematic()
-
+                
                 viewTuple = ddef.viewTuple(schematicObj.libName, schematicObj.cellName, schematicObj.viewName)
-
+                
                 if viewTuple not in self.netlistedViewsSet:
                     self.netlistedViewsSet.add(viewTuple)
-                    pinList = elementSymbol.symattrs.get("pinOrder", ", ").replace(",", " ")
-                    # Store subcircuit definition for later writing
+                    expandedPinsString = self.expandPinNames(list(elementSymbol.pinNetMap.keys()))
                     if not hasattr(self, 'subcircuitDefs'):
                         self.subcircuitDefs = []
+                    
                     subcktContent = []
                     self.collectSubcircuitContent(schematicObj, subcktContent)
-                    subcktDef = f".SUBCKT {schematicObj.cellName} {pinList}\n" + ''.join(subcktContent) + ".ENDS\n"
+                    
+                    subcktDef = f"\n.SUBCKT {schematicObj.cellName} {expandedPinsString}\n" + '\n'.join(subcktContent) + "\n.ENDS\n"
                     self.subcircuitDefs.append(subcktDef)
         elif "symbol" in netlistView:
             symbolLines = self.createXyceSymbolLine(elementSymbol)
@@ -804,136 +809,90 @@ class xyceNetlist:
             for line in verilogaLines:
                 cirFile.write(f"{line}\n")
 
-    def createXyceSymbolLine(self, elementSymbol: shp.schematicSymbol) -> list[str]:
-        """
-        Create a netlist line from a nlp device format line.
-        """
+    def _createNetlistLine(self, elementSymbol: shp.schematicSymbol, netlistLineKey: str) -> list[str]:
+        """Shared netlist line creation logic."""
         try:
             instNameLabel = elementSymbol.labels.get('@instName')
             if not instNameLabel:
                 return []
             
-            baseLabel, arrayTuple = self.parseArrayNotation(instNameLabel.labelValue.strip())
-            step = -1 if arrayTuple[0] > arrayTuple[1] else 1
+            baseInstName, arrayTuple = self.parseArrayNotation(instNameLabel.labelValue.strip())
+            arrayStep = -1 if arrayTuple[0] > arrayTuple[1] else 1
+            arraySize = abs(arrayTuple[0] - arrayTuple[1]) + 1
             
-            # Pre-compute values that don't change in loop
-            baseNetlistLine = elementSymbol.symattrs["SpiceNetlistLine"].strip()
+            baseNetlistLine = elementSymbol.symattrs[netlistLineKey].strip()
             instNameToken = instNameLabel.labelName
-            pinList = " ".join(elementSymbol.pinNetMap.values())
-            
             symbolLines = []
-            for i in range(arrayTuple[0], arrayTuple[1] + step, step):
-                spiceNetlistLine = baseNetlistLine.replace(instNameToken, f"{baseLabel}<{i}>")
-                
-                # Process labels
-                for labelItem in elementSymbol.labels.values():
-                    spiceNetlistLine = spiceNetlistLine.replace(labelItem.labelName, labelItem.labelValue)
-                
-                # Add pin list and process attributes
-                spiceNetlistLine = spiceNetlistLine.replace("%pinOrder", pinList)
-                for attrb, value in elementSymbol.symattrs.items():
-                    spiceNetlistLine = spiceNetlistLine.replace(f"%{attrb}", value)
-                
-                spiceNetlistLine = re.sub(r'\s+\w+\s*=(?=\s|$)', '', spiceNetlistLine)
-                symbolLines.append(spiceNetlistLine)
             
+            # Parse net information
+            netSizeList, netTupleList, netBaseNameList = [], [], []
+            for netName in elementSymbol.pinNetMap.values():
+                netBaseName, netSizeTuple = self.parseArrayNotation(netName)
+                netBaseNameList.append(netBaseName)
+                netTupleList.append(netSizeTuple)
+                netSizeList.append(abs(netSizeTuple[0] - netSizeTuple[1]) + 1)
+            
+            def processLine(line, netsList):
+                line = line.replace("%pinOrder", netsList)
+                for attrb, value in elementSymbol.symattrs.items():
+                    line = line.replace(f"%{attrb}", value)
+                return re.sub(r'\s+\w+\s*=(?=\s|$)', '', line)
+            
+            def createInstanceLine(instanceName):
+                line = baseNetlistLine.replace(instNameToken, instanceName)
+                for labelItem in elementSymbol.labels.values():
+                    line = line.replace(labelItem.labelName, labelItem.labelValue)
+                return line
+            
+            def expandNet(netName):
+                baseName, netTuple = self.parseArrayNotation(netName)
+                if netTuple[0] == netTuple[1] == -1:
+                    return [baseName]
+                netStep = 1 if netTuple[1] >= netTuple[0] else -1
+                return [f"{baseName}<{i}>" for i in range(netTuple[0], netTuple[1] + netStep, netStep)]
+            
+            # Expand all nets
+            expandedNets = []
+            for netName in elementSymbol.pinNetMap.values():
+                expandedNets.extend(expandNet(netName))
+            netsList = " ".join(expandedNets)
+            
+            # Generate instance lines
+            if arraySize == 1:
+                symbolLines.append(processLine(createInstanceLine(baseInstName), netsList))
+            else:
+                for i in range(arrayTuple[0], arrayTuple[1] + arrayStep, arrayStep):
+                    symbolLines.append(processLine(createInstanceLine(f"{baseInstName}<{i}>"), netsList))
+                            
             return symbolLines
-
+            
+        
         except Exception as e:
             self._scene.logger.error(f"Error creating netlist line for {elementSymbol.instanceName}: {e}")
             return [f"*Netlist line is not defined for symbol of {elementSymbol.instanceName}\n"]
 
-    # def createXyceSymbolLine(self, elementSymbol: shp.schematicSymbol) -> list[str]:
-    #     """
-    #     Create a netlist line from a nlp device format line.
-    #     """
-    #     try:
-    #         symbolLines = []
-            
-    #         if elementSymbol.labels.get('@instName'):
-    #             baseLabel, arrayTuple = self.parseArrayNotation(elementSymbol.labels.get('@instName').labelValue.strip())
-
-    #             step = -1 if arrayTuple[0] > arrayTuple[1] else 1
-    #             for i in range(arrayTuple[0], arrayTuple[1] + step, step):
-    #                 spiceNetlistLine = elementSymbol.symattrs["SpiceNetlistLine"].strip()
-    #                 spiceNetlistLine = spiceNetlistLine.replace(elementSymbol.labels.get('@instName').labelName, f"{baseLabel}<{i}>")
-    #                 # Process labels
-    #                 for labelItem in elementSymbol.labels.values():
-    #                     spiceNetlistLine = spiceNetlistLine.replace(labelItem.labelName, labelItem.labelValue)
-
-    #                 # Add pin list
-    #                 pinList = " ".join(elementSymbol.pinNetMap.values())
-    #                 spiceNetlistLine = (spiceNetlistLine.replace("%pinOrder", pinList))
-    #                 # Process other attributes
-    #                 for attrb, value in elementSymbol.symattrs.items():
-    #                     spiceNetlistLine = spiceNetlistLine.replace(f"%{attrb}", value)
-    #                 spiceNetlistLine = re.sub(r'\s+\w+\s*=(?=\s|$)', '', spiceNetlistLine)
-    #                 symbolLines.append(spiceNetlistLine)
-    #         return symbolLines
-
-    #     except Exception as e:
-    #         self._scene.logger.error(f"Error creating netlist line for {elementSymbol.instanceName}: {e}")
-    #         return ([f"*Netlist line is not defined for symbol of {elementSymbol.instanceName}\n"])
+    def createXyceSymbolLine(self, elementSymbol: shp.schematicSymbol) -> list[str]:
+        return self._createNetlistLine(elementSymbol, "SpiceNetlistLine")
 
     def createSpiceLine(self, elementSymbol: shp.schematicSymbol):
-        """
-        Create a netlist line from a nlp device format line.
-        """
         try:
             spiceLines = self.createXyceSymbolLine(elementSymbol)
-
-            self.includeLines.add(
-                elementSymbol.symattrs.get("incLine", "* no include line is found for {item.cellName}").strip())
+            self.includeLines.add(elementSymbol.symattrs.get("incLine", "* no include line is found for {item.cellName}").strip())
             return spiceLines
         except Exception as e:
             self._scene.logger.error(f"Spice subckt netlist error: {e}")
-            self._scene.logger.error(f"Netlist line is not defined for {elementSymbol.instanceName}")
-            # if there is no NLPDeviceFormat line, create a warning line
-            return (f"*Netlist line is not defined for symbol of {elementSymbol.instanceName}\n")
+            return f"*Netlist line is not defined for symbol of {elementSymbol.instanceName}\n"
 
     def createVerilogaLine(self, elementSymbol):
-        """
-        Create a netlist line from a nlp device format line.
-        """
         try:
-            instNameLabel = elementSymbol.labels.get('@instName')
-            if not instNameLabel:
-                return []
-            
-            baseLabel, arrayTuple = self.parseArrayNotation(instNameLabel.labelValue.strip())
-            step = -1 if arrayTuple[0] > arrayTuple[1] else 1
-            
-            # Pre-compute values that don't change in loop
-            baseNetlistLine = elementSymbol.symattrs["XyceVerilogaNetlistLine"].strip()
-            instNameToken = instNameLabel.labelName
-            pinList = " ".join(elementSymbol.pinNetMap.values())
-            
-            symbolLines = []
-            for i in range(arrayTuple[0], arrayTuple[1] + step, step):
-                verilogaNetlistLine = baseNetlistLine.replace(instNameToken, f"{baseLabel}<{i}>")
-                
-                # Process labels
-                for labelItem in elementSymbol.labels.values():
-                    verilogaNetlistLine = verilogaNetlistLine.replace(labelItem.labelName, labelItem.labelValue)
-                
-                # Add pin list and process attributes
-                verilogaNetlistLine = verilogaNetlistLine.replace("%pinOrder", pinList)
-                for attrb, value in elementSymbol.symattrs.items():
-                    verilogaNetlistLine = verilogaNetlistLine.replace(f"%{attrb}", value)
-                
-                verilogaNetlistLine = re.sub(r'\s+\w+\s*=(?=\s|$)', '', verilogaNetlistLine)
-                symbolLines.append(verilogaNetlistLine)
-            self.vamodelLines.add(
-                elementSymbol.symattrs.get("vaModelLine", "* no model line is found for {item.cellName}").strip())
-            self.vahdlLines.add(
-                elementSymbol.symattrs.get("vaHDLLine", "* no hdl line is found for {item.cellName}").strip())
+            symbolLines = self._createNetlistLine(elementSymbol, "XyceVerilogaNetlistLine")
+            self.vamodelLines.add(elementSymbol.symattrs.get("vaModelLine", "* no model line is found for {item.cellName}").strip())
+            self.vahdlLines.add(elementSymbol.symattrs.get("vaHDLLine", "* no hdl line is found for {item.cellName}").strip())
             return symbolLines
-
         except Exception as e:
             self._scene.logger.error(e)
-            self._scene.logger.error(f"Netlist line is not defined for {elementSymbol.instanceName}")
-            # if there is no NLPDeviceFormat line, create a warning line
-            return (f"*Netlist line is not defined for symbol of {elementSymbol.instanceName}\n")
+            return f"*Netlist line is not defined for symbol of {elementSymbol.instanceName}\n"
+
 
     @staticmethod
     def parseArrayNotation(name: str) -> tuple[str, tuple[int, int]]:
@@ -949,7 +908,7 @@ class xyceNetlist:
         """
         # Check if the name does not contain bus notation
         if '<' not in name or '>' not in name:
-            return name, (0, 0)
+            return name, (-1, -1)
 
         baseName = name.split('<')[0]  # Extract the base name before '<'
         indexRange = name.split('<')[1].split('>')[0]  # Extract the content inside '<>'
@@ -962,6 +921,19 @@ class xyceNetlist:
         # Handle range notation (e.g., 'name<0:5>')
         start, end = map(int, indexRange.split(':'))
         return baseName, (start, end)
+
+    @staticmethod
+    def expandPinNames(pinNamesList: List[str])-> str:
+        expandedPinNameList = []
+        for pinName in pinNamesList:
+            pinBaseName, pinTuple = xyceNetlist.parseArrayNotation(pinName)
+            if pinTuple[0]==pinTuple[1]==-1:
+                expandedPinNameList.append(pinBaseName)
+            else:
+                pinStep =  1 if pinTuple[1] >= pinTuple[0] else -1
+                for i in range(pinTuple[0],pinTuple[1]+pinStep):
+                    expandedPinNameList.append(f'{pinBaseName}<{i}>')
+        return ' '.join(expandedPinNameList)
 
 class vacaskNetlist():
     def __init__(self, schematic: schematicEditor, filePathObj: pathlib.Path, useConfig: bool = False, ):
