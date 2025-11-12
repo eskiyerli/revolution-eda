@@ -887,10 +887,10 @@ class layoutScene(editorScene):
             labelText = dlg.pinName.text()
             start = self.snapToGrid(self.toSceneCoord(
                 QPointF(float(dlg.pinBottomLeftX.text()),
-                        float(dlg.pinBottomLeftY.text()), )), self.snapTuple, )
+                        float(dlg.pinBottomLeftY.text()), )) )
             end = self.snapToGrid(self.toSceneCoord(
                 QPointF(float(dlg.pinTopRightX.text()),
-                        float(dlg.pinTopRightY.text()), )), self.snapTuple, )
+                        float(dlg.pinTopRightY.text()), )) )
             pinLayer = laylyr.pdkPinLayers[dlg.pinLayerCB.currentIndex()]
             newPin = lshp.layoutPin(start, end, pinName, pinDir, pinType,
                                     pinLayer)
