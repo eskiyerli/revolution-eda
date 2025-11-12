@@ -36,6 +36,12 @@ import revedaEditor.gui.propertyDialogues as pdlg
 
 
 class editorScene(QGraphicsScene):
+    # Define MOUSE_EVENTS as a class attribute to avoid recreating it on every call
+    MOUSE_EVENTS = {
+        QEvent.GraphicsSceneMouseMove,
+        QEvent.GraphicsSceneMousePress,
+        QEvent.GraphicsSceneMouseRelease
+    }
 
     def __init__(self, parent):
         super().__init__(parent)
@@ -106,10 +112,8 @@ class editorScene(QGraphicsScene):
         self._finalGroupPosDiff = QPoint(0,0)
 
     def contextMenuEvent(self, event):
-        clickedItem = self.itemAt(event.scenePos(), QTransform())
-        if clickedItem is None:
-            for item in self.selectedItems():
-                item.setSelected(False)
+        if self.itemAt(event.scenePos(), QTransform()) is None:
+            self.clearSelection()
             self._selectedItems = []
             self._selectedItemGroup = None
             self._groupItems = []
@@ -183,27 +187,21 @@ class editorScene(QGraphicsScene):
             self._handleMouseRelease(self.mouseReleaseLoc, event.button())
         self.messageLine.setText(self.messages.get(self.editModes.mode(), ""))
 
-    def _handleSelectionRect(self, modifiers):
-        # default implementation of selection rectangle
-        self.clearSelection()
-        selectionMode = (
-            Qt.ItemSelectionMode.IntersectsItemShape
-            if self.partialSelection
-            else Qt.ItemSelectionMode.ContainsItemShape
+    def snapToGrid(self, point: QPoint) -> QPoint:
+        """Snap point to scene grid."""
+        xgrid = self.snapTuple[0]
+        ygrid = self.snapTuple[1]
+        return QPoint(
+            round(point.x() / xgrid) * xgrid,
+            round(point.y() / ygrid) * ygrid
         )
-        selectionPath = QPainterPath()
-        selectionPath.addRect(self._selectionRectItem.sceneBoundingRect())
-        match modifiers:
-            case Qt.KeyboardModifier.ShiftModifier:
-                self.setSelectionArea(selectionPath, mode=selectionMode)
-            case Qt.KeyboardModifier.ControlModifier:
-                for item in self.items(selectionPath, mode=selectionMode):
-                    item.setSelected(not item.isSelected())
-            case _:
-                for item in self.items(selectionPath, mode=selectionMode):
-                    item.setSelected(True)
-        self.removeItem(self._selectionRectItem)
-        self._selectionRectItem = None
+    
+    def _snapPoint(self, pos: QPoint) -> QPoint:
+        """
+        Default snapping behavior. Subclasses can override this for more
+        advanced snapping (e.g., to items, intersections).
+        """
+        return self.snapToGrid(pos)
 
     def _handleMouseRelease(self, mousePos: QPoint, button: Qt.MouseButton):
         pass
@@ -214,12 +212,6 @@ class editorScene(QGraphicsScene):
         """
         return int(round(float(number) / base)) * base
 
-    def snapToGrid(self, point: QPoint, snapTuple: tuple[int, int]):
-        """
-        snap point to grid. Divides and multiplies by grid size.
-        """
-        return QPoint(self.snapToBase(point.x(), snapTuple[0]),
-                      self.snapToBase(point.y(), snapTuple[1]), )
 
     def rotateSelectedItems(self, point: QPoint):
         """
@@ -244,28 +236,39 @@ class editorScene(QGraphicsScene):
         undoCommand = us.undoRotateShape(self, item, point, angle)
         self.undoStack.push(undoCommand)
 
+    def _handleSelectionRect(self, modifiers):
+        # default implementation of selection rectangle
+        self.clearSelection()
+        selectionMode = (
+            Qt.ItemSelectionMode.IntersectsItemShape
+            if self.partialSelection
+            else Qt.ItemSelectionMode.ContainsItemShape
+        )
+        selectionPath = QPainterPath()
+        selectionPath.addRect(self._selectionRectItem.sceneBoundingRect())
+        match modifiers:
+            case Qt.KeyboardModifier.ShiftModifier:
+                self.setSelectionArea(selectionPath, mode=selectionMode)
+            case Qt.KeyboardModifier.ControlModifier:
+                for item in self.items(selectionPath, mode=selectionMode):
+                    item.setSelected(not item.isSelected())
+            case _:
+                for item in self.items(selectionPath, mode=selectionMode):
+                    item.setSelected(True)
+        if self._selectionRectItem:
+            self.removeItem(self._selectionRectItem)
+            self._selectionRectItem = None
+
     def eventFilter(self, source, event):
         """
         Filter mouse events to snap them to background grid points.
-
-        Args:
-            source: The object that triggered the event
-            event: The event to be filtered
-
-        Returns:
-            bool: True if event should be filtered out, False if it should be processed
         """
         if self.readOnly:
             return True
 
-        MOUSE_EVENTS = {
-            QEvent.GraphicsSceneMouseMove,
-            QEvent.GraphicsSceneMousePress,
-            QEvent.GraphicsSceneMouseRelease
-        }
-
-        if event.type() in MOUSE_EVENTS:
-            snappedPos = self.snapToGrid(event.scenePos(), self.snapTuple)
+        if event.type() in self.MOUSE_EVENTS:
+            # Use the _snapPoint method which can be overridden by subclasses
+            snappedPos = self._snapPoint(event.scenePos().toPoint())
             event.setScenePos(snappedPos)
             return False
 
@@ -351,13 +354,14 @@ class editorScene(QGraphicsScene):
                                                          [self.majorGrid,
                                                           self.snapGrid])
         self.snapTuple = (self.snapGrid, self.snapGrid)
-        self.snapDistance = 2 * self.snapGrid
-        self.editorWindow.snapGrid = self.snapGrid
-        self.editorWindow.majorGrid = self.majorGrid
-        self.editorWindow.snapTuple = self.snapTuple
-        self.editorWindow.centralW.view.snapGrid = self.snapGrid
-        self.editorWindow.centralW.view.majorGrid = self.majorGrid
-        self.editorWindow.centralW.view.snapTuple = self.snapTuple
+        self._snapDistance = 2 * self.snapGrid
+        
+        # Update editor window and view
+        view = self.editorWindow.centralW.view
+        for obj in (self.editorWindow, view):
+            obj.snapGrid = self.snapGrid
+            obj.majorGrid = self.majorGrid
+            obj.snapTuple = self.snapTuple
 
     def fitItemsInView(self) -> None:
         self.setSceneRect(self.itemsBoundingRect().adjusted(-40, -40, 40, 40))

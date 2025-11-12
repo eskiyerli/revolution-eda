@@ -1425,7 +1425,7 @@ class schematicSymbol(symbolShape):
             pin_start = pin.mapToScene(pin.start).toPoint()
             if not snapLinesSet:
                 continue
-            for snapLine in snapLinesSet:
+            for snapLine in list(snapLinesSet):  # Iterate over a copy
                 current_end = snapLine.line().p2()
                 new_line = QLineF(pin_start, current_end)
 
@@ -1704,7 +1704,6 @@ class schematicPin(symbolShape):
         self.setFlag(QGraphicsItem.ItemContainsChildrenInShape, True)
         self.flipTuple = (1, 1)
 
-
     def _updateTextMetrics(self):
         self.metrics = QFontMetrics(
             self._font)  # self._textHeight = self.metrics.height()
@@ -1957,7 +1956,6 @@ class schematicPin(symbolShape):
 
         # Set the new transformation
         self._pinItem.setTransform(transform, combine=False)
-
 
 class pinNetIndexTuple(NamedTuple):
     pin: Union[symbolPin, schematicPin]

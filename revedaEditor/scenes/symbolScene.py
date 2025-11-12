@@ -156,8 +156,7 @@ class symbolScene(editorScene):
 
     def mouseMoveEvent(self, mouse_event: QGraphicsSceneMouseEvent) -> None:
         super().mouseMoveEvent(mouse_event)
-        self.mouseMoveLoc = self.snapToGrid(mouse_event.scenePos().toPoint(),
-                                            self.snapTuple)
+        self.mouseMoveLoc = self.snapToGrid(mouse_event.scenePos().toPoint())
 
         # Update message only when needed
         message = None
@@ -493,7 +492,7 @@ class symbolScene(editorScene):
         if queryDlg.exec() == QDialog.Accepted:
             startX = int(float(queryDlg.startXEdit.text()))
             startY = int(float(queryDlg.startYEdit.text()))
-            start = self.snapToGrid(QPoint(startX, startY), self.snapTuple)
+            start = self.snapToGrid(QPoint(startX, startY))
             width = int(float(queryDlg.widthEdit.text()))
             height = int(float(queryDlg.heightEdit.text()))
             end = start + QPoint(width, height)
@@ -526,7 +525,7 @@ class symbolScene(editorScene):
         if queryDlg.exec() == QDialog.Accepted:
             startX = int(float(queryDlg.labelXLine.text()))
             startY = int(float(queryDlg.labelYLine.text()))
-            start = self.snapToGrid(QPoint(startX, startY), self.snapTuple)
+            start = self.snapToGrid(QPoint(startX, startY))
             labelDefinition = queryDlg.labelDefinition.text()
             labelHeight = int(float(queryDlg.labelHeightEdit.text()))
             labelAlign = queryDlg.labelAlignCombo.currentText()
@@ -567,8 +566,7 @@ class symbolScene(editorScene):
             sceneStartX = int(float(queryDlg.pinXLine.text()))
             sceneStartY = int(float(queryDlg.pinYLine.text()))
             start = self.snapToGrid(
-                QPoint(sceneStartX, sceneStartY), self.snapTuple
-            )
+                QPoint(sceneStartX, sceneStartY))
             pinName = queryDlg.pinName.text()
             pinType = queryDlg.pinType.currentText()
             pinDir = queryDlg.pinDir.currentText()
