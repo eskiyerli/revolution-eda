@@ -34,7 +34,7 @@ from PySide6.QtGui import (
     QPixmap,
     QImage,
 )
-from PySide6.QtWidgets import (QTableView, QMenu, QGraphicsItem, )
+from PySide6.QtWidgets import (QTableView, QMenu, QGraphicsItem, QStyledItemDelegate, QStyleOptionViewItem, QStyle)
 import numpy as np
 import os
 from revedaEditor.backend.pdkPaths import importPDKModule
@@ -68,7 +68,8 @@ class layerDataModel(QStandardItemModel):
                 reveda_pdk_pathobj = pathlib.Path(reveda_pdk_path)
 
             texturePath = reveda_pdk_pathobj.joinpath(layer.btexture)
-            _pixmap = QPixmap.fromImage(self.createImage(texturePath, layer.bcolor))
+            _pixmap = QPixmap.fromImage(self.createImage(texturePath,
+                                                         layer.bcolor,1))
             # Create a brush with black background
             brush = QBrush(QColor('black'))
             # Set the texture pattern over the black background
@@ -148,6 +149,21 @@ class layerDataModel(QStandardItemModel):
         return image
 
 
+class TextureDelegate(QStyledItemDelegate):
+    def paint(self, painter, option, index):
+        if index.column() == 0 and option.state & QStyle.State_Selected:
+            # Get the original brush from the model
+            brush = index.data(Qt.BackgroundRole)
+            if brush:
+                # Create a semi-transparent version
+                painter.fillRect(option.rect, brush)
+                # Add selection overlay with transparency
+                selectionColor = option.palette.highlight().color()
+                selectionColor.setAlpha(100)  # Adjust alpha as needed
+                painter.fillRect(option.rect, selectionColor)
+            return
+        super().paint(painter, option, index)
+
 class layerViewTable(QTableView):
     columnTexture = 0
     columnName = 1
@@ -177,6 +193,8 @@ class layerViewTable(QTableView):
         self.setSelectionBehavior(QTableView.SelectRows)
         self.setSelectionMode(QTableView.SingleSelection)
         self.verticalHeader().setVisible(False)
+        # Set custom delegate for texture column
+        self.setItemDelegateForColumn(self.columnTexture, TextureDelegate(self))
 
     def connectSignals(self):
         """Connect signal handlers"""
