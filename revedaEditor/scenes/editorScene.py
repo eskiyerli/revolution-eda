@@ -147,7 +147,6 @@ class editorScene(QGraphicsScene):
             if self.editModes.moveItem:
                 self._selectedItemGroup = self.createItemGroup(
                     self.selectedItems())
-                _groupItems = self._selectedItemGroup.childItems()
                 
                 self._selectedItemGroup.setFlag(QGraphicsItem.ItemIsMovable, True)
                 self._initialGroupPos = self._selectedItemGroup.pos().toPoint()

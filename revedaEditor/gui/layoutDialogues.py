@@ -22,26 +22,22 @@
 #    Licensor: Revolution Semiconductor (Registered in the Netherlands)
 #
 
-import importlib
 import inspect
-import os
 
 from PySide6.QtCore import (Qt, )
-from PySide6.QtGui import (QStandardItem, QFontDatabase, QDoubleValidator, QValidator, )
+from PySide6.QtGui import (QStandardItem, QFontDatabase )
 from PySide6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QFormLayout,
                                QHBoxLayout,
                                QLabel, QLineEdit, QVBoxLayout, QRadioButton, QButtonGroup,
                                QGroupBox, QWidget, QCheckBox, QTableWidget,
                                QTableWidgetItem, )
-from dotenv import load_dotenv
+# from dotenv import load_dotenv
 
 import revedaEditor.common.layoutShapes as lshp
 import revedaEditor.gui.editFunctions as edf
 
 from revedaEditor.backend.pdkPaths import importPDKModule
 fabproc = importPDKModule('process')
-
-from typing import Dict
 
 
 class layoutInstanceDialogue(QDialog):
@@ -102,8 +98,7 @@ class pcellLinkDialogue(QDialog):
         super().__init__(parent)
         # self.logger = parent.logger
         self.viewItem = viewItem
-        # TODO: A more elegant solution
-        self.pcells = self.getClasses("pdk.pcells")
+        self.pcells = self.getClasses()
         self.setWindowTitle("PCell Settings")
         self.setMinimumSize(400, 200)
         self.mainLayout = QVBoxLayout()
@@ -125,13 +120,10 @@ class pcellLinkDialogue(QDialog):
         self.show()
 
     @staticmethod
-    def getClasses(moduleName: str):
-        module = importlib.import_module(moduleName)
-        classes = []
-        for name, obj in inspect.getmembers(module):
-            if inspect.isclass(obj) and issubclass(obj, lshp.layoutPcell):
-                classes.append(name)
-        return classes
+    def getClasses():
+        module = importPDKModule('pcells')
+        return [name for name, obj in inspect.getmembers(module, inspect.isclass)
+                if issubclass(obj, module.baseCell)]
 
 
 class createPathDialogue(QDialog):
@@ -187,9 +179,13 @@ class createPathDialogue(QDialog):
         self.show()
 
     def pathWidthChanged(self, text: str):
-        extend = float(text) / 2
-        self.startExtendEdit.setText(str(extend))
-        self.endExtendEdit.setText(str(extend))
+        try:
+            extend = float(text) / 2
+            self.startExtendEdit.setText(str(extend))
+            self.endExtendEdit.setText(str(extend))
+        except ValueError:
+            self.startExtendEdit.setText("")
+            self.endExtendEdit.setText("")
 
 
 class layoutPathPropertiesDialog(createPathDialogue):

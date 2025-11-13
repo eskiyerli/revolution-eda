@@ -417,9 +417,6 @@ class layoutScene(editorScene):
         dlg.instanceCellName.setText(newInstance.cellName)
         dlg.instanceViewName.setText(newInstance.viewName)
         if isinstance(newInstance, pcells.baseCell):
-            # dlg.instanceLibName.setText(newInstance.libraryName)
-            # dlg.instanceCellName.setText(newInstance.cellName)
-            # dlg.instanceViewName.setText(newInstance.viewName)
             lineEditDict = self.extractPcellInstanceParameters(newInstance)
             if lineEditDict:
                 dlg.pcellParamsGroup.show()
@@ -431,6 +428,7 @@ class layoutScene(editorScene):
                     instanceValuesDict[key] = value.text()
                 if instanceValuesDict:
                     newInstance(*instanceValuesDict.values())
+        self.layoutInstanceTuple = None
         return newInstance
 
     def instLayout(self, layoutInstanceTuple: ddef.viewItemTuple) -> Union[
