@@ -30,11 +30,11 @@ import pathlib
 from typing import Any, Dict, List, Union
 
 import orjson
-from PySide6.QtCore import (QLineF, QPoint, QPointF, QRect, QRectF, Qt)
+from PySide6.QtCore import (QLineF, QPoint, QPointF, QRectF, Qt)
 from PySide6.QtGui import (QColor, QFont, QFontDatabase, QGuiApplication, QPen,
                            QTransform)
 from PySide6.QtWidgets import (QCompleter, QDialog, QGraphicsItem,
-                               QGraphicsLineItem, QGraphicsRectItem,
+                               QGraphicsLineItem,
                                QGraphicsScene, QGraphicsSceneMouseEvent)
 
 import revedaEditor.backend.dataDefinitions as ddef
@@ -173,13 +173,13 @@ class layoutScene(editorScene):
         return returnPoint
 
     @staticmethod
-    def toSceneCoord(point: Union[QPoint | QPointF]) -> QPoint | QPointF:
+    def toSceneCoord(point: Union[QPoint | QPointF]) -> QPoint:
         """
         Converts a point in layout coordinates to scene coordinates by multiplying it with
         fabproc.dbu.
         """
         point *= fabproc.dbu
-        return point
+        return point.toPoint() if isinstance(point, QPointF) else point
 
     def mousePressEvent(self, event: QGraphicsSceneMouseEvent) -> None:
 
@@ -672,9 +672,13 @@ class layoutScene(editorScene):
                             self.layoutPolygonProperties(item)
                         case lshp.layoutInstance:
                             self.layoutInstanceProperties(item, False)
+                        # case _:
+                            # if item.__class__.__bases__[0] == pcells.baseCell:
+                            #     self.layoutInstanceProperties(item, True)
                         case _:
-                            if item.__class__.__bases__[0] == pcells.baseCell:
+                            if isinstance(item, pcells.baseCell):
                                 self.layoutInstanceProperties(item, True)
+
 
         except Exception as e:
             self.logger.error(f"{type(item)} property editor error: {e}")
@@ -903,7 +907,11 @@ class layoutScene(editorScene):
             undoCommandsList = [us.addDeleteShapeUndo(self, newPin, item),
                                 us.addDeleteShapeUndo(self, newLabel, item.label)]
             self.addUndoMacroStack(undoCommandsList,
-                                   'pin/label edit')  # self.undoStack.beginMacro('pin/label edit')  # self.undoStack.push(us.addDeleteShapeUndo(self, newPin, item))  # self.undoStack.push(us.addDeleteShapeUndo(self, newLabel, item.label))  # self.undoStack.endMacro()
+                                   'pin/label edit')
+            # self.undoStack.beginMacro('pin/label edit')
+            # self.undoStack.push(us.addDeleteShapeUndo(self, newPin, item))
+            # self.undoStack.push(us.addDeleteShapeUndo(self, newLabel, item.label))
+            # self.undoStack.endMacro()
 
     def layoutInstanceProperties(self, item: Union[
         lshp.layoutInstance, lshp.layoutPcell], pcell: bool = False):
@@ -964,7 +972,7 @@ class layoutScene(editorScene):
                 for key, value in lineEditDict.items():
                     instanceValuesDict[key] = value.text()
             if instanceValuesDict:
-                newLayoutInstance(*instanceValuesDict.values())
+                newLayoutInstance(**instanceValuesDict)
             newLayoutInstance.setPos(QPoint(
                 self.snapToBase(float(dlg.xEdit.text()) * fabproc.dbu,
                                 self.snapTuple[0]),

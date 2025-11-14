@@ -23,7 +23,7 @@
 #
 
 import inspect
-
+from typing import Dict
 from PySide6.QtCore import (Qt, )
 from PySide6.QtGui import (QStandardItem, QFontDatabase )
 from PySide6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QFormLayout,
@@ -98,7 +98,8 @@ class pcellLinkDialogue(QDialog):
         super().__init__(parent)
         # self.logger = parent.logger
         self.viewItem = viewItem
-        self.pcells = self.getClasses()
+        # self.pcells = self.getClasses()
+        self.pcells = list(importPDKModule('pcells').pcells.keys())
         self.setWindowTitle("PCell Settings")
         self.setMinimumSize(400, 200)
         self.mainLayout = QVBoxLayout()

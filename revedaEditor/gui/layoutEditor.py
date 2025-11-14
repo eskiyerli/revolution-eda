@@ -437,14 +437,13 @@ class layoutEditor(edw.editorWindow):
             layoutItems = [
                 lj.layoutItems(self.centralW.scene).create(item)
                 for item in decodedData
-                if item.get("type") in self.centralW.scene.layoutShapes
             ]
 
             gdsExportObj = gdse.gdsExporter(self.cellName, layoutItems, gdsExportPath)
             gdsExportObj.unit = Quantity(dlg.unitEdit.text().strip()).real
             gdsExportObj.precision = Quantity(dlg.precisionEdit.text().strip()).real
             self.logger.info("GDS Export started")
-            with measureDuration():
+            with self.measureDuration():
                 gdsExportObj.gdsExport()
             self.logger.info("GDS Export finished")
             # gdsExportRunner = startThread(gdsExportObj.gdsExport)
