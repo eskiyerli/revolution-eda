@@ -505,8 +505,9 @@ class layoutScene(editorScene):
                                                                         tuple(
                                                                             self.LAYOUT_SHAPES))]
 
-            return [{"viewType": "layout"}, {"snapGrid": self.snapTuple},
-                *top_level_items]
+            return [{"viewType": "layout"}, {"snapGrid": (self.majorGrid,
+                                                          self.snapGrid)},
+                    *top_level_items]
 
         def safeJsonWrite(file_obj, data: list) -> None:
             """Write JSON data with optimized settings.
@@ -586,8 +587,10 @@ class layoutScene(editorScene):
                         "viewType") != "layout":
                     self.logger.error("Invalid file type.")
                     return
+                self.editorWindow.configureGridSettings(decodedData[1].get(
+                                                         "snapGrid", (self.majorGrid,
+                                                                      self.snapGrid)))
 
-                self.configureGridSettings(decodedData[1])
                 if len(decodedData) > 2:
                     self.createLayoutItems(decodedData[2:])
         except orjson.JSONDecodeError:
@@ -616,7 +619,6 @@ class layoutScene(editorScene):
                     valid_items.append(factory_create(item))
                 except Exception:
                     pass
-
         if valid_items:
             self.undoStack.push(us.loadShapesUndo(self, valid_items))
 

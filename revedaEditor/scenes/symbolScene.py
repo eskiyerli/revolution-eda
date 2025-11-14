@@ -35,19 +35,16 @@ from PySide6.QtCore import (
     QLineF,
     QPoint,
     QPointF,
-    QRectF,
     Qt,
 )
 from PySide6.QtGui import (
     QColor,
     QGuiApplication,
     QPen,
-    QPainterPath,
 )
 from PySide6.QtWidgets import (
     QDialog,
     QGraphicsLineItem,
-    QGraphicsRectItem,
     QGraphicsSceneMouseEvent,
 )
 
@@ -147,10 +144,6 @@ class symbolScene(editorScene):
                 self.editModes.drawPolygon,
             )
         )
-
-    def mousePressEvent(self, mouse_event: QGraphicsSceneMouseEvent) -> None:
-        """Handle mouse press events in the scene."""
-        super().mousePressEvent(mouse_event)
 
 
 
@@ -598,7 +591,10 @@ class symbolScene(editorScene):
                 # if viewDict.get("viewType") != "symbol":
                 #     self.logger.error("Not a symbol file!")
                 #     return
-                self.configureGridSettings(gridSettings)
+                if gridSettings and gridSettings.get("snapGrid"):
+                    self.editorWindow.configureGridSettings(decodedData[1].get(
+                                                         "snapGrid", (self.majorGrid,
+                                                                      self.snapGrid)))
                 self.attributeList = []
                 self.createSymbolItems(itemData)
         except (json.JSONDecodeError, FileNotFoundError) as e:
@@ -703,7 +699,7 @@ class symbolScene(editorScene):
             # Build save data
             save_data = [
                 {"viewType": "symbol"},
-                {"snapGrid": self.snapTuple},
+                {"snapGrid": (self.majorGrid, self.snapGrid)},
                 *sceneItems,
                 *getattr(self, "attributeList", [])
             ]

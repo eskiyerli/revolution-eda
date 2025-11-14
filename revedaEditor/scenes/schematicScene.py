@@ -30,7 +30,7 @@ from typing import Dict, List, Set, Tuple, Union
 
 from PySide6.QtCore import (QLineF, QPoint, QPointF, QRect, QRectF,
                             QRegularExpression, Qt, Signal, Slot)
-from PySide6.QtGui import (QFont, QFontDatabase, QGuiApplication, QPainterPath,
+from PySide6.QtGui import (QFont, QFontDatabase, QPainterPath,
                            QPen, QTextDocument)
 from PySide6.QtWidgets import (QComboBox, QDialog, QGraphicsItem,
                                QGraphicsRectItem, QGraphicsSceneMouseEvent)
@@ -209,14 +209,6 @@ class schematicScene(editorScene):
             f"Cursor Position: ({cursorPosition.x()}, {cursorPosition.y()})")
         self.messageLine.setText(self.messages[self.editModes.mode()])
 
-    def _snapPoint(self, pos: QPoint) -> QPoint:
-        """
-        Override the base _snapPoint to use schematic-specific snapping logic
-        that considers existing nets and pins.
-        """
-        # The ignoredSet can be empty for general snapping
-        return self.findSnapPoint(pos, set())
-
     def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent):
 
         return super().mouseReleaseEvent(event)
@@ -231,7 +223,7 @@ class schematicScene(editorScene):
         """
 
         if button == Qt.LeftButton:
-            modifiers = QGuiApplication.keyboardModifiers()
+            # modifiers = QGuiApplication.keyboardModifiers()
             if self.editModes.addInstance:
                 self._handleAddInstance(mousePos)
             elif self.editModes.drawPin:
@@ -807,7 +799,7 @@ class schematicScene(editorScene):
                     f.write("[\n")
 
                     header_items = [{"viewType": "schematic"},
-                        {"snapGrid": self.snapTuple}, ]
+                        {"snapGrid": (self.majorGrid, self.snapGrid)}, ]
                     json.dump(header_items[0], f)
                     f.write(",\n")
                     json.dump(header_items[1], f)
@@ -896,11 +888,13 @@ class schematicScene(editorScene):
                     return
 
                 if gridSettings and gridSettings.get("snapGrid"):
-                    self.configureGridSettings(gridSettings)
-                else:
-                    self.configureGridSettings({'snapGrid': [
-                        self.editorWindow.MAJOR_GRID_DEFAULT,
-                        self.editorWindow.SNAP_GRID_DEFAULT]})
+                    self.editorWindow.configureGridSettings(decodedData[1].get(
+                                                         "snapGrid", (self.majorGrid,
+                                                                      self.snapGrid)))         
+                # else:
+                #     self.editorWindow.configureGridSettings({'snapGrid': [
+                #         self.editorWindow.MAJOR_GRID_DEFAULT,
+                #         self.editorWindow.SNAP_GRID_DEFAULT]})
                 self.createSchematicItems(
                     itemData)  # self._snapPointRect = self.defineSnapRect()  # self.addItem(self._snapPointRect)
         except (json.JSONDecodeError, FileNotFoundError) as e:
@@ -1449,74 +1443,6 @@ class schematicScene(editorScene):
             return True
         return False
 
-    @staticmethod
-    def matchPinToBus(pinBaseName: str, pinIndexTuple: Tuple[int, int],
-            netBaseName: str, netIndexTuple: Tuple[int, int],
-            netCounter: int, ) -> Tuple[List[Tuple[str, str]], List[str]]:
-        """
-        Matches pins to nets based on their base names and index ranges, and generates a list of
-        matched pin-net pairs. Handles cases where pins and nets have different ranges or are
-        single entities.
-        Args:
-            pinBaseName (str): The base name of the pin.
-            pinIndexTuple (Tuple[int, int]): A tuple representing the start and end indices of the pin range.
-            netBaseName (str): The base name of the net.
-            netIndexTuple (Tuple[int, int]): A tuple representing the start and end indices of the net range.
-            netCounter (int): A counter used to generate unique names for dangling nets.
-        Returns:
-            Tuple[List[Tuple[str, str]], List[str]]:
-                - A list of tuples where each tuple contains a matched pin and net name.
-                - The updated net counter after processing.
-        Notes:
-            - If both pin and net ranges are single entities (0, 0), they are directly matched.
-            - If the pin range is a single entity and the net range is multiple, the single pin is matched
-                to the first each net in the range.
-            - If the net range is a single entity and the pin range is multiple, the single net is matched
-                to each pin in the range, and dangling nets are generated for unmatched pins.
-            - If both pin and net ranges are multiple, they are matched one-to-one, and dangling nets are
-                generated for unmatched pins if the pin range is longer than the net range.
-        """
-
-        def createBusRanges(start: int, end: int):
-            if start < end:
-                resultRange = range(start, end + 1)
-            else:
-                resultRange = range(start, end - 1, -1)
-            return resultRange
-
-        pinRangeStart = pinIndexTuple[0]
-        pinRangeEnd = pinIndexTuple[1]
-        netRangeStart = netIndexTuple[0]
-        netRangeEnd = netIndexTuple[1]
-        # Create the range based on direction
-        pinRange = createBusRanges(pinRangeStart, pinRangeEnd)
-        netRange = createBusRanges(netRangeStart, netRangeEnd)
-        # if both pin and net do not have range
-        if pinRangeStart == pinRangeEnd == netRangeStart == netRangeEnd == 0:
-            return [(pinBaseName, netBaseName)], netCounter
-        elif (
-                pinRangeStart == pinRangeEnd == 0 and netRangeStart != netRangeEnd):  # Single pin and multiple nets
-            # connect pin to first net in the net range
-            return [(pinBaseName, f"{netBaseName}<{netRangeStart}>")], netCounter
-        elif (
-                netRangeStart == netRangeEnd == 0 and pinRangeStart != pinRangeEnd):  # Multiple pins and single net
-            matched_pairs = [(f"{pinBaseName}<{pinRangeStart}>", netBaseName)]
-            for i in pinRange[1:]:
-                matched_pairs.append((f"{pinBaseName}<{i}>", f"dnet{netCounter}"))
-                netCounter += 1
-            return matched_pairs, netCounter
-        else:
-            # Create the list of tuples
-            matched_pairs = [(f"{pinBaseName}<{i}>", f"{netBaseName}<{j}>") for
-                i, j in zip(pinRange, netRange)]
-
-            if len(pinRange) > len(netRange):
-                for i in pinRange[len(netRange):]:
-                    matched_pairs.append(
-                        (f"{pinBaseName}<{i}>", f"dnet{netCounter}"))
-                    netCounter += 1
-
-            return matched_pairs, netCounter
 
     @staticmethod
     def createBusRanges(start: int, end: int):

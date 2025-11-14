@@ -49,12 +49,11 @@ class editorScene(QGraphicsScene):
         self.editorWindow = parent.parent
 
         self.majorGrid = self.editorWindow.majorGrid
+        self.snapGrid = self.editorWindow.snapGrid
         self.snapTuple = self.editorWindow.snapTuple
-        self._snapDistance = int(self.majorGrid * 0.5)
 
         # Initialize mouse-related attributes together
         self.mousePressLoc = self.mouseMoveLoc = self.mouseReleaseLoc = None
-        self.snapGrid = None
 
         # Use dictionary unpacking for edit modes
         self.editModes = ddef.editModes(**{
@@ -88,7 +87,8 @@ class editorScene(QGraphicsScene):
         self._groupItems = []
         self._draftPen = QPen(Qt.DashLine)
         self._draftPen.setColor(QColor(0, 150, 0))
-        self._draftPen.setWidth(self._snapDistance)
+        self._draftPen.setWidth(int(self.snapGrid / 2))
+
 
         # Initialize UI elements
         self.origin = QPoint(0, 0)
@@ -347,20 +347,6 @@ class editorScene(QGraphicsScene):
         """
         pass
 
-    def configureGridSettings(self, gridSettings: dict) -> None:
-        """Configure grid settings from decoded data."""
-        self.majorGrid, self.snapGrid = gridSettings.get("snapGrid",
-                                                         [self.majorGrid,
-                                                          self.snapGrid])
-        self.snapTuple = (self.snapGrid, self.snapGrid)
-        self._snapDistance = 2 * self.snapGrid
-        
-        # Update editor window and view
-        view = self.editorWindow.centralW.view
-        for obj in (self.editorWindow, view):
-            obj.snapGrid = self.snapGrid
-            obj.majorGrid = self.majorGrid
-            obj.snapTuple = self.snapTuple
 
     def fitItemsInView(self) -> None:
         self.setSceneRect(self.itemsBoundingRect().adjusted(-40, -40, 40, 40))

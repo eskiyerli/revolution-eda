@@ -451,6 +451,23 @@ class layoutEditor(edw.editorWindow):
             #     lambda: self.logger.info("GDS Export finished"))
             # self.appMainW.threadPool.start(gdsExportRunner)
 
+    def dispConfigEdit(self):
+        import revedaEditor.gui.propertyDialogues as pdlg
+        dcd = pdlg.layoutDisplayConfigDialog(self)
+        dcd.dbuEntry.setText(str(self.dbu))
+        dcd.majorGridEntry.setText(str(self.majorGrid))
+        dcd.snapGridEdit.setText(str(self.snapGrid))
+        if dcd.exec() == QDialog.Accepted:
+            self.configureGridSettings((int(dcd.majorGridEntry.text()), int(dcd.snapGridEdit.text())))
+            if dcd.dotType.isChecked():
+                self.centralW.view.gridbackg = True
+                self.centralW.view.linebackg = False
+            elif dcd.lineType.isChecked():
+                self.centralW.view.gridbackg = False
+                self.centralW.view.linebackg = True
+            else:
+                self.centralW.view.gridbackg = False
+                self.centralW.view.linebackg = False
 
     def _createSignalConnections(self):
         super()._createSignalConnections()
