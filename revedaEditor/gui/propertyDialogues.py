@@ -777,7 +777,6 @@ class noteTextEdit(QDialog):
 class displayConfigDialog(QDialog):
     def __init__(self, parent):
         super().__init__(parent)
-        self.parent = parent
         self.setWindowTitle("Display Options")
         QBtn = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
         self.buttonBox = QDialogButtonBox(QBtn)
@@ -785,18 +784,18 @@ class displayConfigDialog(QDialog):
         self.buttonBox.rejected.connect(self.reject)
         self.vLayout = QVBoxLayout()
         gridValueGroup = QGroupBox("Grid Values")
-        fLayout = QFormLayout()
-        gridValueGroup.setLayout(fLayout)
+        self.fLayout = QFormLayout()
+        gridValueGroup.setLayout(self.fLayout)
         self.majorGridEntry = QLineEdit()
         self.majorGridEntry.setToolTip(
             "Enter Dot or Line Grid Spacing Value as a multiple of scene grid"
         )
-        fLayout.addRow("GridSpacing:", self.majorGridEntry)
+        self.fLayout.addRow("GridSpacing:", self.majorGridEntry)
         self.snapGridEdit = QLineEdit()
         self.snapGridEdit.setToolTip(
             "Enter the Snap Grid Value as a multiple of scene grid"
         )
-        fLayout.addRow("Snap Distance", self.snapGridEdit)
+        self.fLayout.addRow("Snap Distance", self.snapGridEdit)
 
         gridTypeGroup = QGroupBox("Grid Type")
         gridTypeLayout = QHBoxLayout()
@@ -817,6 +816,14 @@ class displayConfigDialog(QDialog):
         self.setLayout(self.vLayout)
         self.show()
 
+class layoutDisplayConfigDialog(displayConfigDialog):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.setWindowTitle("Layout Display Options")
+        self.dbuEntry = edf.shortLineEdit()
+        self.dbuEntry.setToolTip("Number of points per um")
+        self.dbuEntry.setReadOnly(True)
+        self.fLayout.insertRow(0, "Process Points per um:", self.dbuEntry)
 
 class selectConfigDialogue(QDialog):
     def __init__(self, parent):
@@ -836,12 +843,12 @@ class selectConfigDialogue(QDialog):
         selectionTypeLayout.addWidget(self.partialSelection)
         selectionTypeGroup.setLayout(selectionTypeLayout)
         vLayout.addWidget(selectionTypeGroup)
-        snapDistanceGroup = QGroupBox("Snap Distance")
-        snapDistanceLayout = QFormLayout()
-        self.snapDistanceEntry = edf.shortLineEdit()
-        snapDistanceLayout.addRow("Snap Distance", self.snapDistanceEntry)
-        snapDistanceGroup.setLayout(snapDistanceLayout)
-        vLayout.addWidget(snapDistanceGroup)
+        # snapDistanceGroup = QGroupBox("Snap Distance")
+        # snapDistanceLayout = QFormLayout()
+        # self.snapDistanceEntry = edf.shortLineEdit()
+        # snapDistanceLayout.addRow("Snap Distance", self.snapDistanceEntry)
+        # snapDistanceGroup.setLayout(snapDistanceLayout)
+        # vLayout.addWidget(snapDistanceGroup)
         vLayout.addStretch(1)
         vLayout.addWidget(self.buttonBox)
         self.setLayout(vLayout)

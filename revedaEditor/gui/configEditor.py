@@ -44,7 +44,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-import revedaEditor.resources.resources
+import revedaEditor.resources.resources  # noqa: F401
 import revedaEditor.backend.dataDefinitions as ddef
 import revedaEditor.gui.editFunctions as edf
 import revedaEditor.gui.schematicEditor as sced

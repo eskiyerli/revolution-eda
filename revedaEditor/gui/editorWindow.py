@@ -30,16 +30,17 @@ from logging import getLogger
 from PySide6.QtCore import (Qt, QSize,)
 from PySide6.QtGui import (QAction, QIcon, QImage, QKeySequence)
 from PySide6.QtPrintSupport import QPrintDialog, QPrinter, QPrintPreviewDialog
-from PySide6.QtWidgets import (QApplication, QDialog, QFileDialog, QLabel, QMainWindow,
+from PySide6.QtWidgets import (QApplication, QDialog, QFileDialog, QGraphicsScene, QGraphicsView, QLabel, QMainWindow,
                                QMenu, QToolBar)
+from numpy import lib
 
 import revedaEditor.backend.dataDefinitions as ddef
 import revedaEditor.backend.libraryModelView as lmview
 import revedaEditor.backend.libBackEnd as libb
 import revedaEditor.gui.helpBrowser as hlp
-import revedaEditor.gui.propertyDialogues as pdlg
 import revedaEditor.resources.resources # noqa: F401
 from revedaEditor.gui.startThread import startThread
+import revedaEditor.gui.propertyDialogues as pdlg
 
 
 class editorWindow(QMainWindow):
@@ -58,12 +59,12 @@ class editorWindow(QMainWindow):
         self.file: pathlib.Path = self.viewItem.data(Qt.UserRole + 2)  # pathlib Path object
         self.cellItem: libb.cellItem = self.viewItem.parent()
         self.cellName = self.cellItem.cellName
-        self.libItem = self.cellItem.parent()
+        self.libItem: libb.libraryItem = self.cellItem.parent()
         self.libName: str = self.libItem.libraryName
         self.viewName: str = self.viewItem.viewName
         self.libraryDict = libraryDict
         self.libraryView = libraryView
-        self.parentEditor = None  # type: editorWindow
+        self.parentEditor: editorWindow|None = None  # type: editorWindow
         self.parentObj = None  # type symbol or layoutInstance
         self._app = QApplication.instance()  # main application pointer
         # self.appMainW = self.libraryView.parent.parent.appMainW
@@ -524,14 +525,12 @@ class editorWindow(QMainWindow):
         self.centralW.scene.itemContextMenu.addAction(self.deselectAllAction)
 
     def dispConfigEdit(self):
+        
         dcd = pdlg.displayConfigDialog(self)
         dcd.majorGridEntry.setText(str(self.majorGrid))
         dcd.snapGridEdit.setText(str(self.snapGrid))
         if dcd.exec() == QDialog.Accepted:
-            majorGrid = int(dcd.majorGridEntry.text())
-            snapGrid = int(dcd.snapGridEdit.text())
-            gridDict = {"snapGrid": [majorGrid, snapGrid]}
-            self.centralW.scene.configureGridSettings(gridDict)
+            self.configureGridSettings((int(dcd.majorGridEntry.text()), int(dcd.snapGridEdit.text())))
             if dcd.dotType.isChecked():
                 self.centralW.view.gridbackg = True
                 self.centralW.view.linebackg = False
@@ -541,7 +540,38 @@ class editorWindow(QMainWindow):
             else:
                 self.centralW.view.gridbackg = False
                 self.centralW.view.linebackg = False
-            self.centralW.view.resetCachedContent()
+        
+    # def configureGridSettings(self, gridSettings: tuple[int, int]) -> None:
+    #     """Configure grid settings from decoded data."""
+    #
+    #     # Update editor window and view
+    #     view: QGraphicsView = self.centralW.view
+    #     scene: QGraphicsScene = self.centralW.scene
+    #     for obj in (self, scene, view):
+    #         obj.snapGrid = gridSettings[1]
+    #         obj.majorGrid = gridSettings[0]
+    #         obj.snapTuple = (obj.snapGrid, obj.snapGrid)
+    #         obj._snapDistance = int(obj.snapGrid)
+
+    def configureGridSettings(self, gridSettings: tuple[int,int]) -> None:
+        """Configure grid settings from decoded data."""
+
+        majorGrid, snapGrid = gridSettings
+
+        # Update editor window
+        self.majorGrid = majorGrid
+        self.snapGrid = snapGrid
+        self.snapTuple = (snapGrid, snapGrid)
+
+        # Update scene and view if they exist and have these attributes
+        if hasattr(self, 'centralW') and self.centralW:
+            for obj in (self.centralW.scene, self.centralW.view):
+                if hasattr(obj, 'majorGrid'):
+                    obj.majorGrid = majorGrid
+                if hasattr(obj, 'snapGrid'):
+                    obj.snapGrid = snapGrid
+                if hasattr(obj, 'snapTuple'):
+                    obj.snapTuple = (snapGrid, snapGrid)
 
     def selectConfigEdit(self):
         scd = pdlg.selectConfigDialogue(self)
@@ -549,10 +579,9 @@ class editorWindow(QMainWindow):
             scd.partialSelection.setChecked(True)
         else:
             scd.fullSelection.setChecked(True)
-        scd.snapDistanceEntry.setText(str(self.centralW.scene._snapDistance))
         if scd.exec() == QDialog.Accepted:
             self.centralW.scene.partialSelection = scd.partialSelection.isChecked()
-            self.centralW.scene._snapDistance = int(float(scd.snapDistanceEntry.text()))
+
 
     def readOnlyCellClick(self):
         self.centralW.scene.readOnly = self.readOnlyCellAction.isChecked()
