@@ -1621,32 +1621,7 @@ class schematicSymbol(symbolShape):
         for label in self.labels.values():
             label.setTransform(inverseTransform)
 
-    #
-    # @flipTuple.setter
-    # def flipTuple(self, flipState: Tuple[int, int]):
-    #     self.prepareGeometryChange()
-    #     # Get the current transformation
-    #     transform = self.transform()
-    #     # Apply the scaling
-    #     transform.scale(*flipState)
-    #     # Set the new transformation
-    #     self.setTransform(transform)
-    #     self._flipTuple = (transform.m11(), transform.m22())
-    #     inverseTransform, invertible = transform.inverted()
-    #     if invertible:
-    #         for label in self.labels.values():
-    #             label.setTransform(inverseTransform)
-    #             if self.flipTuple[0] < 0:  # Only shift if horizontally flipped
-    #                 textWidth = label.boundingRect().width()
-    #                 label.moveBy(textWidth, 0)
-    #
-    #         for pin in self._pins.values():
-    #             pin.pinNameItem.setTransform(inverseTransform)
-    #             if self.flipTuple[0] < 0:  # Only shift if horizontally flipped
-    #                 textWidth = pin.pinNameItem.boundingRect().width()
-    #                 pin.pinNameItem.moveBy(textWidth, 0)
-    #
-    #     self.update()
+
 
     @property
     def start(self):
