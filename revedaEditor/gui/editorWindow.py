@@ -540,38 +540,31 @@ class editorWindow(QMainWindow):
             else:
                 self.centralW.view.gridbackg = False
                 self.centralW.view.linebackg = False
-        
-    # def configureGridSettings(self, gridSettings: tuple[int, int]) -> None:
-    #     """Configure grid settings from decoded data."""
-    #
-    #     # Update editor window and view
-    #     view: QGraphicsView = self.centralW.view
-    #     scene: QGraphicsScene = self.centralW.scene
-    #     for obj in (self, scene, view):
-    #         obj.snapGrid = gridSettings[1]
-    #         obj.majorGrid = gridSettings[0]
-    #         obj.snapTuple = (obj.snapGrid, obj.snapGrid)
-    #         obj._snapDistance = int(obj.snapGrid)
+    
 
     def configureGridSettings(self, gridSettings: tuple[int,int]) -> None:
         """Configure grid settings from decoded data."""
+        try:
 
-        majorGrid, snapGrid = gridSettings
+            # Update editor window
+            self.majorGrid, self.snapGrid = gridSettings
+            # majorG, snapG = gridSettings
+            # print(majorG, snapG)
+            self.snapTuple = (self.snapGrid, self.snapGrid)
 
-        # Update editor window
-        self.majorGrid = majorGrid
-        self.snapGrid = snapGrid
-        self.snapTuple = (snapGrid, snapGrid)
-
-        # Update scene and view if they exist and have these attributes
-        if hasattr(self, 'centralW') and self.centralW:
-            for obj in (self.centralW.scene, self.centralW.view):
-                if hasattr(obj, 'majorGrid'):
-                    obj.majorGrid = majorGrid
-                if hasattr(obj, 'snapGrid'):
-                    obj.snapGrid = snapGrid
-                if hasattr(obj, 'snapTuple'):
-                    obj.snapTuple = (snapGrid, snapGrid)
+            # Update scene and view if they exist and have these attributes
+            if hasattr(self, 'centralW') and self.centralW:
+                for obj in (self.centralW.scene, self.centralW.view):
+                    if hasattr(obj, 'majorGrid'):
+                        obj.majorGrid = self.majorGrid
+                    if hasattr(obj, 'snapGrid'):
+                        obj.snapGrid = self.snapGrid
+                    if hasattr(obj, 'snapTuple'):
+                        obj.snapTuple = (self.snapGrid, self.snapGrid)
+                self.centralW.scene.invalidate(self.centralW.scene.sceneRect(),
+                                               QGraphicsScene.BackgroundLayer)
+        except Exception as e:
+            self.logger.info(f'Problem with grid settings: {e}')
 
     def selectConfigEdit(self):
         scd = pdlg.selectConfigDialogue(self)

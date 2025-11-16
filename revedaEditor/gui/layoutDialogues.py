@@ -120,11 +120,11 @@ class pcellLinkDialogue(QDialog):
         self.setLayout(self.mainLayout)
         self.show()
 
-    @staticmethod
-    def getClasses():
-        module = importPDKModule('pcells')
-        return [name for name, obj in inspect.getmembers(module, inspect.isclass)
-                if issubclass(obj, module.baseCell)]
+    # @staticmethod
+    # def getClasses():
+    #     module = importPDKModule('pcells')
+    #     return [name for name, obj in inspect.getmembers(module, inspect.isclass)
+    #             if issubclass(obj, module.baseCell)]
 
 
 class createPathDialogue(QDialog):

@@ -74,21 +74,16 @@ class editorView(QGraphicsView):
         """
         Initializes the user interface.
         """
-        # Cache constants
-        anchor = QGraphicsView.AnchorUnderMouse
-        render_hints = QPainter.Antialiasing | QPainter.TextAntialiasing
-        
-        # Batch all settings in sequence to minimize Qt overhead
-        self.setViewportUpdateMode(QGraphicsView.FullViewportUpdate)
-        # self.setCacheMode(QGraphicsView.CacheBackground)
+        # Batch all settings to minimize Qt overhead
+        self.setViewportUpdateMode(QGraphicsView.SmartViewportUpdate)
+        self.setCacheMode(QGraphicsView.CacheBackground)
         self.setMouseTracking(True)
-        self.setTransformationAnchor(anchor)
-        self.setResizeAnchor(anchor)
+        self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
+        self.setResizeAnchor(QGraphicsView.AnchorUnderMouse)
         self.setInteractive(True)
         self.setCursor(Qt.CrossCursor)
-        self.setRenderHints(render_hints)
+        self.setRenderHints(QPainter.Antialiasing | QPainter.TextAntialiasing)
         
-        # Single flag for deferred calculation
         self._viewRect_cached = False
 
     def wheelEvent(self, event: QWheelEvent) -> None:
@@ -189,23 +184,24 @@ class editorView(QGraphicsView):
         """
         x_coords = range(self._left, self._right, self.majorGrid)
         y_coords = range(self._top, self._bottom, self.majorGrid)
-
-        if 160 <= len(x_coords) < 320:
-            # Create a range of x and y coordinates for drawing the lines
-            x_coords = range(self._left, self._right, self.majorGrid * 2)
-            y_coords = range(self._top, self._bottom, self.majorGrid * 2)
-        elif 320 <= len(x_coords) < 640:
-            x_coords = range(self._left, self._right, self.majorGrid * 4)
-            y_coords = range(self._top, self._bottom, self.majorGrid * 4)
-        elif 640 <= len(x_coords) < 1280:
-            x_coords = range(self._left, self._right, self.majorGrid * 8)
-            y_coords = range(self._top, self._bottom, self.majorGrid * 8)
-        elif 1280 <= len(x_coords) < 2560:
-            x_coords = range(self._left, self._right, self.majorGrid * 16)
-            y_coords = range(self._top, self._bottom, self.majorGrid * 16)
-        elif len(x_coords) >= 2560:  # grid dots are too small to see
-            x_coords = range(self._left, self._right, self.majorGrid * 10000)
-            y_coords = range(self._top, self._bottom, self.majorGrid * 10000)
+        
+        num_lines = len(x_coords)
+        if 160 <= num_lines < 320:
+            spacing = self.majorGrid * 2
+        elif 320 <= num_lines < 640:
+            spacing = self.majorGrid * 4
+        elif 640 <= num_lines < 1280:
+            spacing = self.majorGrid * 8
+        elif 1280 <= num_lines < 2560:
+            spacing = self.majorGrid * 16
+        elif num_lines >= 2560:
+            return range(0, 0), range(0, 0)  # No grid when too dense
+        else:
+            spacing = self.majorGrid
+            
+        if spacing != self.majorGrid:
+            x_coords = range(self._left, self._right, spacing)
+            y_coords = range(self._top, self._bottom, spacing)
 
         return x_coords, y_coords
 
@@ -338,23 +334,34 @@ class schematicView(editorView):
             if netItem.scene():
                 self.scene.mergeSplitNets(netItem)
 
-
     def drawBackground(self, painter, rect):
         super().drawBackground(painter, rect)
-        xextend = self._right - self._left
-        yextend = self._bottom - self._top
-        netsInView = [netItem for netItem in self.scene.items(rect) if
-            isinstance(netItem, net.schematicNet)]
-        if xextend <= 2000 or yextend <= 2000:
-            netEndPoints = []
-            for netItem in netsInView:
-                netEndPoints.extend(netItem.sceneEndPoints)
-            pointCountsDict = Counter(netEndPoints)
-            dotPoints = [point for point, count in pointCountsDict.items() if count >= 3]
+
+        # Early exit for large views to avoid performance issues
+        if (self._right - self._left) > 2000 and (self._bottom - self._top) > 2000:
+            return
+
+        # Get nets in view with type filtering
+        netsInView = [item for item in self.scene.items(rect)
+                      if isinstance(item, net.schematicNet)]
+
+        if not netsInView:
+            return
+
+        # Collect and count endpoints in one pass
+        pointCounts = Counter()
+        for netItem in netsInView:
+            pointCounts.update(netItem.sceneEndPoints)
+
+        # Filter junction points (count >= 3) and draw
+        junctionPoints = [point for point, count in pointCounts.items() if count >= 3]
+
+        if junctionPoints:
             painter.setPen(schlyr.wirePen)
             painter.setBrush(schlyr.wireBrush)
-            for dotPoint in dotPoints:
-                painter.drawEllipse(dotPoint, self._dotRadius, self._dotRadius)
+            for point in junctionPoints:
+                painter.drawEllipse(point, self._dotRadius, self._dotRadius)
+
 
     def keyPressEvent(self, event: QKeyEvent):
         """
@@ -388,43 +395,12 @@ class schematicView(editorView):
 
 class layoutView(editorView):
     def __init__(self, scene, parent):
-        self.scene = scene
-        self.parent = parent
-        super().__init__(self.scene, self.parent)
-        # Create and set OpenGL widget as viewport
+        super().__init__(scene, parent)
+        # # Configure OpenGL viewport for better performance
         glWidget = QOpenGLWidget()
+        glWidget.setUpdateBehavior(QOpenGLWidget.PartialUpdate)
         self.setViewport(glWidget)
 
-
-
-    def findCoords(self):
-        """
-        Calculate the coordinates for drawing lines or points on a grid.
-
-        Returns:
-            tuple: A tuple containing the x and y coordinates for drawing the lines or points.
-        """
-        x_coords = range(self._left, self._right, self.majorGrid)
-        y_coords = range(self._top, self._bottom, self.majorGrid)
-
-        if 160 <= len(x_coords) < 320:
-            # Create a range of x and y coordinates for drawing the lines
-            x_coords = range(self._left, self._right, int(self.majorGrid * fabproc.dbu * 0.5))
-            y_coords = range(self._top, self._bottom, int(self.majorGrid * fabproc.dbu * 0.5))
-        elif 320 <= len(x_coords) < 640:
-            x_coords = range(self._left, self._right, int(self.majorGrid * fabproc.dbu * 2))
-            y_coords = range(self._top, self._bottom, int(self.majorGrid * fabproc.dbu * 2))
-        elif 640 <= len(x_coords) < 1280:
-            x_coords = range(self._left, self._right, int(self.majorGrid * fabproc.dbu * 4))
-            y_coords = range(self._top, self._bottom, int(self.majorGrid * fabproc.dbu * 4))
-        elif 1280 <= len(x_coords) < 2560:
-            x_coords = range(self._left, self._right, int(self.majorGrid * fabproc.dbu * 4))
-            y_coords = range(self._top, self._bottom, int(self.majorGrid * fabproc.dbu * 4))
-        elif len(x_coords) >= 2560:  # grid dots are too small to see
-            x_coords = range(self._left, self._right, int(self.majorGrid * fabproc.dbu * 4))
-            y_coords = range(self._top, self._bottom, int(self.majorGrid * fabproc.dbu * 4))
-
-        return x_coords, y_coords
     def keyPressEvent(self, event: QKeyEvent):
         if event.key() == Qt.Key_Escape:
 

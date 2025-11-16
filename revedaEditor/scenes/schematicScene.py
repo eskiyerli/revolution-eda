@@ -32,7 +32,7 @@ from PySide6.QtCore import (QLineF, QPoint, QPointF, QRect, QRectF,
                             QRegularExpression, Qt, Signal, Slot)
 from PySide6.QtGui import (QFont, QFontDatabase, QPainterPath,
                            QPen, QTextDocument)
-from PySide6.QtWidgets import (QComboBox, QDialog, QGraphicsItem,
+from PySide6.QtWidgets import (QComboBox, QDialog, QGraphicsItem, QGraphicsScene,
                                QGraphicsRectItem, QGraphicsSceneMouseEvent)
 
 import revedaEditor.backend.dataDefinitions as ddef
@@ -368,11 +368,13 @@ class schematicScene(editorScene):
 
         """
 
-        if newNet.draftLine.length() < self.snapDistance * 0.5:
+        if newNet.draftLine.length() < self.snapGrid/2:
             self.removeItem(newNet)
             self.undoStack.removeLastCommand()
         else:
+            newNetSceneRect = newNet.sceneBoundingRect().adjusted(-self.snapGrid, -self.snapGrid, self.snapGrid, self.snapGrid)
             self.mergeSplitNets(newNet)
+            self.invalidate(newNetSceneRect, QGraphicsScene.BackgroundLayer)
 
     def _updateNets(self, nets_to_remove: set, nets_to_add: set, name_source_net):
         """Helper to update nets in scene"""

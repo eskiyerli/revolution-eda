@@ -1335,6 +1335,7 @@ class schematicSymbol(symbolShape):
         self._setup_graphics()
         self.addShapes()
         self._start = self.childrenBoundingRect().bottomLeft()
+        # self.sceneRect = QRectF(0,0,0,0)
 
     def _setup_graphics(self):
         """Setup graphics item properties"""
@@ -1347,10 +1348,20 @@ class schematicSymbol(symbolShape):
             item.setFlag(QGraphicsItem.ItemIsSelectable, False)
             item.setFlag(QGraphicsItem.ItemStacksBehindParent, True)
             item.setParentItem(self)
-            if type(item) is symbolPin:
+            if isinstance(item, symbolPin):
                 self._pins[item.pinName] = item
-            elif type(item) is symbolLabel:
+            elif isinstance(item, symbolLabel):
                 self._labels[item.labelName] = item
+
+    # def addShapes(self):
+    #     for item in self._shapes:
+    #         item.setFlag(QGraphicsItem.ItemIsSelectable, False)
+    #         item.setFlag(QGraphicsItem.ItemStacksBehindParent, True)
+    #         item.setParentItem(self)
+    #         if type(item) is symbolPin:
+    #             self._pins[item.pinName] = item
+    #         elif type(item) is symbolLabel:
+    #             self._labels[item.labelName] = item
 
     def __repr__(self):
         return f"schematicSymbol({self._instanceName})"
@@ -1376,11 +1387,11 @@ class schematicSymbol(symbolShape):
             return super().itemChange(change, value)
 
         # if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange:
-        #     print("Item position change")
-        #     # self._updateSnapLines()
+        #     self.sceneRect = self.sceneBoundingRect().adjusted(-5,-5,5,5)
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
             self._finishSnapLines()
             self._snapLines = dict()
+            # self.scene().invalidate(self.sceneRect, QGraphicsScene.BackgroundLayer)
         elif change == QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
             if scene.editModes.selectItem:
                 scene.selectedSymbol = self if value else None
@@ -1458,18 +1469,25 @@ class schematicSymbol(symbolShape):
                 scene.logger.error(f"Error processing snap lines: {e}")
 
     def paint(self, painter, option, widget):
-        if option.state & QStyle.State_Selected:
+        # The shape() method is expensive. It's better to use boundingRect()
+        # which is cached by Qt's graphics framework.
+        shapeBoundingRect = self.boundingRect().adjusted(5,5,-5,-5)
+
+        is_selected = option.state & QStyle.State_Selected
+
+        if is_selected:
             painter.setPen(symlyr.selectedSymbolPen)
-            painter.drawRect(self.shape().boundingRect().toRect())
+            painter.drawRect(shapeBoundingRect)
         elif self._draft:
             painter.setPen(symlyr.draftPen)
+            painter.drawRect(shapeBoundingRect)
 
         if self.netlistIgnore:
             painter.setPen(schlyr.ignoreSymbolPen)
-            painter.drawLine(self.boundingRect().bottomLeft(),
-                             self.boundingRect().topRight())
-            painter.drawLine(self.boundingRect().topLeft(),
-                             self.boundingRect().bottomRight())
+            painter.drawLine(shapeBoundingRect.topLeft(),
+                             shapeBoundingRect.bottomRight())
+            painter.drawLine(shapeBoundingRect.bottomLeft(),
+                             shapeBoundingRect.topRight())
 
     def boundingRect(self):
         return self.childrenBoundingRect()

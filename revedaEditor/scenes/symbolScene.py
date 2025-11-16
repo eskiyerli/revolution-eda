@@ -588,9 +588,8 @@ class symbolScene(editorScene):
             self.blockSignals(True)
             with self.measureDuration():
                 viewDict, gridSettings, *itemData = decodedData
-                # if viewDict.get("viewType") != "symbol":
-                #     self.logger.error("Not a symbol file!")
-                #     return
+                if viewDict.get("viewType") != "symbol":
+                    raise Exception("Not a symbol file!")
                 if gridSettings and gridSettings.get("snapGrid"):
                     self.editorWindow.configureGridSettings(decodedData[1].get(
                                                          "snapGrid", (self.majorGrid,
