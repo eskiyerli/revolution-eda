@@ -27,6 +27,7 @@ import inspect
 import revedaEditor.common.layoutShapes as lshp
 from revedaEditor.backend.pdkPaths import importPDKModule
 laylyr = importPDKModule('layoutLayers')
+pcells = importPDKModule('pcells')
 
 
 class layoutEncoder(json.JSONEncoder):

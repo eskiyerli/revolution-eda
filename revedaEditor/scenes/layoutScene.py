@@ -483,31 +483,8 @@ class layoutScene(editorScene):
 
         Raises:
             IOError: If there are issues writing to the file
-            JSONEncodeError: If there are issues encoding the JSON
             ValueError: If the layout data is invalid
         """
-
-        def get_layout_data() -> list:
-            """Prepare layout data with validation.
-
-            Returns:
-                list: List of layout items
-
-            Raises:
-                ValueError: If required attributes are missing
-            """
-            if not hasattr(self, 'snapTuple'):
-                raise ValueError("Missing required attribute: snapTuple")
-
-            # Pre-validate top-level items
-            top_level_items = [item for item in self.items() if
-                               item.parentItem() is None and isinstance(item,
-                                                                        tuple(
-                                                                            self.LAYOUT_SHAPES))]
-
-            return [{"viewType": "layout"}, {"snapGrid": (self.majorGrid,
-                                                          self.snapGrid)},
-                    *top_level_items]
 
         def safeJsonWrite(file_obj, data: list) -> None:
             """Write JSON data with optimized settings.
@@ -529,14 +506,17 @@ class layoutScene(editorScene):
             filePathObj.parent.mkdir(parents=True, exist_ok=True)
 
             # Prepare data before file operation
-            layout_data = get_layout_data()
+            self.itemRefs = list(self.items())
+            topLevelItems =  [item for item in self.itemRefs if item.parentItem() is None and isinstance(item, tuple(self.LAYOUT_SHAPES))]
+            layoutData = [{"viewType": "layout"},
+                        {"snapGrid": (self.majorGrid, self.snapGrid)}, *topLevelItems]
 
             # Use temporary file for atomic write
             temp_path = filePathObj.with_suffix('.tmp')
             try:
                 with temp_path.open(mode='w',
                                     buffering=65536) as f:  # 64KB buffer
-                    safeJsonWrite(f, layout_data)
+                    safeJsonWrite(f, layoutData)
 
                 # Atomic rename for safer file writing
                 temp_path.replace(filePathObj)
@@ -547,14 +527,13 @@ class layoutScene(editorScene):
                     temp_path.unlink()
 
             self.logger.info(
-                f"Saved layout to {self.editorWindow.cellName}:{self.editorWindow.viewName}"
-                f"({len(layout_data)} items)")
+                f"Saved layout to {self.editorWindow.cellName}:{self.editorWindow.viewName}")
 
         except ValueError as e:
             self.logger.error(f"Invalid layout data: {str(e)}")
             raise
 
-        except (IOError, json.JSONEncodeError) as e:
+        except (IOError, TypeError) as e:
             self.logger.error(f"Failed to save layout to {filePathObj}: {str(e)}")
             raise
 
@@ -562,20 +541,7 @@ class layoutScene(editorScene):
             self.logger.error(f"Unexpected error while saving layout: {str(e)}")
             raise
 
-    # def loadDesign(self, filePathObj: pathlib.Path) -> None:
-    #     """Load the layout cell from the given JSON file."""
-    #     try:
-    #         with filePathObj.open("r", buffering=65536) as file:
-    #             decodedData = json.load(file)
-    #         with self.measureDuration():
-    #             if len(decodedData) < 2 or decodedData[0].get("viewType") != "layout":
-    #                 return
 
-    #             self.configureGridSettings(decodedData[1])
-    #             if len(decodedData) > 2:
-    #                 self.createLayoutItems(decodedData[2:])
-    #     except Exception:
-    #         return
 
     def loadDesign(self, filePathObj: pathlib.Path) -> None:
         """Load the layout cell from the given JSON file."""
@@ -587,10 +553,9 @@ class layoutScene(editorScene):
                         "viewType") != "layout":
                     self.logger.error("Invalid file type.")
                     return
-                self.editorWindow.configureGridSettings(decodedData[1].get(
-                                                         "snapGrid", (self.majorGrid,
-                                                                      self.snapGrid)))
 
+                self.editorWindow.configureGridSettings(decodedData[1].get(
+                    'snapGrid', (self.majorGrid, self.snapGrid)))
                 if len(decodedData) > 2:
                     self.createLayoutItems(decodedData[2:])
         except orjson.JSONDecodeError:
@@ -605,42 +570,16 @@ class layoutScene(editorScene):
     #     return set(shapes_tuple)
 
     def createLayoutItems(self, decoded_data: List[Dict[str, Any]]) -> None:
-        """Create layout items from decoded data and add them to the undo stack."""
         if not decoded_data:
             return
-
-        # layoutShapes = self.getLayoutShapesSet(tuple(self.LAYOUT_SHAPES))
+        
         factory_create = lj.layoutItems(self).create
-
-        valid_items = []
         for item in decoded_data:
             if isinstance(item, dict):
                 try:
-                    valid_items.append(factory_create(item))
+                    self.addItem(factory_create(item))
                 except Exception:
                     pass
-        if valid_items:
-            self.undoStack.push(us.loadShapesUndo(self, valid_items))
-
-    # def createLayoutItems(self, decoded_data: List[Dict[str, Any]]) -> None:
-    #     """Create layout items from decoded data and add them to the undo stack."""
-    #     if not decoded_data:
-    #         return
-    #
-    #     valid_items = []
-    #     layoutShapes = self.getLayoutShapesSet(tuple(self.layoutShapes))
-    #     factory_create = lj.layoutItems(self).create  # Cache method lookup
-    #
-    #     for item in decoded_data:
-    #         item_type = item.get("type") if isinstance(item, dict) else None
-    #         if item_type in layoutShapes:
-    #             try:
-    #                 valid_items.append(factory_create(item))
-    #             except Exception:
-    #                 pass
-    #
-    #     if valid_items:
-    #         self.undoStack.push(us.loadShapesUndo(self, valid_items))
 
     def deleteSelectedItems(self):
         for item in self.selectedItems():

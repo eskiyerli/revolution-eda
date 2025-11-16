@@ -216,7 +216,7 @@ class layoutShape(QGraphicsItem):
     #         self._lastScale = rounded_scale
     def _updateTransformedBrush(self, brush: QBrush, scale: float):
         """Update transformed brush only when needed"""
-        rounded_scale = round(scale, 2)
+        rounded_scale = max(round(scale, 2), 0.01)  # Prevent division by zero
 
         if self._transformedBrush is None or self._lastScale != rounded_scale:
             if self._transformedBrush is None:

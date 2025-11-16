@@ -46,15 +46,15 @@
 # nuitka-project: --include-package-data=defaultPDK
 # nuitka-project: --include-data-files=.env=.env
 # nuitka-project-if: {OS} == "Windows":
-#    nuitka-project: --output-dir=C:\Users\eskiye50\dist
+#    nuitka-project: --output-dir=C:\Users\eskiy\dist
 # nuitka-project-if: {OS} == "Linux":
 #    nuitka-project: --output-dir=/home/eskiyerli/dist
 # nuitka-project: --product-name="Revolution EDA"
-# nuitka-project: --product-version="0.8.3"
+# nuitka-project: --product-version="0.8.6"
 # nuitka-project: --company-name="Revolution EDA"
 # nuitka-project: --file-description="Electronic Design Automation Software for Professional Custom IC Design Engineers"
 # nuitka-project: --copyright="Revolution Semiconductor (C) 2025"
-# import time
+
 import importlib
 import os
 import pkgutil
