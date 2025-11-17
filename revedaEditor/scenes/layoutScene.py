@@ -139,7 +139,7 @@ class layoutScene(editorScene):
         self._draftPen = QPen(Qt.DashLine)
         self._draftPen.setColor(QColor(0, 150, 0))
         self._draftPen.setWidth(int(fabproc.dbu/10))
-        self.setMinimumRenderSize(1)
+        self.setMinimumRenderSize(2)
 
     @property
     def drawMode(self):
@@ -506,8 +506,8 @@ class layoutScene(editorScene):
             filePathObj.parent.mkdir(parents=True, exist_ok=True)
 
             # Prepare data before file operation
-            self.itemRefs = list(self.items())
-            topLevelItems =  [item for item in self.itemRefs if item.parentItem() is None and isinstance(item, tuple(self.LAYOUT_SHAPES))]
+            self.itemsRefSet = set(self.items())
+            topLevelItems =  [item for item in self.itemsRefSet if item.parentItem() is None and isinstance(item, tuple(self.LAYOUT_SHAPES))]
             layoutData = [{"viewType": "layout"},
                         {"snapGrid": (self.majorGrid, self.snapGrid)}, *topLevelItems]
 
@@ -543,26 +543,29 @@ class layoutScene(editorScene):
 
 
 
-    def loadDesign(self, filePathObj: pathlib.Path) -> None:
+    def loadDesign(self, filePathObj: pathlib.Path) -> bool:
         """Load the layout cell from the given JSON file."""
         try:
             with filePathObj.open("rb") as file:
                 decodedData = orjson.loads(file.read())
-            with self.measureDuration():
-                if len(decodedData) < 2 or decodedData[0].get(
+            if len(decodedData) < 2 or decodedData[0].get(
                         "viewType") != "layout":
-                    self.logger.error("Invalid file type.")
-                    return
-
+                self.logger.error("Invalid file type.")
+                return False
+            with self.measureDuration():
                 self.editorWindow.configureGridSettings(decodedData[1].get(
                     'snapGrid', (self.majorGrid, self.snapGrid)))
                 if len(decodedData) > 2:
                     self.createLayoutItems(decodedData[2:])
+                self.itemsRefSet = set(self.items())
+                return True
+            return True
         except orjson.JSONDecodeError:
             self.logger.error("Invalid file format.")
-            return
+            return False
         except Exception:
-            return
+            return False
+
 
     # @functools.lru_cache(maxsize=1)
     # def getLayoutShapesSet(self, shapes_tuple):
