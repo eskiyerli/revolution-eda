@@ -78,6 +78,7 @@ class editorScene(QGraphicsScene):
         # Initialize undo stack with limit
         self.undoStack = us.undoStack()
         self.undoStack.setUndoLimit(99)
+        self.itemsRefSet: set[QGraphicsItem] = set()
 
         # Group selection-related attributes
         self.partialSelection = False
@@ -340,12 +341,6 @@ class editorScene(QGraphicsScene):
             for view in self.views():
                 view.setUpdatesEnabled(True)
                 view.viewport().update()
-
-    def loadDesign(self, filePathObj:pathlib.Path):
-        """
-        implement in subclasses
-        """
-        pass
 
 
     def fitItemsInView(self) -> None:

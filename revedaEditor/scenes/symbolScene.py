@@ -596,6 +596,7 @@ class symbolScene(editorScene):
                                                                       self.snapGrid)))
                 self.attributeList = []
                 self.createSymbolItems(itemData)
+            self.itemsRef = set(self.items())
         except (json.JSONDecodeError, FileNotFoundError) as e:
             self.logger.error(f"File error while loading symbol: {e}")
             self.attributeList = []
@@ -692,6 +693,7 @@ class symbolScene(editorScene):
         """
 
         try:
+            self.itemsRefSet = set(self.items())
             # Filter items and process labels in one pass
             sceneItems = [item for item in self.items() 
                          if isinstance(item, shp.symbolPolygon) or item.parentItem() is None]
@@ -713,6 +715,7 @@ class symbolScene(editorScene):
         except Exception as e:
             self.logger.error(f"Symbol save error: {e}")
             return False
+        
 
     def viewSymbolProperties(self):
         """

@@ -777,7 +777,7 @@ class schematicScene(editorScene):
                         shape.counter = int(self.instanceCounter)
                         [label.labelDefs() for label in shape.labels.values()]
 
-    def saveSchematic(self, file: pathlib.Path):
+    def saveSchematic(self, file: pathlib.Path) -> bool:
         """
         Save the schematic to a file with optimized memory usage and error handling.
 
@@ -789,6 +789,7 @@ class schematicScene(editorScene):
             JSONEncodeError: If there are JSON serialization errors
         """
         try:
+            self.itemsRefSet = set(self.items())
             # Ensure parent directory exists
             file.parent.mkdir(parents=True, exist_ok=True)
 
@@ -805,10 +806,6 @@ class schematicScene(editorScene):
                     json.dump(header_items[0], f)
                     f.write(",\n")
                     json.dump(header_items[1], f)
-                    # Get top-level items more efficiently
-                    # topLevelItems = {
-                    #     item for item in self.items() if item.parentItem() is None
-                    # }
                     topLevelItems = filter(
                         lambda item: isinstance(item, self.SCHEMATIC_SHAPES),
                         self.items())
@@ -835,17 +832,24 @@ class schematicScene(editorScene):
                 self.logger.info(
                     f"Saved schematic to {self.editorWindow.cellName}:"
                     f"{self.editorWindow.viewName}")
-
+                self.undoStack.clear()
+                return True
         except IOError as io_err:
             self.logger.error(f"IO Error while saving schematic: {str(io_err)}")
-            return
+            return False
         except Exception as e:
             self.logger.error(
                 f"Unexpected error while saving schematic: {str(e)}")
             # Clean up temporary file if it exists
             if tempFile.exists():
                 tempFile.unlink()
-            return
+            return False
+        finally:
+            if tempFile.exists():
+                tempFile.unlink()
+            return True
+            
+
 
     @staticmethod
     def findEditorTypeString(editorWindow):
@@ -893,12 +897,9 @@ class schematicScene(editorScene):
                     self.editorWindow.configureGridSettings(decodedData[1].get(
                                                          "snapGrid", (self.majorGrid,
                                                                       self.snapGrid)))         
-                # else:
-                #     self.editorWindow.configureGridSettings({'snapGrid': [
-                #         self.editorWindow.MAJOR_GRID_DEFAULT,
-                #         self.editorWindow.SNAP_GRID_DEFAULT]})
-                self.createSchematicItems(
-                    itemData)  # self._snapPointRect = self.defineSnapRect()  # self.addItem(self._snapPointRect)
+                self.createSchematicItems(itemData) 
+            self.itemsRefSet = set(self.items())
+                
         except (json.JSONDecodeError, FileNotFoundError) as e:
             self.logger.error(f"File error while loading schematic: {e}")
             return
