@@ -24,12 +24,15 @@
 import revedaEditor.backend.dataDefinitions as ddef
 from revedaEditor.backend.pdkPaths import importPDKModule
 fabproc = importPDKModule('process')
+
 laylyr = importPDKModule('layoutLayers')
 
 # common process parameters
-dbu = 1000  # grid points per micron
-snapGrid = 50 # 0.05
-majorGrid = 100 # 0.1 micron
+dbu = 1000  # distance between two points, 1um/1000=1n
+snapGrid = 50 # 50nm
+majorGrid = 100 # 100nm
+gdsUnit = Quantity("1 um")
+gdsPrecision = Quantity("1 num")
 
 # Some predefined rules
 # via defintions

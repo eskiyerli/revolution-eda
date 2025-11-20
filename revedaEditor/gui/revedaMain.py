@@ -44,6 +44,7 @@ import revedaEditor.gui.libraryBrowser as libw
 import revedaEditor.gui.pythonConsole as pcon
 import revedaEditor.gui.revinit as revinit
 import revedaEditor.gui.stippleEditor as stip
+from revedaEditor.gui.startThread import startThread
 from revedaEditor.backend.pdkPaths import importPDKModule
 # from revedaEditor.gui.startThread import startThread
 from revedaEditor.resources import resources  # noqa: F401
@@ -362,8 +363,8 @@ class MainWindow(QMainWindow):
 
     def importGDSClick(self):
         dlg = fd.gdsImportDialogue(self)
-        dlg.unitEdit.setText(fabproc.gdsUnit)
-        dlg.precisionEdit.setText(fabproc.gdsPrecision)
+        dlg.unitEdit.setText(str(fabproc.gdsUnit))
+        dlg.precisionEdit.setText(str(fabproc.gdsPrecision))
         dlg.libNameEdit.setText("importLib")
         if dlg.exec() == QDialog.Accepted:
             gdsImportLibName = dlg.libNameEdit.text().strip()
@@ -384,10 +385,10 @@ class MainWindow(QMainWindow):
             try:
                 gdsImportObj = igds.gdsImporter(self, gdsImportFileObj, gdsImportLibItem)
                 if gdsImportObj:
-                    gdsImportObj.importGDS()
-                    # gdsImportRunner = startThread(gdsImportObj.importGDS)
-                    # self.threadPool.start(gdsImportRunner)
-                    # self.logger.info("GDS Import started.")
+                    # gdsImportObj.importGDS()
+                    gdsImportRunner = startThread(gdsImportObj.importGDS)
+                    self.threadPool.start(gdsImportRunner)
+                    self.logger.info("GDS Import started.")
 
             except Exception as e:
                 self.logger.error(f"GDS Import failed: {e}")
@@ -404,7 +405,7 @@ class MainWindow(QMainWindow):
         ret = warning.exec()
         if ret == QMessageBox.Yes:
 
-            libDialog = QFileDialog(self, "Select Parent Directory", self.runPath)
+            libDialog = QFileDialog(self, "Select Parent Directory", str(self.runPath))
             libDialog.setFileMode(QFileDialog.Directory)
             if libDialog.exec() == QDialog.Accepted:
                 selectedDir = libDialog.selectedFiles()[0]

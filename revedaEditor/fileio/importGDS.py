@@ -18,6 +18,13 @@ from revedaEditor.backend.pdkPaths import importPDKModule
 fabproc = importPDKModule("process")
 laylyr = importPDKModule("layoutLayers")
 
+dbu = float(fabproc.dbu)
+snapGrid = float(fabproc.snapGrid)
+majorGrid = float(fabproc.majorGrid)
+gdsUnit = float(fabproc.gdsUnit)
+gdsPrecision = float(fabproc.gdsPrecision)
+
+
 
 class gdsImporter:
     def __init__(
@@ -86,7 +93,7 @@ class gdsImporter:
             layoutInstance.viewName = viewItem.viewName
             layoutInstance.counter = 1
             layoutInstance.instanceName = 'I1'
-            layoutInstance.setPos(ref.origin[0]*fabproc.dbu, ref.origin[1]*fabproc.dbu)
+            layoutInstance.setPos(ref.origin[0]*dbu, ref.origin[1]*dbu)
             layoutInstance.angle = ref.rotation * 180 / pi
             layoutInstance.flipTuple = (1,1)
             yield layoutInstance
@@ -97,7 +104,7 @@ class gdsImporter:
                 laylyr.pdkAllLayers, polygon.layer, polygon.datatype
             )
             if layoutLayer:
-                points = [QPoint(point[0]*fabproc.dbu, point[1]*fabproc.dbu) for point in polygon.points]
+                points = [QPoint(point[0]*dbu, point[1]*dbu) for point in polygon.points]
                 yield lshp.layoutPolygon(points, layoutLayer)
 
         # Process paths
@@ -107,7 +114,7 @@ class gdsImporter:
                     laylyr.pdkAllLayers, polygon.layer, polygon.datatype
                 )
                 if layoutLayer:
-                    points = [QPoint(point[0]*fabproc.dbu, point[1]*fabproc.dbu) for point in polygon.points]
+                    points = [QPoint(point[0]*dbu, point[1]*dbu) for point in polygon.points]
                     yield lshp.layoutPolygon(points, layoutLayer)
         # Process labels
         for gds_label in cell.labels:
@@ -115,7 +122,7 @@ class gdsImporter:
                 laylyr.pdkAllLayers, gds_label.layer, 0)
             if not textLayer:
                 continue
-            origin = QPoint(gds_label.origin[0]*fabproc.dbu, gds_label.origin[1]*fabproc.dbu)
+            origin = QPoint(gds_label.origin[0]*dbu, gds_label.origin[1]*dbu)
             angle = gds_label.rotation * 180 / pi
             layout_label = lshp.layoutLabel(origin, gds_label.text, "Arial", "Regular", "10", "Center", "R0", textLayer)
             layout_label.angle = angle

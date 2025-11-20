@@ -32,18 +32,20 @@ class workerSignals(QObject):
 
 class startThread(QRunnable):
     """A thread class to execute a given function as a runnable task."""
-    __slots__ = ("fn", "signals")
+    __slots__ = ("fn", "args", "kwargs", "signals")
 
-    def __init__(self, fn: Callable) -> None:
+    def __init__(self, fn: Callable, *args, **kwargs) -> None:
         super().__init__()
         self.fn = fn
+        self.args = args
+        self.kwargs = kwargs
         self.signals = workerSignals()
 
     @Slot()
     def run(self) -> None:
         """Execute the stored function in the thread."""
         try:
-            result = self.fn()
+            result = self.fn(*self.args, **self.kwargs)
             self.signals.finished.emit(result or "Success")
         except Exception as e:
             self.signals.error.emit((str(e),))
