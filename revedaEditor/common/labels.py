@@ -400,32 +400,20 @@ class symbolLabel(QGraphicsSimpleTextItem):
         Create a PyLabel using the label definition and parent item information.
         """
         try:
-            # Split the label definition into name and function
             labelName, labelFunction = map(str.strip, self._labelDefinition.split("="))
-
-            # Check if parent item exists and has 'cellName' attribute
-            if self.parentItem() and hasattr(self.parentItem(), "cellName"):
-                # Construct the expression to evaluate
-                parentItem = self.parentItem()
-                parentCellName = parentItem.cellName
-                parentLabelsDict = parentItem.labels
-                if hasattr(cb, parentCellName):
-                    callbackClass = getattr(cb, parentCellName)
-                    callbackClassObj = callbackClass(parentLabelsDict)
-                    if hasattr(callbackClassObj, labelFunction):
-                        labelMethod = getattr(callbackClassObj, labelFunction)
-                        if labelMethod:
-                            self._labelValue = Quantity(labelMethod()).render(prec=3)
-                        else:
-                            self._labelValue = "?"
-
-                        # Set the label text with the name and value
-                        self._labelText = f"{labelName}={self._labelValue}"
-            else:
-                # Set the label text with the name and function
-                self._labelText = f"{labelName} = {labelFunction}"
             self._labelName = f"@{labelName}"
+            self._labelValue = "?"
+            parentItem = self.parentItem()
+
+            if parentItem and hasattr(parentItem, "cellName"):
+                callbackClass = getattr(cb, parentItem.cellName)
+                callbackObj = callbackClass(parentItem.labels)
+                if hasattr(callbackObj, labelFunction):
+                    self._labelValue =  Quantity(getattr(callbackObj, labelFunction)()).render(prec=3)
+
+            self._labelText = f"{labelName}={self._labelValue}"
+
+
         except Exception as e:
-            # Log the error if scene exists
             if self.scene():
                 self.scene().logger.error(f"PyLabel Error: {e}")

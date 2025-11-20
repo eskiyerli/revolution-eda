@@ -23,34 +23,34 @@
 
 
 # net class definition.
+from enum import IntEnum
 from functools import cached_property
+from typing import Dict, List, Set, Type, Union
+
 from PySide6.QtCore import (
-    QPoint,
-    Qt,
     QLineF,
-    QRectF,
+    QPoint,
     QPointF,
+    QRectF,
+    Qt,
 )
 from PySide6.QtGui import (
-    QPen,
-    QPainterPath,
-    QPainter,
     QBrush,
     QColor,
+    QPainter,
+    QPainterPath,
+    QPen,
 )
 from PySide6.QtWidgets import (
-    QGraphicsLineItem,
-    QGraphicsSimpleTextItem,
     QGraphicsItem,
+    QGraphicsLineItem,
     QGraphicsPathItem,
-    QGraphicsSceneMouseEvent,
     QGraphicsSceneHoverEvent,
+    QGraphicsSceneMouseEvent,
+    QGraphicsSimpleTextItem,
 )
 
-from typing import Type, Set, Union, Dict
-from enum import IntEnum
 from revedaEditor.backend.pdkPaths import importPDKModule
-from typing import List
 
 schlyr = importPDKModule("schLayers")
 
@@ -69,15 +69,14 @@ class netNameStrengthEnum(IntEnum):
 
 
 class schematicNet(QGraphicsItem):
-
     def __init__(self, start: QPoint, end: QPoint, width: int = 0, mode: int = 0):
         super().__init__()
 
         # Batch set multiple flags at once using setFlags
         self.setFlags(
-            QGraphicsItem.ItemIsSelectable |
-            QGraphicsItem.ItemIsFocusable |
-            QGraphicsItem.ItemSendsGeometryChanges
+            QGraphicsItem.ItemIsSelectable
+            | QGraphicsItem.ItemIsFocusable
+            | QGraphicsItem.ItemSendsGeometryChanges
         )
         self.setFlag(QGraphicsItem.ItemIsMovable, False)
 
@@ -98,7 +97,7 @@ class schematicNet(QGraphicsItem):
         # Collections
         self._flightLinesSet: Set["schematicNet"] = set()
         self._connectedNetsSet: Set["schematicNet"] = set()
-        self._endPointNetDict: Dict[int,Set["schematicNet"]]
+        self._endPointNetDict: Dict[int, Set["schematicNet"]]
         # track nets connected to each end point.
         self._netSnapLines: dict[QPoint, Set["schematicNet"]] = {}
 
@@ -126,11 +125,11 @@ class schematicNet(QGraphicsItem):
             line = QLineF(p1, p2)
 
         # Early exit if the line hasn't changed
-        if hasattr(self, '_draftLine') and self._draftLine == line:
+        if hasattr(self, "_draftLine") and self._draftLine == line:
             return
 
         self.prepareGeometryChange()
-        self.__dict__.pop('_hash_value', None)
+        self.__dict__.pop("_hash_value", None)
 
         self._draftLine = line
         origin_point = line.p1()
@@ -147,7 +146,7 @@ class schematicNet(QGraphicsItem):
         self.setRotation(-self._angle)
 
         # Clear the cached _extractRect
-        self.__dict__.pop('_extractRect', None)
+        self.__dict__.pop("_extractRect", None)
         self._shapeRect = self._extractRect.adjusted(-2, -2, 2, 2)
         self._boundingRect = self._extractRect.adjusted(-10, -10, 10, 10)
 
@@ -178,13 +177,12 @@ class schematicNet(QGraphicsItem):
         perp_y = direction_x * half_width
 
         point1 = QPoint(
-            round(p1.x() + perp_x),  # Using round() instead of int() for better precision
-            round(p1.y() + perp_y)
+            round(
+                p1.x() + perp_x
+            ),  # Using round() instead of int() for better precision
+            round(p1.y() + perp_y),
         )
-        point2 = QPoint(
-            round(p2.x() - perp_x),
-            round(p2.y() - perp_y)
-        )
+        point2 = QPoint(round(p2.x() - perp_x), round(p2.y() - perp_y))
 
         return QRectF(point1, point2).normalized()
 
@@ -206,9 +204,11 @@ class schematicNet(QGraphicsItem):
             self.isSelected(): schlyr.selectedWirePen,
             self._stretch: schlyr.stretchWirePen,
             self._highlighted: schlyr.hilightPen,
-            self._nameConflict: schlyr.errorWirePen
+            self._nameConflict: schlyr.errorWirePen,
         }
-        base_pen = next((pen for condition, pen in pen_mapping.items() if condition), schlyr.wirePen)
+        base_pen = next(
+            (pen for condition, pen in pen_mapping.items() if condition), schlyr.wirePen
+        )
         return_pen = QPen(base_pen)
         return_pen.setWidth(base_pen.width() * (self._width + 1))
         return return_pen
@@ -261,8 +261,11 @@ class schematicNet(QGraphicsItem):
     def generateEndPointNetDict(self):
         self._endPointNetDict = dict[int, Set[schematicNet]]()
         for i, endPoint in enumerate(self.sceneEndPoints):
-            netSet: Set["schematicNet"] = {item for item in self.scene().items(
-                endPoint) if isinstance(item, schematicNet)}- {self}
+            netSet: Set["schematicNet"] = {
+                item
+                for item in self.scene().items(endPoint)
+                if isinstance(item, schematicNet)
+            } - {self}
             self._endPointNetDict[i] = netSet
 
     def initializeSnapLines(self):
@@ -276,9 +279,8 @@ class schematicNet(QGraphicsItem):
             snapLinesSet: set["guideLine"] = set()
             for net in nets:
                 for endPoint in net.sceneEndPoints:
-                    if ((endPoint-point).manhattanLength() <
-                            sceneGrid/2):
-                        otherEndPoint  = net.sceneOtherEnd(endPoint)
+                    if (endPoint - point).manhattanLength() < sceneGrid / 2:
+                        otherEndPoint = net.sceneOtherEnd(endPoint)
                         snapLine = guideLine(point, otherEndPoint)
                         snapLine.inherit(net)
                         snapLinesSet.add(snapLine)
@@ -288,7 +290,6 @@ class schematicNet(QGraphicsItem):
             self._netSnapLines[i] = snapLinesSet
 
     def updateSnapLines(self):
-
         # Create a list to store lines for removal to avoid modifying the set during iteration
         lines_to_remove = []
         # shape is not connected to any nets
@@ -301,7 +302,9 @@ class schematicNet(QGraphicsItem):
                 newLine = QLineF(point, current_end)
 
                 # Only update if there's a significant change
-                if newLine.length() > 1 and (abs(newLine.dx()) > 1 or abs(newLine.dy()) > 1):
+                if newLine.length() > 1 and (
+                    abs(newLine.dx()) > 1 or abs(newLine.dy()) > 1
+                ):
                     snapLine.setLine(newLine)
                 else:
                     # Remove unnecessary lines
@@ -321,8 +324,10 @@ class schematicNet(QGraphicsItem):
                 scene = self.scene()
                 for snapLinesSet in self._netSnapLines.values():
                     for snapLine in snapLinesSet:
-                        newNets = scene.addStretchWires(snapLine.line().p1().toPoint(),
-                                                        snapLine.line().p2().toPoint())
+                        newNets = scene.addStretchWires(
+                            snapLine.line().p1().toPoint(),
+                            snapLine.line().p2().toPoint(),
+                        )
                         if newNets:
                             for netItem in newNets:
                                 netItem.inherit(snapLine)
@@ -342,17 +347,17 @@ class schematicNet(QGraphicsItem):
             tuple[str, tuple[int, int]]: Base name and (start, end) indices.
                                          Returns (-1, -1) if no bus notation.
         """
-        if '<' not in name or '>' not in name:
+        if "<" not in name or ">" not in name:
             return name, (-1, -1)
 
-        baseName = name.split('<')[0]
-        indexRange = name.split('<')[1].split('>')[0]
+        baseName = name.split("<")[0]
+        indexRange = name.split("<")[1].split(">")[0]
 
-        if ':' not in indexRange:
+        if ":" not in indexRange:
             singleIndex = int(indexRange)
             return baseName, (singleIndex, singleIndex)
 
-        start, end = map(int, indexRange.split(':'))
+        start, end = map(int, indexRange.split(":"))
         return baseName, (start, end)
 
     @staticmethod
@@ -398,7 +403,7 @@ class schematicNet(QGraphicsItem):
         # Check if highlightNets flag is set in the scene
         if self.scene().highlightNets:
             self._highlighted = True
-            self.scene().nameSceneNets() # first name all the nets in the scene.
+            self.scene().nameSceneNets()  # first name all the nets in the scene.
             sceneNetsSet = self.scene().findSceneNetsSet()
             self._connectedNetsSet = {
                 net for net in sceneNetsSet if self._namesMatch(net.name, self.name)
@@ -521,7 +526,7 @@ class schematicNet(QGraphicsItem):
         Merge net names based on name strength and handle conflicts.
         """
         if otherNet.nameStrength > self.nameStrength:
-            if  otherNet.nameStrength == 3:
+            if otherNet.nameStrength == 3:
                 self.name = otherNet.name
                 self.nameStrength = netNameStrengthEnum.INHERIT
                 return True
@@ -534,7 +539,6 @@ class schematicNet(QGraphicsItem):
                 self.nameConflict = otherNet.nameConflict = True
                 return False
             return True
-
 
     def clearName(self):
         """
@@ -623,11 +627,11 @@ class schematicNet(QGraphicsItem):
         self.prepareGeometryChange()
         self._width = value
         # Invalidate cached hash when width changes
-        if hasattr(self, '_hash_value'):
+        if hasattr(self, "_hash_value"):
             del self._hash_value
         # Clear the cached _extractRect
-        if '_extractRect' in self.__dict__:
-            del self.__dict__['_extractRect']
+        if "_extractRect" in self.__dict__:
+            del self.__dict__["_extractRect"]
         self.update()
 
     def highlight(self):
@@ -703,7 +707,7 @@ class schematicNet(QGraphicsItem):
         self._annotationItem.setParentItem(self)
 
     def clearAnnotation(self):
-        if hasattr(self, '_annotationItem') and self._annotationItem:
+        if hasattr(self, "_annotationItem") and self._annotationItem:
             if self._annotationItem.scene():
                 self._annotationItem.scene().removeItem(self._annotationItem)
             self._annotationItem = None
@@ -711,13 +715,15 @@ class schematicNet(QGraphicsItem):
     def __hash__(self) -> int:
         """Generate a hash value for the schematic net based on its properties."""
         # Cache the hash value since the line length is unlikely to change frequently
-        if not hasattr(self, '_hash_value'):
+        if not hasattr(self, "_hash_value"):
             # Combine multiple properties for a more unique hash
-            self._hash_value = hash((
-                self.draftLine.length(),
-                self.width,
-                frozenset((p.x(), p.y()) for p in self.sceneEndPoints)
-            ))
+            self._hash_value = hash(
+                (
+                    self.draftLine.length(),
+                    self.width,
+                    frozenset((p.x(), p.y()) for p in self.sceneEndPoints),
+                )
+            )
         return self._hash_value
 
     def __eq__(self, other) -> bool:
@@ -732,9 +738,12 @@ class schematicNet(QGraphicsItem):
         # Use set comprehension for endpoints comparison
         # Cache the results to avoid multiple set creations
         self_points = frozenset((point.x(), point.y()) for point in self.sceneEndPoints)
-        other_points = frozenset((point.x(), point.y()) for point in other.sceneEndPoints)
+        other_points = frozenset(
+            (point.x(), point.y()) for point in other.sceneEndPoints
+        )
 
         return self_points == other_points
+
 
 class netAnnotation(QGraphicsSimpleTextItem):
     def __init__(self, text: str, parent: schematicNet | None = None):
@@ -748,7 +757,6 @@ class netAnnotation(QGraphicsSimpleTextItem):
     def parent(self):
         return self._parent
 
-    
     @property
     def value(self) -> str:
         return self.text()
@@ -824,9 +832,7 @@ class netName(QGraphicsSimpleTextItem):
         self.setRotation(self._parent.angle)
         self._draftLineCenter = self._parent.draftLine.center()
 
-
     def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent) -> None:
-
         self.setSelected(False)
         self.setFlag(QGraphicsItem.ItemIsMovable, False)
         if self._parent:
@@ -920,13 +926,15 @@ class guideLine(QGraphicsLineItem):
         assert isinstance(otherNet, schematicNet)
         self.name = otherNet.name
         self.nameStrength = otherNet.nameStrength
+
     def _finishSnapLines(self):
         if self._netSnapLines:
             scene = self.scene()
             for snapLinesSet in self._netSnapLines.values():
                 for snapLine in snapLinesSet:
-                    newNets = scene.addStretchWires(snapLine.line().p1().toPoint(),
-                                                    snapLine.line().p2().toPoint())
+                    newNets = scene.addStretchWires(
+                        snapLine.line().p1().toPoint(), snapLine.line().p2().toPoint()
+                    )
                     if newNets:
                         for netItem in newNets:
                             netItem.inherit(snapLine)

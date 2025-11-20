@@ -18,9 +18,10 @@
 #    License: Mozilla Public License 2.0
 #    Licensor: Revolution Semiconductor (Registered in the Netherlands)
 
-from typing import NamedTuple, Union
 from dataclasses import dataclass
-from PySide6.QtCore import Qt, QPoint, QPointF
+from typing import NamedTuple, Union
+
+from PySide6.QtCore import QPoint, QPointF, Qt
 from PySide6.QtGui import QColor
 
 
@@ -36,7 +37,7 @@ class edLayer:
     z: int = 1  # z-index
     selectable: bool = True  # selectable
     visible: bool = True  # visible
-    gdsLayer: int = 0  # gds edLayer
+    gdsLayer: int = 0  # gds Layer
     datatype: int = 0  # gds datatype
 
 
@@ -52,15 +53,18 @@ class layLayer:
     z: int = 1  # z-index
     selectable: bool = True  # selectable
     visible: bool = True  # visible
-    gdsLayer: int = 0  # gds edLayer
+    gdsLayer: int = 0  # gds Layer
     datatype: int = 0  # gds datatype
 
     @classmethod
-    def filterByGDSLayer(cls, layer_list, gdsLayer: int, gdsDatatype: int) -> 'layLayer':
+    def filterByGDSLayer(
+        cls, layer_list, gdsLayer: int, gdsDatatype: int
+    ) -> "layLayer":
         for layer in layer_list:
             if layer.gdsLayer == gdsLayer and layer.datatype == gdsDatatype:
                 return layer
         return cls()
+
 
 @dataclass
 class editModes:
@@ -118,7 +122,7 @@ class layoutModes(editModes):
     drawCircle: bool
     drawRuler: bool
     addInstance: bool
-    chopShape:bool
+    chopShape: bool
 
 
 @dataclass
@@ -203,6 +207,7 @@ class rulerTuple(NamedTuple):
 # # this tuple defines the minimum dimensions of a via
 # # This can be extended to define the maximum dimensions
 
+
 # used in PDK
 class viaDefTuple(NamedTuple):
     name: str
@@ -215,11 +220,13 @@ class viaDefTuple(NamedTuple):
     minSpacing: float
     maxSpacing: float
 
+
 # Used to define the via prototype
 class singleViaTuple(NamedTuple):
     viaDefTuple: viaDefTuple
     width: float
     height: float
+
 
 # both single vias and vias arrays are defined by this
 class arrayViaTuple(NamedTuple):
@@ -238,4 +245,3 @@ class rectCoords(NamedTuple):
     top: float
     w: float
     h: float
-

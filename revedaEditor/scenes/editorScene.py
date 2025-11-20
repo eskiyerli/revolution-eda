@@ -150,8 +150,8 @@ class editorScene(QGraphicsScene):
                     self.selectedItems())
                 
                 self._selectedItemGroup.setFlag(QGraphicsItem.ItemIsMovable, True)
-                self._initialGroupPos = self._selectedItemGroup.pos().toPoint()
-                self._initialGroupPosList = [item.pos().toPoint() for item in self._selectedItemGroup.childItems()]
+                self._initialGroupPos = QPoint(int(self._selectedItemGroup.pos().x()), int(self._selectedItemGroup.pos().y()))
+                self._initialGroupPosList = [QPoint(int(item.pos().x()), int(item.pos().y())) for item in self._selectedItemGroup.childItems()]
             elif self.editModes.panView:
                 self.centerViewOnPoint(self.mousePressLoc)
             self.messageLine.setText(self.messages.get(self.editModes.mode(), ""))

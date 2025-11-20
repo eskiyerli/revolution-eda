@@ -77,10 +77,5 @@ The IHP PDK installation directory also has schematic symbols under the `sg13g2_
 
 ## Example Libraries
 
-For example components and IHP sg13g2_pr library:
-
-```bash
-git clone https://github.com/eskiyerli/exampleLibraries.git
-```
-
+There is an example analogLib library and a
 Use the Library Path Editor in Revolution EDA to add library paths to the browser.
