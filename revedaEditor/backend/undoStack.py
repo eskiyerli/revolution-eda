@@ -23,12 +23,15 @@
 #
 
 
+from typing import List, Tuple, Union
+
 from PySide6.QtCore import QPoint
 from PySide6.QtGui import QUndoCommand, QUndoStack
-from PySide6.QtWidgets import QGraphicsScene, QGraphicsItem
-import revedaEditor.common.shapes as shp
+from PySide6.QtWidgets import QGraphicsItem, QGraphicsScene
+
 import revedaEditor.common.layoutShapes as lshp
-from typing import List, Tuple, Sequence, Union, Dict
+import revedaEditor.common.shapes as shp
+
 
 class undoStack(QUndoStack):
     def __init__(self):
@@ -49,16 +52,18 @@ class addShapeUndo(QUndoCommand):
 
     def undo(self):
         self._scene.removeItem(self._shape)
-        self._scene.itemsRefSet.remove(self._shape)
-
 
     def redo(self):
         self._scene.addItem(self._shape)
-        self._scene.itemsRefSet.add(self._shape)
 
 
 class addDeleteShapesUndo(QUndoCommand):
-    def __init__(self, scene: QGraphicsScene, newShapes: List[QGraphicsItem], oldShapes: List[QGraphicsItem]):
+    def __init__(
+        self,
+        scene: QGraphicsScene,
+        newShapes: List[QGraphicsItem],
+        oldShapes: List[QGraphicsItem],
+    ):
         super().__init__()
         self._scene = scene
         self._newShapes = newShapes
@@ -68,19 +73,17 @@ class addDeleteShapesUndo(QUndoCommand):
     def undo(self):
         for item in self._newShapes:
             self._scene.removeItem(item)
-            self._scene.itemsRefSet.remove(item)
+
         for item in self._oldShapes:
             self._scene.addItem(item)
-            self._scene.itemsRefSet.add(item)
-
 
     def redo(self):
         for item in self._newShapes:
             self._scene.addItem(item)
-            self._scene.itemsRefSet.add(item)
+
         for item in self._oldShapes:
             self._scene.removeItem(item)
-            self._scene.itemsRefSet.remove(item)
+
 
 class addShapesUndo(QUndoCommand):
     def __init__(self, scene: QGraphicsScene, shapes: List[QGraphicsItem]):
@@ -91,12 +94,9 @@ class addShapesUndo(QUndoCommand):
 
     def undo(self):
         [self._scene.removeItem(item) for item in self._shapes]
-        self._scene.itemsRefSet.difference_update(self._shapes)
 
     def redo(self):
         [self._scene.addItem(item) for item in self._shapes]
-        self._scene.itemsRefSet.update(self._shapes)
-
 
 
 class deleteShapeUndo(QUndoCommand):
@@ -108,12 +108,9 @@ class deleteShapeUndo(QUndoCommand):
 
     def undo(self):
         self._scene.addItem(self._shape)
-        self._scene.itemsRefSet.add(self._shape)
-
 
     def redo(self):
         self._scene.removeItem(self._shape)
-        self._scene.itemsRefSet.remove(self._shape)
 
 
 class deleteShapesUndo(QUndoCommand):
@@ -125,11 +122,9 @@ class deleteShapesUndo(QUndoCommand):
 
     def undo(self):
         [self._scene.addItem(item) for item in self._shapes]
-        self._scene.itemsRefSet.update(self._shapes)
 
     def redo(self):
         [self._scene.removeItem(item) for item in self._shapes]
-        self._scene.itemsRefSet.difference_update(self._shapes)
 
 
 class addDeleteShapeUndo(QUndoCommand):
@@ -145,17 +140,16 @@ class addDeleteShapeUndo(QUndoCommand):
     def undo(self):
         self._scene.removeItem(self._addshape)
         self._scene.addItem(self._deleteShape)
-        self._scene.itemsRefSet.remove(self._addshape)
-        self._scene.itemsRefSet.add(self._deleteShape)
 
     def redo(self):
         self._scene.addItem(self._addshape)
         self._scene.removeItem(self._deleteShape)
-        self._scene.itemsRefSet.add(self._addshape)
-        self._scene.itemsRefSet.remove(self._deleteShape)
+
 
 class addDeleteNetUndo(QUndoCommand):
-    def __init__(self, scene: QGraphicsScene, addNet: QGraphicsItem, deleteNet: QGraphicsItem):
+    def __init__(
+        self, scene: QGraphicsScene, addNet: QGraphicsItem, deleteNet: QGraphicsItem
+    ):
         super().__init__()
         self._scene = scene
         self._addNet = addNet
@@ -165,14 +159,11 @@ class addDeleteNetUndo(QUndoCommand):
     def undo(self):
         self._scene.removeItem(self._addNet)
         self._scene.addItem(self._deleteNet)
-        self._scene.itemsRefSet.remove(self._addNet)
-        self._scene.itemsRefSet.add(self._deleteNet)
 
     def redo(self):
         self._scene.addItem(self._addNet)
         self._scene.removeItem(self._deleteNet)
-        self._scene.itemsRefSet.add(self._addNet)
-        self._scene.itemsRefSet.remove(self._deleteNet)
+
 
 class updateSymUndo(QUndoCommand):
     def __init__(self, item: QGraphicsItem, oldItemList: list, newItemList: list):
@@ -203,7 +194,7 @@ class moveShapeUndo(QUndoCommand):
         self._attribute = attribute
         self._oldPosition = oldPosition
         self._newPosition = newPosition
-        self.setText('move shape undo')
+        self.setText("move shape undo")
 
     def undo(self):
         setattr(self._item, self._attribute, self._oldPosition)
@@ -213,9 +204,13 @@ class moveShapeUndo(QUndoCommand):
 
 
 class undoRotateShape(QUndoCommand):
-    def __init__(self, scene: QGraphicsScene, shape: Union[shp.symbolShape, lshp.layoutShape],
-                 point:QPoint,
-                 angle:int):
+    def __init__(
+        self,
+        scene: QGraphicsScene,
+        shape: Union[shp.symbolShape, lshp.layoutShape],
+        point: QPoint,
+        angle: int,
+    ):
         super().__init__()
         self._scene = scene
         self._shape = shape
@@ -236,25 +231,28 @@ class undoRotateShape(QUndoCommand):
 
 
 class undoMoveByCommand(QUndoCommand):
-    def __init__(self, scene, items: List, dx: float, dy: float, description: str = "Move Items"):
+    def __init__(
+        self, scene, items: List, dx: float, dy: float, description: str = "Move Items"
+    ):
         super().__init__(description)
         self.scene = scene
         self.items = items
         self.dx = dx
         self.dy = dy
-        self.oldPositions: List[Tuple[QPoint, QPoint]] = []
+        self.oldPositions: List[Tuple[QGraphicsItem, QPoint]] = []
         self.setText(description)
 
     def redo(self):
         for item in self.items:
             oldPos = item.pos()
-            newPos = oldPos + QPoint(self.dx, self.dy)
+            newPos = oldPos + QPoint(int(self.dx), int(self.dy))
             self.oldPositions.append((item, oldPos))
             item.setPos(newPos)
 
     def undo(self):
         for item, oldPos in self.oldPositions:
             item.setPos(oldPos)
+
 
 class undoGroupMove(QUndoCommand):
     def __init__(self, scene, items: List, oldPosList: List[QPoint], posDiff: QPoint):

@@ -300,7 +300,7 @@ class schematicItems:
         symbolInstance.counter = item["ic"]
         symbolInstance.instanceName = item["nam"]
         symbolInstance.netlistIgnore = bool(item.get("ign", 0))
-        symbolInstance.labelDict = item["ld"]
+        labelDict = item["ld"]
         symbolInstance.setPos(*item["loc"])
         [
             labelItem.labelDefs()
@@ -325,11 +325,7 @@ class schematicItems:
                 with file.open(mode="r", encoding="utf-8") as temp:
                     try:
                         jsonItems = json.load(temp)
-                        # assert jsonItems[0]["cellView"] == "symbol"
-                        symbolSnapTuple = jsonItems[1]["snapGrid"]
-                        # we snap to scene grid values. Need to test further.
                         symbolShape = symbolItems(self.scene)
-                        symbolShape.snapTuple = symbolSnapTuple
                         for jsonItem in jsonItems[2:]:  # skip first two entries.
                             if jsonItem["type"] == "attr":
                                 symbolAttributes[jsonItem["nam"]] = (
@@ -343,15 +339,15 @@ class schematicItems:
                         for labelItem in symbolInstance.labels.values():
                             if (
                                     labelItem.labelName
-                                    in symbolInstance.labelDict.keys()
+                                    in labelDict.keys()
                             ):
                                 labelItem.labelValue = (
-                                    symbolInstance.labelDict[
+                                    labelDict[
                                         labelItem.labelName
                                     ][0]
                                 )
                                 labelItem.labelVisible = (
-                                    symbolInstance.labelDict[
+                                    labelDict[
                                         labelItem.labelName
                                     ][1]
                                 )
@@ -460,17 +456,22 @@ class layoutItems:
             return self.unknownItem()
         return self._creators.get(item.get("type"), self.unknownItem)(item)
 
-    @functools.lru_cache(maxsize=32)
     def _get_library_path(self, lib_name):
         """Common method to get and validate library path"""
-        library_path = pathlib.Path(self.libraryDict.get(lib_name, ""))
+        return self._get_library_path_cached(lib_name, tuple(self.libraryDict.items()))
+    
+    @functools.lru_cache(maxsize=32)
+    def _get_library_path_cached(self, lib_name, library_dict_items):
+        """Cached library path lookup"""
+        library_dict = dict(library_dict_items)
+        library_path = pathlib.Path(library_dict.get(lib_name, ""))
         if not library_path.exists():
-            self.scene.logger.error(f'{lib_name} cannot be found.')
             return None
         return library_path
 
+    @staticmethod
     @functools.lru_cache(maxsize=128)
-    def _load_json_file(self, file_path_str):
+    def _load_json_file(file_path_str):
         """Cached JSON file loading with error handling"""
         try:
             with open(file_path_str, "rb") as f:

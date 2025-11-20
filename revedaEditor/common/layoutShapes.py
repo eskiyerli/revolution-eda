@@ -63,8 +63,6 @@ from PySide6.QtWidgets import (
 import revedaEditor.backend.dataDefinitions as ddef
 
 from revedaEditor.backend.pdkPaths import importPDKModule
-laylyr = importPDKModule('layoutLayers')
-fabproc = importPDKModule('process')
 
 
 class textureCache:
@@ -177,6 +175,8 @@ class layoutShape(QGraphicsItem):
                     layer.pwidth, layer.pstyle, layer.bcolor.name(), layer.btexture)
         
         if cache_key not in self._pen_brush_cache:
+            # Import PDK module when needed to avoid circular imports
+            laylyr = importPDKModule('layoutLayers')
             # Create objects only once per unique layer configuration
             texturePath = Path(laylyr.__file__).parent.joinpath(layer.btexture)
             _pixmap = textureCache.getCachedPixmap(texturePath, layer.bcolor)
