@@ -45,7 +45,7 @@ import revedaEditor.gui.fileDialogues as fd
 import revedaEditor.gui.propertyDialogues as pdlg
 import revedaEditor.gui.toolsDialogues as tdlg
 import revedaEditor.scenes.schematicScene as schscn
-from revedaEditor.gui.startThread import startThread
+from revedaEditor.backend.startThread import startThread
 
 
 class schematicEditor(edw.editorWindow):
@@ -387,9 +387,9 @@ class schematicEditor(edw.editorWindow):
         netlistObj = self.createNetlistObject(selectedViewName, netlistFilePath)
 
         if netlistObj:
-            # self.runNetlisting(netlistObj, self.appMainW.threadPool)
-            with self.measureDuration():
-                netlistObj.writeNetlist()
+            self.runNetlisting(netlistObj, self.appMainW.threadPool)
+            # with self.measureDuration():
+            #     netlistObj.writeNetlist()
         # except Exception as e:
         #     self.logger.error(f"Error in creating netlist start: {e}")
 

@@ -30,16 +30,15 @@ from logging import getLogger
 from PySide6.QtCore import (Qt, QSize,)
 from PySide6.QtGui import (QAction, QIcon, QImage, QKeySequence)
 from PySide6.QtPrintSupport import QPrintDialog, QPrinter, QPrintPreviewDialog
-from PySide6.QtWidgets import (QApplication, QDialog, QFileDialog, QGraphicsScene, QGraphicsView, QLabel, QMainWindow,
+from PySide6.QtWidgets import (QApplication, QDialog, QFileDialog, QGraphicsScene, QLabel, QMainWindow,
                                QMenu, QToolBar)
-from numpy import lib
 
 import revedaEditor.backend.dataDefinitions as ddef
 import revedaEditor.backend.libraryModelView as lmview
 import revedaEditor.backend.libBackEnd as libb
 import revedaEditor.gui.helpBrowser as hlp
 import revedaEditor.resources.resources # noqa: F401
-from revedaEditor.gui.startThread import startThread
+from revedaEditor.backend.startThread import startThread
 import revedaEditor.gui.propertyDialogues as pdlg
 
 

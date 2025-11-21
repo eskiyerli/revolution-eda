@@ -44,7 +44,7 @@ import revedaEditor.gui.libraryBrowser as libw
 import revedaEditor.gui.pythonConsole as pcon
 import revedaEditor.gui.revinit as revinit
 import revedaEditor.gui.stippleEditor as stip
-from revedaEditor.gui.startThread import startThread
+from revedaEditor.backend.startThread import startThread
 from revedaEditor.backend.pdkPaths import importPDKModule
 # from revedaEditor.gui.startThread import startThread
 from revedaEditor.resources import resources  # noqa: F401
