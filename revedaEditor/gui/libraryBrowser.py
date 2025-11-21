@@ -29,7 +29,6 @@ import logging
 import pathlib
 
 from copy import deepcopy
-from logging import exception
 
 # import numpy as np
 from PySide6.QtCore import (
@@ -65,7 +64,7 @@ from revedaEditor.gui.symbolEditor import symbolEditor
 from revedaEditor.gui.schematicEditor import schematicEditor
 from revedaEditor.gui.layoutEditor import layoutEditor
 from revedaEditor.gui.configEditor import configViewEdit
-from revedaEditor.gui.startThread import startThread
+from revedaEditor.backend.startThread import startThread
 
 
 class libraryBrowser(QMainWindow):

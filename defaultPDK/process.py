@@ -23,6 +23,8 @@
 #
 import revedaEditor.backend.dataDefinitions as ddef
 from revedaEditor.backend.pdkPaths import importPDKModule
+from quantiphy import Quantity
+
 fabproc = importPDKModule('process')
 
 laylyr = importPDKModule('layoutLayers')

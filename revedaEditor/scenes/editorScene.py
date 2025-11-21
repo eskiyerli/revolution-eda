@@ -21,7 +21,6 @@
 #    License: Mozilla Public License 2.0
 #    Licensor: Revolution Semiconductor (Registered in the Netherlands)
 
-import pathlib
 from typing import List
 from PySide6.QtCore import (QEvent, QPoint, QRectF, Qt, QSizeF )
 from PySide6.QtGui import (QGuiApplication, QTransform, QPainterPath, QPen, QColor)

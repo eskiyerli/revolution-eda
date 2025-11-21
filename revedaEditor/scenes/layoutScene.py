@@ -557,8 +557,7 @@ class layoutScene(editorScene):
                     'snapGrid', (self.majorGrid, self.snapGrid)))
                 if len(decodedData) > 2:
                     self.createLayoutItems(decodedData[2:])
-                self.itemsRefSet = set(self.items())
-                return True
+            self.itemsRefSet = set(self.items())
             return True
         except orjson.JSONDecodeError:
             self.logger.error("Invalid file format.")
