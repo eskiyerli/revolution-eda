@@ -27,6 +27,9 @@ import json
 import revedaEditor.common.shapes as shp
 import revedaEditor.common.labels as lbl
 
+from typing import Dict, Any
+from PySide6.QtCore import QPointF
+
 
 class symbolAttribute(object):
     def __init__(self, name: str, definition: str):
@@ -58,32 +61,127 @@ class symbolAttribute(object):
         self._definition = value
 
 class symbolEncoder(json.JSONEncoder):
-    def _get_common_fields(self, item):
-        """Extract common fields for items with scene position."""
+    def default(self, item: Any) -> Dict[str, Any]:
+        if isinstance(item, shp.symbolRectangle):
+            return self._encodeSymbolRectangle(item)
+        elif isinstance(item, shp.symbolLine):
+            return self._encodeSymbolLine(item)
+        elif isinstance(item, shp.symbolCircle):
+            return self._encodeSymbolCircle(item)
+        elif isinstance(item, shp.symbolArc):
+            return self._encodeSymbolArc(item)
+        elif isinstance(item, shp.symbolPolygon):
+            return self._encodeSymbolPolygon(item)
+        elif isinstance(item, shp.symbolPin):
+            return self._encodeSymbolPin(item)
+        elif isinstance(item, shp.text):
+            return self._encodeText(item)
+        elif isinstance(item, lbl.symbolLabel):
+            return self._encodeSymbolLabel(item)
+        elif isinstance(item, symbolAttribute):
+            return self._encodeSymbolAttribute(item)
+        return super().default(item)
+
+    def _encodeSymbolRectangle(self, item: shp.symbolRectangle) -> Dict[str, Any]:
         return {
-            "loc": (item.scenePos() - item.scene().origin).toTuple(),
+            "type": "rect",
+            "rect": item.rect.getCoords(),
+            "loc": self._subtract_point(item.scenePos(), item.scene().origin),
             "ang": item.angle,
             "fl": item.flipTuple,
         }
 
-    def default(self, item):
-        type_handlers = {
-            shp.symbolRectangle: lambda i: {"type": "rect", "rect": i.rect.getCoords(), **self._get_common_fields(i)},
-            shp.symbolLine: lambda i: {"type": "line", "st": i.start.toTuple(), "end": i.end.toTuple(), **self._get_common_fields(i)},
-            shp.symbolCircle: lambda i: {"type": "circle", "cen": i.centre.toTuple(), "end": i.end.toTuple(), **self._get_common_fields(i)},
-            shp.symbolArc: lambda i: {"type": "arc", "st": i.start.toTuple(),
-                                      "end": i.end.toTuple(),
-                                      **self._get_common_fields(i),
-                                      "at":
-                                          shp.symbolArc.arcTypes.index(
-                                              i.arcType)},
-            shp.symbolPolygon: lambda i: {"type": "polygon", "ps": [i.mapToScene(p).toTuple() for p in i.points], "fl": i.flipTuple},
-            shp.symbolPin: lambda i: {"type": "pin", "st": i.start.toTuple(), "nam": i.pinName, "pd": i.pinDir, "pt": i.pinType, **self._get_common_fields(i)},
-            shp.text: lambda i: {"type": "text", "st": i.start.toTuple(), "tc": i.textContent, "ff": i.fontFamily, "fs": i.fontStyle, "th": i.textHeight, "ta": i.textAlignment, "to": i.textOrient, **self._get_common_fields(i)},
-            lbl.symbolLabel: lambda i: {"type": "label", "st": i.start.toTuple(), "nam": i.labelName, "def": i.labelDefinition, "txt": i.labelText, "val": i.labelValue, "vis": i.labelVisible, "lt": i.labelType, "ht": i.labelHeight, "al": i.labelAlign, "or": i.labelOrient, "use": i.labelUse, "loc": (i.scenePos() - i.scene().origin).toTuple(), "fl": i.flipTuple},
-            symbolAttribute: lambda i: {"type": "attr", "nam": i.name, "def": i.definition},
+    def _encodeSymbolLine(self, item: shp.symbolLine) -> Dict[str, Any]:
+        return {
+            "type": "line",
+            "st": item.start.toTuple(),
+            "end": item.end.toTuple(),
+            "loc": self._subtract_point(item.scenePos(), item.scene().origin),
+            "ang": item.angle,
+            "fl": item.flipTuple,
         }
-        
-        handler = type_handlers.get(type(item))
-        return handler(item) if handler else super().default(item)
+
+    def _encodeSymbolCircle(self, item: shp.symbolCircle) -> Dict[str, Any]:
+        return {
+            "type": "circle",
+            "cen": item.centre.toTuple(),
+            "end": item.end.toTuple(),
+            "loc": self._subtract_point(item.scenePos(), item.scene().origin),
+            "ang": item.angle,
+            "fl": item.flipTuple,
+        }
+
+    def _encodeSymbolArc(self, item: shp.symbolArc) -> Dict[str, Any]:
+        return {
+            "type": "arc",
+            "st": item.start.toTuple(),
+            "end": item.end.toTuple(),
+            "loc": self._subtract_point(item.scenePos(), item.scene().origin),
+            "ang": item.angle,
+            "fl": item.flipTuple,
+            "at": shp.symbolArc.arcTypes.index(item.arcType),
+        }
+
+    def _encodeSymbolPolygon(self, item: shp.symbolPolygon) -> Dict[str, Any]:
+        return {
+            "type": "polygon",
+            "ps": [item.mapToScene(p).toTuple() for p in item.points],
+            "fl": item.flipTuple,
+        }
+
+    def _encodeSymbolPin(self, item: shp.symbolPin) -> Dict[str, Any]:
+        return {
+            "type": "pin",
+            "st": item.start.toTuple(),
+            "nam": item.pinName,
+            "pd": item.pinDir,
+            "pt": item.pinType,
+            "loc": self._subtract_point(item.scenePos(), item.scene().origin),
+            "ang": item.angle,
+            "fl": item.flipTuple,
+        }
+
+    def _encodeText(self, item: shp.text) -> Dict[str, Any]:
+        return {
+            "type": "text",
+            "st": item.start.toTuple(),
+            "tc": item.textContent,
+            "ff": item.fontFamily,
+            "fs": item.fontStyle,
+            "th": item.textHeight,
+            "ta": item.textAlignment,
+            "to": item.textOrient,
+            "loc": self._subtract_point(item.scenePos(), item.scene().origin),
+            "ang": item.angle,
+            "fl": item.flipTuple,
+        }
+
+    def _encodeSymbolLabel(self, item: lbl.symbolLabel) -> Dict[str, Any]:
+        return {
+            "type": "label",
+            "st": item.start.toTuple(),
+            "nam": item.labelName,
+            "def": item.labelDefinition,
+            "txt": item.labelText,
+            "val": item.labelValue,
+            "vis": item.labelVisible,
+            "lt": item.labelType,
+            "ht": item.labelHeight,
+            "al": item.labelAlign,
+            "or": item.labelOrient,
+            "use": item.labelUse,
+            "loc": self._subtract_point(item.scenePos(), item.scene().origin),
+            "fl": item.flipTuple,
+        }
+
+    def _encodeSymbolAttribute(self, item: symbolAttribute) -> Dict[str, Any]:
+        return {
+            "type": "attr",
+            "nam": item.name,
+            "def": item.definition,
+        }
+
+    @staticmethod
+    def _subtract_point(point: QPointF, origin: QPointF) -> tuple:
+        return (point - origin).toTuple()
 

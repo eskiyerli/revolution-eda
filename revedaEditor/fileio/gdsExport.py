@@ -32,7 +32,7 @@ pcells = importPDKModule('pcells')
 
 class gdsExporter:
     __slots__ = ('_cellname', '_items', '_outputFileObj', '_libraryName',
-                 '_unit', '_precision', '_topCell', '_itemCounter')
+                 '_unit', '_precision', '_topCell', '_itemCounter', '_cellCache')
 
     DEFAULT_UNIT = 1e-6
     DEFAULT_PRECISION = 1e-9
@@ -46,7 +46,8 @@ class gdsExporter:
         self._libraryName = None
         self._topCell = None
         self._itemCounter = 0
-
+        self._cellCache = {}
+        
     def gdsExport(self):
         self._outputFileObj.parent.mkdir(parents=True, exist_ok=True)
         lib = gdstk.Library(unit=self._unit, precision=self._precision)

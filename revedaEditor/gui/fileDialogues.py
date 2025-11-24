@@ -712,6 +712,14 @@ class appProperties(QDialog):
         self.pluginsPathButton.clicked.connect(self.onPluginsPathButtonClicked)
         pluginsPathDialogLayout.addWidget(self.pluginsPathButton, 1)
         filePathsLayout.addLayout(pluginsPathDialogLayout)
+        vaModulePathDialogLayout = QHBoxLayout()
+        vaModulePathDialogLayout.addWidget(edf.boldLabel("Verilog-A Module Path:"), 2)
+        self.vaModulePathEdit = edf.longLineEdit()
+        vaModulePathDialogLayout.addWidget(self.vaModulePathEdit, 5)
+        self.vaModulePathButton = QPushButton("...")
+        self.vaModulePathButton.clicked.connect(self.onVaModulePathButtonClicked)
+        vaModulePathDialogLayout.addWidget(self.vaModulePathButton, 1)
+        filePathsLayout.addLayout(vaModulePathDialogLayout)
         filePathsGroup.setLayout(filePathsLayout)
         mainLayout.addWidget(filePathsGroup)
         switchViewsGroup = QGroupBox("Switch and Stop Views")
@@ -763,6 +771,10 @@ class appProperties(QDialog):
             QFileDialog.getExistingDirectory(self, caption="Plugins path:")
         )
 
+    def onVaModulePathButtonClicked(self):
+        self.vaModulePathEdit.setText(
+            QFileDialog.getExistingDirectory(self, caption="Verilog-a Modules path:")
+        )
 
 class libraryPathsModel(QStandardItemModel):
     def __init__(self, libraryDict):

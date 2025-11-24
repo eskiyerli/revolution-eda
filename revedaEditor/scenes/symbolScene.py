@@ -752,71 +752,16 @@ class symbolScene(editorScene):
                 self.attributeList = deepcopy(localAttributeList)
 
     def copySelectedItems(self):
-        copyOffset = QPoint(2 * self.snapTuple[0], 2 * self.snapTuple[1])
-
-        def apply_offset(point):
-            return point + copyOffset
-
-        def create_label(item: lbl.symbolLabel):
-            newLabel = lbl.symbolLabel(
-                apply_offset(item.start),
-                item.labelDefinition,
-                item.labelType,
-                item.labelHeight,
-                item.labelAlign,
-                item.labelOrient,
-                item.labelUse,
-            )
-            newLabel.setVisible(True)
-            newLabel.setOpacity(1)
-            if newLabel.labelType == lbl.symbolLabel.labelTypes[1]:
-                newLabel.labelDefs()
-            return newLabel
-
-        def create_pin(item: shp.symbolPin):
-            return shp.symbolPin(
-                apply_offset(item.start),
-                item.pinName,
-                item.pinDir,
-                item.pinType,
-            )
-
-        def create_line(item: shp.symbolLine):
-            return shp.symbolLine(
-                apply_offset(item.start),
-                apply_offset(item.end),
-            )
-
-        def create_arc(item: shp.symbolArc):
-            return shp.symbolArc(
-                apply_offset(item.start),
-                apply_offset(item.end),
-            )
-
-        def create_polygon(item: shp.symbolPolygon):
-            return shp.symbolPolygon(
-                [apply_offset(point) for point in item.points]
-            )
-
-        def create_circle(item: shp.symbolCircle):
-            return shp.symbolCircle(
-                apply_offset(item.centre),
-                apply_offset(item.end),
-            )
-
-        # Dictionary mapping types to their creation functions
-        creators = {
-            lbl.symbolLabel: create_label,
-            shp.symbolPin: create_pin,
-            shp.symbolLine: create_line,
-            shp.symbolArc: create_arc,
-            shp.symbolPolygon: create_polygon,
-            shp.symbolCircle: create_circle,
-        }
-
-        for item in self.selectedItems():
-            itemType = type(item)
-            if itemType in creators:
-                new_item = creators[itemType](item)
-                self.addUndoStack(new_item)
+        selectedItems = [item for item in self.selectedItems()]
+        copyShapesList = []
+        if selectedItems:
+            for item in selectedItems:
+                selectedItemJson = json.dumps(item, cls=symenc.symbolEncoder)
+                itemCopyDict = json.loads(selectedItemJson)
+                shape = lj.symbolItems(self).create(itemCopyDict)
+                if shape is not None:
+                    copyShapesList.append(shape)
+            self._selectedItemGroup = self.createItemGroup(copyShapesList)
+            self._selectedItemGroup.setSelected(True)
+            self.addListUndoStack(copyShapesList)
 

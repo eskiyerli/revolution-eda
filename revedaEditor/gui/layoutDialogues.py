@@ -560,21 +560,6 @@ class createLayoutViaDialog(QDialog):
             self._parent.logger.warning(f"Invalid number format, set back to {min_val}")
             lineEdit.setText(str(min_val))
 
-    # def validateValue(self, text, lineEdit: QLineEdit, min: float, max: float):
-    #     validator = QDoubleValidator()
-    #     validator.setRange(min, max)
-    #     pos = 0
-    #     state = validator.validate(text, pos)
-    #     if text=="":
-    #         text = str(min)
-    #     if state[0] != QValidator.Acceptable:
-    #         if float(text) < min:
-    #             self._parent.logger.warning(f"Value too small, set back to {min}")
-    #             lineEdit.setText(str(min))
-    #         else:
-    #             self._parent.logger.warning(f"Value too large, set back to {max}")
-    #             lineEdit.setText(str(max))
-
 
 class layoutViaProperties(createLayoutViaDialog):
     def __init__(self, parent: QWidget):

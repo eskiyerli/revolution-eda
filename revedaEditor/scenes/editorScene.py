@@ -162,6 +162,11 @@ class editorScene(QGraphicsScene):
             self._selectionRectItem.setRect(
                 QRectF(self.mousePressLoc, self.mouseMoveLoc).normalized()
             )
+        # elif self.editModes.copyItem and self._selectedItemGroup:
+        #     self._selectedItemGroup.setPos(self.mouseMoveLoc)
+        elif self.editModes.copyItem and self._selectedItemGroup:
+            offset = self.mouseMoveLoc - self.mousePressLoc
+            self._selectedItemGroup.setPos(offset)
 
     def mouseReleaseEvent(self, event):
         super().mouseReleaseEvent(event)
@@ -179,7 +184,10 @@ class editorScene(QGraphicsScene):
             self.undoGroupMoveStack(_groupItems, self._initialGroupPosList, self._finalGroupPosDiff)
             [item.setSelected(False) for item in _groupItems]
             self.editModes.setMode("selectItem")
-
+        elif self.editModes.copyItem and self._selectedItemGroup:
+            self.destroyItemGroup(self._selectedItemGroup)
+            self._selectedItemGroup = None
+            self.editModes.setMode("selectItem")
         elif self.editModes.selectItem and self._selectionRectItem:
             self._handleSelectionRect(modifiers)
         else:
@@ -390,7 +398,7 @@ class editorScene(QGraphicsScene):
         undoCommand = us.deleteShapeUndo(self, item)
         self.undoStack.push(undoCommand)
 
-    def addListUndoStack(self, itemList: List) -> None:
+    def addListUndoStack(self, itemList: List[QGraphicsItem]) -> None:
         undoCommand = us.addShapesUndo(self, itemList)
         self.undoStack.push(undoCommand)
 
