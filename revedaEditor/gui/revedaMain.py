@@ -30,6 +30,8 @@ from PySide6.QtCore import (QThreadPool, QThread, Slot, Signal, QTimer, QObject,
 from PySide6.QtGui import (QAction, QIcon, )
 from PySide6.QtWidgets import (QGraphicsScene, QApplication, QDialog, QMainWindow, QMessageBox, QVBoxLayout, QWidget,
                                QFileDialog, )
+from dotenv import load_dotenv
+from numpy.f2py.f2py2e import validate_modulename
 
 import revedaEditor.backend.dataDefinitions as ddef
 import revedaEditor.backend.libraryMethods as libm
@@ -277,10 +279,13 @@ class MainWindow(QMainWindow):
 
     def optionsClick(self):
         dlg = fd.appProperties(self)
+        load_dotenv()
+        import os
 
         # Set initial values more efficiently using a dictionary
         initial_values = {'rootPathEdit': str(self.runPath), 'simInpPathEdit': str(self.pdkPath),
             'simOutPathEdit': str(self.outputPrefixPath), 'pluginsPathEdit': self.pluginsPath,
+            "vaModulePathEdit": os.getenv("REVEDA_VA_MODULE_PATH", str(self.pdkPath)),
             'switchViewsEdit': ", ".join(self.switchViewList), 'stopViewsEdit': ", ".join(self.stopViewList),
             'threadPoolEdit': str(self.threadPool.maxThreadCount())}
 
@@ -288,10 +293,12 @@ class MainWindow(QMainWindow):
         for field, value in initial_values.items():
             getattr(dlg, field).setText(value)
 
+
         if dlg.exec() == QDialog.Accepted:
             # Get and process all text values at once
             text_values = {'rootPathEdit': dlg.rootPathEdit.text(), 'simInpPathEdit': dlg.simInpPathEdit.text(),
                 'simOutPathEdit': dlg.simOutPathEdit.text(), 'pluginsPathEdit': dlg.pluginsPathEdit.text(),
+                'vaModulePathEdit': dlg.vaModulePathEdit.text(),
                 'switchViewsEdit': dlg.switchViewsEdit.text(), 'stopViewsEdit': dlg.stopViewsEdit.text(),
                 'threadPoolEdit': dlg.threadPoolEdit.text()}
 
@@ -301,8 +308,9 @@ class MainWindow(QMainWindow):
             self.outputPrefixPath = pathlib.Path(text_values['simOutPathEdit'])
             self.pluginsPath = text_values['pluginsPathEdit']
 
-            self.app.update_pdk_path(self.pdkPath)
-            self.app.update_plugins_path(self.pluginsPath)
+            self.app.updatePDKPath(self.pdkPath)
+            self.app.updatePluginsPath(self.pluginsPath)
+            self.app.updateVaModulesPath(text_values['vaModulePathEdit'])
 
             # Process lists in a more compact way
             self.switchViewList = [x.strip() for x in text_values['switchViewsEdit'].split(',')]
