@@ -327,7 +327,8 @@ class layoutEditor(edw.editorWindow):
         dlg.singleViaHeightEdit.setText(str(fabproc.processVias[0].minHeight))
         dlg.arrayViaWidthEdit.setText(str(fabproc.processVias[0].minWidth))
         dlg.arrayViaHeightEdit.setText(str(fabproc.processVias[0].minHeight))
-        dlg.arrayViaSpacingEdit.setText(str(fabproc.processVias[0].minSpacing))
+        dlg.arrayXspacingEdit.setText(str(fabproc.processVias[0].minSpacing))
+        dlg.arrayYspacingEdit.setText(str(fabproc.processVias[0].minSpacing))
         if dlg.exec() == QDialog.Accepted:
             self.centralW.scene.editModes.setMode("addVia")
             self.centralW.scene.addVia = True
@@ -362,8 +363,8 @@ class layoutEditor(edw.editorWindow):
                 )
                 self.centralW.scene.arrayViaTuple = ddef.arrayViaTuple(
                     singleViaTuple,
-                    fabproc.dbu * float(dlg.arrayViaSpacingEdit.text().strip()),
-                    fabproc.dbu * float(dlg.arrayViaSpacingEdit.text().strip()),
+                    fabproc.dbu * float(dlg.arrayXspacingEdit.text().strip()),
+                    fabproc.dbu * float(dlg.arrayYspacingEdit.text().strip()),
                     int(float(dlg.arrayXNumEdit.text().strip())),
                     int(float(dlg.arrayYNumEdit.text().strip())),
                 )

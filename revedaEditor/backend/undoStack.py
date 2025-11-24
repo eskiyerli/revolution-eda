@@ -84,7 +84,6 @@ class addDeleteShapesUndo(QUndoCommand):
         for item in self._oldShapes:
             self._scene.removeItem(item)
 
-
 class addShapesUndo(QUndoCommand):
     def __init__(self, scene: QGraphicsScene, shapes: List[QGraphicsItem]):
         super().__init__()
@@ -93,10 +92,29 @@ class addShapesUndo(QUndoCommand):
         self.setText("Add Shapes")
 
     def undo(self):
-        [self._scene.removeItem(item) for item in self._shapes]
+        for item in self._shapes:
+            if item.scene() == self._scene:
+                self._scene.removeItem(item)
 
     def redo(self):
-        [self._scene.addItem(item) for item in self._shapes]
+        for item in self._shapes:
+            if item.scene() != self._scene:
+                self._scene.addItem(item)
+
+# class addShapesUndo(QUndoCommand):
+#     def __init__(self, scene: QGraphicsScene, shapes: List[QGraphicsItem]):
+#         super().__init__()
+#         self._scene = scene
+#         self._shapes = shapes
+#         self.setText("Add Shapes")
+#
+#     def undo(self):
+#         [self._scene.removeItem(item) for item in self._shapes]
+#
+#     def redo(self):
+#         [self._scene.addItem(item) for item in self._shapes]
+
+
 
 
 class deleteShapeUndo(QUndoCommand):

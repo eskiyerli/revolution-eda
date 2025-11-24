@@ -412,11 +412,11 @@ class layoutScene(editorScene):
 
     def addNewInstance(self) -> Union[lshp.layoutInstance, lshp.layoutPcell]:
         newInstance = self.instLayout(self.layoutInstanceTuple)
-        dlg = ldlg.layoutInstanceDialogue(self.editorWindow)
-        dlg.instanceLibName.setText(newInstance.libraryName)
-        dlg.instanceCellName.setText(newInstance.cellName)
-        dlg.instanceViewName.setText(newInstance.viewName)
         if isinstance(newInstance, pcells.baseCell):
+            dlg = ldlg.layoutInstanceDialogue(self.editorWindow)
+            dlg.instanceLibName.setText(newInstance.libraryName)
+            dlg.instanceCellName.setText(newInstance.cellName)
+            dlg.instanceViewName.setText(newInstance.viewName)
             lineEditDict = self.extractPcellInstanceParameters(newInstance)
             if lineEditDict:
                 dlg.pcellParamsGroup.show()
@@ -453,10 +453,10 @@ class layoutScene(editorScene):
             if viewType == "layout" and decodedData and decodedData[0].get(
                     "viewType") == "layout":
                 factory_create = lj.layoutItems(self).create
-                valid_items = filter(
-                    lambda item: isinstance(item, dict) and item.get(
-                        "type") in self.LAYOUT_SHAPES, decodedData[2:])
-                instanceShapes = [factory_create(item) for item in valid_items]
+                # valid_items = filter(
+                #     lambda item: isinstance(item, dict) and item.get(
+                #         "type") in self.LAYOUT_SHAPES, decodedData[2:])
+                instanceShapes = [factory_create(item) for item in decodedData[2:]]
                 return setup_instance(lshp.layoutInstance(instanceShapes))
 
             elif viewType == "pcell" and len(decodedData) > 1 and decodedData[
@@ -995,26 +995,23 @@ class layoutScene(editorScene):
 
     def copySelectedItems(self):
         selectedItems = [item for item in self.selectedItems() if
-                         item.parentItem() is None]
+            item.parentItem() is None]
+        copyShapesList = []
         if selectedItems:
             for item in selectedItems:
                 selectedItemJson = json.dumps(item, cls=layenc.layoutEncoder)
                 itemCopyDict = json.loads(selectedItemJson)
                 shape = lj.layoutItems(self).create(itemCopyDict)
                 if shape is not None:
-                    item.setSelected(False)
-                    self.addUndoStack(shape)
-                    shape.setSelected(True)
-                    # shift position by four grid units to right and down
-                    shape.setPos(
-                        QPoint(item.pos().x() + self.snapTuple[0] * fabproc.dbu,
-                               item.pos().y() + self.snapTuple[
-                                   1] * fabproc.dbu, ))
                     if isinstance(shape, lshp.layoutInstance) or isinstance(shape,
                                                                             lshp.layoutPcell):
                         self.itemCounter += 1
                         shape.counter = self.itemCounter
                         shape.instanceName = f"I{shape.counter}"
+                    copyShapesList.append(shape)
+            self._selectedItemGroup = self.createItemGroup(copyShapesList)
+            self._selectedItemGroup.setSelected(True)
+            self.addListUndoStack(copyShapesList)
 
     def deleteAllRulers(self):
         for ruler in self.rulersSet:

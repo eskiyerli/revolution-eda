@@ -695,8 +695,8 @@ class schematicScene(editorScene):
         """
         instance = self.instSymbol(instanceTuple, pos)
         if instance:  # Add check for None
-            self.instanceCounter += 1
             self.addUndoStack(instance)
+            self.instanceCounter += 1
             return instance
         else:
             return None
@@ -759,23 +759,24 @@ class schematicScene(editorScene):
     def copySelectedItems(self):
         selectedItems = [item for item in self.selectedItems() if
             item.parentItem() is None]
+        copyShapesList = []
         if selectedItems:
             for item in selectedItems:
                 selectedItemJson = json.dumps(item, cls=schenc.schematicEncoder)
                 itemCopyDict = json.loads(selectedItemJson)
                 shape = lj.schematicItems(self).create(itemCopyDict)
                 if shape is not None:
-                    item.setSelected(False)
-                    self.addUndoStack(shape)
-                    shape.setSelected(True)
-                    # shift position by four grid units to right and down
-                    shape.setPos(QPoint(int(item.x() + 4 * self.snapTuple[0]),
-                        int(item.y() + 4 * self.snapTuple[1]), ))
                     if isinstance(shape, shp.schematicSymbol):
                         self.instanceCounter += 1
                         shape.instanceName = f"I{self.instanceCounter}"
                         shape.counter = int(self.instanceCounter)
                         [label.labelDefs() for label in shape.labels.values()]
+                    copyShapesList.append(shape)
+            self._selectedItemGroup = self.createItemGroup(copyShapesList)
+            self._selectedItemGroup.setSelected(True)
+            self.addListUndoStack(copyShapesList)
+
+
 
     def saveSchematic(self, file: pathlib.Path) -> bool:
         """
