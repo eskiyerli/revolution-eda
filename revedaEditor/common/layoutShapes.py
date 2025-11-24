@@ -592,6 +592,7 @@ class layoutInstance(layoutShape):
         self._shapes = shapes
         self._draft = False
         self._libraryName = self._cellName = self._viewName = self._instanceName = ""
+        self._counter = 0
         
         # Cache pen creation
         self._selectedPen = self._get_cached_color("yellow")
@@ -705,6 +706,15 @@ class layoutInstance(layoutShape):
         if self._start is None:
             self._start = self.childrenBoundingRect().bottomLeft()
         return self._start.toPoint()
+
+    @property
+    def counter(self):
+        return self._counter
+
+    @counter.setter
+    def counter(self, value: int):
+        if isinstance(value, int):
+            self._counter = value
 
     def addShape(self, shape: layoutShape):
         self._shapes.append(shape)

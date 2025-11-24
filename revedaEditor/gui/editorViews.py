@@ -229,13 +229,9 @@ class editorView(QGraphicsView):
                 if self.scene._selectionRectItem:
                     self.scene.removeItem(self.scene._selectionRectItem)
                     self.scene._selectionRectItem = None
-                if self.scene.editModes.moveItem and self._items:
-
-                    self.moveShapesUndoStack(self._items, self._itemsOffset,
-                                                 self.scene.mousePressLoc,
-                                                 self.scene.mouseMoveLoc)
-                    self._items = []
-                    self._itemsOffset = []
+                if self.scene._selectedItemGroup:
+                    self.scene.destroyItemGroup(self.scene._selectedItemGroup)
+                    self.scene._selectedItemGroup = None
             case _:
                 super().keyPressEvent(event)
 

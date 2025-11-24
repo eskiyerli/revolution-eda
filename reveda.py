@@ -46,7 +46,7 @@
 # nuitka-project: --include-package-data=defaultPDK
 # nuitka-project: --include-data-files=.env=.env
 # nuitka-project-if: {OS} == "Windows":
-#    nuitka-project: --output-dir=C:\Users\eskiy\dist
+#    nuitka-project: --output-dir=C:\Users\eskiye50\dist
 # nuitka-project-if: {OS} == "Linux":
 #    nuitka-project: --output-dir=/home/eskiyerli/dist
 # nuitka-project: --product-name="Revolution EDA"
@@ -127,9 +127,9 @@ class revedaApp(QApplication):
             self.logger.info(f"Loaded plugins: {list(self.plugins.keys())}")
 
 
-    def update_pdk_path(self, new_path: Path):
+    def updatePDKPath(self, newPath: Path):
         """Update PDK path and persist to .env file"""
-        self.revedaPdkPathObj = new_path.resolve()
+        self.revedaPdkPathObj = newPath.resolve()
         
         # Update environment variable
         os.environ["REVEDA_PDK_PATH"] = str(self.revedaPdkPathObj)
@@ -139,14 +139,14 @@ class revedaApp(QApplication):
             sys.path.append(str(self.revedaPdkPathObj))
         
         # Persist to .env file
-        self._update_env_file("REVEDA_PDK_PATH", str(self.revedaPdkPathObj))
+        self.update_env_file("REVEDA_PDK_PATH", str(self.revedaPdkPathObj))
         
         self.logger.info(f"PDK path updated to: {self.revedaPdkPathObj}")
 
-    def update_plugins_path(self, new_path:str):
+    def updatePluginsPath(self, newPath:str):
         """Update plugin path and persist to .env file"""
-        if new_path:
-            self.revedaPluginPathObj = Path(new_path).resolve()
+        if newPath:
+            self.revedaPluginPathObj = Path(newPath).resolve()
             # Update environment variable
             os.environ["REVEDA_PLUGIN_PATH"] = str(self.revedaPluginPathObj)
 
@@ -155,11 +155,22 @@ class revedaApp(QApplication):
                 sys.path.append(str(self.revedaPluginPathObj))
 
             # Persist to .env file
-            self._update_env_file("REVEDA_PLUGIN_PATH", str(self.revedaPluginPathObj))
+            self.update_env_file("REVEDA_PLUGIN_PATH", str(self.revedaPluginPathObj))
 
             self.logger.info(f"Plugin path updated to: {self.revedaPluginPathObj}")
+
+    def updateVaModulesPath(self, newPath: str):
+        """Update plugin path and persist to .env file"""
+        if newPath:
+            # Update environment variable
+            os.environ["REVEDA_VA_MODULE_PATH"] = str(Path(newPath).resolve())
+
+            # Persist to .env file
+            self.update_env_file("REVEDA_VA_MODULE_PATH", os.environ["REVEDA_VA_MODULE_PATH"])
+            self.logger.info(f"Central Verilog-A module repository path: {os.environ["REVEDA_VA_MODULE_PATH"]}")
+
         
-    def _update_env_file(self, key, value):
+    def update_env_file(self, key, value):
         """Update or add environment variable in .env file"""
         env_file = self.base_path / ".env"
         lines = []
