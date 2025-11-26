@@ -23,6 +23,7 @@ from typing import NamedTuple, Union
 
 from PySide6.QtCore import QPoint, QPointF, Qt
 from PySide6.QtGui import QColor
+from polars import int_range
 
 
 @dataclass
@@ -170,14 +171,6 @@ class viewItemTuple(NamedTuple):
     viewItem: object
 
 
-# layout related tuples
-class layoutPathTuple(NamedTuple):
-    layer: layLayer
-    name: str
-    mode: str
-    width: float
-    startExtend: bool
-    endExtend: bool
 
 
 class layoutPinTuple(NamedTuple):
@@ -238,10 +231,28 @@ class arrayViaTuple(NamedTuple):
 
 
 # rectangle coordinates tuple
-
-
 class rectCoords(NamedTuple):
     left: float
     top: float
     w: float
     h: float
+
+
+class layoutPathDefTuple(NamedTuple):
+    name: str
+    layer: layLayer
+    type: str
+    minWidth: float
+    maxWidth: float
+    minLength: float
+    maxLength: float
+    minSpacing: float
+    maxSpacing: float
+
+class layoutPathTuple(NamedTuple):
+    name: str
+    layer: layLayer
+    pathMode: int
+    width: float
+    startExtend: float
+    endExtend: float

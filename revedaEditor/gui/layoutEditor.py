@@ -23,6 +23,8 @@
 #
 import json
 
+from multiprocessing import process
+from os import path
 import pathlib
 
 # import numpy as np
@@ -199,14 +201,27 @@ class layoutEditor(edw.editorWindow):
         self.centralW.scene.editModes.setMode("selectItem")
 
     def createPathClick(self, s):
+        def pathLayerChanged(dlg):
+            pathTupleName = dlg.pathLayerCB.currentText()
+            pathDefTuple = [
+                item for item in fabproc.processPaths if item.name == pathTupleName
+            ][0]
+            dlg.pathWidth.setText(pathDefTuple.minWidth.__str__())
+            dlg.pathWidthValidator.setRange(pathDefTuple.minWidth, pathDefTuple.maxWidth)
+            dlg.startExtendEdit.setText(str(pathDefTuple.minWidth/2))
+            dlg.endExtendEdit.setText(str(pathDefTuple.minWidth/2))
+            
         dlg = ldlg.createPathDialogue(self)
-        # paths are created on drawing layers
-        dlg.pathLayerCB.addItems(
-            [f"{item.name} [{item.purpose}]" for item in laylyr.pdkDrawingLayers]
-        )
-        dlg.pathWidth.setText("1.0")
-        dlg.startExtendEdit.setText("0.5")
-        dlg.endExtendEdit.setText("0.5")
+        # paths are created on path layers
+        processPathNames = [f'{pathTuple.name}' for pathTuple in fabproc.processPaths]
+        dlg.pathLayerCB.addItems(processPathNames)
+        dlg.pathLayerCB.setCurrentIndex(0)
+        defaultPathTuple = fabproc.processPaths[0]
+        dlg.pathLayerCB.currentIndexChanged.connect(lambda: pathLayerChanged(dlg))
+        dlg.pathWidth.setText(fabproc.processPaths[0].minWidth.__str__())
+        dlg.pathWidthValidator.setRange(defaultPathTuple.minWidth, defaultPathTuple.maxWidth)
+        dlg.startExtendEdit.setText(str(fabproc.processPaths[0].minWidth/2))
+        dlg.endExtendEdit.setText(str(fabproc.processPaths[0].minWidth/2))
 
         if dlg.exec() == QDialog.Accepted:
             self.centralW.scene.editModes.setMode("drawPath")
@@ -227,14 +242,14 @@ class layoutEditor(edw.editorWindow):
             else:
                 pathWidth = fabproc.dbu * 1.0
             pathName = dlg.pathNameEdit.text()
-            pathLayerName = dlg.pathLayerCB.currentText().split()[0]
-            pathLayer = [
-                item for item in laylyr.pdkDrawingLayers if item.name == pathLayerName
+            pathTupleName = dlg.pathLayerCB.currentText()
+            pathTuple = [
+                item for item in fabproc.processPaths if item.name == pathTupleName
             ][0]
+            pathLayer = pathTuple.layer
             startExtend = float(dlg.startExtendEdit.text().strip()) * fabproc.dbu
             endExtend = float(dlg.endExtendEdit.text().strip()) * fabproc.dbu
-            self.centralW.scene.newPathTuple = ddef.layoutPathTuple(
-                pathLayer, pathName, pathMode, pathWidth, startExtend, endExtend
+            self.centralW.scene.newPathTuple = ddef.layoutPathTuple(pathName, pathLayer, pathMode, pathWidth, startExtend, endExtend
             )
 
     def createPinClick(self):
