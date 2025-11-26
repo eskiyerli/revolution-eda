@@ -18,16 +18,19 @@
 #    License: Mozilla Public License 2.0
 #    Licensor: Revolution Semiconductor (Registered in the Netherlands)
 
+from typing import Union
+
 from PySide6.QtCore import (
     Qt,
 )
 from PySide6.QtGui import QStandardItemModel
 
 import revedaEditor.backend.libBackEnd as scb
-from typing import Union
 
 
-def getLibItem(libraryModel: QStandardItemModel, libName: str) -> Union[scb.libraryItem, None]:
+def getLibItem(
+    libraryModel: QStandardItemModel, libName: str
+) -> Union[scb.libraryItem, None]:
     try:
         libItem = [
             item
@@ -35,10 +38,13 @@ def getLibItem(libraryModel: QStandardItemModel, libName: str) -> Union[scb.libr
             if item.data(Qt.UserRole + 1) == "library"
         ][0]
     except IndexError:
-        return None
+        return libraryModel.item(0, 0)
     return libItem
 
-def getCellItem(libItem: scb.libraryItem, cellNameInp: str) -> Union[scb.cellItem, None]:
+
+def getCellItem(
+    libItem: scb.libraryItem, cellNameInp: str
+) -> Union[scb.cellItem, None]:
     cellItems = [
         libItem.child(i)
         for i in range(libItem.rowCount())
@@ -67,6 +73,7 @@ def getViewItem(cellItem: scb.cellItem, viewNameInp: str) -> Union[scb.viewItem,
         if child.text() == viewNameInp:
             return child
     return None
+
 
 def findViewItem(libraryModel, libName: str, cellName: str, viewName: str):
     libItem = getLibItem(libraryModel, libName)

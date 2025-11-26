@@ -803,7 +803,7 @@ class layoutPath(layoutShape):
         self._angle = 0
         self._rectCorners(self._draftLine.angle())
         self.setZValue(self._layer.z)
-
+        self._drcPen = QPen(QColor(255, 255, 0), 1, Qt.DashLine)
 
     def __repr__(self):
         return (
@@ -825,8 +825,7 @@ class layoutPath(layoutShape):
                 self._createVerticalPath(angle)
         self._draftLine.setAngle(0)
         self._rect = self._extractRect()
-        self.setTransformOriginPoint(self.draftLine.p1())
-        self.setRotation(-self._angle)
+
 
     def _createManhattanPath(self, angle: float) -> None:
         """
