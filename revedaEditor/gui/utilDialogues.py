@@ -23,11 +23,17 @@
 #
 
 
-from PySide6.QtWidgets import (QCheckBox,
-                               QGroupBox, QGridLayout, QLabel, QComboBox)
-from PySide6.QtPrintSupport import (QPrinter, QPrintDialog, )
-from PySide6.QtGui import (QPainter,)
-from PySide6.QtCore import (Signal, Qt, )
+from PySide6.QtCore import (
+    Signal,
+)
+from PySide6.QtGui import (
+    QPainter,
+)
+from PySide6.QtPrintSupport import (
+    QPrintDialog,
+    QPrinter,
+)
+from PySide6.QtWidgets import QCheckBox, QComboBox, QGridLayout, QGroupBox, QLabel
 
 
 class revedaPrintDialog(QPrintDialog):

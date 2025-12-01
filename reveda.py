@@ -46,7 +46,7 @@
 # nuitka-project: --include-package-data=defaultPDK
 # nuitka-project: --include-data-files=.env=.env
 # nuitka-project-if: {OS} == "Windows":
-#    nuitka-project: --output-dir=C:\Users\eskiye50\dist
+#    nuitka-project: --output-dir=C:\Users\eskiye\dist
 # nuitka-project-if: {OS} == "Linux":
 #    nuitka-project: --output-dir=/home/eskiyerli/dist
 # nuitka-project: --product-name="Revolution EDA"
@@ -126,24 +126,23 @@ class revedaApp(QApplication):
                     self.logger.error(f"Failed to load plugin {name}: {e}")
             self.logger.info(f"Loaded plugins: {list(self.plugins.keys())}")
 
-
     def updatePDKPath(self, newPath: Path):
         """Update PDK path and persist to .env file"""
         self.revedaPdkPathObj = newPath.resolve()
-        
+
         # Update environment variable
         os.environ["REVEDA_PDK_PATH"] = str(self.revedaPdkPathObj)
-        
+
         # Update sys.path
         if str(self.revedaPdkPathObj) not in sys.path:
             sys.path.append(str(self.revedaPdkPathObj))
-        
+
         # Persist to .env file
         self.update_env_file("REVEDA_PDK_PATH", str(self.revedaPdkPathObj))
-        
+
         self.logger.info(f"PDK path updated to: {self.revedaPdkPathObj}")
 
-    def updatePluginsPath(self, newPath:str):
+    def updatePluginsPath(self, newPath: str):
         """Update plugin path and persist to .env file"""
         if newPath:
             self.revedaPluginPathObj = Path(newPath).resolve()
@@ -169,17 +168,16 @@ class revedaApp(QApplication):
             self.update_env_file("REVEDA_VA_MODULE_PATH", os.environ["REVEDA_VA_MODULE_PATH"])
             self.logger.info(f"Central Verilog-A module repository path: {os.environ["REVEDA_VA_MODULE_PATH"]}")
 
-        
     def update_env_file(self, key, value):
         """Update or add environment variable in .env file"""
         env_file = self.base_path / ".env"
         lines = []
-        
+
         # Read existing .env file if it exists
         if env_file.exists():
             with env_file.open('r') as f:
                 lines = f.readlines()
-        
+
         # Update or add the key-value pair
         key_found = False
         for i, line in enumerate(lines):
@@ -187,10 +185,10 @@ class revedaApp(QApplication):
                 lines[i] = f"{key}={value}\n"
                 key_found = True
                 break
-        
+
         if not key_found:
             lines.append(f"{key}={value}\n")
-        
+
         # Write back to .env file
         with env_file.open('w') as f:
             f.writelines(lines)
@@ -211,6 +209,7 @@ def main():
     with redirect_stdout(console), redirect_stderr(redirect):
         mainW.show()
         return app.exec()
+
 
 if __name__ == "__main__":
     main()

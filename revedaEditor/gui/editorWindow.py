@@ -40,6 +40,7 @@ import revedaEditor.gui.helpBrowser as hlp
 import revedaEditor.resources.resources # noqa: F401
 from revedaEditor.backend.startThread import startThread
 import revedaEditor.gui.propertyDialogues as pdlg
+import revedaEditor.backend.processManager as prm
 
 
 class editorWindow(QMainWindow):
@@ -77,6 +78,7 @@ class editorWindow(QMainWindow):
         self.majorGrid = self.MAJOR_GRID_DEFAULT  # dot/line grid spacing
         self.snapGrid = self.SNAP_GRID_DEFAULT  # snapping grid size
         self.snapTuple = (self.snapGrid, self.snapGrid)
+        self.processManager = prm.ProcessManager(3, self)
         self.init_UI()
         self._createSignalConnections()
 

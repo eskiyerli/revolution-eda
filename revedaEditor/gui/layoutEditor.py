@@ -22,36 +22,19 @@
 #    Licensor: Revolution Semiconductor (Registered in the Netherlands)
 #
 import json
-
-from multiprocessing import process
-from os import path
 import pathlib
 
 # import numpy as np
-from PySide6.QtCore import (
-    Qt,
-)
-from PySide6.QtGui import (
-    QAction,
-    QIcon,
-)
-from PySide6.QtWidgets import (
-    QDialog,
-    QMenu,
-    QSplitter,
-    QToolBar,
-    QVBoxLayout,
-    QWidget,
-    QApplication,
-)
-
+from PySide6.QtCore import (Qt, QRectF, )
+from PySide6.QtGui import (QAction, QIcon, )
+from PySide6.QtWidgets import (QApplication, QDialog, QMenu, QSplitter, QToolBar,
+                               QVBoxLayout, QWidget)
 from quantiphy import Quantity
 
-
 import revedaEditor.backend.dataDefinitions as ddef
+import revedaEditor.backend.libBackEnd as libb
 import revedaEditor.backend.libraryMethods as libm
 import revedaEditor.backend.libraryModelView as lmview
-import revedaEditor.backend.libBackEnd as libb
 import revedaEditor.fileio.gdsExport as gdse
 import revedaEditor.fileio.layoutEncoder as layenc
 import revedaEditor.fileio.loadJSON as lj
@@ -60,17 +43,17 @@ import revedaEditor.gui.editorWindow as edw
 import revedaEditor.gui.fileDialogues as fd
 import revedaEditor.gui.layoutDialogues as ldlg
 import revedaEditor.gui.lsw as lsw
-from revedaEditor.scenes.layoutScene import layoutScene
 from revedaEditor.backend.pdkPaths import importPDKModule
-
+from revedaEditor.scenes.layoutScene import layoutScene
 
 fabproc = importPDKModule('process')
 laylyr = importPDKModule('layoutLayers')
 
 
 class layoutEditor(edw.editorWindow):
-    
-    def __init__(self, viewItem: libb.viewItem, libraryDict: dict, libraryView) -> None:
+
+    def __init__(self, viewItem: libb.viewItem, libraryDict: dict,
+                 libraryView) -> None:
         super().__init__(viewItem, libraryDict, libraryView)
         self.setWindowTitle(f"Layout Editor - {self.cellName} - {self.viewName}")
         self.setWindowIcon(QIcon(":/icons/edLayer-shape.png"))
@@ -80,8 +63,12 @@ class layoutEditor(edw.editorWindow):
         self.snapGrid = fabproc.snapGrid
         self.snapTuple = (self.snapGrid, self.snapGrid)
         self.layoutChooser = None
-        self.gdsExportDir = pathlib.Path.cwd().parent / "gds"
+        self.gdsExportDirObj = (self.appMainW.runPath / 'gdsExport' /
+                                self.libName / self.cellName)
+        self.gdsExportDirObj.mkdir(parents=True, exist_ok=True)
         self._layoutContextMenu()
+        # drc error polygons
+        self._previousPolygons = []
 
     def init_UI(self):
         super().init_UI()
@@ -93,14 +80,16 @@ class layoutEditor(edw.editorWindow):
         super()._createMenuBar()
         self.alignMenu = QMenu("Align", self)
         self.alignMenu.setIcon(QIcon("icons/layers-alignment-middle.png"))
-
+        self.klayoutVerMenu = QMenu('KLayout DRC/LVS')
+        self.menuTools.addMenu(self.klayoutVerMenu)
         self.propertyMenu = self.menuEdit.addMenu("Properties")
 
     def _createActions(self):
         super()._createActions()
         self.exportGDSAction = QAction("Export GDS", self)
         self.exportGDSAction.setToolTip("Export GDS from Layout")
-
+        self.klayoutDRCAction = QAction("KLayout DRC...", self)
+        self.klayoutDRCAction.setToolTip("DRC with KLayout")
 
     def _addActions(self):
         super()._addActions()
@@ -124,12 +113,12 @@ class layoutEditor(edw.editorWindow):
         self.menuCreate.addAction(self.rulerAction)
         self.menuCreate.addAction(self.delRulerAction)
         self.menuTools.addAction(self.exportGDSAction)
-        
+        self.klayoutVerMenu.addAction(self.klayoutDRCAction)
+
         # hierarchy submenu
         self.hierMenu = self.menuEdit.addMenu("Hierarchy")
         self.hierMenu.addAction(self.goUpAction)
         self.hierMenu.addAction(self.goDownAction)
-        
 
     def _layoutContextMenu(self):
         super()._editorContextMenu()
@@ -172,7 +161,7 @@ class layoutEditor(edw.editorWindow):
         self.delRulerAction.triggered.connect(self.delRulerClick)
         self.deleteAction.triggered.connect(self.deleteClick)
         self.objPropAction.triggered.connect(self.objPropClick)
-
+        self.klayoutDRCAction.triggered.connect(self.klayoutDRCClick)
         self.goDownAction.triggered.connect(self.goDownClick)
 
     def _createShortcuts(self):
@@ -203,25 +192,28 @@ class layoutEditor(edw.editorWindow):
     def createPathClick(self, s):
         def pathLayerChanged(dlg):
             pathTupleName = dlg.pathLayerCB.currentText()
-            pathDefTuple = [
-                item for item in fabproc.processPaths if item.name == pathTupleName
-            ][0]
+            pathDefTuple = \
+                [item for item in fabproc.processPaths if item.name == pathTupleName][
+                    0]
             dlg.pathWidth.setText(pathDefTuple.minWidth.__str__())
-            dlg.pathWidthValidator.setRange(pathDefTuple.minWidth, pathDefTuple.maxWidth)
-            dlg.startExtendEdit.setText(str(pathDefTuple.minWidth/2))
-            dlg.endExtendEdit.setText(str(pathDefTuple.minWidth/2))
-            
+            dlg.pathWidthValidator.setRange(pathDefTuple.minWidth,
+                                            pathDefTuple.maxWidth)
+            dlg.startExtendEdit.setText(str(pathDefTuple.minWidth / 2))
+            dlg.endExtendEdit.setText(str(pathDefTuple.minWidth / 2))
+
         dlg = ldlg.createPathDialogue(self)
         # paths are created on path layers
-        processPathNames = [f'{pathTuple.name}' for pathTuple in fabproc.processPaths]
+        processPathNames = [f'{pathTuple.name}' for pathTuple in
+                            fabproc.processPaths]
         dlg.pathLayerCB.addItems(processPathNames)
         dlg.pathLayerCB.setCurrentIndex(0)
         defaultPathTuple = fabproc.processPaths[0]
         dlg.pathLayerCB.currentIndexChanged.connect(lambda: pathLayerChanged(dlg))
         dlg.pathWidth.setText(fabproc.processPaths[0].minWidth.__str__())
-        dlg.pathWidthValidator.setRange(defaultPathTuple.minWidth, defaultPathTuple.maxWidth)
-        dlg.startExtendEdit.setText(str(fabproc.processPaths[0].minWidth/2))
-        dlg.endExtendEdit.setText(str(fabproc.processPaths[0].minWidth/2))
+        dlg.pathWidthValidator.setRange(defaultPathTuple.minWidth,
+                                        defaultPathTuple.maxWidth)
+        dlg.startExtendEdit.setText(str(fabproc.processPaths[0].minWidth / 2))
+        dlg.endExtendEdit.setText(str(fabproc.processPaths[0].minWidth / 2))
 
         if dlg.exec() == QDialog.Accepted:
             self.centralW.scene.editModes.setMode("drawPath")
@@ -243,95 +235,89 @@ class layoutEditor(edw.editorWindow):
                 pathWidth = fabproc.dbu * 1.0
             pathName = dlg.pathNameEdit.text()
             pathTupleName = dlg.pathLayerCB.currentText()
-            pathTuple = [
-                item for item in fabproc.processPaths if item.name == pathTupleName
-            ][0]
+            pathTuple = \
+                [item for item in fabproc.processPaths if item.name == pathTupleName][
+                    0]
             pathLayer = pathTuple.layer
             startExtend = float(dlg.startExtendEdit.text().strip()) * fabproc.dbu
             endExtend = float(dlg.endExtendEdit.text().strip()) * fabproc.dbu
-            self.centralW.scene.newPathTuple = ddef.layoutPathTuple(pathName, pathLayer, pathMode, pathWidth, startExtend, endExtend
-            )
+            self.centralW.scene.newPathTuple = ddef.layoutPathTuple(pathName,
+                                                                    pathLayer,
+                                                                    pathMode,
+                                                                    pathWidth,
+                                                                    startExtend,
+                                                                    endExtend)
 
     def createPinClick(self):
         dlg = ldlg.createLayoutPinDialog(self)
-        pinLayersNames = [f"{item.name} [{item.purpose}]" for item in laylyr.pdkPinLayers]
-        textLayersNames = [f"{item.name} [{item.purpose}]" for item in laylyr.pdkTextLayers]
+        pinLayersNames = [f"{item.name} [{item.purpose}]" for item in
+                          laylyr.pdkPinLayers]
+        textLayersNames = [f"{item.name} [{item.purpose}]" for item in
+                           laylyr.pdkTextLayers]
         dlg.pinLayerCB.addItems(pinLayersNames)
         dlg.labelLayerCB.addItems(textLayersNames)
 
         if self.centralW.scene.newPinTuple is not None:
             dlg.pinLayerCB.setCurrentText(
                 f"{self.centralW.scene.newPinTuple.pinLayer.name} "
-                f"[{self.centralW.scene.newPinTuple.pinLayer.purpose}]"
-            )
+                f"[{self.centralW.scene.newPinTuple.pinLayer.purpose}]")
         if self.centralW.scene.newLabelTuple is not None:
             dlg.labelLayerCB.setCurrentText(
                 f"{self.centralW.scene.newLabelTuple.labelLayer.name} ["
-                f"{self.centralW.scene.newLabelTuple.labelLayer.purpose}]"
-            )
-            dlg.familyCB.setCurrentText(self.centralW.scene.newLabelTuple.fontFamily)
-            dlg.fontStyleCB.setCurrentText(self.centralW.scene.newLabelTuple.fontStyle)
+                f"{self.centralW.scene.newLabelTuple.labelLayer.purpose}]")
+            dlg.familyCB.setCurrentText(
+                self.centralW.scene.newLabelTuple.fontFamily)
+            dlg.fontStyleCB.setCurrentText(
+                self.centralW.scene.newLabelTuple.fontStyle)
             dlg.labelHeightCB.setCurrentText(
-                str(self.centralW.scene.newLabelTuple.fontHeight)
-            )
-            dlg.labelAlignCB.setCurrentText(self.centralW.scene.newLabelTuple.labelAlign)
-            dlg.labelOrientCB.setCurrentText(self.centralW.scene.newLabelTuple.labelOrient)
+                str(self.centralW.scene.newLabelTuple.fontHeight))
+            dlg.labelAlignCB.setCurrentText(
+                self.centralW.scene.newLabelTuple.labelAlign)
+            dlg.labelOrientCB.setCurrentText(
+                self.centralW.scene.newLabelTuple.labelOrient)
         if dlg.exec() == QDialog.Accepted:
             self.centralW.scene.editModes.setMode("drawPin")
             pinName = dlg.pinName.text()
             pinDir = dlg.pinDir.currentText()
             pinType = dlg.pinType.currentText()
             pinLayerName = dlg.pinLayerCB.currentText().split()[0]
-            pinLayer = [item for item in laylyr.pdkPinLayers if item.name == pinLayerName][
-                0
-            ]
+            pinLayer = \
+                [item for item in laylyr.pdkPinLayers if item.name == pinLayerName][0]
             labelLayerName = dlg.labelLayerCB.currentText().split()[0]
-            labelLayer = [
-                item for item in laylyr.pdkTextLayers if item.name == labelLayerName
-            ][0]
+            labelLayer = [item for item in laylyr.pdkTextLayers if
+                          item.name == labelLayerName][0]
             fontFamily = dlg.familyCB.currentText()
             fontStyle = dlg.fontStyleCB.currentText()
             labelHeight = float(dlg.labelHeightCB.currentText())
             labelAlign = dlg.labelAlignCB.currentText()
             labelOrient = dlg.labelOrientCB.currentText()
-            self.centralW.scene.newPinTuple = ddef.layoutPinTuple(
-                pinName, pinDir, pinType, pinLayer
-            )
-            self.centralW.scene.newLabelTuple = ddef.layoutLabelTuple(
-                pinName,
-                fontFamily,
-                fontStyle,
-                labelHeight,
-                labelAlign,
-                labelOrient,
-                labelLayer,
-            )
+            self.centralW.scene.newPinTuple = ddef.layoutPinTuple(pinName, pinDir,
+                                                                  pinType, pinLayer)
+            self.centralW.scene.newLabelTuple = ddef.layoutLabelTuple(pinName,
+                                                                      fontFamily, fontStyle, labelHeight, labelAlign,
+                                                                      labelOrient,
+                                                                      labelLayer, )
 
     def createLabelClick(self):
         dlg = ldlg.createLayoutLabelDialog(self)
-        textLayersNames = [f"{item.name} [{item.purpose}]" for item in laylyr.pdkTextLayers]
+        textLayersNames = [f"{item.name} [{item.purpose}]" for item in
+                           laylyr.pdkTextLayers]
         dlg.labelLayerCB.addItems(textLayersNames)
         if dlg.exec() == QDialog.Accepted:
             self.centralW.scene.editModes.setMode("addLabel")
             labelName = dlg.labelName.text()
             labelLayerName = dlg.labelLayerCB.currentText().split()[0]
-            labelLayer = [
-                item for item in laylyr.pdkTextLayers if item.name == labelLayerName
-            ][0]
+            labelLayer = [item for item in laylyr.pdkTextLayers if
+                          item.name == labelLayerName][0]
             fontFamily = dlg.familyCB.currentText()
             fontStyle = dlg.fontStyleCB.currentText()
             fontHeight = dlg.labelHeightCB.currentText()
             labelAlign = dlg.labelAlignCB.currentText()
             labelOrient = dlg.labelOrientCB.currentText()
-            self.centralW.scene.newLabelTuple = ddef.layoutLabelTuple(
-                labelName,
-                fontFamily,
-                fontStyle,
-                fontHeight,
-                labelAlign,
-                labelOrient,
-                labelLayer,
-            )
+            self.centralW.scene.newLabelTuple = ddef.layoutLabelTuple(labelName,
+                                                                      fontFamily, fontStyle, fontHeight, labelAlign,
+                                                                      labelOrient,
+                                                                      labelLayer, )
 
     def createViaClick(self):
         dlg = ldlg.createLayoutViaDialog(self)
@@ -349,40 +335,30 @@ class layoutEditor(edw.editorWindow):
             self.centralW.scene.addVia = True
             if dlg.singleViaRB.isChecked():
                 selViaDefTuple = fabproc.processVias[
-                    fabproc.processViaNames.index(dlg.singleViaNamesCB.currentText())
-                ]
+                    fabproc.processViaNames.index(
+                        dlg.singleViaNamesCB.currentText())]
 
-                singleViaTuple = ddef.singleViaTuple(
-                    selViaDefTuple,
-                    fabproc.dbu * float(dlg.singleViaWidthEdit.text().strip()),
-                    fabproc.dbu * float(dlg.singleViaHeightEdit.text().strip()),
-                )
+                singleViaTuple = ddef.singleViaTuple(selViaDefTuple,
+                                                     fabproc.dbu * float(dlg.singleViaWidthEdit.text().strip()),
+                                                     fabproc.dbu * float(dlg.singleViaHeightEdit.text().strip()), )
                 self.centralW.scene.arrayViaTuple = ddef.arrayViaTuple(
-                    singleViaTuple,
-                    fabproc.dbu * selViaDefTuple.minSpacing,
-                    fabproc.dbu * selViaDefTuple.minSpacing,
-                    1,
-                    1,
-                )
+                    singleViaTuple, fabproc.dbu * selViaDefTuple.minSpacing,
+                                    fabproc.dbu * selViaDefTuple.minSpacing, 1,
+                    1, )
             else:
-                selViaDefTuple = [
-                    viaDefTuple
-                    for viaDefTuple in fabproc.processVias
-                    if viaDefTuple.name == dlg.arrayViaNamesCB.currentText()
-                ][0]
+                selViaDefTuple = \
+                    [viaDefTuple for viaDefTuple in fabproc.processVias if
+                     viaDefTuple.name == dlg.arrayViaNamesCB.currentText()][0]
 
-                singleViaTuple = ddef.singleViaTuple(
-                    selViaDefTuple,
-                    fabproc.dbu * float(dlg.arrayViaWidthEdit.text().strip()),
-                    fabproc.dbu * float(dlg.arrayViaHeightEdit.text().strip()),
-                )
+                singleViaTuple = ddef.singleViaTuple(selViaDefTuple,
+                                                     fabproc.dbu * float(dlg.arrayViaWidthEdit.text().strip()),
+                                                     fabproc.dbu * float(dlg.arrayViaHeightEdit.text().strip()), )
                 self.centralW.scene.arrayViaTuple = ddef.arrayViaTuple(
                     singleViaTuple,
                     fabproc.dbu * float(dlg.arrayXspacingEdit.text().strip()),
                     fabproc.dbu * float(dlg.arrayYspacingEdit.text().strip()),
                     int(float(dlg.arrayXNumEdit.text().strip())),
-                    int(float(dlg.arrayYNumEdit.text().strip())),
-                )
+                    int(float(dlg.arrayYNumEdit.text().strip())), )
         else:
             self.centralW.scene.editModes.setMode("selectItem")
 
@@ -396,11 +372,8 @@ class layoutEditor(edw.editorWindow):
         self.centralW.scene.goDownHier()
 
     def checkSaveCell(self):
-        self.centralW.scene.saveLayoutCell(self.file)
-        # if the parent editor is not None, emit the childEditorChanged signal
-        # and pass the parentObj as the argument
-        # if self.parentEditor:
-        #     self.parentEditor.childEditorChanged.emit(self.parentObj)
+        self.centralW.scene.saveLayoutCell(
+            self.file)  # if the parent editor is not None, emit the childEditorChanged signal  # and pass the parentObj as the argument  # if self.parentEditor:  #     self.parentEditor.childEditorChanged.emit(self.parentObj)
 
     def saveCell(self):
         self.centralW.scene.saveLayoutCell(self.file)
@@ -411,7 +384,7 @@ class layoutEditor(edw.editorWindow):
         QApplication.setOverrideCursor(Qt.WaitCursor)
         QApplication.processEvents()
         try:
-            
+
             self.centralW.scene.loadDesign(self.file)
         finally:
             QApplication.restoreOverrideCursor()
@@ -426,46 +399,158 @@ class layoutEditor(edw.editorWindow):
             self.layoutChooser.raise_()
         if self.layoutChooser.exec() == QDialog.Accepted:
             self.centralW.scene.editModes.setMode("addInstance")
-            libItem = libm.getLibItem(
-                libraryModel, self.layoutChooser.libNamesCB.currentText()
-            )
-            cellItem = libm.getCellItem(libItem, self.layoutChooser.cellCB.currentText())
-            viewItem = libm.getViewItem(cellItem, self.layoutChooser.viewCB.currentText())
+            libItem = libm.getLibItem(libraryModel,
+                                      self.layoutChooser.libNamesCB.currentText())
+            cellItem = libm.getCellItem(libItem,
+                                        self.layoutChooser.cellCB.currentText())
+            viewItem = libm.getViewItem(cellItem,
+                                        self.layoutChooser.viewCB.currentText())
             # libm.findViewItem(libraryModel, self.layoutChooser.libNamesCB.currentText())
-            self.centralW.scene.layoutInstanceTuple = ddef.viewItemTuple(
-                libItem, cellItem, viewItem
-            )
+            self.centralW.scene.layoutInstanceTuple = ddef.viewItemTuple(libItem,
+                                                                         cellItem, viewItem)
 
     def exportGDSClick(self):
         dlg = fd.gdsExportDialogue(self)
         dlg.unitEdit.setText("1 um")
         dlg.precisionEdit.setText("1 nm")
-        dlg.exportPathEdit.setText(str(self.gdsExportDir / f'{self.cellName}'))
+        dlg.exportPathEdit.setText(str(self.gdsExportDir))
 
         if dlg.exec() == QDialog.Accepted:
             self.gdsExportDir = pathlib.Path(dlg.exportPathEdit.text().strip())
-            gdsExportPath: pathlib.Path = self.gdsExportDir / f"{self.cellName}.gds"
-            # reprocess the layout to get the layout positions right.
-            topLevelItems = [
-                item for item in self.centralW.scene.items() if item.parentItem() is None
-            ]
-            decodedData = json.loads(json.dumps(topLevelItems, cls=layenc.layoutEncoder))
-            layoutItems = [
-                lj.layoutItems(self.centralW.scene).create(item)
-                for item in decodedData
-            ]
+            gdsUnit = Quantity(dlg.unitEdit.text().strip()).real
+            gdsPrecision = Quantity(
+                dlg.precisionEdit.text().strip()).real
+            self.exportCellGDS(self.gdsExportDir, gdsUnit, gdsPrecision)
 
-            gdsExportObj = gdse.gdsExporter(self.cellName, layoutItems, gdsExportPath)
-            gdsExportObj.unit = Quantity(dlg.unitEdit.text().strip()).real
-            gdsExportObj.precision = Quantity(dlg.precisionEdit.text().strip()).real
-            self.logger.info("GDS Export started")
-            with self.measureDuration():
-                gdsExportObj.gdsExport()
-            self.logger.info("GDS Export finished")
-            # gdsExportRunner = startThread(gdsExportObj.gdsExport)
-            # gdsExportRunner.signals.finished.connect(
-            #     lambda: self.logger.info("GDS Export finished"))
-            # self.appMainW.threadPool.start(gdsExportRunner)
+    def exportCellGDS(self, gdsExportDir: pathlib.Path, gdsUnit: float,
+                      gdsPrecision: float):
+
+        gdsExportPath: pathlib.Path = gdsExportDir / f"{self.cellName}.gds"
+        # reprocess the layout to get the layout positions right.
+        topLevelItems = [item for item in self.centralW.scene.items() if
+                         item.parentItem() is None]
+        decodedData = json.loads(
+            json.dumps(topLevelItems, cls=layenc.layoutEncoder))
+        layoutItems = [lj.layoutItems(self.centralW.scene).create(item) for
+                       item in decodedData]
+
+        gdsExportObj = gdse.gdsExporter(self.cellName, layoutItems,
+                                        gdsExportPath)
+        gdsExportObj.unit = gdsUnit
+        gdsExportObj.precision = gdsPrecision
+
+        self.logger.info("GDS Export started")
+        with self.measureDuration():
+            gdsExportObj.gdsExport()
+        self.logger.info(
+            "GDS Export finished")
+
+    def handlePolygonSelection(self, polygons):
+        # Remove previous polygons
+        for polygon in self._previousPolygons:
+            self.centralW.scene.removeItem(polygon)
+
+        # Add new polygons
+        for polygon in polygons:
+            self.centralW.scene.addItem(polygon)
+
+        # Remember current polygons (store reference)
+        self._previousPolygons = polygons
+
+    def klayoutDRCClick(self):
+        klayoutDRCModule = importPDKModule("klayoutDRC")
+        if klayoutDRCModule is None:
+            self.logger.error('PDK does not allow DRC verification with KLayout.')
+            return
+
+        def saveRunSet(dlg: klayoutDRCModule.drcKLayoutDialogue):
+            klayoutPath = dlg.klayoutPathEdit.text().strip()
+            cellName = dlg.cellNameEdit.text().strip()
+            drcRunSetName = dlg.DRCRunSetCB.currentText().strip()
+            drcRunLimit = dlg.DRCRunLimitEdit.text().strip()
+            drcRunPath = dlg.DRCRunPathEdit.text().strip()
+            gdsExport = 1 if dlg.gdsExportBox.isChecked() else 0
+            gdsUnit = Quantity(dlg.unitEdit.text().strip()).real
+            gdsPrecision = Quantity(dlg.precisionEdit.text().strip()).real
+            drcRunPathObj = pathlib.Path(drcRunPath)
+            drcRunPathObj.mkdir(parents=True, exist_ok=True)
+            settingsPathObj = drcRunPathObj / 'drcSettings.json'
+            with settingsPathObj.open('w') as f:
+                json.dump({'klayoutPath': klayoutPath, 'cellName': cellName,
+                           'drcRunSetName': drcRunSetName, 'drcRunLimit':
+                               drcRunLimit, 'drcRunPath': drcRunPath,
+                           'gdsExport': gdsExport, 'gdsUnit': gdsUnit,
+                           'gdsPrecision': gdsPrecision}, f, indent=4)
+
+        def DRCProcessFinished(filePath: pathlib.Path):
+            dlg = ldlg.drcErrorsDialogue(self, filePath.resolve())
+            dlg.drcTable.polygonSelected.connect(self.handlePolygonSelection)
+            dlg.show()
+
+        def runKlayoutDRC(dlg: klayoutDRCModule.drcKLayoutDialogue):
+            klayoutPath = dlg.klayoutPathEdit.text().strip()
+            cellName = dlg.cellNameEdit.text().strip()
+            drcRunSetName = dlg.DRCRunSetCB.currentText().strip()
+            drcRunLimit = dlg.DRCRunLimitEdit.text().strip()
+            drcRunPath = dlg.DRCRunPathEdit.text().strip()
+            gdsExport = 1 if dlg.gdsExportBox.isChecked() else 0
+            gdsUnit = Quantity(dlg.unitEdit.text().strip()).real
+            gdsPrecision = Quantity(dlg.precisionEdit.text().strip()).real
+            drcRunPathObj = pathlib.Path(drcRunPath)
+            drcRunPathObj.mkdir(parents=True, exist_ok=True)
+            if gdsExport:
+                self.exportCellGDS(drcRunPathObj, gdsUnit, gdsPrecision)
+            if (drcRunPathObj / f'{cellName}.gds').exists():
+                gdsPath = drcRunPathObj.joinpath(f'{cellName}.gds')
+                drcPath = pathlib.Path(drc.__file__).parent.resolve()
+                drcRuleFilePath = drcPath.joinpath(f'{drcRunSetName}.lydrc')
+                drcReportFilePath = drcRunPathObj.joinpath(f'{cellName}.lyrdb')
+                argumentsList = ['-b', '-r',
+                                 f'{drcRuleFilePath}',
+                                 '-rd',
+                                 f'in_gds={gdsPath}',
+                                 '-rd',
+                                 f'report_file={drcReportFilePath}']
+                self.processManager.maxProcesses = int(drcRunLimit)
+                drcProcess = self.processManager.add_process(klayoutPath, argumentsList)
+                drcProcess.process.finished.connect(lambda: DRCProcessFinished(drcReportFilePath))
+            else:
+                self.logger.error('GDS file can not be found')
+
+        dlg = klayoutDRCModule.drcKLayoutDialogue(self)
+        drc = importPDKModule("drc")
+        drcPath = pathlib.Path(drc.__file__).parent.resolve()
+        rulesFiles = [pathItem.stem for pathItem in list(drcPath.glob("*.lydrc"))]
+        dlg.DRCRunSetCB.addItems(rulesFiles)
+        dlg.saveButton.clicked.connect(lambda: saveRunSet(dlg))
+        dlg.runButton.clicked.connect(lambda: runKlayoutDRC(dlg))
+        settingsPathObj = (self.gdsExportDirObj / 'drcSettings.json')
+        if settingsPathObj.exists():
+            try:
+                with settingsPathObj.open('r') as f:
+                    settings = json.load(f)
+                    dlg.klayoutPathEdit.setText(settings['klayoutPath'])
+                    dlg.cellNameEdit.setText(settings['cellName'])
+                    dlg.DRCRunSetCB.setCurrentText(settings['drcRunSetName'])
+                    dlg.DRCRunLimitEdit.setText(settings['drcRunLimit'])
+                    dlg.DRCRunPathEdit.setText(settings['drcRunPath'])
+                    dlg.gdsExportBox.setChecked(bool(settings['gdsExport']))
+                    dlg.unitEdit.setText(str(settings['gdsUnit']))
+                    dlg.precisionEdit.setText(str(settings['gdsPrecision']))
+            except Exception as e:
+                self.logger.error(e)
+        else:
+            dlg.gdsExportBox.setChecked(False)
+            dlg.cellNameEdit.setText(self.cellName)
+            dlg.DRCRunSetCB.setCurrentIndex(0)
+            dlg.DRCRunLimitEdit.setText('2')
+            dlg.DRCRunPathEdit.setText(str(self.gdsExportDirObj))
+            if hasattr(fabproc, "gdsUnit"):
+                dlg.unitEdit.setText(fabproc.gdsUnit.render())
+            if hasattr(fabproc, "gdsPrecision"):
+                dlg.precisionEdit.setText(fabproc.gdsPrecision.render())
+
+        dlg.show()
 
     def dispConfigEdit(self):
         import revedaEditor.gui.propertyDialogues as pdlg
@@ -474,7 +559,8 @@ class layoutEditor(edw.editorWindow):
         dcd.majorGridEntry.setText(str(self.majorGrid))
         dcd.snapGridEdit.setText(str(self.snapGrid))
         if dcd.exec() == QDialog.Accepted:
-            self.configureGridSettings((int(dcd.majorGridEntry.text()), int(dcd.snapGridEdit.text())))
+            self.configureGridSettings(
+                (int(dcd.majorGridEntry.text()), int(dcd.snapGridEdit.text())))
             if dcd.dotType.isChecked():
                 self.centralW.view.gridbackg = True
                 self.centralW.view.linebackg = False
@@ -486,9 +572,8 @@ class layoutEditor(edw.editorWindow):
                 self.centralW.view.linebackg = False
 
     def _createSignalConnections(self):
-        super()._createSignalConnections()
-        # if self.parentEditor is None:
-        #     self.childEditorChanged.connect(self.centralW.scene.reloadScene)
+        super()._createSignalConnections()  # if self.parentEditor is None:  #     self.childEditorChanged.connect(self.centralW.scene.reloadScene)
+
 
 class layoutContainer(QWidget):
     def __init__(self, parent: layoutEditor):
@@ -502,7 +587,8 @@ class layoutContainer(QWidget):
         self.lswWidget.setMinimumWidth(300)
         self.lswWidget.setMaximumWidth(360)
         self.lswWidget.lswTable.dataSelected.connect(self.selectLayer)
-        self.lswWidget.lswTable.layerSelectable.connect(self.layerSelectableChange)
+        self.lswWidget.lswTable.layerSelectable.connect(
+            self.layerSelectableChange)
         self.lswWidget.lswTable.layerVisible.connect(self.layerVisibleChange)
         self.init_UI()
 
@@ -530,23 +616,20 @@ class layoutContainer(QWidget):
                 return layer
         return laylyr.pdkAllLayers[0]
 
-    def layerSelectableChange(
-            self, layerName: str, layerPurpose: str, layerSelectable: bool
-    ):
+    def layerSelectableChange(self, layerName: str, layerPurpose: str,
+                              layerSelectable: bool):
         selectedLayer = self.findSelectedLayer(layerName, layerPurpose)
         if selectedLayer:
             selectedLayer.selectable = layerSelectable
 
         for item in self.scene.items():
-            if (
-                    hasattr(item, "layer")
-                    and item.layer == selectedLayer
-                    and item.parentItem() is None
-            ):
+            if (hasattr(item,
+                        "layer") and item.layer == selectedLayer and item.parentItem() is None):
                 item.setEnabled(layerSelectable)
                 item.update()
 
-    def layerVisibleChange(self, layerName: str, layerPurpose: str, layerVisible: bool):
+    def layerVisibleChange(self, layerName: str, layerPurpose: str,
+                           layerVisible: bool):
         selectedLayer = self.findSelectedLayer(layerName, layerPurpose)
         if selectedLayer:
             selectedLayer.visible = layerVisible

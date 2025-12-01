@@ -31,7 +31,7 @@ from PySide6.QtGui import (QAction, QIcon, )
 from PySide6.QtWidgets import (QGraphicsScene, QApplication, QDialog, QMainWindow, QMessageBox, QVBoxLayout, QWidget,
                                QFileDialog, )
 from dotenv import load_dotenv
-from numpy.f2py.f2py2e import validate_modulename
+
 
 import revedaEditor.backend.dataDefinitions as ddef
 import revedaEditor.backend.libraryMethods as libm
@@ -148,19 +148,21 @@ class MainWindow(QMainWindow):
 
         try:
             self._app = QApplication.instance()
-            if hasattr(self._app, "revedaeditor_pathObj"):
-                self.runPath = self._app.revedaeditor_pathObj.parent
+            revedaeditor_pathObj = getattr(self._app, "revedaeditor_pathObj", None)
+            if revedaeditor_pathObj is not None:
+                self.runPath = revedaeditor_pathObj.parent
             else:
                 self.runPath = pathlib.Path.cwd()
-            if hasattr(self._app, "revedaPdkPathObj"):
-                self.pdkPath = self._app.revedaPdkPathObj
-            else:
-                self.pdkPath = self.runPath / self.PATHS["defaultPDK"]
+            revedaPdkPathObj = getattr(self._app, "revedaPdkPathObj", None)
+            if revedaPdkPathObj is not None:
+                self.pdkPath = revedaPdkPathObj
             self.outputPrefixPath = self.runPath.parent / self.PATHS['testbenches']
             self.libraryPathObj = self.runPath / self.PATHS['library']
             self.confFilePath = self.runPath / self.PATHS['config']
-            self.pluginsPath: str = str(self._app.revedaPluginPathObj) if hasattr(self._app,
-                "revedaPluginPathObj") else ""
+            revedaPluginPathObj = getattr(self._app, "revedaPluginPathObj", None)
+            self.pluginsPath: str = str(revedaPluginPathObj) if revedaPluginPathObj is not None else ""
+            # self.pluginsPath: str = str(self._app.revedaPluginPathObj) if hasattr(self._app,
+            #     "revedaPluginPathObj") else ""
         except Exception as e:
             self._handle_init_error("Path initialization failed", e)
 
