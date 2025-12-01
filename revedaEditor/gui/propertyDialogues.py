@@ -825,6 +825,7 @@ class layoutDisplayConfigDialog(displayConfigDialog):
         self.dbuEntry.setReadOnly(True)
         self.fLayout.insertRow(0, "Process Points per um:", self.dbuEntry)
 
+
 class selectConfigDialogue(QDialog):
     def __init__(self, parent):
         super().__init__(parent)

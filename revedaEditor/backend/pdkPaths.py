@@ -42,5 +42,8 @@ def importPDKModule(moduleName):
         sys.path.append(pdkPathParentStr)
     
     fullModuleName = f"{pdkPathObj.name}.{moduleName}"
-    return importlib.import_module(fullModuleName)
+    try:
+        return importlib.import_module(fullModuleName)
+    except ModuleNotFoundError:
+        return None
 

@@ -22,8 +22,8 @@
 #    Licensor: Revolution Semiconductor (Registered in the Netherlands)
 #
 
-import inspect
 from typing import Dict
+from pathlib import Path
 from PySide6.QtCore import (Qt, )
 from PySide6.QtGui import (QStandardItem, QFontDatabase, QDoubleValidator)
 from PySide6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QFormLayout,
@@ -35,8 +35,9 @@ from PySide6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QFormLayout
 
 import revedaEditor.common.layoutShapes as lshp
 import revedaEditor.gui.editFunctions as edf
-
+import revedaEditor.backend.drcModelView as drcmv
 from revedaEditor.backend.pdkPaths import importPDKModule
+
 fabproc = importPDKModule('process')
 
 
@@ -444,12 +445,12 @@ class createLayoutViaDialog(QDialog):
         arrayViaPropsLayout.addRow(edf.boldLabel("Via Height"), self.arrayViaHeightEdit)
         self.arrayXspacingEdit = edf.shortLineEdit()
         self.arrayXspacingEdit.editingFinished.connect(lambda:
-                            self.arrayViaSpacingChanged(self.arrayXspacingEdit))
+                                                       self.arrayViaSpacingChanged(self.arrayXspacingEdit))
         arrayViaPropsLayout.addRow(edf.boldLabel("Column Spacing"),
                                    self.arrayXspacingEdit)
         self.arrayYspacingEdit = edf.shortLineEdit()
         self.arrayYspacingEdit.editingFinished.connect(lambda:
-                            self.arrayViaSpacingChanged(self.arrayYspacingEdit))
+                                                       self.arrayViaSpacingChanged(self.arrayYspacingEdit))
         arrayViaPropsLayout.addRow(edf.boldLabel("Row Spacing"),
                                    self.arrayYspacingEdit)
         self.arrayXNumEdit = edf.shortLineEdit()
@@ -673,6 +674,11 @@ class layoutPolygonProperties(QDialog):
 
 
 class formDictionary:
+    '''
+    This code defines a utility class formDictionary that extracts data 
+    from a Qt form layout and converts it into a Python dictionary.
+    '''
+
     def __init__(self, formLayout: QFormLayout):
         self.formLayout = formLayout
 
@@ -691,3 +697,36 @@ class formDictionary:
                     value = field
                     data[key] = value
         return data
+
+
+class drcErrorsDialogue(QDialog):
+
+    def __init__(self, parent, drcDataPathObj: Path):
+        super().__init__(parent)
+        self.setWindowTitle("DRC Errors")
+        self.setMinimumSize(600, 400)
+
+        layout = QVBoxLayout()
+
+        # Add DRC table view
+        import revedaEditor.fileio.importlyrdb as imlyrdb
+        DRCDataObj = imlyrdb.DRCOutput(str(drcDataPathObj))
+        DRCDataObj.parseDRCOutput()
+        self.drcTable = drcmv.DRCTableView(DRCDataObj.result['violations'])
+        layout.addWidget(self.drcTable)
+
+        QBtn = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        self.buttonBox = QDialogButtonBox(QBtn)
+        self.buttonBox.accepted.connect(self.accept)
+        self.buttonBox.rejected.connect(self.reject)
+        layout.addWidget(self.buttonBox)
+
+        self.setLayout(layout)
+
+        # Connect signal for polygon highlighting
+        # self.drcTable.polygonSelected.connect(self.highlightPolygons)
+
+    # def highlightPolygons(self, polygons):
+    #     # Emit signal or call parent method to highlight polygons in scene
+    #     if hasattr(self.parent(), 'highlightDRCPolygons'):
+    #         self.parent().highlightDRCPolygons(polygons)

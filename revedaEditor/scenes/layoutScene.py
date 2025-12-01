@@ -147,11 +147,10 @@ class layoutScene(editorScene):
         self.itemCounter = 0
         self._newPath = None
         self._stretchPath = None
-        defaultPathDefTuple = fabproc.processPathTuples[0]
+        defaultPathDefTuple = fabproc.processPaths[0]
         self.newPathTuple = ddef.layoutPathTuple("", defaultPathDefTuple.layer, 0, defaultPathDefTuple.minWidth, int(defaultPathDefTuple.minWidth/2), int(defaultPathDefTuple.minWidth/2))
         self.draftLine = None
-        self.m45Rotate = QTransform()
-        self.m45Rotate.rotate(-45)
+        self.m45Rotate = QTransform().rotate(-45)
         self._newPin = None
         self.newPinTuple = None
         self.newLabelTuple = None

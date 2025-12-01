@@ -24,39 +24,15 @@
 
 # properties dialogues for various editor functions
 
-from ast import main
-import pathlib
-from PySide6.QtGui import (
-    QFontDatabase, 
-)
-from PySide6.QtCore import (
-    Qt,
-)
 from PySide6.QtWidgets import (
-    QWidget,
     QDialog,
     QVBoxLayout,
-    QHBoxLayout,
     QFormLayout,
     QDialogButtonBox,
-    QButtonGroup,
-    QTabWidget,
-    QLineEdit,
     QLabel,
     QComboBox,
-    QGroupBox,
-    QRadioButton,
-    QGridLayout,
-    QTextEdit,
-    QCheckBox,
-    QTableWidget,
-    QTableWidgetItem,
 )
 
-import revedaEditor.common.net as net
-import revedaEditor.common.shapes as shp
-import revedaEditor.common.labels as lbl
-import revedaEditor.gui.editFunctions as edf
 
 class findProjectEditors(QDialog):
     def __init__(self, parent):

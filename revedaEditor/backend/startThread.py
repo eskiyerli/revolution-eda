@@ -44,13 +44,12 @@ class startThread(QRunnable):
 
     @Slot()
     def run(self) -> None:
-        """Execute the stored function in the thread."""
         try:
-
-            self.fn(*self.args, **self.kwargs)
-            self.signals.finished.emit()
+            self.fn
         except Exception as e:
-            self.signals.error.emit((str(e),))
+            self.signals.error.emit(e)
+        finally:
+            self.signals.finished.emit()
 
     @contextmanager
     def measureDuration(self):

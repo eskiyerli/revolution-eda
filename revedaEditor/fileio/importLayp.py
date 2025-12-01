@@ -1,6 +1,3 @@
-import xml.etree.ElementTree as ET
-import re
-import logging
 #    “Commons Clause” License Condition v1.0
 #   #
 #    The Software is provided to you by the Licensor under the License, as defined
@@ -25,7 +22,9 @@ import logging
 #    Licensor: Revolution Semiconductor (Registered in the Netherlands)
 #
 
-
+import xml.etree.ElementTree as ET
+import re
+import logging
 from pathlib import Path
 
 from PySide6.QtGui import (
