@@ -328,13 +328,13 @@ files = [
 
 [[package]]
 name = "nuitka"
-version = "2.8.6"
+version = "2.8.2"
 description = "Python compiler with full language support and CPython compatibility"
 optional = false
 python-versions = "*"
 groups = ["dev"]
 files = [
-    {file = "nuitka-2.8.6.tar.gz", hash = "sha256:a648c392d2a041f31c9582a68ef7c1a3a71166eaf2d344a0bb1d03f184ed3a2a"},
+    {file = "Nuitka-2.8.2.tar.gz", hash = "sha256:36af094e9e36ed3cdb33bc54e04bfe31b1b3a28c54b06875a411f61a2164b917"},
 ]
 
 [package.dependencies]
@@ -948,4 +948,4 @@ cffi = ["cffi (>=1.17,<2.0) ; platform_python_implementation != \"PyPy\" and pyt
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12,<3.14"
-content-hash = "0407f0d579406bd6777cf93be2db6d998522475d87c4eabc1b088a7723b7007e"
+content-hash = "d9c401d495b5eb30a517cfa61726aadf24cea98006db0b7f787867d96c65b515"

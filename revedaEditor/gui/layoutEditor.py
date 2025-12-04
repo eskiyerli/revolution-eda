@@ -25,7 +25,7 @@ import json
 import pathlib
 
 # import numpy as np
-from PySide6.QtCore import (Qt, QRectF, )
+from PySide6.QtCore import (Qt, )
 from PySide6.QtGui import (QAction, QIcon, )
 from PySide6.QtWidgets import (QApplication, QDialog, QMenu, QSplitter, QToolBar,
                                QVBoxLayout, QWidget)
@@ -35,8 +35,8 @@ import revedaEditor.backend.dataDefinitions as ddef
 import revedaEditor.backend.libBackEnd as libb
 import revedaEditor.backend.libraryMethods as libm
 import revedaEditor.backend.libraryModelView as lmview
-import revedaEditor.fileio.gdsExport as gdse
-import revedaEditor.fileio.layoutEncoder as layenc
+
+# import revedaEditor.fileio.layoutEncoder as layenc
 import revedaEditor.fileio.loadJSON as lj
 import revedaEditor.gui.editorViews as edv
 import revedaEditor.gui.editorWindow as edw
@@ -411,9 +411,9 @@ class layoutEditor(edw.editorWindow):
 
     def exportGDSClick(self):
         dlg = fd.gdsExportDialogue(self)
-        dlg.unitEdit.setText("1 um")
-        dlg.precisionEdit.setText("1 nm")
-        dlg.exportPathEdit.setText(str(self.gdsExportDir))
+        dlg.unitEdit.setText(fabproc.gdsUnit.render())
+        dlg.precisionEdit.setText(fabproc.gdsPrecision.render())
+        dlg.exportPathEdit.setText(str(self.gdsExportDirObj))
 
         if dlg.exec() == QDialog.Accepted:
             self.gdsExportDir = pathlib.Path(dlg.exportPathEdit.text().strip())
@@ -424,26 +424,8 @@ class layoutEditor(edw.editorWindow):
 
     def exportCellGDS(self, gdsExportDir: pathlib.Path, gdsUnit: float,
                       gdsPrecision: float):
+        self.centralW.scene.exportCellGDS(gdsExportDir, gdsUnit, gdsPrecision)
 
-        gdsExportPath: pathlib.Path = gdsExportDir / f"{self.cellName}.gds"
-        # reprocess the layout to get the layout positions right.
-        topLevelItems = [item for item in self.centralW.scene.items() if
-                         item.parentItem() is None]
-        decodedData = json.loads(
-            json.dumps(topLevelItems, cls=layenc.layoutEncoder))
-        layoutItems = [lj.layoutItems(self.centralW.scene).create(item) for
-                       item in decodedData]
-
-        gdsExportObj = gdse.gdsExporter(self.cellName, layoutItems,
-                                        gdsExportPath)
-        gdsExportObj.unit = gdsUnit
-        gdsExportObj.precision = gdsPrecision
-
-        self.logger.info("GDS Export started")
-        with self.measureDuration():
-            gdsExportObj.gdsExport()
-        self.logger.info(
-            "GDS Export finished")
 
     def handlePolygonSelection(self, polygons):
         # Remove previous polygons
@@ -463,7 +445,7 @@ class layoutEditor(edw.editorWindow):
             self.logger.error('PDK does not allow DRC verification with KLayout.')
             return
 
-        def saveRunSet(dlg: klayoutDRCModule.drcKLayoutDialogue):
+        def saveRunSet(dlg):
             klayoutPath = dlg.klayoutPathEdit.text().strip()
             cellName = dlg.cellNameEdit.text().strip()
             drcRunSetName = dlg.DRCRunSetCB.currentText().strip()
@@ -487,7 +469,7 @@ class layoutEditor(edw.editorWindow):
             dlg.drcTable.polygonSelected.connect(self.handlePolygonSelection)
             dlg.show()
 
-        def runKlayoutDRC(dlg: klayoutDRCModule.drcKLayoutDialogue):
+        def runKlayoutDRC(dlg):
             klayoutPath = dlg.klayoutPathEdit.text().strip()
             cellName = dlg.cellNameEdit.text().strip()
             drcRunSetName = dlg.DRCRunSetCB.currentText().strip()
@@ -519,6 +501,9 @@ class layoutEditor(edw.editorWindow):
 
         dlg = klayoutDRCModule.drcKLayoutDialogue(self)
         drc = importPDKModule("drc")
+        if drc is None:
+            self.logger.error('PDK does not have DRC module.')
+            return
         drcPath = pathlib.Path(drc.__file__).parent.resolve()
         rulesFiles = [pathItem.stem for pathItem in list(drcPath.glob("*.lydrc"))]
         dlg.DRCRunSetCB.addItems(rulesFiles)

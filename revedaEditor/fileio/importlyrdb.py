@@ -4,22 +4,25 @@ KLayout DRC XML report to dictionary converter using lxml.
 Handles nested categories, cells, and DRC violations with polygons.
 """
 
-from os import error
+
 from lxml import etree
 from typing import Dict, Any, List
 import sys
-from PySide6.QtGui import (QPolygonF, QPen, QColor, QBrush)
+from PySide6.QtGui import (QPolygonF, QPen, QColor)
 from PySide6.QtWidgets import (QGraphicsPolygonItem, )
 from PySide6.QtCore import (QPoint, Qt, )
+from revedaEditor.backend.pdkPaths import importPDKModule
+fabproc = importPDKModule('process')
+
+
 
 
 class DRCErrorPolygon(QGraphicsPolygonItem):
     def __init__(self, polygon: QPolygonF) -> None:
         super().__init__(polygon)
-        self.pen = QPen(QColor(255, 0, 0), 20, Qt.DashLine)
         # self.setBrush(QBrush(QColor(255, 0, 0, 100)))
         self.setZValue(100)
-        self.setPen(self.pen)
+        self.setPen(QPen(QColor(255, 0, 0), 20, Qt.DashLine))
         self._errorCategory = ''
         self._cell = ''
 
@@ -30,7 +33,7 @@ class DRCErrorPolygon(QGraphicsPolygonItem):
         return f'DRCErrorPolygon({self.polygon})'
 
     @property
-    def errorCategory(self, value: str):
+    def errorCategory(self):
         return self._errorCategory
 
     @errorCategory.setter
@@ -39,7 +42,7 @@ class DRCErrorPolygon(QGraphicsPolygonItem):
             self._errorCategory = value
 
     @property
-    def cell(self, value: str):
+    def cell(self):
         return self._cell
 
     @cell.setter
@@ -86,12 +89,8 @@ class DRCOutput():
         for cat in categoryElement.findall('category'):
             name = cat.find('name')
             desc = cat.find('description')
-            categoriesDict = {
-                'name': name.text if name is not None else None,
-                'description': desc.text if desc is not None else None,
-                'subcategories': self.parseCategories(cat) if cat.find('categories') is not None else {}
-            }
-            cats[categoriesDict['name']] = categoriesDict
+            cats[
+                name.text if name is not None else ''] = desc.text if desc is not None else ''
         return cats
 
     def parseCells(self, cells_el: etree._Element) -> Dict[str, Dict]:
@@ -105,7 +104,8 @@ class DRCOutput():
     def xmltoDict(self, element: etree._Element) -> Dict[str, Any]:
         """Recursively convert lxml Element to dictionary."""
         if element.text and element.text.strip():
-            return {'tag': element.tag, 'text': element.text.strip(), 'tail': element.tail}
+            return {'tag': element.tag, 'text': element.text.strip(),
+                    'tail': element.tail}
 
         result = {'tag': element.tag}
 
@@ -142,8 +142,8 @@ class DRCOutput():
                     pt = pt.strip()
                     if ',' in pt:
                         try:
-                            x, y = map(int, pt.split(','))
-                            coords.append(QPoint(x, y))
+                            x, y = map(float, pt.split(','))
+                            coords.append(QPoint(x*fabproc.dbu, y*fabproc.dbu))
                         except ValueError:
                             continue
                 return coords
@@ -159,15 +159,18 @@ class DRCOutput():
                 return ('edge-pair', parseCoords(points), points)
             return ('', [], [])
 
-
         """Parse violations/items section."""
         violations = []
         for item in items_el.findall('item'):
             violation = {
-                'category': item.find('category').text.strip("'") if item.find('category') is not None else None,
-                'cell': item.find('cell').text if item.find('cell') is not None else None,
-                'visited': item.find('visited').text == 'true' if item.find('visited') is not None else False,
-                'multiplicity': int(item.find('multiplicity').text) if item.find('multiplicity') is not None else 1,
+                'category': item.find('category').text.strip("'") if item.find(
+                    'category') is not None else None,
+                'cell': item.find('cell').text if item.find(
+                    'cell') is not None else None,
+                'visited': item.find('visited').text == 'true' if item.find(
+                    'visited') is not None else False,
+                'multiplicity': int(item.find('multiplicity').text) if item.find(
+                    'multiplicity') is not None else 1,
                 'polygons': [],
                 'points': []
             }
@@ -181,14 +184,13 @@ class DRCOutput():
                         violation['points'].append(points)
                         polygonItem = DRCErrorPolygon(QPolygonF(polyCoords))
                         polygonItem.cell = violation['cell']
-                        polygonItem.errorType = errorType
-                        polygonItem.setToolTip(f'{violation['cell']}, {violation['category']}, {violation["points"]}')
+                        polygonItem.errorCategory = errorType
+                        polygonItem.setToolTip(
+                            f'{violation['cell']}, {violation['category']}, {violation["points"]}')
                         violation['polygons'].append(polygonItem)
 
             violations.append(violation)
         return violations
-
-    
 
 
 def main(file_path: str):

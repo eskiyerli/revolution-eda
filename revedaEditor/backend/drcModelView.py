@@ -21,21 +21,26 @@
 #     License: Mozilla Public License 2.0
 #     Licensor: Revolution Semiconductor (Registered in the Netherlands)
 
-from PySide6.QtCore import QAbstractTableModel, Qt, QModelIndex, Signal
-from PySide6.QtWidgets import QTableView
+from PySide6.QtCore import (QAbstractTableModel, Qt, QModelIndex, QPersistentModelIndex, Signal)
+from PySide6.QtWidgets import (QHeaderView, QTableView)
+from PySide6.QtGui import QFont
 from typing import List, Dict, Any
 
 
 class DRCTableModel(QAbstractTableModel):
-    def __init__(self, data: List[Dict[str, Any]]):
+    def __init__(self, violations: List[Dict[str, Any]],
+                 categories: Dict[str, str]):
         super().__init__()
-        self._data = data
-        self._headers = ['Category', 'Cell', 'Visited', 'Multiplicity', 'Polygons', 'Points']
+        self._data = violations
 
-    def rowCount(self, parent=QModelIndex()):
+        self._categories = categories
+        self._headers = ['Category', 'Description', 'Cell', 'Visited',
+                         'Multiplicity', 'Points']
+
+    def rowCount(self, parent: QModelIndex | QPersistentModelIndex = QModelIndex()) -> int:
         return len(self._data)
 
-    def columnCount(self, parent=QModelIndex()):
+    def columnCount(self, parent: QModelIndex | QPersistentModelIndex = QModelIndex()):
         return len(self._headers)
 
     def data(self, index, role=Qt.DisplayRole):
@@ -43,6 +48,7 @@ class DRCTableModel(QAbstractTableModel):
             return None
 
         row = self._data[index.row()]
+
         col = index.column()
 
         # Handle case where row might be a string instead of dict
@@ -52,38 +58,56 @@ class DRCTableModel(QAbstractTableModel):
         if col == 0:
             return row.get('category', '')
         elif col == 1:
-            return row.get('cell', '')
+            return self._categories.get(row.get('category', ''))
         elif col == 2:
-            return str(row.get('visited', ''))
+            return row.get('cell', '')
         elif col == 3:
-            return str(row.get('multiplicity', ''))
+            return str(row.get('visited', ''))
         elif col == 4:
-            polygons = row.get('polygons', [])
-            return f"{len(polygons)} polygon(s)" if polygons else "0 polygon(s)"
+            return str(row.get('multiplicity', ''))
         elif col == 5:
             return str(row.get('points', ''))
 
         return None
 
     def headerData(self, section, orientation, role=Qt.DisplayRole):
-        if orientation == Qt.Horizontal and role == Qt.DisplayRole:
-            return self._headers[section]
+        if orientation == Qt.Horizontal:
+            if role == Qt.DisplayRole:
+                return self._headers[section]
+            elif role == Qt.FontRole:
+                font = QFont()
+                font.setBold(True)
+                return font
         return None
 
     def getPolygons(self, row):
         return self._data[row]['polygons']
+    
+    def markVisited(self, row):
+        if 0 <= row < len(self._data):
+            self._data[row]['visited'] = True
+            index = self.index(row, 3)  # Column 3 is 'Visited'
+            self.dataChanged.emit(index, index)
 
 
 class DRCTableView(QTableView):
     polygonSelected = Signal(list)  # Signal to emit selected polygons
 
-    def __init__(self, data):
+    def __init__(self, data, categories):
         super().__init__()
-        self.model = DRCTableModel(data)
+        self.model = DRCTableModel(data, categories)
         self.setModel(self.model)
         self.selectionModel().currentRowChanged.connect(self.onRowChanged)
+        self.header = self.horizontalHeader()
+        self.header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        self.header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        self.header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        self.header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        self.header.setStretchLastSection(True)
 
     def onRowChanged(self, current, previous):
         if current.isValid():
-            polygons = self.model.getPolygons(current.row())
+            row = current.row()
+            self.model.markVisited(row)
+            polygons = self.model.getPolygons(row)
             self.polygonSelected.emit(polygons)
