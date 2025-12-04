@@ -77,7 +77,7 @@ class textureCache:
         return cls._file_content_cache[filePath]
 
     @classmethod
-    def createImage(cls, filePath: Path, color: QColor, scale: int = 1)  -> QImage:
+    def createImage(cls, filePath: Path, color: QColor, scale: int = 1) -> QImage:
         content = cls.readFileContent(str(filePath))
 
         # Use numpy's loadtxt for faster parsing of text data
@@ -131,21 +131,21 @@ class layoutShape(QGraphicsItem):
     _color_cache = {}
     # Class-level pen/brush lookup table
     _pen_brush_cache = {}
-    
+
     def __init__(self) -> None:
         super().__init__()
-        
+
         # Batch flag operations for better performance
-        flags = (QGraphicsItem.ItemIsSelectable | 
-                QGraphicsItem.ItemSendsGeometryChanges |
-                QGraphicsItem.ItemIsFocusable |
-                QGraphicsItem.ItemUsesExtendedStyleOption)
+        flags = (QGraphicsItem.ItemIsSelectable |
+                 QGraphicsItem.ItemSendsGeometryChanges |
+                 QGraphicsItem.ItemIsFocusable |
+                 QGraphicsItem.ItemUsesExtendedStyleOption)
         self.setFlags(flags)
-        
+
         # Single method calls
         self.setAcceptHoverEvents(True)
         self.setCacheMode(QGraphicsItem.DeviceCoordinateCache)
-        
+
         # Direct attribute initialization (faster than individual assignments)
         self._pen = self._brush = None
         self._angle = 0
@@ -153,14 +153,14 @@ class layoutShape(QGraphicsItem):
         self._offset = QPoint(0, 0)
         self._flipTuple = (1, 1)
         self._transformedBrush = self._lastScale = None
-    
+
     @classmethod
     def _get_cached_color(cls, color_name):
         if color_name not in cls._color_cache:
             cls._color_cache[color_name] = QColor(color_name)
         return cls._color_cache[color_name]
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return "layoutShape()"
 
     def itemChange(self, change, value):
@@ -171,19 +171,19 @@ class layoutShape(QGraphicsItem):
 
     def _definePensBrushes(self, layer):
         # Create cache key from layer properties
-        cache_key = (layer.name, layer.purpose, layer.pcolor.name(), 
-                    layer.pwidth, layer.pstyle, layer.bcolor.name(), layer.btexture)
-        
+        cache_key = (layer.name, layer.purpose, layer.pcolor.name(),
+                     layer.pwidth, layer.pstyle, layer.bcolor.name(), layer.btexture)
+
         if cache_key not in self._pen_brush_cache:
             # Import PDK module when needed to avoid circular imports
             laylyr = importPDKModule('layoutLayers')
             # Create objects only once per unique layer configuration
             texturePath = Path(laylyr.__file__).parent.joinpath(layer.btexture)
             _pixmap = textureCache.getCachedPixmap(texturePath, layer.bcolor)
-            
+
             yellow = self._get_cached_color("yellow")
             red = self._get_cached_color("red")
-            
+
             self._pen_brush_cache[cache_key] = {
                 'pen': QPen(layer.pcolor, layer.pwidth, layer.pstyle),
                 'brush': QBrush(layer.bcolor, _pixmap),
@@ -192,7 +192,7 @@ class layoutShape(QGraphicsItem):
                 'stretchPen': QPen(red, layer.pwidth, Qt.SolidLine),
                 'stretchBrush': QBrush(red, _pixmap)
             }
-        
+
         # Assign from cache
         cached = self._pen_brush_cache[cache_key]
         self._pen = cached['pen']
@@ -297,7 +297,7 @@ class layoutShape(QGraphicsItem):
         Do not propagate event if shape needs to keep still.
         """
         if self.scene() and (
-            self.scene().editModes.changeOrigin or self.scene().drawMode
+                self.scene().editModes.changeOrigin or self.scene().drawMode
         ):
             return False
         else:
@@ -335,16 +335,16 @@ class layoutShape(QGraphicsItem):
         # Early exit if no change
         if self._flipTuple == flipState:
             return
-        
+
         # Cache center calculation
         if not hasattr(self, '_cached_center'):
             self._cached_center = self.boundingRect().center()
         center = self._cached_center
-        
+
         # Direct transform creation is faster than modifying existing
         cx, cy = center.x(), center.y()
         sx, sy = flipState
-        
+
         transform = QTransform(sx, 0, 0, sy, cx - sx * cx, cy - sy * cy)
         self.setTransform(transform)
         self._flipTuple = flipState
@@ -364,10 +364,10 @@ class layoutRect(layoutShape):
     sides = ["Left", "Right", "Top", "Bottom"]
 
     def __init__(
-        self,
-        start: QPoint,
-        end: QPoint,
-        layer: ddef.layLayer,
+            self,
+            start: QPoint,
+            end: QPoint,
+            layer: ddef.layLayer,
     ):
         super().__init__()
         self._rect = QRectF(start, end).normalized()
@@ -392,11 +392,8 @@ class layoutRect(layoutShape):
             self.sides[3]: (lambda r: r.bottomLeft(), lambda r: r.bottomRight())
         }
 
-
-
     def __repr__(self):
         return f"layoutRect({self._start}, {self._end}, {self._layer})"
-
 
     def paint(self, painter, option, widget):
         # Cache the rect to avoid multiple attribute lookups
@@ -587,28 +584,28 @@ class layoutRect(layoutShape):
 class layoutInstance(layoutShape):
     def __init__(self, shapes: list[layoutShape]):
         super().__init__()
-        
+
         # Direct attribute initialization
         self._shapes = shapes
         self._draft = False
         self._libraryName = self._cellName = self._viewName = self._instanceName = ""
         self._counter = 0
-        
+
         # Cache pen creation
         self._selectedPen = self._get_cached_color("yellow")
         pen = QPen(self._selectedPen, 4, Qt.DashLine)
         pen.setCosmetic(True)
         self._selectedPen = pen
-        
+
         # Batch flag operations
         self.setFiltersChildEvents(True)
         self.setHandlesChildEvents(True)
         self.setFlag(QGraphicsItem.ItemContainsChildrenInShape, True)
-        
+
         # Defer expensive operations
         self._start = None
         self._shapes_set = False
-        
+
         # Set shapes only if not empty
         if shapes:
             self.setShapes()
@@ -622,7 +619,7 @@ class layoutInstance(layoutShape):
             item.setFlags(QGraphicsItem.ItemStacksBehindParent)
             item.setFlag(QGraphicsItem.ItemIsSelectable, False)
             item.setParentItem(self)
-        
+
         self._shapes_set = True
 
     def removeShapes(self):
@@ -644,14 +641,13 @@ class layoutInstance(layoutShape):
             painter.setPen(self._selectedPen)
             painter.drawRect(self.childrenBoundingRect())
 
-
     def sceneEvent(self, event):
         """
         Do not propagate event if shape needs to keep still.
         """
         if not (
-            self.scene().selectModes.selectInstance
-            or self.scene().selectModes.selectAll
+                self.scene().selectModes.selectInstance
+                or self.scene().selectModes.selectAll
         ):
             return False
         else:
@@ -731,10 +727,10 @@ class layoutPcell(layoutInstance):
 
 class layoutLine(layoutShape):
     def __init__(
-        self,
-        draftLine: QLineF,
-        layer: ddef.layLayer,
-        width: float = 1.0,
+            self,
+            draftLine: QLineF,
+            layer: ddef.layLayer,
+            width: float = 1.0,
     ):
         super().__init__()
         self._draftLine = draftLine
@@ -765,16 +761,15 @@ class layoutLine(layoutShape):
 
 # "layer", "name", "mode", "width", "startExtend", "endExtend"
 
-
 class layoutPath(layoutShape):
     def __init__(
-        self,
-        draftLine: QLineF,
-        layer: ddef.layLayer,
-        width: float = 1.0,
-        startExtend: int = 0,
-        endExtend: int = 0,
-        mode: int = 0,
+            self,
+            draftLine: QLineF,
+            layer: ddef.layLayer,
+            width: float = 1.0,
+            startExtend: int = 0,
+            endExtend: int = 0,
+            mode: int = 0,
     ):
         """
         Initialize the class instance.
@@ -803,7 +798,6 @@ class layoutPath(layoutShape):
         self._angle = 0
         self._rectCorners(self._draftLine.angle())
         self.setZValue(self._layer.z)
-        self._drcPen = QPen(QColor(255, 255, 0), 1, Qt.DashLine)
 
     def __repr__(self):
         return (
@@ -825,7 +819,8 @@ class layoutPath(layoutShape):
                 self._createVerticalPath(angle)
         self._draftLine.setAngle(0)
         self._rect = self._extractRect()
-
+        self.setTransformOriginPoint(self.draftLine.p1())
+        self.setRotation(-self._angle)
 
     def _createManhattanPath(self, angle: float) -> None:
         """
@@ -873,14 +868,14 @@ class layoutPath(layoutShape):
             direction /= direction.manhattanLength()
             perpendicular = QPointF(-direction.y(), direction.x())
             point1 = (
-                self._draftLine.p1()
-                + perpendicular * self._width * 0.5
-                - direction * self._startExtend
+                    self._draftLine.p1()
+                    + perpendicular * self._width * 0.5
+                    - direction * self._startExtend
             ).toPoint()
             point2 = (
-                self._draftLine.p2()
-                - perpendicular * self._width * 0.5
-                + direction * self._endExtend
+                    self._draftLine.p2()
+                    - perpendicular * self._width * 0.5
+                    + direction * self._endExtend
             ).toPoint()
             rect = QRectF(point1, point2).normalized()
         return rect
@@ -998,27 +993,27 @@ class layoutPath(layoutShape):
             eventPos = event.pos().toPoint()
             if self._stretch:
                 if (
-                    eventPos - self._draftLine.p1().toPoint()
+                        eventPos - self._draftLine.p1().toPoint()
                 ).manhattanLength() <= self.scene().snapDistance:
                     self._stretchSide = "p1"
                     self.setCursor(Qt.SizeHorCursor)
                 elif (
-                    eventPos - self._draftLine.p2().toPoint()
+                        eventPos - self._draftLine.p2().toPoint()
                 ).manhattanLength() <= self.scene().snapDistance:
                     self._stretchSide = "p2"
                     self.setCursor(Qt.SizeHorCursor)
                 self.scene().stretchPath(self, self._stretchSide)
-
+                
 
 class layoutRuler(layoutShape):
     def __init__(
-        self,
-        draftLine: QLineF,
-        width: float,
-        tickGap: float,
-        tickLength: int,
-        tickFont: QFont,
-        mode: int = 0,
+            self,
+            draftLine: QLineF,
+            width: float,
+            tickGap: float,
+            tickLength: int,
+            tickFont: QFont,
+            mode: int = 0,
     ):
         """
         Initialize the TickLine object.
@@ -1113,52 +1108,59 @@ class layoutRuler(layoutShape):
         self._angle = angle
 
     def _createRulerTicks(self):
-        self._tickTuples = list()
-        direction = QPoint(0, 0)
-        perpendicular = QPoint(0, 0)
-        if self._draftLine.length() >= self._tickGap:
-            numberOfTicks = math.ceil(self._draftLine.length() / self._tickGap)
-            direction = self._draftLine.p2() - self._draftLine.p1()
-            if direction != QPoint(
-                0, 0
-            ):  # no need for a tick when the line is zero length
-                direction /= direction.manhattanLength()
-                perpendicular = QPointF(-direction.y(), direction.x())
+        self._tickTuples = []
+        direction = self._draftLine.p2() - self._draftLine.p1()
+
+        if direction != QPointF(0, 0):
+            length = direction.manhattanLength()
+            direction = QPointF(direction.x() / length, direction.y() / length)
+            perpendicular = QPointF(-direction.y(), direction.x())
+
+            if self._draftLine.length() >= self._tickGap:
+                # Pre-calculate common values
+                p1 = self._draftLine.p1()
+                perp_tick = perpendicular * self._tickLength
+                numberOfTicks = math.ceil(self._draftLine.length() / self._tickGap)
+
+                # Generate ticks in single loop
                 for i in range(numberOfTicks):
+                    tick_pos = p1 + direction * (i * self._tickGap)
+                    tick_line = QLineF(tick_pos, tick_pos + perp_tick)
                     self._tickTuples.append(
                         ddef.rulerTuple(
-                            self._draftLine.p1()
-                            + i * self._tickGap * direction
-                            + perpendicular * self._tickLength,
-                            QLineF(
-                                self._draftLine.p1() + i * self._tickGap * direction,
-                                self._draftLine.p1()
-                                + i * self._tickGap * direction
-                                + perpendicular * self._tickLength,
-                            ),
-                            str(float(i * self._tickGap)),
+                            tick_pos + perp_tick,
+                            (tick_line.p1(), tick_line.p2()),
+                            str(float(i))
                         )
                     )
-        self._tickTuples.append(
-            ddef.rulerTuple(
-                self.draftLine.p2() + direction * 2,
-                QLineF(
-                    self._draftLine.p2(),
-                    self.draftLine.p2() + +perpendicular * self._tickLength,
-                ),
-                str(round(self._draftLine.length() / self._tickGap, 3)),
+
+            # Final tick
+            p2 = self._draftLine.p2()
+            final_line = QLineF(p2, p2 + perpendicular * self._tickLength)
+            self._tickTuples.append(
+                ddef.rulerTuple(
+                    p2 + direction * 2,
+                    (final_line.p1(), final_line.p2()),
+                    str(round(self._draftLine.length() / self._tickGap, 3))
+                )
             )
-        )
+
         self._rect = QRectF(
-            self._draftLine.p1().toPoint(), self._draftLine.p2().toPoint()
+            self._draftLine.p1().toPoint(),
+            self._draftLine.p2().toPoint()
         ).normalized()
 
     def boundingRect(self) -> QRectF:
-        return self._rect.normalized().adjusted(
+        # For vertical rulers (90° or 270°), swap width and height adjustments
+        if self._angle == 90 or self._angle == 270:
+            return QRectF(self._rect).normalized().adjusted(
+                -self._fontHeight, -self._fontWidth, self._fontHeight, self._fontWidth
+            )
+        return QRectF(self._rect).normalized().adjusted(
             -self._fontWidth, -self._fontHeight, self._fontWidth, self._fontHeight
         )
 
-    def paint(self, painter, option, widget):
+    def paint(self, painter, option, widget=None):
         if self.isSelected():
             painter.setPen(self._selectedPen)
             painter.drawRect(self.childrenBoundingRect())
@@ -1167,7 +1169,7 @@ class layoutRuler(layoutShape):
         painter.drawLine(self._draftLine)
         painter.setFont(self._tickFont)
         for tickTuple in self._tickTuples:
-            painter.drawLine(tickTuple.line)
+            painter.drawLine(tickTuple.line[0], tickTuple.line[1])
             painter.save()
             painter.translate(tickTuple.point)
             painter.rotate(self.angle)
@@ -1218,15 +1220,15 @@ class layoutLabel(layoutShape):
     LABEL_SCALE = 10
 
     def __init__(
-        self,
-        start: QPoint,
-        labelText: str,
-        fontFamily: str,
-        fontStyle: str,
-        fontHeight: str,
-        labelAlign: str,
-        labelOrient: str,
-        layer: ddef.layLayer,
+            self,
+            start: QPoint,
+            labelText: str,
+            fontFamily: str,
+            fontStyle: str,
+            fontHeight: str,
+            labelAlign: str,
+            labelOrient: str,
+            layer: ddef.layLayer,
     ):
         super().__init__()
         self._start = start
@@ -1241,7 +1243,7 @@ class layoutLabel(layoutShape):
         self._labelFont = QFont(fontFamily)
         self._labelFont.setStyleName(fontStyle)
         self._labelFont.setKerning(False)
-        self._labelFont.setPointSize(int(float(self._fontHeight)*self.LABEL_SCALE))
+        self._labelFont.setPointSize(int(float(self._fontHeight) * self.LABEL_SCALE))
         # self.setOpacity(1)
         self._fm = QFontMetrics(self._labelFont)
         self._rect = self._fm.boundingRect(self._labelText)
@@ -1377,7 +1379,7 @@ class layoutLabel(layoutShape):
     def fontHeight(self, value: str):
         self.prepareGeometryChange()
         self._fontHeight = value
-        self._labelFont.setPointSize(int(float(self._fontHeight)*self.LABEL_SCALE))
+        self._labelFont.setPointSize(int(float(self._fontHeight) * self.LABEL_SCALE))
         self._fm = QFontMetrics(self._labelFont)
         self._rect = self._fm.boundingRect(self._labelText)
 
@@ -1405,13 +1407,13 @@ class layoutPin(layoutShape):
     pinTypes = ["Signal", "Ground", "Power", "Clock", "Digital", "Analog"]
 
     def __init__(
-        self,
-        start,
-        end,
-        pinName: str,
-        pinDir: str,
-        pinType: str,
-        layer: ddef.layLayer,
+            self,
+            start,
+            end,
+            pinName: str,
+            pinDir: str,
+            pinType: str,
+            layer: ddef.layLayer,
     ):
         super().__init__()
         self._pinName = pinName
@@ -1427,7 +1429,6 @@ class layoutPin(layoutShape):
         self._stretchSide = None
         self._stretchPen = QPen(QColor("red"), self._layer.pwidth, Qt.SolidLine)
         self.setZValue(self._layer.z)
-
 
     def __repr__(self):
         return (
@@ -1582,11 +1583,11 @@ class layoutPin(layoutShape):
 
 class layoutVia(layoutShape):
     def __init__(
-        self,
-        start: QPoint,
-        viaDefTuple: ddef.viaDefTuple,
-        width: int,
-        height: int,
+            self,
+            start: QPoint,
+            viaDefTuple: ddef.viaDefTuple,
+            width: int,
+            height: int,
     ):
         super().__init__()
         end = start + QPoint(width, height)
@@ -1600,7 +1601,6 @@ class layoutVia(layoutShape):
         self._height = height
         self._definePensBrushes(self._layer)
         self.setZValue(self._layer.z)
-
 
     def __repr__(self):
         return f"layoutVia({self._start}, {self._end}, {self._layer})"
@@ -1684,17 +1684,17 @@ class layoutViaArray(layoutShape):
                  ):
         super().__init__()
         self._prototype_via = prototype_via
-        self._ynum = ynum # number of rows
-        self._xnum = xnum # number of columns
-        self._xs = xs # column spacing
-        self._ys = ys # row spacing
-        self._start = start # top-left corner location
-        self._via =  layoutVia(
-                    self._start,
-                    self._prototype_via.viaDefTuple,
-                    self._prototype_via.width,
-                    self._prototype_via.height
-                )
+        self._ynum = ynum  # number of rows
+        self._xnum = xnum  # number of columns
+        self._xs = xs  # column spacing
+        self._ys = ys  # row spacing
+        self._start = start  # top-left corner location
+        self._via = layoutVia(
+            self._start,
+            self._prototype_via.viaDefTuple,
+            self._prototype_via.width,
+            self._prototype_via.height
+        )
         self._via_array = []
         self._create_array()
         self.setFiltersChildEvents(True)
@@ -1764,7 +1764,6 @@ class layoutViaArray(layoutShape):
             painter.setPen(self._selectedPen)
             painter.drawRect(self.childrenBoundingRect())
 
-
     @property
     def via_array(self):
         return self._via_array
@@ -1778,7 +1777,7 @@ class layoutViaArray(layoutShape):
         return self._xnum
 
     @property
-    def start(self)-> QPoint:
+    def start(self) -> QPoint:
         return self._start
 
     @property
@@ -1971,14 +1970,14 @@ class layoutViaArray(layoutShape):
 
 class layoutPolygon(layoutShape):
     __slots__ = ('_points', '_layer', '_polygon', '_selectedCorner', '_selectedCornerIndex')
-    
+
     def __init__(self, points: list, layer: ddef.layLayer):
         super().__init__()
         self._points = points
         self._layer = layer
         self._selectedCorner = QPoint(99999, 99999)
         self._selectedCornerIndex = 999
-        
+
         # Defer expensive operations
         self._polygon = None
         self._definePensBrushes(self._layer)
@@ -1992,7 +1991,7 @@ class layoutPolygon(layoutShape):
         # Cache frequently accessed values
         selected = self.isSelected()
         scale = self.scene().views()[0].transform().m11()
-        
+
         # Set pen and brush based on selection state
         if selected:
             painter.setPen(self._selectedPen)
@@ -2003,10 +2002,9 @@ class layoutPolygon(layoutShape):
         else:
             painter.setPen(self._pen)
             self._updateTransformedBrush(self._brush, scale)
-        
+
         painter.setBrush(self._transformedBrush)
         painter.drawPolygon(self.polygon)
-
 
     def boundingRect(self) -> QRectF:
         return self.polygon.boundingRect()
@@ -2051,7 +2049,7 @@ class layoutPolygon(layoutShape):
                 self.setFlag(QGraphicsItem.ItemIsMovable, False)
                 for point in self._points:
                     if (
-                        eventPos - point
+                            eventPos - point
                     ).manhattanLength() <= self.scene().snapDistance:
                         self._selectedCorner = point
                         self._selectedCornerIndex = self._points.index(point)

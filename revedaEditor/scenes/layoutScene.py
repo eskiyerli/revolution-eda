@@ -54,6 +54,7 @@ import revedaEditor.backend.libraryMethods as libm
 import revedaEditor.backend.libraryModelView as lmview
 import revedaEditor.backend.undoStack as us
 import revedaEditor.common.layoutShapes as lshp  # import layout shapes
+import revedaEditor.fileio.gdsExport as gdse
 import revedaEditor.fileio.layoutEncoder as layenc
 import revedaEditor.fileio.loadJSON as lj
 import revedaEditor.gui.editFunctions as edf
@@ -164,7 +165,7 @@ class layoutScene(editorScene):
         self._newRuler = None
         self._selectionRectItem = None
         self.rulersSet = set()
-        self.rulerFont = self.setRulerFont(12)
+        self.rulerFont = self.setRulerFont(12*fabproc.dbu)
         self.rulerFont.setKerning(False)
         self.rulerTickGap = fabproc.dbu
         self.rulerTickLength = 10
@@ -616,6 +617,50 @@ class layoutScene(editorScene):
             self.logger.error(f"Unexpected error while saving layout: {str(e)}")
             raise
 
+
+    def exportCellGDS(self, gdsExportDir: pathlib.Path, gdsUnit: float,
+                      gdsPrecision: float):
+        gdsExportPath: pathlib.Path = gdsExportDir / f"{self.cellName}.gds"
+        try:
+            
+            # reprocess the layout to get the layout positions right.
+            topLevelItems = [
+                    item
+                    for item in self.itemsRefSet
+                    if item.parentItem() is None
+                    and isinstance(item, tuple(self.LAYOUT_SHAPES))
+                ]
+            
+            decodedData = json.loads(
+                json.dumps(topLevelItems, cls=layenc.layoutEncoder))
+            
+            layoutItems = [lj.layoutItems(self).create(item) for
+                        item in decodedData]
+
+            gdsExportObj = gdse.gdsExporter(self.cellName, layoutItems,
+                                            gdsExportPath)
+            gdsExportObj.unit = gdsUnit
+            gdsExportObj.precision = gdsPrecision
+
+            self.logger.info("GDS Export started")
+            with self.measureDuration():
+                gdsExportObj.gdsExport()
+            self.logger.info(
+                "GDS Export finished")
+            
+        except ValueError as e:
+            self.logger.error(f"Invalid layout data: {str(e)}")
+            raise
+
+        except (IOError, TypeError) as e:
+            self.logger.error(f"Failed to export layout to {gdsExportPath}: {str(e)}")
+            raise
+
+        except Exception as e:
+            self.logger.error(f"Unexpected error while exporting layout: {str(e)}")
+            raise
+
+        
     def loadDesign(self, filePathObj: pathlib.Path) -> bool:
         """Load the layout cell from the given JSON file."""
         try:
@@ -1160,9 +1205,11 @@ class layoutScene(editorScene):
             self.addListUndoStack(copyShapesList)
 
     def deleteAllRulers(self):
-        for ruler in self.rulersSet:
-            undoCommand = us.deleteShapeUndo(self, ruler)
-            self.undoStack.push(undoCommand)
+        sceneRulerSet = {item for item in self.items() if isinstance(item, lshp.layoutRuler)}
+        self.deleteListUndoStack(list(sceneRulerSet))
+        # for ruler in self.rulersSet:
+        #     undoCommand = us.deleteShapeUndo(self, ruler)
+        #     self.undoStack.push(undoCommand)
 
     def goDownHier(self):
         if self.selectedItems():

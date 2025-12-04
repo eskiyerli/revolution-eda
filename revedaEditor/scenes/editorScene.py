@@ -402,6 +402,10 @@ class editorScene(QGraphicsScene):
         undoCommand = us.addShapesUndo(self, itemList)
         self.undoStack.push(undoCommand)
 
+    def deleteListUndoStack(self, itemList: List[QGraphicsItem]) -> None:
+        undoCommand = us.deleteShapesUndo(self, itemList)
+        self.undoStack.push(undoCommand)
+
     def undoGroupMoveStack(self, items: List[QGraphicsItem],
                          startPos: List[QPoint],endPos: QPoint) -> None:
 
