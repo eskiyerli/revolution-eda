@@ -348,7 +348,6 @@ class schematicEditor(edw.editorWindow):
         dlg = fd.netlistExportDialogue(self)
         dlg.libNameEdit.setText(self.libName)
         dlg.cellNameEdit.setText(self.cellName)
-
         netlistableViews = self._getNetlistableViews()
         dlg.viewNameCombo.addItems(netlistableViews)
 
@@ -379,23 +378,27 @@ class schematicEditor(edw.editorWindow):
         self.switchViewList = [item.strip() for item in dlg.switchViewEdit.text().split(",")]
         self.stopViewList = [dlg.stopViewEdit.text().strip()]
 
-        subDirPath = self.appMainW.simulationOutputPath / self.cellName / selectedViewName
+        subDirPath = self.appMainW.simulationOutputPath / self.libName / self.cellName / selectedViewName
         subDirPath.mkdir(parents=True, exist_ok=True)
 
         netlistFilePath = subDirPath / f"{self.cellName}_{selectedViewName}.cir"
+        if dlg.topAsSubcktCheckBox.isChecked():
+            topSubCkt = True
+        else:
+            topSubCkt = False
 
-        netlistObj = self.createNetlistObject(selectedViewName, netlistFilePath)
+        netlistObj = self.createNetlistObject(selectedViewName, netlistFilePath, topSubCkt)
 
         if netlistObj:
             # self.runNetlisting(netlistObj, self.appMainW.threadPool)
             with self.measureDuration():
                 netlistObj.writeNetlist()
 
-    def createNetlistObject(self, view_name: str, filePath: pathlib.Path):
+    def createNetlistObject(self, view_name: str, filePath: pathlib.Path, topSubCkt: bool):
         if "schematic" in view_name:
-            return xyceNetlist(self, filePath)
+            return xyceNetlist(self, filePath, False, topSubCkt)
         elif "config" in view_name:
-            netlist_obj = xyceNetlist(self, filePath, True)
+            netlist_obj = xyceNetlist(self, filePath, True, topSubCkt)
             config_item = libm.findViewItem(self.libraryView.libraryModel, self.libName, self.cellName, view_name)
             with config_item.data(Qt.UserRole + 2).open(mode="r") as f:
                 netlist_obj.configDict = json.load(f)[2]
@@ -611,7 +614,7 @@ class schematicContainer(QWidget):
 
 
 class xyceNetlist:
-    def __init__(self, schematic, filePathObj: pathlib.Path, useConfig: bool = False, ):
+    def __init__(self, schematic, filePathObj: pathlib.Path, useConfig: bool = False, topSubckt: bool = False):
         self.filePathObj = filePathObj
         self.schematic = schematic
         self._use_config = useConfig
@@ -621,13 +624,14 @@ class xyceNetlist:
         self._configDict = None
         self.libItem = libm.getLibItem(self.schematic.libraryView.libraryModel, self.schematic.libName, )
         self.cellItem = libm.getCellItem(self.libItem, self.schematic.cellName)
-
+        self.subcircuitDefs = []
         self._switchViewList = schematic.switchViewList
         self._stopViewList = schematic.stopViewList
         self.netlistedViewsSet = set()  # keeps track of netlisted views.
         self.includeLines = set()  # keeps track of include lines.
         self.vamodelLines = set()  # keeps track of vamodel lines.
         self.vahdlLines = set()  # keeps track of *.HDL lines.
+        self.topSubckt = topSubckt
 
     def __repr__(self):
         return f"xyceNetlist(filePathObj={self.filePathObj}, schematic={self.schematic}, useConfig={self._use_config})"
@@ -675,7 +679,7 @@ class xyceNetlist:
             for line in self.vahdlLines:
                 cirFile.write(f"{line}\n")
 
-    def collectSubcircuitContent(self, schematic, content):
+    def collectSubcircuitContent(self, schematic: schematicEditor, content):
         """Collect subcircuit content without writing to file."""
         schematicScene = schematic.centralW.scene
         schematicScene.nameSceneNets()
@@ -726,16 +730,29 @@ class xyceNetlist:
     def configDict(self, value: dict):
         self._configDict = value
 
-    def recursiveNetlisting(self, schematic: schematicEditor, cirFile):
+    def recursiveNetlisting(self, schematicEdObj: schematicEditor, cirFile):
         """
         Recursively traverse all sub-circuits and netlist them.
         """
-        schematicScene = schematic.centralW.scene
-        schematicScene.nameSceneNets()  # name all nets in the schematic
-        sceneSymbolSet = schematicScene.findSceneSymbolSet()
-        schematicScene.generatePinNetMap(sceneSymbolSet)
-        for elementSymbol in sceneSymbolSet:
-            self.processElementSymbol(elementSymbol, schematic, cirFile)
+        if self.topSubckt:
+            viewTuple = ddef.viewTuple(schematicEdObj.libName, schematicEdObj.cellName, schematicEdObj.viewName)
+            self.netlistedViewsSet.add(viewTuple)
+            schematicPinsSet = schematicEdObj.centralW.scene.findSceneSchemPinsSet()
+            pinNames = [pin.pinName for pin in schematicPinsSet]
+            expandedPinsString = self.expandPinNames(pinNames)
+
+            subcktContent = []
+            self.collectSubcircuitContent(schematicEdObj, subcktContent)
+            subcktDef = f"\n.SUBCKT {schematicEdObj.cellName} {expandedPinsString}\n" + '\n'.join(
+                subcktContent) + "\n.ENDS\n"
+            self.subcircuitDefs.append(subcktDef)
+        else:
+            schematicScene = schematicEdObj.centralW.scene
+            schematicScene.nameSceneNets()  # name all nets in the schematic
+            sceneSymbolSet = schematicScene.findSceneSymbolSet()
+            schematicScene.generatePinNetMap(sceneSymbolSet)
+            for elementSymbol in sceneSymbolSet:
+                self.processElementSymbol(elementSymbol, schematicEdObj, cirFile)
 
     def processElementSymbol(self, elementSymbol, schematic, cirFile):
         if elementSymbol.symattrs.get("XyceNetlistPass") != "1" and (not elementSymbol.netlistIgnore):
@@ -779,8 +796,6 @@ class xyceNetlist:
                 if viewTuple not in self.netlistedViewsSet:
                     self.netlistedViewsSet.add(viewTuple)
                     expandedPinsString = self.expandPinNames(list(elementSymbol.pinNetMap.keys()))
-                    if not hasattr(self, 'subcircuitDefs'):
-                        self.subcircuitDefs = []
 
                     subcktContent = []
                     self.collectSubcircuitContent(schematicObj, subcktContent)

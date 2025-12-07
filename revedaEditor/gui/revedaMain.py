@@ -395,11 +395,8 @@ class MainWindow(QMainWindow):
             try:
                 gdsImportObj = igds.gdsImporter(self, gdsImportFileObj, gdsImportLibItem)
                 if gdsImportObj:
-                    # gdsImportObj.importGDS()
-                    gdsImportRunner = startThread(gdsImportObj.importGDS)
-                    self.threadPool.start(gdsImportRunner)
-                    self.logger.info("GDS Import started.")
-
+                    gdsImportObj.importGDS()
+                    self.logger.info("GDS Import completed.")
             except Exception as e:
                 self.logger.error(f"GDS Import failed: {e}")
 

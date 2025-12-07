@@ -26,10 +26,12 @@ from typing import Callable
 from PySide6.QtCore import QRunnable, Slot, Signal, QObject
 import time
 
+
 class workerSignals(QObject):
     """Defines the signals available from a running worker thread."""
     finished = Signal()
     error = Signal(tuple)
+
 
 class startThread(QRunnable):
     """A thread class to execute a given function as a runnable task."""
@@ -45,19 +47,8 @@ class startThread(QRunnable):
     @Slot()
     def run(self) -> None:
         try:
-            self.fn
+            self.fn(*self.args, **self.kwargs)
         except Exception as e:
             self.signals.error.emit(e)
         finally:
             self.signals.finished.emit()
-
-    @contextmanager
-    def measureDuration(self):
-        start_time = time.perf_counter()
-        try:
-            yield
-        finally:
-            end_time = time.perf_counter()
-            self.logger.info(f"Total processing time: {end_time - start_time:.3f} seconds")
-
-

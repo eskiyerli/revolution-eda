@@ -28,18 +28,22 @@ import inspect
 from typing import List, Dict, Tuple, Any
 from pathlib import Path
 from revedaEditor.backend.pdkPaths import importPDKModule
+
 pcells = importPDKModule('pcells')
+
 
 class gdsExporter:
     __slots__ = ('_cellname', '_items', '_outputFileObj', '_libraryName',
-                 '_unit', '_precision', '_topCell', '_itemCounter', '_cellCache')
+                 '_unit', '_precision', '_dbu', '_topCell', '_itemCounter', '_cellCache')
 
-    DEFAULT_UNIT = 1e-6
+    DEFAULT_UNIT = 1e-9
     DEFAULT_PRECISION = 1e-9
+    DEFAULT_DBU = 1000
 
     def __init__(self, cellname: str, items: List[Any], outputFileObj: Path):
-        self._unit = self.DEFAULT_UNIT
-        self._precision = self.DEFAULT_PRECISION
+        self._unit = gdsExporter.DEFAULT_UNIT
+        self._precision = gdsExporter.DEFAULT_PRECISION
+        self._dbu: int = gdsExporter.DEFAULT_DBU
         self._cellname = cellname
         self._items = items
         self._outputFileObj = outputFileObj
@@ -47,7 +51,7 @@ class gdsExporter:
         self._topCell = None
         self._itemCounter = 0
         self._cellCache = {}
-        
+
     def gdsExport(self):
         self._outputFileObj.parent.mkdir(parents=True, exist_ok=True)
         lib = gdstk.Library(unit=self._unit, precision=self._precision)
@@ -56,6 +60,18 @@ class gdsExporter:
             self.createCells(lib, item, self._topCell)
 
         lib.write_gds(self._outputFileObj)
+
+    def gdsExportThreaded(self, threadPool):
+        self._outputFileObj.parent.mkdir(parents=True, exist_ok=True)
+        lib = gdstk.Library(unit=self._unit, precision=self._precision)
+        self._topCell = lib.new_cell(self._cellname)
+        for item in self._items:
+            self.createCells(lib, item, self._topCell)
+
+        # Run write in thread
+        from revedaEditor.backend.startThread import startThread
+        writer = startThread(lib.write_gds, str(self._outputFileObj))
+        threadPool.start(writer)
 
     def createCells(self, library: gdstk.Library, item: lshp.layoutShape, parentCell: gdstk.Cell):
         item_type = type(item)
@@ -82,7 +98,7 @@ class gdsExporter:
             self.createCells(library, shape, cellGDS)
         ref = gdstk.Reference(
             cellGDS,
-            (0,0)
+            (0, 0)
         )
         parentCell.add(ref)
 
@@ -110,9 +126,10 @@ class gdsExporter:
         label = gdstk.Label(
             text=item.labelText,
             origin=item.mapToScene(item.start).toPoint().toTuple(),
-            magnification= float(item.fontHeight),
+            magnification=float(item.fontHeight * self._dbu),
             rotation=item.angle,
             layer=item.layer.gdsLayer,
+            texttype=item.layer.datatype,
         )
         parentCell.add(label)
 
@@ -165,7 +182,7 @@ class gdsExporter:
 
             ref = gdstk.Reference(
                 pcellGDS,
-                (0,0),
+                (0, 0),
             )
             parentCell.add(ref)
 
@@ -183,7 +200,7 @@ class gdsExporter:
         return self._unit
 
     @unit.setter
-    def unit(self, value):
+    def unit(self, value: float):
         self._unit = value
 
     @property
@@ -191,5 +208,13 @@ class gdsExporter:
         return self._precision
 
     @precision.setter
-    def precision(self, value):
+    def precision(self, value: float):
         self._precision = value
+
+    @property
+    def dbu(self):
+        return self._dbu
+
+    @dbu.setter
+    def dbu(self, value: int):
+        self._dbu = value

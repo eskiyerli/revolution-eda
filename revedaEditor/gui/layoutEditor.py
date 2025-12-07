@@ -420,12 +420,7 @@ class layoutEditor(edw.editorWindow):
             gdsUnit = Quantity(dlg.unitEdit.text().strip()).real
             gdsPrecision = Quantity(
                 dlg.precisionEdit.text().strip()).real
-            self.exportCellGDS(self.gdsExportDir, gdsUnit, gdsPrecision)
-
-    def exportCellGDS(self, gdsExportDir: pathlib.Path, gdsUnit: float,
-                      gdsPrecision: float):
-        self.centralW.scene.exportCellGDS(gdsExportDir, gdsUnit, gdsPrecision)
-
+            self.centralW.scene.exportCellGDS(self.gdsExportDir, gdsUnit, gdsPrecision, fabproc.dbu)
 
     def handlePolygonSelection(self, polygons):
         # Remove previous polygons
@@ -481,7 +476,7 @@ class layoutEditor(edw.editorWindow):
             drcRunPathObj = pathlib.Path(drcRunPath)
             drcRunPathObj.mkdir(parents=True, exist_ok=True)
             if gdsExport:
-                self.exportCellGDS(drcRunPathObj, gdsUnit, gdsPrecision)
+                self.centralW.scene.exportCellGDS(drcRunPathObj, gdsUnit, gdsPrecision, fabproc.dbu)
             if (drcRunPathObj / f'{cellName}.gds').exists():
                 gdsPath = drcRunPathObj.joinpath(f'{cellName}.gds')
                 drcPath = pathlib.Path(drc.__file__).parent.resolve()

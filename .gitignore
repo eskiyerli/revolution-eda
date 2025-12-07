@@ -8,6 +8,7 @@
 *.ini
 .vs/
 .idea/
+.history/
 __pycache__/
 icons/
 dist/

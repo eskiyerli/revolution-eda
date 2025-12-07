@@ -54,7 +54,7 @@ import revedaEditor.backend.libraryMethods as libm
 import revedaEditor.backend.libraryModelView as lmview
 import revedaEditor.backend.undoStack as us
 import revedaEditor.common.layoutShapes as lshp  # import layout shapes
-import revedaEditor.fileio.gdsExport as gdse
+import revedaEditor.fileio.exportGDS as gdse
 import revedaEditor.fileio.layoutEncoder as layenc
 import revedaEditor.fileio.loadJSON as lj
 import revedaEditor.gui.editFunctions as edf
@@ -149,7 +149,9 @@ class layoutScene(editorScene):
         self._newPath = None
         self._stretchPath = None
         defaultPathDefTuple = fabproc.processPaths[0]
-        self.newPathTuple = ddef.layoutPathTuple("", defaultPathDefTuple.layer, 0, defaultPathDefTuple.minWidth, int(defaultPathDefTuple.minWidth/2), int(defaultPathDefTuple.minWidth/2))
+        self.newPathTuple = ddef.layoutPathTuple("", defaultPathDefTuple.layer, 0, defaultPathDefTuple.minWidth,
+                                                 int(defaultPathDefTuple.minWidth / 2),
+                                                 int(defaultPathDefTuple.minWidth / 2))
         self.draftLine = None
         self.m45Rotate = QTransform().rotate(-45)
         self._newPin = None
@@ -165,7 +167,7 @@ class layoutScene(editorScene):
         self._newRuler = None
         self._selectionRectItem = None
         self.rulersSet = set()
-        self.rulerFont = self.setRulerFont(12*fabproc.dbu)
+        self.rulerFont = self.setRulerFont(12 * fabproc.dbu)
         self.rulerFont.setKerning(False)
         self.rulerTickGap = fabproc.dbu
         self.rulerTickLength = 10
@@ -440,7 +442,7 @@ class layoutScene(editorScene):
             self.newPathTuple.width,
             int(self.newPathTuple.startExtend),
             int(self.newPathTuple.endExtend),
-            self.newPathTuple.pathMode,)
+            self.newPathTuple.pathMode, )
         self._newPath.name = self.newPathTuple.name
         self.addUndoStack(self._newPath)
 
@@ -492,7 +494,7 @@ class layoutScene(editorScene):
         return newInstance
 
     def instLayout(
-        self, layoutInstanceTuple: ddef.viewItemTuple
+            self, layoutInstanceTuple: ddef.viewItemTuple
     ) -> Union[lshp.layoutInstance, lshp.layoutPcell]:
         """Read a layout file and create layoutShape objects from it."""
         try:
@@ -512,9 +514,9 @@ class layoutScene(editorScene):
             viewType = layoutInstanceTuple.viewItem.viewType
 
             if (
-                viewType == "layout"
-                and decodedData
-                and decodedData[0].get("viewType") == "layout"
+                    viewType == "layout"
+                    and decodedData
+                    and decodedData[0].get("viewType") == "layout"
             ):
                 factory_create = lj.layoutItems(self).create
                 # valid_items = filter(
@@ -524,9 +526,9 @@ class layoutScene(editorScene):
                 return setup_instance(lshp.layoutInstance(instanceShapes))
 
             elif (
-                viewType == "pcell"
-                and len(decodedData) > 1
-                and decodedData[0].get("cellView") == "pcell"
+                    viewType == "pcell"
+                    and len(decodedData) > 1
+                    and decodedData[0].get("cellView") == "pcell"
             ):
                 pcellInstance = eval(f"pcells.{decodedData[1]['reference']}()")
                 return setup_instance(pcellInstance)
@@ -579,7 +581,7 @@ class layoutScene(editorScene):
                 item
                 for item in self.itemsRefSet
                 if item.parentItem() is None
-                and isinstance(item, tuple(self.LAYOUT_SHAPES))
+                   and isinstance(item, tuple(self.LAYOUT_SHAPES))
             ]
             layoutData = [
                 {"viewType": "layout"},
@@ -617,37 +619,37 @@ class layoutScene(editorScene):
             self.logger.error(f"Unexpected error while saving layout: {str(e)}")
             raise
 
-
     def exportCellGDS(self, gdsExportDir: pathlib.Path, gdsUnit: float,
-                      gdsPrecision: float):
+                      gdsPrecision: float, dbu: int):
         gdsExportPath: pathlib.Path = gdsExportDir / f"{self.cellName}.gds"
         try:
-            
+
             # reprocess the layout to get the layout positions right.
             topLevelItems = [
-                    item
-                    for item in self.itemsRefSet
-                    if item.parentItem() is None
-                    and isinstance(item, tuple(self.LAYOUT_SHAPES))
-                ]
-            
+                item
+                for item in self.itemsRefSet
+                if item.parentItem() is None
+                   and isinstance(item, tuple(self.LAYOUT_SHAPES))
+            ]
+
             decodedData = json.loads(
                 json.dumps(topLevelItems, cls=layenc.layoutEncoder))
-            
+
             layoutItems = [lj.layoutItems(self).create(item) for
-                        item in decodedData]
+                           item in decodedData]
 
             gdsExportObj = gdse.gdsExporter(self.cellName, layoutItems,
                                             gdsExportPath)
             gdsExportObj.unit = gdsUnit
             gdsExportObj.precision = gdsPrecision
+            gdsExportObj.dbu = dbu
 
             self.logger.info("GDS Export started")
             with self.measureDuration():
-                gdsExportObj.gdsExport()
+                gdsExportObj.gdsExportThreaded(self.appMainW.threadPool)
             self.logger.info(
                 "GDS Export finished")
-            
+
         except ValueError as e:
             self.logger.error(f"Invalid layout data: {str(e)}")
             raise
@@ -660,7 +662,6 @@ class layoutScene(editorScene):
             self.logger.error(f"Unexpected error while exporting layout: {str(e)}")
             raise
 
-        
     def loadDesign(self, filePathObj: pathlib.Path) -> bool:
         """Load the layout cell from the given JSON file."""
         try:
@@ -682,11 +683,6 @@ class layoutScene(editorScene):
             return False
         except Exception:
             return False
-
-    # @functools.lru_cache(maxsize=1)
-    # def getLayoutShapesSet(self, shapes_tuple):
-    #     """Cached conversion of layoutShapes to set for O(1) lookup."""
-    #     return set(shapes_tuple)
 
     def createLayoutItems(self, decoded_data: List[Dict[str, Any]]) -> None:
         if not decoded_data:
@@ -876,7 +872,6 @@ class layoutScene(editorScene):
             case 4:
                 dlg.verticalButton.setChecked(True)
 
-
         dlg.pathLayerCB.addItems(fabproc.processPathNames)
 
         currentIndex = next(
@@ -907,7 +902,7 @@ class layoutScene(editorScene):
         )
         dlg.angleEdit.setText(str(item.angle))
         if dlg.exec() == QDialog.Accepted:
-            item.name =  dlg.pathNameEdit.text()
+            item.name = dlg.pathNameEdit.text()
             pathDefTuple = fabproc.processPaths[dlg.pathLayerCB.currentIndex()]
             width = fabproc.dbu * float(dlg.pathWidth.text())
             startExtend = fabproc.dbu * float(dlg.startExtendEdit.text())
@@ -942,9 +937,15 @@ class layoutScene(editorScene):
         dlg.labelAlignCB.setCurrentText(item.labelAlign)
         dlg.labelOrientCB.setCurrentText(item.labelOrient)
         start = item.mapToScene(item.start)
+        dlg.labelTopLeftX.setText(str(self.toLayoutCoord(start).x()))
+        dlg.labelTopLeftY.setText(str(self.toLayoutCoord(start).y()))
 
         if dlg.exec() == QDialog.Accepted:
             labelName = dlg.labelName.text()
+            labelStartX = float(dlg.labelTopLeftX.text())
+            labelStartY = float(dlg.labelTopLeftY.text())
+
+            labelStart = self.toSceneCoord(QPointF(labelStartX, labelStartY))
             labelLayerName = dlg.labelLayerCB.currentText().split()[0]
             labelLayer = [
                 item for item in laylyr.pdkTextLayers if item.name == labelLayerName
@@ -963,9 +964,8 @@ class layoutScene(editorScene):
                 labelOrient,
                 labelLayer,
             )
-            newLabel = lshp.layoutLabel(start, *newLabelTuple)
+            newLabel = lshp.layoutLabel(labelStart, *newLabelTuple)
             self.undoStack.push(us.addDeleteShapeUndo(self, newLabel, item))
-            self.addItem(newLabel)
 
     def layoutPinProperties(self, item):
         dlg = ldlg.layoutPinProperties(self.editorWindow)
@@ -1030,7 +1030,7 @@ class layoutScene(editorScene):
             # self.undoStack.endMacro()
 
     def layoutInstanceProperties(
-        self, item: Union[lshp.layoutInstance, lshp.layoutPcell], pcell: bool = False
+            self, item: Union[lshp.layoutInstance, lshp.layoutPcell], pcell: bool = False
     ):
         libraryModel = lmview.layoutViewsModel(
             self.editorWindow.libraryDict, self.editorWindow.layoutViews
@@ -1112,10 +1112,10 @@ class layoutScene(editorScene):
             self.undoStack.push(us.addDeleteShapeUndo(self, newLayoutInstance, item))
 
     def changePcellParameterFields(
-        self,
-        dlg: ldlg.layoutInstancePropertiesDialogue,
-        libraryModel: lmview.layoutViewsModel,
-        instanceTuple: ddef.viewItemTuple,
+            self,
+            dlg: ldlg.layoutInstancePropertiesDialogue,
+            libraryModel: lmview.layoutViewsModel,
+            instanceTuple: ddef.viewItemTuple,
     ):
         """Update the PCell parameter fields based on the selected instance tuple."""
         # Get the new item tuple
@@ -1194,7 +1194,7 @@ class layoutScene(editorScene):
                 shape = lj.layoutItems(self).create(itemCopyDict)
                 if shape is not None:
                     if isinstance(shape, lshp.layoutInstance) or isinstance(
-                        shape, lshp.layoutPcell
+                            shape, lshp.layoutPcell
                     ):
                         self.itemCounter += 1
                         shape.counter = self.itemCounter
