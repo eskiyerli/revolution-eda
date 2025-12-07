@@ -12,7 +12,7 @@
 #    consideration (including without limitation fees for hosting) a product or service whose value
 #    derives, entirely or substantially, from the functionality of the Software. Any
 #    license notice or attribution required by the License must also include this
-#    Commons Clause License Condition notice.
+#    Commons Clause Lic\ense Condition notice.
 #
 #   Add-ons and extensions developed for this software may be distributed
 #   under their own separate licenses.
@@ -321,7 +321,7 @@ class netlistExportDialogue(QDialog):
         viewBoxLayout.addRow(edf.boldLabel("View:"), self.viewNameCombo)
         viewBox.setLayout(viewBoxLayout)
         self.mainLayout.addWidget(viewBox)
-        self.switchBox = QGroupBox("Switch and Stop View Lists")
+        switchBox = QGroupBox("Switch and Stop View Lists")
         self.formLayout = QFormLayout()
         self.switchViewEdit = edf.longLineEdit()
         self.switchViewEdit.setText((", ").join(self.parent.switchViewList))
@@ -329,8 +329,15 @@ class netlistExportDialogue(QDialog):
         self.stopViewEdit = edf.longLineEdit()
         self.stopViewEdit.setText((", ").join(self.parent.stopViewList))
         self.formLayout.addRow((edf.boldLabel("Stop View: ")), self.stopViewEdit)
-        self.switchBox.setLayout(self.formLayout)
-        self.mainLayout.addWidget(self.switchBox)
+        switchBox.setLayout(self.formLayout)
+        self.mainLayout.addWidget(switchBox)
+        netlistOptionBox = QGroupBox("Netlist Options")
+        netlistOptLayout = QVBoxLayout()
+        self.topAsSubcktCheckBox = QCheckBox("Netlist top level as subcircuit")
+        self.topAsSubcktCheckBox.setChecked(False)
+        netlistOptLayout.addWidget(self.topAsSubcktCheckBox)
+        netlistOptionBox.setLayout(netlistOptLayout)
+        self.mainLayout.addWidget(netlistOptionBox)
         fileBox = QGroupBox("Select Simulation Directory")
         fileDialogLayout = QHBoxLayout()
         fileDialogLayout.addWidget(edf.boldLabel("Export Directory:"))
