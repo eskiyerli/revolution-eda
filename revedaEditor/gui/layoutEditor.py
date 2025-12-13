@@ -193,7 +193,8 @@ class layoutEditor(edw.editorWindow):
         def pathLayerChanged(dlg):
             pathTupleName = dlg.pathLayerCB.currentText()
             pathDefTuple = \
-                [item for item in fabproc.processPaths if item.name == pathTupleName][
+                [item for item in fabproc.processPaths if
+                 item.name == pathTupleName][
                     0]
             dlg.pathWidth.setText(pathDefTuple.minWidth.__str__())
             dlg.pathWidthValidator.setRange(pathDefTuple.minWidth,
@@ -236,7 +237,8 @@ class layoutEditor(edw.editorWindow):
             pathName = dlg.pathNameEdit.text()
             pathTupleName = dlg.pathLayerCB.currentText()
             pathTuple = \
-                [item for item in fabproc.processPaths if item.name == pathTupleName][
+                [item for item in fabproc.processPaths if
+                 item.name == pathTupleName][
                     0]
             pathLayer = pathTuple.layer
             startExtend = float(dlg.startExtendEdit.text().strip()) * fabproc.dbu
@@ -282,7 +284,8 @@ class layoutEditor(edw.editorWindow):
             pinType = dlg.pinType.currentText()
             pinLayerName = dlg.pinLayerCB.currentText().split()[0]
             pinLayer = \
-                [item for item in laylyr.pdkPinLayers if item.name == pinLayerName][0]
+                [item for item in laylyr.pdkPinLayers if
+                 item.name == pinLayerName][0]
             labelLayerName = dlg.labelLayerCB.currentText().split()[0]
             labelLayer = [item for item in laylyr.pdkTextLayers if
                           item.name == labelLayerName][0]
@@ -292,9 +295,13 @@ class layoutEditor(edw.editorWindow):
             labelAlign = dlg.labelAlignCB.currentText()
             labelOrient = dlg.labelOrientCB.currentText()
             self.centralW.scene.newPinTuple = ddef.layoutPinTuple(pinName, pinDir,
-                                                                  pinType, pinLayer)
+                                                                  pinType,
+                                                                  pinLayer)
             self.centralW.scene.newLabelTuple = ddef.layoutLabelTuple(pinName,
-                                                                      fontFamily, fontStyle, labelHeight, labelAlign,
+                                                                      fontFamily,
+                                                                      fontStyle,
+                                                                      labelHeight,
+                                                                      labelAlign,
                                                                       labelOrient,
                                                                       labelLayer, )
 
@@ -315,7 +322,10 @@ class layoutEditor(edw.editorWindow):
             labelAlign = dlg.labelAlignCB.currentText()
             labelOrient = dlg.labelOrientCB.currentText()
             self.centralW.scene.newLabelTuple = ddef.layoutLabelTuple(labelName,
-                                                                      fontFamily, fontStyle, fontHeight, labelAlign,
+                                                                      fontFamily,
+                                                                      fontStyle,
+                                                                      fontHeight,
+                                                                      labelAlign,
                                                                       labelOrient,
                                                                       labelLayer, )
 
@@ -339,8 +349,10 @@ class layoutEditor(edw.editorWindow):
                         dlg.singleViaNamesCB.currentText())]
 
                 singleViaTuple = ddef.singleViaTuple(selViaDefTuple,
-                                                     fabproc.dbu * float(dlg.singleViaWidthEdit.text().strip()),
-                                                     fabproc.dbu * float(dlg.singleViaHeightEdit.text().strip()), )
+                                                     fabproc.dbu * float(
+                                                         dlg.singleViaWidthEdit.text().strip()),
+                                                     fabproc.dbu * float(
+                                                         dlg.singleViaHeightEdit.text().strip()), )
                 self.centralW.scene.arrayViaTuple = ddef.arrayViaTuple(
                     singleViaTuple, fabproc.dbu * selViaDefTuple.minSpacing,
                                     fabproc.dbu * selViaDefTuple.minSpacing, 1,
@@ -351,8 +363,10 @@ class layoutEditor(edw.editorWindow):
                      viaDefTuple.name == dlg.arrayViaNamesCB.currentText()][0]
 
                 singleViaTuple = ddef.singleViaTuple(selViaDefTuple,
-                                                     fabproc.dbu * float(dlg.arrayViaWidthEdit.text().strip()),
-                                                     fabproc.dbu * float(dlg.arrayViaHeightEdit.text().strip()), )
+                                                     fabproc.dbu * float(
+                                                         dlg.arrayViaWidthEdit.text().strip()),
+                                                     fabproc.dbu * float(
+                                                         dlg.arrayViaHeightEdit.text().strip()), )
                 self.centralW.scene.arrayViaTuple = ddef.arrayViaTuple(
                     singleViaTuple,
                     fabproc.dbu * float(dlg.arrayXspacingEdit.text().strip()),
@@ -407,7 +421,8 @@ class layoutEditor(edw.editorWindow):
                                         self.layoutChooser.viewCB.currentText())
             # libm.findViewItem(libraryModel, self.layoutChooser.libNamesCB.currentText())
             self.centralW.scene.layoutInstanceTuple = ddef.viewItemTuple(libItem,
-                                                                         cellItem, viewItem)
+                                                                         cellItem,
+                                                                         viewItem)
 
     def exportGDSClick(self):
         dlg = fd.gdsExportDialogue(self)
@@ -420,7 +435,8 @@ class layoutEditor(edw.editorWindow):
             gdsUnit = Quantity(dlg.unitEdit.text().strip()).real
             gdsPrecision = Quantity(
                 dlg.precisionEdit.text().strip()).real
-            self.centralW.scene.exportCellGDS(self.gdsExportDir, gdsUnit, gdsPrecision, fabproc.dbu)
+            self.centralW.scene.exportCellGDS(self.gdsExportDir, gdsUnit,
+                                              gdsPrecision, fabproc.dbu)
 
     def handlePolygonSelection(self, polygons):
         # Remove previous polygons
@@ -476,7 +492,8 @@ class layoutEditor(edw.editorWindow):
             drcRunPathObj = pathlib.Path(drcRunPath)
             drcRunPathObj.mkdir(parents=True, exist_ok=True)
             if gdsExport:
-                self.centralW.scene.exportCellGDS(drcRunPathObj, gdsUnit, gdsPrecision, fabproc.dbu)
+                self.centralW.scene.exportCellGDS(drcRunPathObj, gdsUnit,
+                                                  gdsPrecision, fabproc.dbu)
             if (drcRunPathObj / f'{cellName}.gds').exists():
                 gdsPath = drcRunPathObj.joinpath(f'{cellName}.gds')
                 drcPath = pathlib.Path(drc.__file__).parent.resolve()
@@ -489,8 +506,10 @@ class layoutEditor(edw.editorWindow):
                                  '-rd',
                                  f'report_file={drcReportFilePath}']
                 self.processManager.maxProcesses = int(drcRunLimit)
-                drcProcess = self.processManager.add_process(klayoutPath, argumentsList)
-                drcProcess.process.finished.connect(lambda: DRCProcessFinished(drcReportFilePath))
+                drcProcess = self.processManager.add_process(klayoutPath,
+                                                             argumentsList)
+                drcProcess.process.finished.connect(
+                    lambda: DRCProcessFinished(drcReportFilePath))
             else:
                 self.logger.error('GDS file can not be found')
 
@@ -551,8 +570,8 @@ class layoutEditor(edw.editorWindow):
                 self.centralW.view.gridbackg = False
                 self.centralW.view.linebackg = False
 
-    def _createSignalConnections(self):
-        super()._createSignalConnections()  # if self.parentEditor is None:  #     self.childEditorChanged.connect(self.centralW.scene.reloadScene)
+    # def _createSignalConnections(self):
+    #     super()._createSignalConnections()  
 
 
 class layoutContainer(QWidget):
@@ -583,8 +602,13 @@ class layoutContainer(QWidget):
         # ratio of first column to second column is 5
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 5)
-        vLayout.addWidget(splitter)
-
+        vLayout.addWidget(splitter, stretch=5)
+        vLayout.addWidget(self.parent.aiTerminal)
+        self.parent.aiTerminal.hide()
+        if self.parent.aiTerminal.isVisible():
+            vLayout.setStretch(1, 1)
+        else:
+            vLayout.setStretch(1, 0)
         self.setLayout(vLayout)
 
     def selectLayer(self, layerName: str, layerPurpose: str):
@@ -626,16 +650,16 @@ class lswWindow(QWidget):
         self.lswTable = lswTable
         layout = QVBoxLayout()
         toolBar = QToolBar()
-        avIcon = QIcon("icons/eye.png")
-        nvIcon = QIcon("icons/eye-close.png")
+        avIcon = QIcon(":/icons/eye.png")
+        nvIcon = QIcon(":/icons/eye-close.png")
         avAction = QAction(avIcon, "All Visible", self)
         avAction.setToolTip("All layers visible")
         avAction.triggered.connect(self.lswTable.allLayersVisible)
         nvAction = QAction(nvIcon, "None Visible", self)
         nvAction.setToolTip("No layer visible")
         nvAction.triggered.connect(self.lswTable.noLayersVisible)
-        asIcon = QIcon("icons/pencil.png")
-        nsIcon = QIcon("icons/pencil-prohibition.png")
+        asIcon = QIcon(":/icons/pencil.png")
+        nsIcon = QIcon(":/icons/pencil-prohibition.png")
         nsAction = QAction(nsIcon, "All Selectable", self)
         nsAction.setToolTip("No layers selectable")
         nsAction.triggered.connect(self.lswTable.noLayersSelectable)

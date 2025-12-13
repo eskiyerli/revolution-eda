@@ -27,20 +27,22 @@ import pathlib
 from contextlib import contextmanager
 import time
 from logging import getLogger
-from PySide6.QtCore import (Qt, QSize,)
+from PySide6.QtCore import (Qt, QSize, )
 from PySide6.QtGui import (QAction, QIcon, QImage, QKeySequence)
 from PySide6.QtPrintSupport import QPrintDialog, QPrinter, QPrintPreviewDialog
-from PySide6.QtWidgets import (QApplication, QDialog, QFileDialog, QGraphicsScene, QLabel, QMainWindow,
-                               QMenu, QToolBar)
+from PySide6.QtWidgets import (QApplication, QDialog, QFileDialog, QGraphicsScene,
+                               QLabel, QMainWindow,
+                               QMenu, QToolBar, QWidget)
 
 import revedaEditor.backend.dataDefinitions as ddef
 import revedaEditor.backend.libraryModelView as lmview
 import revedaEditor.backend.libBackEnd as libb
 import revedaEditor.gui.helpBrowser as hlp
-import revedaEditor.resources.resources # noqa: F401
+import revedaEditor.resources.resources  # noqa: F401
 from revedaEditor.backend.startThread import startThread
 import revedaEditor.gui.propertyDialogues as pdlg
 import revedaEditor.backend.processManager as prm
+import revedaEditor.gui.aiTerminal as ait
 
 
 class editorWindow(QMainWindow):
@@ -54,9 +56,11 @@ class editorWindow(QMainWindow):
     def __init__(self, viewItem: libb.viewItem, libraryDict: dict,
                  libraryView: lmview.BaseDesignLibrariesView, ):
         super().__init__()
-        self.centralW = None
+        self.centralW = QWidget()
+        self.setCentralWidget(self.centralW)
         self.viewItem = viewItem
-        self.file: pathlib.Path = self.viewItem.data(Qt.UserRole + 2)  # pathlib Path object
+        self.file: pathlib.Path = self.viewItem.data(
+            Qt.UserRole + 2)  # pathlib Path object
         self.cellItem: libb.cellItem = self.viewItem.parent()
         self.cellName = self.cellItem.cellName
         self.libItem: libb.libraryItem = self.cellItem.parent()
@@ -64,21 +68,21 @@ class editorWindow(QMainWindow):
         self.viewName: str = self.viewItem.viewName
         self.libraryDict = libraryDict
         self.libraryView = libraryView
-        self.parentEditor: editorWindow|None = None  # type: editorWindow
+        self.parentEditor: editorWindow | None = None  # type: editorWindow
         self.parentObj = None  # type symbol or layoutInstance
         self._app = QApplication.instance()  # main application pointer
-        # self.appMainW = self.libraryView.parent.parent.appMainW
         self.appMainW = self._app.mainW
         self.logger = getLogger(self.MAIN_LOGGER)
         self.switchViewList = self.appMainW.switchViewList
         self.stopViewList = self.appMainW.stopViewList
         self.statusLine = self.statusBar()
         self.messageLine = QLabel()  # message line
-        self.statusLine.insertPermanentWidget(0,self.messageLine)
+        self.statusLine.insertPermanentWidget(0, self.messageLine)
         self.majorGrid = self.MAJOR_GRID_DEFAULT  # dot/line grid spacing
         self.snapGrid = self.SNAP_GRID_DEFAULT  # snapping grid size
         self.snapTuple = (self.snapGrid, self.snapGrid)
         self.processManager = prm.ProcessManager(3, self)
+        self.aiTerminal = ait.aiTerminal(self)
         self.init_UI()
         self._createSignalConnections()
 
@@ -133,7 +137,8 @@ class editorWindow(QMainWindow):
         self.printAction.setToolTip("Print the current design")
 
         printPreviewIcon = QIcon(":/icons/printer--arrow.png")
-        self.printPreviewAction = QAction(printPreviewIcon, "Print Preview...", self)
+        self.printPreviewAction = QAction(printPreviewIcon, "Print Preview...",
+                                          self)
         self.printPreviewAction.setToolTip("Preview the current design output")
 
         exportImageIcon = QIcon(":/icons/image-export.png")
@@ -178,7 +183,8 @@ class editorWindow(QMainWindow):
         self.alignTopAction.setToolTip("Align top of selected objects")
 
         alignVerticalIcon = QIcon(":/icons/layers-alignment-center.png")
-        self.alignVerticalAction = QAction(alignVerticalIcon, "Vertical Align", self)
+        self.alignVerticalAction = QAction(alignVerticalIcon, "Vertical Align",
+                                           self)
         self.alignVerticalAction.setToolTip(
             "Align selected objects vertically at the centre")
 
@@ -196,11 +202,13 @@ class editorWindow(QMainWindow):
         self.dispConfigAction.setToolTip("Configure the display options")
 
         selectConfigIcon = QIcon(":/icons/zone-select.png")
-        self.selectConfigAction = QAction(selectConfigIcon, "Selection Config...", self)
+        self.selectConfigAction = QAction(selectConfigIcon, "Selection Config...",
+                                          self)
         self.selectConfigAction.setToolTip("Configure the selection options")
 
         panZoomConfigIcon = QIcon(":/icons/selection-resize.png")
-        self.panZoomConfigAction = QAction(panZoomConfigIcon, "Pan/Zoom Config...", self)
+        self.panZoomConfigAction = QAction(panZoomConfigIcon,
+                                           "Pan/Zoom Config...", self)
         self.panZoomConfigAction.setToolTip("Configure the pan/zoom options")
 
         undoIcon = QIcon(":/icons/arrow-circle-315-left.png")
@@ -255,7 +263,8 @@ class editorWindow(QMainWindow):
         self.verticalFlipAction.setToolTip("Vertical Flip")
 
         horizontalFlipIcon = QIcon(":/icons/layer-flip.png")
-        self.horizontalFlipAction = QAction(horizontalFlipIcon, "Horizontal Flip", self)
+        self.horizontalFlipAction = QAction(horizontalFlipIcon, "Horizontal Flip",
+                                            self)
         self.horizontalFlipAction.setToolTip("Horizontal Flip")
 
         netNameIcon = QIcon(":/icons/node-design.png")
@@ -292,7 +301,8 @@ class editorWindow(QMainWindow):
         self.objPropAction.setToolTip("Configure object properties")
 
         viewPropIcon = QIcon(":/icons/property.png")
-        self.viewPropAction = QAction(viewPropIcon, "Cellview Properties...", self)
+        self.viewPropAction = QAction(viewPropIcon, "Cellview Properties...",
+                                      self)
         self.viewPropAction.setToolTip("Configure Cellview Properties")
 
         viewCheckIcon = QIcon(":/icons/ui-check-box.png")
@@ -304,7 +314,8 @@ class editorWindow(QMainWindow):
         self.viewErrorsAction.setToolTip("View Errros")
 
         deleteErrorsIcon = QIcon(":/icons/report--minus.png")
-        self.deleteErrorsAction = QAction(deleteErrorsIcon, "Delete Errors...", self)
+        self.deleteErrorsAction = QAction(deleteErrorsIcon, "Delete Errors...",
+                                          self)
         self.deleteErrorsAction.setToolTip("Delete Errros")
 
         netlistIcon = QIcon(":/icons/script-text.png")
@@ -316,15 +327,18 @@ class editorWindow(QMainWindow):
         self.createLineAction.setToolTip("Create Line")
 
         createRectIcon = QIcon(":/icons/layer-shape.png")
-        self.createRectAction = QAction(createRectIcon, "Create Rectangle...", self)
+        self.createRectAction = QAction(createRectIcon, "Create Rectangle...",
+                                        self)
         self.createRectAction.setToolTip("Create Rectangle")
 
         createPolyIcon = QIcon(":/icons/layer-shape-polygon.png")
-        self.createPolygonAction = QAction(createPolyIcon, "Create Polygon...", self)
+        self.createPolygonAction = QAction(createPolyIcon, "Create Polygon...",
+                                           self)
         self.createPolygonAction.setToolTip("Create Polygon")
 
         createCircleIcon = QIcon(":/icons/layer-shape-ellipse.png")
-        self.createCircleAction = QAction(createCircleIcon, "Create Circle...", self)
+        self.createCircleAction = QAction(createCircleIcon, "Create Circle...",
+                                          self)
         self.createCircleAction.setToolTip("Create Circle")
 
         createArcIcon = QIcon(":/icons/layer-shape-polyline.png")
@@ -336,7 +350,8 @@ class editorWindow(QMainWindow):
         self.createViaAction.setToolTip("Create Via")
 
         createInstIcon = QIcon(":/icons/block--plus.png")
-        self.createInstAction = QAction(createInstIcon, "Create Instance...", self)
+        self.createInstAction = QAction(createInstIcon, "Create Instance...",
+                                        self)
         self.createInstAction.setToolTip("Create Instance")
 
         self.createNetAction = QAction(createLineIcon, "Create Net...", self)
@@ -350,7 +365,8 @@ class editorWindow(QMainWindow):
         self.createBusAction.setToolTip("Create Bus")
 
         createSymbolIcon = QIcon(":/icons/application-block.png")
-        self.createSymbolAction = QAction(createSymbolIcon, "Create Symbol...", self)
+        self.createSymbolAction = QAction(createSymbolIcon, "Create Symbol...",
+                                          self)
         self.createSymbolAction.setToolTip("Create Symbol from Cellview")
 
         createTextIcon = QIcon(":icons/sticky-note-text.png")
@@ -359,7 +375,8 @@ class editorWindow(QMainWindow):
 
         # selection Actions
         selectDeviceIcon = QIcon(":icons/target.png")
-        self.selectDeviceAction = QAction(selectDeviceIcon, "Select Devices", self)
+        self.selectDeviceAction = QAction(selectDeviceIcon, "Select Devices",
+                                          self)
         self.selectDeviceAction.setToolTip("Select Devices Only")
 
         selectNetIcon = QIcon(":icons/pencil--plus.png")
@@ -389,6 +406,11 @@ class editorWindow(QMainWindow):
         self.aboutIcon = QIcon(":/icons/information.png")
         self.aboutAction = QAction(self.aboutIcon, "About", self)
         self.aboutAction.setToolTip("About Revolution EDA")
+
+        aiTerminalIcon = QIcon(":/icons/terminal.png")
+        self.aiTerminalAction = QAction(aiTerminalIcon, "AI Terminal", self)
+        self.aiTerminalAction.setToolTip("Open AI Agent Terminal")
+        self.aiTerminalAction.setCheckable(True)
 
     def _createToolBars(self):
         # Create tools bar called "main toolbar"
@@ -457,6 +479,7 @@ class editorWindow(QMainWindow):
         # self.menuCheck.addAction(self.viewCheckAction)
         self.menuOptions.addAction(self.dispConfigAction)
         self.menuOptions.addAction(self.selectConfigAction)
+        self.menuTools.addAction(self.aiTerminalAction)
         self.menuHelp.addAction(self.helpAction)
         self.menuHelp.addAction(self.aboutAction)
 
@@ -498,6 +521,7 @@ class editorWindow(QMainWindow):
         self.verticalFlipAction.triggered.connect(self.verticalFlipClick)
         self.horizontalFlipAction.triggered.connect(self.horizontalFlipClick)
         self.goUpAction.triggered.connect(self.goUpHierarchy)
+        self.aiTerminalAction.triggered.connect(self.toggleAITerminal)
         self.helpAction.triggered.connect(self.helpClick)
         self.aboutAction.triggered.connect(self.aboutClick)
 
@@ -526,12 +550,13 @@ class editorWindow(QMainWindow):
         self.centralW.scene.itemContextMenu.addAction(self.deselectAllAction)
 
     def dispConfigEdit(self):
-        
+
         dcd = pdlg.displayConfigDialog(self)
         dcd.majorGridEntry.setText(str(self.majorGrid))
         dcd.snapGridEdit.setText(str(self.snapGrid))
         if dcd.exec() == QDialog.Accepted:
-            self.configureGridSettings((int(dcd.majorGridEntry.text()), int(dcd.snapGridEdit.text())))
+            self.configureGridSettings(
+                (int(dcd.majorGridEntry.text()), int(dcd.snapGridEdit.text())))
             if dcd.dotType.isChecked():
                 self.centralW.view.gridbackg = True
                 self.centralW.view.linebackg = False
@@ -541,9 +566,8 @@ class editorWindow(QMainWindow):
             else:
                 self.centralW.view.gridbackg = False
                 self.centralW.view.linebackg = False
-    
 
-    def configureGridSettings(self, gridSettings: tuple[int,int]) -> None:
+    def configureGridSettings(self, gridSettings: tuple[int, int]) -> None:
         """Configure grid settings from decoded data."""
         try:
 
@@ -576,7 +600,6 @@ class editorWindow(QMainWindow):
         if scd.exec() == QDialog.Accepted:
             self.centralW.scene.partialSelection = scd.partialSelection.isChecked()
 
-
     def readOnlyCellClick(self):
         self.centralW.scene.readOnly = self.readOnlyCellAction.isChecked()
 
@@ -591,7 +614,8 @@ class editorWindow(QMainWindow):
             printer = dlg.printer()
             printRunner = startThread(self.centralW.view.printView(printer))
             self.appMainW.threadPool.start(printRunner)
-            self.logger.info("Printing started")  # self.centralW.view.printView(printer)
+            self.logger.info(
+                "Printing started")  # self.centralW.view.printView(printer)
 
     def printPreviewClick(self):
         printer = QPrinter(QPrinter.ScreenResolution)
@@ -626,10 +650,10 @@ class editorWindow(QMainWindow):
         self.centralW.scene.deselectAll()
 
     def stretchClick(self, s):
-       self.centralW.scene.editModes.setMode("stretchItem")
-       self.messageLine.setText(self.centralW.scene.messages[
-                                    self.centralW.scene.editModes.mode()])
-       self.centralW.scene.stretchSelectedItems()
+        self.centralW.scene.editModes.setMode("stretchItem")
+        self.messageLine.setText(self.centralW.scene.messages[
+                                     self.centralW.scene.editModes.mode()])
+        self.centralW.scene.stretchSelectedItems()
 
     def moveClick(self):
         self.centralW.scene.editModes.setMode("moveItem")
@@ -725,8 +749,16 @@ class editorWindow(QMainWindow):
         return current
 
     def _createSignalConnections(self):
-        self.centralW.scene.selectionChanged.connect(self.appMainW.selectionChangedScene)
+        self.centralW.scene.selectionChanged.connect(
+            self.appMainW.selectionChangedScene)
         self.centralW.view.keyPressedSignal.connect(self.appMainW.viewKeyPressed)
+        self.aiTerminal.reloadRequested.connect(self.updateDesignScene)
+
+    def toggleAITerminal(self):
+        if self.aiTerminal.isVisible():
+            self.aiTerminal.hide()
+        else:
+            self.aiTerminal.show()
 
     @contextmanager
     def measureDuration(self):
@@ -735,5 +767,5 @@ class editorWindow(QMainWindow):
             yield
         finally:
             end_time = time.perf_counter()
-            self.logger.info(f"Total processing time: {(end_time - start_time) * 1000:.3f} milliseconds")
-
+            self.logger.info(
+                f"Total processing time: {(end_time - start_time) * 1000:.3f} milliseconds")

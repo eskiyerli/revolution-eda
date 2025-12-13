@@ -26,15 +26,16 @@ import revedaEditor.backend.undoStack as us
 from collections import Counter
 
 # import numpy as np
-from PySide6.QtCore import (QPoint, QRect, Qt, Signal, QLine,)
+from PySide6.QtCore import (QPoint, QRect, Qt, Signal, QLine, )
 from PySide6.QtGui import (QColor, QKeyEvent, QPainter, QWheelEvent, QPolygon, )
 from PySide6.QtWidgets import (QGraphicsView, )
-from PySide6.QtPrintSupport import (QPrinter,)
+from PySide6.QtPrintSupport import (QPrinter, )
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
 from revedaEditor.backend.pdkPaths import importPDKModule
 
 schlyr = importPDKModule('schLayers')
 fabproc = importPDKModule('process')
+
 
 class editorView(QGraphicsView):
     """
@@ -45,27 +46,27 @@ class editorView(QGraphicsView):
     # zoomFactorChanged = Signal(float)
     def __init__(self, scene, parent):
         super().__init__(scene, parent)
-        
+
         # Cache parent references
         self.parent = parent
         self.editor = parent.parent
         self.scene = scene
         self.logger = scene.logger
-        
+
         # Cache editor properties
         editor = self.editor
         self.majorGrid = editor.majorGrid
         self.snapGrid = editor.snapGrid
         self.snapTuple = editor.snapTuple
-        
+
         # Direct attribute initialization
         self.gridbackg = True
         self.linebackg = self._transparent = False
         self.zoomFactor = 1.0
-        
+
         # Initialize coordinate cache as integers (faster than QPoint)
         self._left = self._right = self._top = self._bottom = 0
-        
+
         # Defer expensive operations
         self.viewRect = None
         self.init_UI()
@@ -83,7 +84,7 @@ class editorView(QGraphicsView):
         self.setInteractive(True)
         self.setCursor(Qt.CrossCursor)
         self.setRenderHints(QPainter.Antialiasing | QPainter.TextAntialiasing)
-        
+
         self._viewRect_cached = False
 
     def wheelEvent(self, event: QWheelEvent) -> None:
@@ -110,8 +111,6 @@ class editorView(QGraphicsView):
             self.viewRect = self.mapToScene(self.rect()).boundingRect().toRect()
             self._viewRect_cached = True
 
-
-
     def drawBackground(self, painter, rect):
         """
         Draws the background of the painter within the given rectangle.
@@ -136,7 +135,7 @@ class editorView(QGraphicsView):
             x_coords, y_coords = self.findCoords()
 
             if self.gridbackg:
-                painter.setPen(QColor("white"))
+                painter.setPen(QColor("gray"))
 
                 # Pre-allocate the polygon for better performance
                 points = QPolygon()
@@ -184,21 +183,21 @@ class editorView(QGraphicsView):
         """
         x_coords = range(self._left, self._right, self.majorGrid)
         y_coords = range(self._top, self._bottom, self.majorGrid)
-        
+
         num_lines = len(x_coords)
-        if 160 <= num_lines < 320:
+        if 120 <= num_lines < 240:
             spacing = self.majorGrid * 2
-        elif 320 <= num_lines < 640:
+        elif 240 <= num_lines < 480:
             spacing = self.majorGrid * 4
-        elif 640 <= num_lines < 1280:
+        elif 480 <= num_lines < 960:
             spacing = self.majorGrid * 8
-        elif 1280 <= num_lines < 2560:
+        elif 960 <= num_lines < 1920:
             spacing = self.majorGrid * 16
-        elif num_lines >= 2560:
+        elif num_lines >= 1920:
             return range(0, 0), range(0, 0)  # No grid when too dense
         else:
             spacing = self.majorGrid
-            
+
         if spacing != self.majorGrid:
             x_coords = range(self._left, self._right, spacing)
             y_coords = range(self._top, self._bottom, spacing)
@@ -268,6 +267,7 @@ class editorView(QGraphicsView):
         # End painting
         painter.end()
 
+
 class symbolView(editorView):
     def __init__(self, scene, parent):
         self.scene = scene
@@ -293,13 +293,13 @@ class symbolView(editorView):
 
 class schematicView(editorView):
     _dotRadius = 10
+
     def __init__(self, scene, parent):
         self.parent = parent
         self.scene = scene
         super().__init__(self.scene, self.parent)
 
         self.scene.wireEditFinished.connect(self.mergeSplitViewNets)
-
 
     def mousePressEvent(self, event):
         self.viewRect = self.mapToScene(self.rect()).boundingRect().toRect()
@@ -313,7 +313,6 @@ class schematicView(editorView):
 
         super().mouseReleaseEvent(event)
 
-
     def pruneShortNets(self):
         """Remove nets shorter than snap spacing."""
         snapSpacing = self.scene.snapTuple[0]
@@ -325,7 +324,7 @@ class schematicView(editorView):
 
     def mergeSplitViewNets(self):
         netsInView = (netItem for netItem in self.scene.items(self.viewRect) if
-            isinstance(netItem, net.schematicNet))
+                      isinstance(netItem, net.schematicNet))
         for netItem in netsInView:
             if netItem.scene():
                 self.scene.mergeSplitNets(netItem)
@@ -334,7 +333,8 @@ class schematicView(editorView):
         super().drawBackground(painter, rect)
 
         # Early exit for large views to avoid performance issues
-        if (self._right - self._left) > 2000 and (self._bottom - self._top) > 2000:
+        if (self._right - self._left) > 2000 and (
+                self._bottom - self._top) > 2000:
             return
 
         # Get nets in view with type filtering
@@ -350,14 +350,14 @@ class schematicView(editorView):
             pointCounts.update(netItem.sceneEndPoints)
 
         # Filter junction points (count >= 3) and draw
-        junctionPoints = [point for point, count in pointCounts.items() if count >= 3]
+        junctionPoints = [point for point, count in pointCounts.items() if
+                          count >= 3]
 
         if junctionPoints:
             painter.setPen(schlyr.wirePen)
             painter.setBrush(schlyr.wireBrush)
             for point in junctionPoints:
                 painter.drawEllipse(point, self._dotRadius, self._dotRadius)
-
 
     def keyPressEvent(self, event: QKeyEvent):
         """
@@ -413,7 +413,8 @@ class layoutView(editorView):
                 self.scene._stretchPath = None
             elif self.scene.editModes.drawPolygon:
                 self.scene.removeItem(self.scene._polygonGuideLine)
-                self.scene._newPolygon.points.pop(0)  # remove first duplicate point
+                self.scene._newPolygon.points.pop(
+                    0)  # remove first duplicate point
                 self.scene._newPolygon = None
             elif self.scene.editModes.addInstance:
                 self.scene.newInstance = None

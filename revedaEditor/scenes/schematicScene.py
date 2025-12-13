@@ -1180,7 +1180,12 @@ class schematicScene(editorScene):
         for index, symbolInstance in enumerate(symbolList):
             symbolInstance.counter = index
             if symbolInstance.instanceName.startswith("I"):
-                symbolInstance.instanceName = f"I{index}"
+                # Preserve array notation like I2<0:5>
+                if "<" in symbolInstance.instanceName and ">" in symbolInstance.instanceName:
+                    array_part = symbolInstance.instanceName[symbolInstance.instanceName.find("<"):]
+                    symbolInstance.instanceName = f"I{index}{array_part}"
+                else:
+                    symbolInstance.instanceName = f"I{index}"
                 for label in symbolInstance.labels.values():
                     label.labelDefs()
         self.instanceCounter = index + 1
