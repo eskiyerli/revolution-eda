@@ -31,6 +31,7 @@ class workerSignals(QObject):
     """Defines the signals available from a running worker thread."""
     finished = Signal()
     error = Signal(tuple)
+    result = Signal(object)
 
 
 class startThread(QRunnable):
@@ -47,8 +48,10 @@ class startThread(QRunnable):
     @Slot()
     def run(self) -> None:
         try:
-            self.fn(*self.args, **self.kwargs)
+            result = self.fn(*self.args, **self.kwargs)
+            if result:
+                self.signals.result.emit(result)
         except Exception as e:
-            self.signals.error.emit(e)
+            self.signals.error.emit((type(e), e.args, str(e)))
         finally:
             self.signals.finished.emit()

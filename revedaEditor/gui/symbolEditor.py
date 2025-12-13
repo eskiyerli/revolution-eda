@@ -49,7 +49,7 @@ class symbolEditor(edw.editorWindow):
             self,
             viewItem: libb.viewItem,
             libraryDict: dict,
-            libraryView: lmview.BaseDesignLibrariesView ,
+            libraryView: lmview.BaseDesignLibrariesView,
     ):
         super().__init__(viewItem, libraryDict, libraryView)
         self.setWindowTitle(f"Symbol Editor - {self.cellName} - {self.viewName}")
@@ -225,7 +225,12 @@ class symbolContainer(QWidget):
         gLayout = QGridLayout()
         gLayout.setSpacing(10)
         gLayout.addWidget(self.view, 0, 0)
-        # ratio of first column to second column is 5
         gLayout.setColumnStretch(0, 5)
         gLayout.setRowStretch(0, 6)
+        gLayout.addWidget(self.parent.aiTerminal, 1, 0)
+        self.parent.aiTerminal.hide()
+        if self.parent.aiTerminal.isVisible():
+            gLayout.setRowStretch(1, 1)
+        else:
+            gLayout.setRowStretch(1, 0)
         self.setLayout(gLayout)

@@ -44,6 +44,10 @@ markdown = "^3.9"
 lxml = "^6.0.0"
 polars = "~1.35.0"
 orjson = "^3.11.4"
+anthropic = "^0.75.0"
+google-generativeai = "^0.8.5"
+cryptography = "^46.0.3"
+
 
 [tool.poetry.group.dev.dependencies]
 pytest = "~8.4.1"
