@@ -29,7 +29,6 @@ import json
 import pathlib
 from copy import deepcopy
 
-
 # import numpy as np
 from PySide6.QtCore import (
     QLineF,
@@ -60,6 +59,7 @@ from revedaEditor.scenes.editorScene import editorScene
 from typing import List, Dict
 
 symlyr = importPDKModule('symLayers')
+
 
 # noinspection PyUnresolvedReferences
 class symbolScene(editorScene):
@@ -108,7 +108,7 @@ class symbolScene(editorScene):
         }
 
         self.symbolShapes = ["line", "arc", "rect", "circle", "pin", "label", "polygon"]
-        self.attributeList = [] # list of symbol attributes
+        self.attributeList = []  # list of symbol attributes
         self.origin = QPoint(0, 0)
         # some default attributes
 
@@ -123,14 +123,14 @@ class symbolScene(editorScene):
         self.labelVisible = False
         self.labelHeight = "12"
         self.labelOpaque = True
-        self._newPin = None
-        self._newLine = None
-        self._newRect = None
-        self._newCircle = None
-        self._newArc = None
-        self._newLabel = None
+        self.newPin = None
+        self.newLine = None
+        self.newRect = None
+        self.newCircle = None
+        self.newArc = None
+        self.newLabel = None
         self._newPolygon = None
-        self._polygonGuideLine = None
+        self.polygonGuideLine = None
 
     @property
     def drawMode(self):
@@ -145,40 +145,38 @@ class symbolScene(editorScene):
             )
         )
 
-
-
     def mouseMoveEvent(self, mouse_event: QGraphicsSceneMouseEvent) -> None:
         super().mouseMoveEvent(mouse_event)
         self.mouseMoveLoc = self.snapToGrid(mouse_event.scenePos().toPoint())
 
         # Update message only when needed
         message = None
-        if self.editModes.drawLine and self._newLine:
+        if self.editModes.drawLine and self.newLine:
             message = "Release mouse on the end point"
-            self._newLine.end = self.mouseMoveLoc
-        elif self.editModes.drawPin and self._newPin:
+            self.newLine.end = self.mouseMoveLoc
+        elif self.editModes.drawPin and self.newPin:
             message = "Place pin"
-            self._newPin.setPos(self.mouseMoveLoc - self.mouseReleaseLoc)
-        elif self.editModes.drawCircle and self._newCircle:
+            self.newPin.setPos(self.mouseMoveLoc - self.mouseReleaseLoc)
+        elif self.editModes.drawCircle and self.newCircle:
             message = "Extend Circle"
             # Optimize circle radius calculation
-            dx = self.mouseMoveLoc.x() - self._newCircle.centre.x()
-            dy = self.mouseMoveLoc.y() - self._newCircle.centre.y()
-            self._newCircle.radius = (dx * dx + dy * dy) ** 0.5
-        elif self.editModes.drawRect and self._newRect:
+            dx = self.mouseMoveLoc.x() - self.newCircle.centre.x()
+            dy = self.mouseMoveLoc.y() - self.newCircle.centre.y()
+            self.newCircle.radius = (dx * dx + dy * dy) ** 0.5
+        elif self.editModes.drawRect and self.newRect:
             message = "Click to finish the rectangle"
-            self._newRect.end = self.mouseMoveLoc
-        elif self.editModes.drawArc and self._newArc:
+            self.newRect.end = self.mouseMoveLoc
+        elif self.editModes.drawArc and self.newArc:
             message = "Extend Arc"
-            self._newArc.end = self.mouseMoveLoc
-        elif self.editModes.addLabel and self._newLabel:
+            self.newArc.end = self.mouseMoveLoc
+        elif self.editModes.addLabel and self.newLabel:
             message = "Place Label"
-            self._newLabel.setPos(self.mouseMoveLoc)
+            self.newLabel.setPos(self.mouseMoveLoc)
         elif (self.editModes.drawPolygon and
               self._newPolygon and
-              self._polygonGuideLine):
+              self.polygonGuideLine):
             message = "Add another point to Polygon"
-            self._polygonGuideLine.setLine(
+            self.polygonGuideLine.setLine(
                 QLineF(self._newPolygon.points[-1], self.mouseMoveLoc)
             )
 
@@ -192,7 +190,7 @@ class symbolScene(editorScene):
         if mouse_event.button() == Qt.LeftButton:
             self.mouseReleaseLoc = mouse_event.scenePos().toPoint()
             modifiers = QGuiApplication.keyboardModifiers()
-            if self.editModes.selectItem and self._selectionRectItem:
+            if self.editModes.selectItem and self.selectionRectItem:
                 self._handleSelectionRect(modifiers)
             else:
                 self._handleMouseRelease(self.mouseReleaseLoc, mouse_event.button())
@@ -203,44 +201,44 @@ class symbolScene(editorScene):
                 self.origin = mousePos
             elif self.editModes.drawLine:
 
-                if self._newLine:
-                    if self._newLine.length <= 1:
+                if self.newLine:
+                    if self.newLine.length <= 1:
                         self.undoStack.removeLastCommand()
-                    self._newLine = None
-                self._newLine = self.lineDraw(mousePos, mousePos)
-                self._newLine.setSelected(True)
+                    self.newLine = None
+                self.newLine = self.lineDraw(mousePos, mousePos)
+                self.newLine.setSelected(True)
             elif self.editModes.drawCircle:
-                if self._newCircle:
-                    if self._newCircle.radius <= 1:
+                if self.newCircle:
+                    if self.newCircle.radius <= 1:
                         self.undoStack.removeLastCommand()
-                    self._newCircle = None
+                    self.newCircle = None
 
-                self._newCircle = self.circleDraw(mousePos, mousePos)
-                self._newCircle.setSelected(True)
+                self.newCircle = self.circleDraw(mousePos, mousePos)
+                self.newCircle.setSelected(True)
             elif self.editModes.drawPin:
-                if self._newPin:
-                    self._newPin = None
+                if self.newPin:
+                    self.newPin = None
 
-                self._newPin = self.pinDraw(mousePos)
-                self._newPin.setSelected(True)
+                self.newPin = self.pinDraw(mousePos)
+                self.newPin.setSelected(True)
             elif self.editModes.drawRect:
-                if self._newRect:
-                    if self._newRect.width <= 1 or self._newRect.height <= 1:
+                if self.newRect:
+                    if self.newRect.width <= 1 or self.newRect.height <= 1:
                         self.undoStack.removeLastCommand()
-                    self._newRect = None
-                self._newRect = self.rectDraw(mousePos, mousePos)
-                self._newRect.setSelected(True)
+                    self.newRect = None
+                self.newRect = self.rectDraw(mousePos, mousePos)
+                self.newRect.setSelected(True)
             elif self.editModes.drawArc:
-                if self._newArc:
-                    if self._newArc.width <= 1 or self._newArc.height <= 1:
+                if self.newArc:
+                    if self.newArc.width <= 1 or self.newArc.height <= 1:
                         self.undoStack.removeLastCommand()
-                    self._newArc = None
-                self._newArc = self.arcDraw(mousePos, mousePos)
-                self._newArc.setSelected(True)
+                    self.newArc = None
+                self.newArc = self.arcDraw(mousePos, mousePos)
+                self.newArc.setSelected(True)
             elif self.editModes.addLabel:
-                if self._newLabel:
-                    self._newLabel = None
-                self._newLabel = self.labelDraw(
+                if self.newLabel:
+                    self.newLabel = None
+                self.newLabel = self.labelDraw(
                     mousePos,
                     self.labelDefinition,
                     self.labelType,
@@ -249,19 +247,18 @@ class symbolScene(editorScene):
                     self.labelOrient,
                     self.labelUse,
                 )
-                self._newLabel.setSelected(True)
+                self.newLabel.setSelected(True)
             elif self.editModes.drawPolygon:
                 if self._newPolygon:
                     self._newPolygon.addPoint(mousePos)
                 else:
-                    self._newPolygon, self._polygonGuideLine = self.startPolygon(mousePos)
+                    self._newPolygon, self.polygonGuideLine = self.startPolygon(mousePos)
 
             elif self.editModes.rotateItem:
                 self.rotateSelectedItems(self.mousePressLoc)
             self.messageLine.setText(self.messages.get(self.editModes.mode(), ""))
         except Exception as e:
             self.logger.error(f"Error in Mouse Release Event: {e} ")
-
 
     def mouseDoubleClickEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         super().mouseDoubleClickEvent(event)
@@ -345,7 +342,7 @@ class symbolScene(editorScene):
             parts = core.split(":")
             instProp = parts[0]
 
-    def startPolygon(self, startLoc: QPoint ):
+    def startPolygon(self, startLoc: QPoint):
         newPolygon = shp.symbolPolygon([startLoc, startLoc])
         self.addUndoStack(newPolygon)
         # Create guide line
@@ -353,16 +350,17 @@ class symbolScene(editorScene):
         polygonGuideLine = QGraphicsLineItem(guide_line)
         polygonGuideLine.setPen(QPen(QColor(255, 255, 0), 1, Qt.DashLine))
         self.addUndoStack(polygonGuideLine)
-        return newPolygon,polygonGuideLine
+        return newPolygon, polygonGuideLine
 
     def finishPolygon(self, event):
-        if hasattr(event, 'button') and event.button() == Qt.LeftButton and self.editModes.drawPolygon and self._newPolygon:
+        if hasattr(event,
+                   'button') and event.button() == Qt.LeftButton and self.editModes.drawPolygon and self._newPolygon:
             self._newPolygon.polygon.remove(0)
             self._newPolygon.points.pop(0)
             self.editModes.setMode("selectItem")
             self._newPolygon = None
-            self.removeItem(self._polygonGuideLine)
-            self._polygonGuideLine = None
+            self.removeItem(self.polygonGuideLine)
+            self.polygonGuideLine = None
             self.editorWindow.messageLine.setText('Select Item.')
 
     def moveBySelectedItems(self):
@@ -401,7 +399,6 @@ class symbolScene(editorScene):
             updateMethod = UPDATE_METHODS.get(type(item))
             if updateMethod:
                 updateMethod(item)
-
 
     def updateSymbolRectangle(self, item):
         queryDlg = pdlg.rectPropertyDialog(self.editorWindow)
@@ -592,8 +589,8 @@ class symbolScene(editorScene):
                     raise Exception("Not a symbol file!")
                 if gridSettings and gridSettings.get("snapGrid"):
                     self.editorWindow.configureGridSettings(decodedData[1].get(
-                                                         "snapGrid", (self.majorGrid,
-                                                                      self.snapGrid)))
+                        "snapGrid", (self.majorGrid,
+                                     self.snapGrid)))
                 self.attributeList = []
                 self.createSymbolItems(itemData)
             self.itemsRef = set(self.items())
@@ -615,7 +612,6 @@ class symbolScene(editorScene):
         finally:
             self.blockSignals(False)
             self.update()
-
 
         # try:
         #     # Load file contents
@@ -666,7 +662,6 @@ class symbolScene(editorScene):
         #     self.blockSignals(False)
         #     self.update()
 
-
     def createSymbolItems(self, itemsList: List[Dict]):
         factory = lj.symbolItems(self)
         for itemDict in itemsList:
@@ -695,8 +690,8 @@ class symbolScene(editorScene):
         try:
             self.itemsRefSet = set(self.items())
             # Filter items and process labels in one pass
-            sceneItems = [item for item in self.items() 
-                         if isinstance(item, shp.symbolPolygon) or item.parentItem() is None]
+            sceneItems = [item for item in self.items()
+                          if isinstance(item, shp.symbolPolygon) or item.parentItem() is None]
             # Build save data
             save_data = [
                 {"viewType": "symbol"},
@@ -715,7 +710,6 @@ class symbolScene(editorScene):
         except Exception as e:
             self.logger.error(f"Symbol save error: {e}")
             return False
-        
 
     def viewSymbolProperties(self):
         """
@@ -764,4 +758,3 @@ class symbolScene(editorScene):
             self._selectedItemGroup = self.createItemGroup(copyShapesList)
             self._selectedItemGroup.setSelected(True)
             self.addListUndoStack(copyShapesList)
-

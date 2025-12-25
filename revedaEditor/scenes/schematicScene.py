@@ -69,9 +69,9 @@ class schematicScene(editorScene):
 
         # Initialize modes with default values
         self.editModes = ddef.schematicModes(selectItem=True, deleteItem=False,
-            moveItem=False, copyItem=False, rotateItem=False, changeOrigin=False,
-            panView=False, drawPin=False, drawWire=False, drawBus=False,
-            drawText=False, addInstance=False, stretchItem=False, nameNet=False, )
+                                             moveItem=False, copyItem=False, rotateItem=False, changeOrigin=False,
+                                             panView=False, drawPin=False, drawWire=False, drawBus=False,
+                                             drawText=False, addInstance=False, stretchItem=False, nameNet=False, )
         self.messages = {'selectItem': 'Select Item', 'deleteItem': 'Delete Item',
                          'moveItem': 'Move Item', 'copyItem': 'Copy Item',
                          'rotateItem': 'Rotate Item',
@@ -83,7 +83,7 @@ class schematicScene(editorScene):
                          'nameNet': 'Name Net', 'drawSymbol': 'Draw Symbol'}
 
         self.selectModes = ddef.schematicSelectModes(selectAll=True,
-            selectDevice=False, selectNet=False, selectPin=False)
+                                                     selectDevice=False, selectNet=False, selectPin=False)
 
         # Initialize selection trackers
         self.selectedNet = None
@@ -214,7 +214,7 @@ class schematicScene(editorScene):
         return super().mouseReleaseEvent(event)
 
     def _handleMouseRelease(self, mousePos: QPoint,
-            button: Qt.MouseButton) -> None:
+                            button: Qt.MouseButton) -> None:
         """
         Handle mouse release logic.
 
@@ -246,7 +246,7 @@ class schematicScene(editorScene):
         selectionMode = (
             Qt.ItemSelectionMode.IntersectsItemShape if self.partialSelection else Qt.ItemSelectionMode.ContainsItemShape)
         selectionPath = QPainterPath()
-        selectionPath.addRect(self._selectionRectItem.sceneBoundingRect())
+        selectionPath.addRect(self.selectionRectItem.sceneBoundingRect())
         match modifiers:
             case Qt.KeyboardModifier.ShiftModifier:
                 self._handleShiftSelection(selectionMode, selectionPath)
@@ -256,15 +256,15 @@ class schematicScene(editorScene):
             case _:
                 for item in self.items(selectionPath, mode=selectionMode):
                     item.setSelected(True)
-        self.removeItem(self._selectionRectItem)
+        self.removeItem(self.selectionRectItem)
         self._selectionRectItem = None
 
     def _handleShiftSelection(self, selectionMode, selectionPath):
         selectedItems = self.items(selectionPath, mode=selectionMode)
 
         type_map = {'selectNet': (snet.schematicNet, self.selectModes.selectNet),
-            'selectDevice': (shp.schematicSymbol, self.selectModes.selectDevice),
-            'selectPin': (shp.schematicPin, self.selectModes.selectPin)}
+                    'selectDevice': (shp.schematicSymbol, self.selectModes.selectDevice),
+                    'selectPin': (shp.schematicPin, self.selectModes.selectPin)}
 
         for mode_name, (item_type, is_active) in type_map.items():
             if is_active:
@@ -304,7 +304,7 @@ class schematicScene(editorScene):
         """
         if self._newNet:  # finish net drawing
             self._newNet.draftLine = QLineF(self._newNet.draftLine.p1(),
-                self.snapToGrid(eventLoc))
+                                            self.snapToGrid(eventLoc))
             self.wireEditFinished.emit(self._newNet)
             self._newNet = None
 
@@ -317,7 +317,7 @@ class schematicScene(editorScene):
     def _handleDrawBus(self, eventLoc: QPoint):
         if self._newNet:
             self._newNet.draftLine = QLineF(self._newNet.draftLine.p1(),
-                self.snapToGrid(eventLoc))
+                                            self.snapToGrid(eventLoc))
             self.wireEditFinished.emit(self._newNet)
             self._newNet = None
         startSnapPoint = self.snapToGrid(self.findSnapPoint(eventLoc, set()))
@@ -359,7 +359,7 @@ class schematicScene(editorScene):
 
     def updateStretchNet(self):
         self._stretchNet.draftLine = QLineF(self._stretchNet.draftLine.p1(),
-            self.mouseMoveLoc)
+                                            self.mouseMoveLoc)
 
     @Slot(snet.schematicNet)
     def _handleWireFinished(self, newNet: snet.schematicNet):
@@ -368,11 +368,12 @@ class schematicScene(editorScene):
 
         """
 
-        if newNet.draftLine.length() < self.snapGrid/2:
+        if newNet.draftLine.length() < self.snapGrid / 2:
             self.removeItem(newNet)
             self.undoStack.removeLastCommand()
         else:
-            newNetSceneRect = newNet.sceneBoundingRect().adjusted(-self.snapGrid, -self.snapGrid, self.snapGrid, self.snapGrid)
+            newNetSceneRect = newNet.sceneBoundingRect().adjusted(-self.snapGrid, -self.snapGrid, self.snapGrid,
+                                                                  self.snapGrid)
             self.mergeSplitNets(newNet)
             self.invalidate(newNetSceneRect, QGraphicsScene.BackgroundLayer)
 
@@ -451,7 +452,7 @@ class schematicScene(editorScene):
 
         # Create ordered points list
         splitPointsList = [inputNet.sceneEndPoints[0], *splitPointsSet,
-            inputNet.sceneEndPoints[1], ]
+                           inputNet.sceneEndPoints[1], ]
         orderedPoints = list(dict.fromkeys(self.orderPoints(splitPointsList)))
 
         # Create split nets
@@ -460,7 +461,7 @@ class schematicScene(editorScene):
 
         for i in range(len(orderedPoints) - 1):
             splitNet = snet.schematicNet(orderedPoints[i], orderedPoints[i + 1],
-                inputNet.width)
+                                         inputNet.width)
             if not splitNet.draftLine.isNull():
                 if is_selected:
                     splitNet.setSelected(True)
@@ -469,7 +470,7 @@ class schematicScene(editorScene):
         return True, splitNetSet
 
     def findSnapPoint(self, eventLoc: QPoint,
-            ignoredSet: set[snet.schematicNet]) -> QPoint:
+                      ignoredSet: set[snet.schematicNet]) -> QPoint:
         snapRect = QRect(eventLoc.x() - self.snapTuple[0],
                          eventLoc.y() - self.snapTuple[1], 2 * self.snapTuple[0],
                          2 * self.snapTuple[1], )
@@ -479,22 +480,22 @@ class schematicScene(editorScene):
             snapPoints.update(self.findNetInterSect(self._newNet, snapRect))
         if snapPoints:
             lengths = [(snapPoint - eventLoc).manhattanLength() for snapPoint in
-                snapPoints]
+                       snapPoints]
             closestPoint = list(snapPoints)[lengths.index(min(lengths))]
             return closestPoint
         else:
             return eventLoc
 
     def findConnectPoints(self, sceneRect: QRect,
-            ignoredSet: set[QGraphicsItem]) -> set[QPoint]:
+                          ignoredSet: set[QGraphicsItem]) -> set[QPoint]:
         snapPoints = set()
         rectItems = set(self.items(sceneRect)) - ignoredSet
         for item in rectItems:
             if isinstance(item, snet.schematicNet) and any(
                     list(map(sceneRect.contains, item.sceneEndPoints))):
                 snapPoints.add(item.sceneEndPoints[
-                    list(map(sceneRect.contains, item.sceneEndPoints)).index(
-                        True)])
+                                   list(map(sceneRect.contains, item.sceneEndPoints)).index(
+                                       True)])
             elif isinstance(item, shp.symbolPin):
                 snapPoints.add(item.mapToScene(item.start).toPoint())
             elif isinstance(item, shp.schematicPin):
@@ -505,8 +506,8 @@ class schematicScene(editorScene):
         QPoint]:
         # Find all nets in the rectangle except the input net
         netsInSnapRectSet = {netItem for netItem in self.items(rect) if
-            isinstance(netItem, snet.schematicNet) and netItem.isOrthogonal(
-                inputNet)}
+                             isinstance(netItem, snet.schematicNet) and netItem.isOrthogonal(
+                                 inputNet)}
         snapPointsSet = set()
         l1 = QLineF(inputNet.sceneEndPoints[0], inputNet.sceneEndPoints[1])
         unitVector = l1.unitVector()
@@ -523,7 +524,7 @@ class schematicScene(editorScene):
         return snapPointsSet
 
     def findNetStretchPoints(self, netItem: snet.schematicNet,
-            snapDistance: int) -> dict[int, QPoint]:
+                             snapDistance: int) -> dict[int, QPoint]:
         netEndPointsDict: dict[int, QPoint] = {}
         sceneEndPoints = netItem.sceneEndPoints
         for netEnd in sceneEndPoints:
@@ -543,7 +544,7 @@ class schematicScene(editorScene):
                         sceneEndPoints.index(netEnd)] = item.mapToScene(
                         item.start).toPoint()
                 if netEndPointsDict.get(sceneEndPoints.index(
-                    netEnd)):  # after finding one point, no need to iterate.
+                        netEnd)):  # after finding one point, no need to iterate.
                     break
         return netEndPointsDict
 
@@ -583,14 +584,14 @@ class schematicScene(editorScene):
         match stretchEnd:
             case "p2":
                 self._stretchNet = snet.schematicNet(netItem.sceneEndPoints[0],
-                    netItem.sceneEndPoints[1])
+                                                     netItem.sceneEndPoints[1])
             case "p1":
                 self._stretchNet = snet.schematicNet(netItem.sceneEndPoints[1],
-                    netItem.sceneEndPoints[0])
+                                                     netItem.sceneEndPoints[0])
         self._stretchNet.stretch = True
         self._stretchNet.mergeNetName(netItem)
         addDeleteStretchNetCommand = us.addDeleteShapeUndo(self, self._stretchNet,
-            netItem)
+                                                           netItem)
         self.undoStack.push(addDeleteStretchNetCommand)
 
     def generatePinNetMap(self, sceneSymbolSet: set[shp.schematicSymbol]):
@@ -614,18 +615,18 @@ class schematicScene(editorScene):
 
     def findRectSymbolPin(self, rect: Union[QRect, QRectF]) -> set[shp.symbolPin]:
         pinsRectSet = {item for item in self.items(rect) if
-            isinstance(item, shp.symbolPin)}
+                       isinstance(item, shp.symbolPin)}
         return pinsRectSet
 
     def findRectSchemPins(self, rect: Union[QRect, QRectF]) -> set[
         shp.schematicPin]:
         pinsRectSet = {item for item in self.items(rect) if
-            isinstance(item, shp.schematicPin)}
+                       isinstance(item, shp.schematicPin)}
         return pinsRectSet
 
     def findSceneSchemPinsSet(self) -> set[shp.schematicPin]:
         pinsSceneSet = {item for item in self.items() if
-            isinstance(item, shp.schematicPin)}
+                        isinstance(item, shp.schematicPin)}
         if pinsSceneSet:  # check pinsSceneSet is empty
             return pinsSceneSet
         else:
@@ -655,14 +656,14 @@ class schematicScene(editorScene):
 
             # Calculate intermediate points
             firstPointX = self.snapToBase((end.x() - start.x()) / 3 + start.x(),
-                self.snapTuple[0])
+                                          self.snapTuple[0])
             firstPoint = QPoint(firstPointX, start.y())
             secondPoint = QPoint(firstPointX, end.y())
 
             # Create wire segments
             lines = []
             segments = [(start, firstPoint), (firstPoint, secondPoint),
-                (secondPoint, end), ]
+                        (secondPoint, end), ]
             for seg_start, seg_end in segments:
                 if seg_start != seg_end:
                     lines.append(snet.schematicNet(seg_start, seg_end))
@@ -703,8 +704,8 @@ class schematicScene(editorScene):
 
     def instSymbol(self, instanceTuple: ddef.viewTuple, pos: QPoint):
         viewItem = libm.findViewItem(self.editorWindow.libraryView.libraryModel,
-            instanceTuple.libraryName, instanceTuple.cellName,
-            instanceTuple.viewName, )
+                                     instanceTuple.libraryName, instanceTuple.cellName,
+                                     instanceTuple.viewName, )
         viewPath = viewItem.viewPath
         try:
             # Try to get items from cache first
@@ -720,18 +721,18 @@ class schematicScene(editorScene):
 
             # Use comprehensions for better performance
             itemAttributes = {item["nam"]: item["def"] for item in items[2:] if
-                item["type"] == "attr"}
+                              item["type"] == "attr"}
 
             itemShapes = [lj.symbolItems(self).create(item) for item in items[2:]
-                if item["type"] != "attr"]
+                          if item["type"] != "attr"]
             symbolInstance = shp.schematicSymbol(itemShapes, itemAttributes)
             cellItem = viewItem.parent()
             libItem = cellItem.parent()
             # Batch property assignments
             instanceProperties = {"pos": pos, "counter": self.instanceCounter,
-                "instanceName": f"I{self.instanceCounter}",
-                "libraryName": libItem.libraryName, "cellName": cellItem.cellName,
-                "viewName": viewItem.viewName, }
+                                  "instanceName": f"I{self.instanceCounter}",
+                                  "libraryName": libItem.libraryName, "cellName": cellItem.cellName,
+                                  "viewName": viewItem.viewName, }
 
             for prop, value in instanceProperties.items():
                 setattr(symbolInstance, prop, value)
@@ -758,7 +759,7 @@ class schematicScene(editorScene):
 
     def copySelectedItems(self):
         selectedItems = [item for item in self.selectedItems() if
-            item.parentItem() is None]
+                         item.parentItem() is None]
         copyShapesList = []
         if selectedItems:
             for item in selectedItems:
@@ -775,8 +776,6 @@ class schematicScene(editorScene):
             self._selectedItemGroup = self.createItemGroup(copyShapesList)
             self._selectedItemGroup.setSelected(True)
             self.addListUndoStack(copyShapesList)
-
-
 
     def saveSchematic(self, file: pathlib.Path) -> bool:
         """
@@ -803,7 +802,7 @@ class schematicScene(editorScene):
                     f.write("[\n")
 
                     header_items = [{"viewType": "schematic"},
-                        {"snapGrid": (self.majorGrid, self.snapGrid)}, ]
+                                    {"snapGrid": (self.majorGrid, self.snapGrid)}, ]
                     json.dump(header_items[0], f)
                     f.write(",\n")
                     json.dump(header_items[1], f)
@@ -849,8 +848,6 @@ class schematicScene(editorScene):
             if tempFile.exists():
                 tempFile.unlink()
             return True
-            
-
 
     @staticmethod
     def findEditorTypeString(editorWindow):
@@ -896,11 +893,11 @@ class schematicScene(editorScene):
 
                 if gridSettings and gridSettings.get("snapGrid"):
                     self.editorWindow.configureGridSettings(decodedData[1].get(
-                                                         "snapGrid", (self.majorGrid,
-                                                                      self.snapGrid)))         
-                self.createSchematicItems(itemData) 
+                        "snapGrid", (self.majorGrid,
+                                     self.snapGrid)))
+                self.createSchematicItems(itemData)
             self.itemsRefSet = set(self.items())
-                
+
         except (json.JSONDecodeError, FileNotFoundError) as e:
             self.logger.error(f"File error while loading schematic: {e}")
             return
@@ -930,7 +927,7 @@ class schematicScene(editorScene):
         """
         try:
             selectedItems = [item for item in self.selectedItems() if
-                item.parentItem() is None]
+                             item.parentItem() is None]
             if selectedItems:
                 for item in selectedItems:
                     item.prepareGeometryChange()
@@ -993,7 +990,7 @@ class schematicScene(editorScene):
             viewName = dlg.viewNameEdit.text().strip()
             instanceTuple = ddef.viewTuple(libraryName, cellName, viewName)
             location = QPoint(int(float(dlg.xLocationEdit.text().strip())),
-                int(float(dlg.yLocationEdit.text().strip())), )
+                              int(float(dlg.yLocationEdit.text().strip())), )
             newInstance = self.instSymbol(instanceTuple, location)
 
             if newInstance:
@@ -1070,9 +1067,9 @@ class schematicScene(editorScene):
             # item.prepareGeometryChange()
             start = item.mapToScene(item.start)
             newText = shp.text(start, dlg.plainTextEdit.toPlainText(),
-                dlg.familyCB.currentText(), dlg.fontStyleCB.currentText(),
-                dlg.fontsizeCB.currentText(), dlg.textAlignmCB.currentText(),
-                dlg.textOrientCB.currentText(), )
+                               dlg.familyCB.currentText(), dlg.fontStyleCB.currentText(),
+                               dlg.fontsizeCB.currentText(), dlg.textAlignmCB.currentText(),
+                               dlg.textOrientCB.currentText(), )
             self.rotateAnItem(start, newText, int(float(item.textOrient[1:])))
             self.undoStack.push(us.addDeleteShapeUndo(self, newText, item))
         return item
@@ -1090,7 +1087,7 @@ class schematicScene(editorScene):
             pinDir = dlg.pinDir.currentText()
             pinType = dlg.pinType.currentText()
             itemStartPos = QPoint(int(float(dlg.xlocationEdit.text().strip())),
-                int(float(dlg.ylocationEdit.text().strip())), )
+                                  int(float(dlg.ylocationEdit.text().strip())), )
             start = self.snapToGrid(itemStartPos - self.origin)
             angle = float(dlg.angleEdit.text().strip())
             newPin = shp.schematicPin(QPoint(0, 0), pinName, pinDir, pinType)
@@ -1114,7 +1111,7 @@ class schematicScene(editorScene):
         """
         try:
             selectedSymbol = [item for item in self.selectedItems() if
-                isinstance(item, shp.schematicSymbol)][0]
+                              isinstance(item, shp.schematicSymbol)][0]
 
             if isinstance(selectedSymbol, shp.schematicSymbol):
                 dlg = fd.goDownHierDialogue(self.editorWindow)
@@ -1123,7 +1120,7 @@ class schematicScene(editorScene):
                     selectedSymbol.libraryName, )
                 cellItem = libm.getCellItem(libItem, selectedSymbol.cellName)
                 viewNames = [cellItem.child(i).text() for i in
-                    range(cellItem.rowCount()) if "schematic" in cellItem.child(
+                             range(cellItem.rowCount()) if "schematic" in cellItem.child(
                         i).text() or "symbol" in cellItem.child(i).text()]
                 dlg.viewListCB.addItems(viewNames)
                 if dlg.exec() == QDialog.Accepted:
@@ -1140,10 +1137,10 @@ class schematicScene(editorScene):
                         viewItem, cellItem, libItem)
                     if viewItem.viewType == "schematic":
                         parentInstanceName = \
-                        [labelItem.labelValue for labelItem in
-                            selectedSymbol.labels.values() if
-                            labelItem.labelType == "NLPLabel" and labelItem.labelDefinition == "[@instName]"][
-                            0]
+                            [labelItem.labelValue for labelItem in
+                             selectedSymbol.labels.values() if
+                             labelItem.labelType == "NLPLabel" and labelItem.labelDefinition == "[@instName]"][
+                                0]
                         self.editorWindow.appMainW.openViews[
                             openViewTuple].centralW.scene.hierarchyTrail = (
                             f"{self.hierarchyTrail}{parentInstanceName}.")
@@ -1175,7 +1172,7 @@ class schematicScene(editorScene):
 
     def renumberInstances(self):
         symbolList = [item for item in self.items() if
-            isinstance(item, shp.schematicSymbol)]
+                      isinstance(item, shp.schematicSymbol)]
 
         for index, symbolInstance in enumerate(symbolList):
             symbolInstance.counter = index
@@ -1198,8 +1195,8 @@ class schematicScene(editorScene):
         unconnectedPins = []
         for pinName, pinItem in symbolItem.pins.items():
             netsConnectedToPin = [netItem for netItem in
-                pinItem.collidingItems(Qt.IntersectsItemBoundingRect) if
-                isinstance(netItem, snet.schematicNet)]
+                                  pinItem.collidingItems(Qt.IntersectsItemBoundingRect) if
+                                  isinstance(netItem, snet.schematicNet)]
             if netsConnectedToPin:
                 # all the nets connected to this pin should have the same name
                 netName = netsConnectedToPin[0].name
@@ -1224,9 +1221,8 @@ class schematicScene(editorScene):
                 ordered_map[pinName] = symbolItem.pinNetMap[pinName]
             symbolItem.pinNetMap = ordered_map
 
-
     def _processNetGroup(self, namedNets: Set[snet.schematicNet],
-            remainingNets: Set[snet.schematicNet]):
+                         remainingNets: Set[snet.schematicNet]):
         """Process a group of named nets and their connections."""
         while namedNets:
             net = namedNets.pop()
@@ -1236,7 +1232,7 @@ class schematicScene(editorScene):
             remainingNets -= connectedNets
 
     def findConnectedNets(self, startNet: snet.schematicNet,
-            candidateNets: Set[snet.schematicNet]) -> Set[snet.schematicNet]:
+                          candidateNets: Set[snet.schematicNet]) -> Set[snet.schematicNet]:
         """Find all nets connected to startNet using DFS without mutating input."""
         connected = set()
         stack = [startNet]
@@ -1308,14 +1304,14 @@ class schematicScene(editorScene):
 
         # Find all global pins in one pass
         globalPins = (pinItem for symbol in symbolSet for pinName, pinItem in
-        symbol.pins.items() if pinName.endswith("!"))
+                      symbol.pins.items() if pinName.endswith("!"))
 
         for pinItem in globalPins:
             try:
                 # Get nets connected to this global pin
                 connectedNets = (netItem for netItem in
-                pinItem.collidingItems(Qt.IntersectsItemShape) if
-                isinstance(netItem, snet.schematicNet))
+                                 pinItem.collidingItems(Qt.IntersectsItemShape) if
+                                 isinstance(netItem, snet.schematicNet))
 
                 for netItem in connectedNets:
                     if netItem.nameStrength.value == 3:  # Strong name
@@ -1337,7 +1333,7 @@ class schematicScene(editorScene):
                 return False, set()
 
         return True, globalNetsSet
-    
+
     def findSchPins(self, net: snet.schematicNet) -> set[shp.schematicPin]:
         return {pinItem for pinItem in net.collidingItems(Qt.IntersectsItemShape)
                 if isinstance(pinItem, shp.schematicPin)}
@@ -1350,8 +1346,8 @@ class schematicScene(editorScene):
             try:
                 # Use collision detection for better performance
                 connectedNets = (netItem for netItem in
-                sceneSchemPin.collidingItems(Qt.IntersectsItemShape) if
-                isinstance(netItem, snet.schematicNet))
+                                 sceneSchemPin.collidingItems(Qt.IntersectsItemShape) if
+                                 isinstance(netItem, snet.schematicNet))
 
                 # Parse pin name once
                 pinBaseName, pinIndices = self.parseBusNotation(
@@ -1365,7 +1361,7 @@ class schematicScene(editorScene):
                             self.logger.error(
                                 f"Net name conflict: net '{netItem.name}' vs pin '{sceneSchemPin.pinName}'")
                             return False, set()
-                        else: # names are the same, check if bus sizes are the same
+                        else:  # names are the same, check if bus sizes are the same
                             if abs(pinIndices[0] - pinIndices[1]) != abs(
                                     netIndices[0] - netIndices[1]):
                                 netItem.nameConflict = True
@@ -1384,14 +1380,13 @@ class schematicScene(editorScene):
                 return False, set()
         return True, connectedNetsSet
 
-
     def _processNetPinConnection(self, net: snet.schematicNet, pinName: str) -> set[snet.schematicNet]:
         """Common logic for processing net-pin connections."""
         if net.nameStrength.value == 3 and net.name != pinName:
             net.nameConflict = True
             self.logger.error(f"Net name conflict: net '{net.name}' vs pin '{pinName}'")
             return set()
-        
+
         if net.nameStrength.value != 3:
             net.name = pinName
             net.nameStrength = snet.netNameStrengthEnum.INHERIT
@@ -1451,7 +1446,6 @@ class schematicScene(editorScene):
         if match.hasMatch() and text.count("<") == 1 and text.count(">") == 1:
             return True
         return False
-
 
     @staticmethod
     def createBusRanges(start: int, end: int):

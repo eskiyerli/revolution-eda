@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "revolution-eda"
-version = "0.8.6"
+version = "0.8.7"
 description = "Custom IC Design Environment for Professionals"
 authors = ["Revolution Semiconductor <48187772+eskiyerli@users.noreply.github.com>"]
 license = "Mozilla Public License v2 modified by Commons Clause"

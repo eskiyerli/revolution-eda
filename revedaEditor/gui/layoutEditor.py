@@ -86,6 +86,9 @@ class layoutEditor(edw.editorWindow):
 
     def _createActions(self):
         super()._createActions()
+        chopIcon = QIcon(":/icons/cutter.png")
+        self.chopAction = QAction(chopIcon, "Cut", self)
+        self.chopAction.setToolTip("Cut selected objects")
         self.exportGDSAction = QAction("Export GDS", self)
         self.exportGDSAction.setToolTip("Export GDS from Layout")
         self.klayoutDRCAction = QAction("KLayout DRC...", self)
@@ -102,6 +105,7 @@ class layoutEditor(edw.editorWindow):
 
         self.propertyMenu.addAction(self.objPropAction)
         self.menuEdit.addAction(self.stretchAction)
+        self.menuEdit.addAction(self.chopAction)
         self.menuCreate.addAction(self.createInstAction)
         self.menuCreate.addAction(self.createRectAction)
         self.menuCreate.addAction(self.createPathAction)
@@ -151,7 +155,7 @@ class layoutEditor(edw.editorWindow):
         self.createInstAction.triggered.connect(self.createInstClick)
         self.createRectAction.triggered.connect(self.createRectClick)
         self.exportGDSAction.triggered.connect(self.exportGDSClick)
-
+        self.chopAction.triggered.connect(self.chopClick)
         self.createPathAction.triggered.connect(self.createPathClick)
         self.createPinAction.triggered.connect(self.createPinClick)
         self.createLabelAction.triggered.connect(self.createLabelClick)
@@ -166,16 +170,20 @@ class layoutEditor(edw.editorWindow):
 
     def _createShortcuts(self):
         super()._createShortcuts()
-        self.createRectAction.setShortcut(Qt.Key_R)
-        self.createPathAction.setShortcut(Qt.Key_W)
-        self.createInstAction.setShortcut(Qt.Key_I)
-        self.createPinAction.setShortcut(Qt.Key_P)
-        self.createLabelAction.setShortcut(Qt.Key_L)
-        self.createViaAction.setShortcut(Qt.Key_V)
-        self.createPolygonAction.setShortcut(Qt.Key_G)
-        self.stretchAction.setShortcut(Qt.Key_S)
-        self.rulerAction.setShortcut(Qt.Key_K)
+        self.createRectAction.setShortcut(Qt.Key.Key_R)
+        self.createPathAction.setShortcut(Qt.Key.Key_W)
+        self.createInstAction.setShortcut(Qt.Key.Key_I)
+        self.createPinAction.setShortcut(Qt.Key.Key_P)
+        self.createLabelAction.setShortcut(Qt.Key.Key_L)
+        self.createViaAction.setShortcut(Qt.Key.Key_V)
+        self.createPolygonAction.setShortcut(Qt.Key.Key_G)
+        self.stretchAction.setShortcut(Qt.Key.Key_S)
+        self.rulerAction.setShortcut(Qt.Key.Key_K)
         self.delRulerAction.setShortcut("Shift+K")
+        self.chopAction.setShortcut("Shift+C")
+
+    def chopClick(self):
+        self.centralW.scene.editModes.setMode("cutShape")
 
     def createRectClick(self, s):
         self.centralW.scene.editModes.setMode("drawRect")
@@ -386,9 +394,7 @@ class layoutEditor(edw.editorWindow):
         self.centralW.scene.goDownHier()
 
     def checkSaveCell(self):
-        self.centralW.scene.saveLayoutCell(
-            self.file)  # if the parent editor is not None, emit the childEditorChanged signal  # and pass the parentObj as the argument  # if self.parentEditor:  #     self.parentEditor.childEditorChanged.emit(self.parentObj)
-
+        self.centralW.scene.saveLayoutCell(self.file)  
     def saveCell(self):
         self.centralW.scene.saveLayoutCell(self.file)
 

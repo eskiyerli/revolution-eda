@@ -21,6 +21,8 @@
 #    License: Mozilla Public License 2.0
 #    Licensor: Revolution Semiconductor (Registered in the Netherlands)
 #
+from lxml.html.builder import Q
+from itertools import cycle
 
 
 import inspect
@@ -108,7 +110,7 @@ class layoutScene(editorScene):
             drawRuler=False,
             stretchItem=False,
             addInstance=False,
-            chopShape=False,
+            cutShape=False,
         )
         self.editModes.setMode("selectItem")
         self.selectModes = ddef.layoutSelectModes(
@@ -139,15 +141,15 @@ class layoutScene(editorScene):
             "drawCircle": "Draw Circle",
             "drawRuler": "Draw Ruler",
             "addInstance": "Add Instance",
-            "chopShape": "Chop Shape",
+            "cutShape": "Cut Shape",
             "stretchItem": "Stretch Item",
         }
         self.newInstance = None
         self.layoutInstanceTuple = None
         self._scale = fabproc.dbu
         self.itemCounter = 0
-        self._newPath = None
-        self._stretchPath = None
+        self.newPath = None
+        self.stretchPathItem = None
         defaultPathDefTuple = fabproc.processPaths[0]
         self.newPathTuple = ddef.layoutPathTuple("", defaultPathDefTuple.layer, 0, defaultPathDefTuple.minWidth,
                                                  int(defaultPathDefTuple.minWidth / 2),
@@ -157,14 +159,15 @@ class layoutScene(editorScene):
         self._newPin = None
         self.newPinTuple = None
         self.newLabelTuple = None
-        self._newLabel = None
-        self._newRect = None
-        self._newPolygon = None
+        self.newLabel = None
+        self.newRect = None
+        self.newPolygon = None
         self.arrayViaTuple = None
         self._singleVia = None
-        self._arrayVia = None
-        self._polygonGuideLine = None
+        self.arrayVia = None
+        self.polygonGuideLine = None
         self._newRuler = None
+        self._newCutLine = None
         self._selectionRectItem = None
         self.rulersSet = set()
         self.rulerFont = self.setRulerFont(12 * fabproc.dbu)
@@ -176,7 +179,7 @@ class layoutScene(editorScene):
         self._draftPen = QPen(Qt.DashLine)
         self._draftPen.setColor(QColor(0, 150, 0))
         self._draftPen.setWidth(int(fabproc.dbu / 10))
-        self.setMinimumRenderSize(2)
+        self.setMinimumRenderSize(0.2)
 
     @property
     def drawMode(self):
@@ -245,36 +248,40 @@ class layoutScene(editorScene):
         super().mouseMoveEvent(event)
 
         # Handle drawing path mode
-        if self.editModes.drawPath and self._newPath is not None:
-            self._newPath.draftLine = QLineF(
-                self._newPath.draftLine.p1(), self.mouseMoveLoc
+        if self.editModes.drawPath and self.newPath is not None:
+            self.newPath.draftLine = QLineF(
+                self.newPath.draftLine.p1(), self.mouseMoveLoc
             )
-        elif (self.editModes.drawRect or self.editModes.chopShape) and self._newRect:
-            self._newRect.end = self.mouseMoveLoc
+        elif (self.editModes.drawRect or self.editModes.cutShape) and self.newRect:
+            self.newRect.end = self.mouseMoveLoc
         # Handle drawing pin mode with no new pin
         elif self.editModes.drawPin:
             if self._newPin is not None:
                 self._newPin.end = self.mouseMoveLoc
-        elif self.editModes.addLabel and self._newLabel is not None:
-            self._newLabel.start = self.mouseMoveLoc
+        elif self.editModes.addLabel and self.newLabel is not None:
+            self.newLabel.start = self.mouseMoveLoc
         elif self.editModes.addInstance and self.newInstance is not None:
             self.newInstance.setPos(self.mouseMoveLoc - self.newInstance.start)
         # Handle drawing polygon mode
-        elif self.editModes.drawPolygon and self._newPolygon is not None:
-            self._polygonGuideLine.setLine(
-                QLineF(self._newPolygon.points[-1], self.mouseMoveLoc)
+        elif self.editModes.drawPolygon and self.newPolygon is not None:
+            self.polygonGuideLine.setLine(
+                QLineF(self.newPolygon.points[-1], self.mouseMoveLoc)
             )
         elif self.editModes.drawRuler and self._newRuler is not None:
             self._newRuler.draftLine = QLineF(
                 self._newRuler.draftLine.p1(), self.mouseMoveLoc
             )
         # Handle adding via mode with array via tuple
-        elif self.editModes.addVia and self._arrayVia is not None:
-            self._arrayVia.setPos(self.mouseMoveLoc - self._arrayVia.start)
+        elif self.editModes.addVia and self.arrayVia is not None:
+            self.arrayVia.setPos(self.mouseMoveLoc - self.arrayVia.start)
 
-        elif self.editModes.stretchItem and self._stretchPath is not None:
-            self._stretchPath.draftLine = QLineF(
-                self._stretchPath.draftLine.p1(), self.mouseMoveLoc
+        elif self.editModes.stretchItem and self.stretchPathItem is not None:
+            self.stretchPathItem.draftLine = QLineF(
+                self.stretchPathItem.draftLine.p1(), self.mouseMoveLoc
+            )
+        elif self.editModes.cutShape and self._newCutLine is not None:
+            self._newCutLine.draftLine = QLineF(
+                self._newCutLine.draftLine.p1(), self.mouseMoveLoc
             )
 
         # Calculate the cursor position in layout units
@@ -312,12 +319,13 @@ class layoutScene(editorScene):
                 self.drawLayoutPolygon()
             elif self.editModes.drawRuler:
                 self.drawLayoutRuler()
+            elif self.editModes.cutShape:
+                self.finishCutLine()
+                self.startCutLine()
             elif self.editModes.addVia:
                 self.addLayoutViaArray()
             elif self.editModes.changeOrigin:
                 self.origin = mousePos
-            elif self.editModes.chopShape:
-                self.chopShape()
             elif self.editModes.rotateItem:
                 self.editorWindow.messageLine.setText("Rotate item")
                 if self.selectedItems():
@@ -326,15 +334,15 @@ class layoutScene(editorScene):
             self.logger.error(f"mouse release error: {e}")
 
     def addLayoutViaArray(self):
-        if self._arrayVia is not None:
+        if self.arrayVia is not None:
             self.arrayViaTuple = None
-            self._arrayVia = None
+            self.arrayVia = None
 
         singleVia = lshp.layoutVia(
             QPoint(0, 0),
             *self.arrayViaTuple.singleViaTuple,
         )
-        self._arrayVia = lshp.layoutViaArray(
+        self.arrayVia = lshp.layoutViaArray(
             self.mouseReleaseLoc,
             singleVia,
             self.arrayViaTuple.xs,
@@ -342,7 +350,7 @@ class layoutScene(editorScene):
             self.arrayViaTuple.xnum,
             self.arrayViaTuple.ynum,
         )
-        self.addUndoStack(self._arrayVia)
+        self.addUndoStack(self.arrayVia)
 
     def drawLayoutRuler(self):
         if self._newRuler:
@@ -358,25 +366,167 @@ class layoutScene(editorScene):
         )
         self.addUndoStack(self._newRuler)
 
+    def finishCutLine(self):
+        if self._newCutLine is None:
+            return
+        if self._newCutLine.draftLine.isNull():
+            self.undoStack.removeLastCommand()
+        else:
+            if self.selectedItemList:
+                item = self.selectedItemList[0]
+                line = QLineF(*self._newCutLine.sceneEndPoints)
+                if isinstance(item, lshp.layoutRect):
+                    self._splitRect(item, line)
+                elif isinstance(item, lshp.layoutPath):
+                    self._splitPath(item, line)
+                elif isinstance(item, lshp.layoutPolygon):
+                    self._splitPolygon(item, line)
+        self.removeItem(self._newCutLine)
+        self._newCutLine = None
+
+    def _splitRect(self, item, line:QLineF):
+        rect = item.rect
+        points = [rect.topLeft(), rect.topRight(), rect.bottomRight(), rect.bottomLeft()]
+        intersections = []
+        
+        # Find all intersection points with rectangle edges
+        for i in range(4):
+            edge = QLineF(points[i], points[(i + 1) % 4])
+            result = line.intersects(edge)
+            if result[0] == QLineF.IntersectionType.BoundedIntersection:
+                intersections.append((i, result[1]))
+        
+        # Split rectangle if we have exactly 2 intersections
+        if len(intersections) == 2:
+            idx1, p1 = intersections[0]
+            idx2, p2 = intersections[1]
+            
+            # Create two new polygons
+            poly1_points = [p1]
+            for i in range(idx1 + 1, idx2 + 1):
+                poly1_points.append(points[i])
+            poly1_points.append(p2)
+            
+            poly2_points = [p2]
+            for i in range(idx2 + 1, 4):
+                poly2_points.append(points[i])
+            for i in range(0, idx1 + 1):
+                poly2_points.append(points[i])
+            poly2_points.append(p1)
+            
+            poly1 = lshp.layoutPolygon(poly1_points, item.layer)
+            poly2 = lshp.layoutPolygon(poly2_points, item.layer)
+            
+            self.undoStack.beginMacro("Split Rectangle")
+            self.deleteUndoStack(item)
+            self.addUndoStack(poly1)
+            self.addUndoStack(poly2)
+            self.undoStack.endMacro()
+
+    def _splitPath(self, item, line):
+        """Split a path at the intersection with the cut line."""
+        pathLine = QLineF(*item.sceneEndPoints)
+        result = line.intersects(pathLine)
+        
+        if result[0] == QLineF.IntersectionType.BoundedIntersection:
+            intersectPoint = result[1]
+            
+            # Create two new paths
+            path1 = lshp.layoutPath(
+                QLineF(pathLine.p1(), intersectPoint),
+                item.layer,
+                item.width,
+                item.startExtend,
+                0,
+                item.mode
+            )
+            path1.name = item.name
+            
+            path2 = lshp.layoutPath(
+                QLineF(intersectPoint, pathLine.p2()),
+                item.layer,
+                item.width,
+                0,
+                item.endExtend,
+                item.mode
+            )
+            path2.name = item.name
+            
+            self.undoStack.beginMacro("Split Path")
+            self.deleteUndoStack(item)
+            self.addUndoStack(path1)
+            self.addUndoStack(path2)
+            self.undoStack.endMacro()
+
+    def _splitPolygon(self, item, line):
+        """Split a polygon at intersections with the cut line."""
+        points = item.points
+        intersections = []
+        
+        # Find all intersection points with polygon edges
+        for i in range(len(points)):
+            edge = QLineF(points[i], points[(i + 1) % len(points)])
+            result = line.intersects(edge)
+            if result[0] == QLineF.IntersectionType.BoundedIntersection:
+                intersections.append((i, result[1]))
+        
+        # Split polygon if we have exactly 2 intersections
+        if len(intersections) == 2:
+            idx1, p1 = intersections[0]
+            idx2, p2 = intersections[1]
+            
+            # Create two new polygons
+            poly1_points = [p1]
+            for i in range(idx1 + 1, idx2 + 1):
+                poly1_points.append(points[i])
+            poly1_points.append(p2)
+            
+            poly2_points = [p2]
+            for i in range(idx2 + 1, len(points)):
+                poly2_points.append(points[i])
+            for i in range(0, idx1 + 1):
+                poly2_points.append(points[i])
+            poly2_points.append(p1)
+            
+            poly1 = lshp.layoutPolygon(poly1_points, item.layer)
+            poly2 = lshp.layoutPolygon(poly2_points, item.layer)
+            
+            self.undoStack.beginMacro("Split Polygon")
+            self.deleteUndoStack(item)
+            self.addUndoStack(poly1)
+            self.addUndoStack(poly2)
+            self.undoStack.endMacro()
+
+    def startCutLine(self):
+        if self.selectedItemList:
+            self.selectedItemList[0].setSelected(True)
+            self._newCutLine = lshp.layoutLine(
+                QLineF(self.mouseReleaseLoc, self.mouseReleaseLoc), self.snapGrid,
+            1)
+            self.addUndoStack(self._newCutLine)
+        else:
+            self.editorWindow.messageLine.setText("No item selected")
+
+
     def drawLayoutPolygon(self):
-        if self._newPolygon is None:
+        if self.newPolygon is None:
             # Create a new polygon
-            self._newPolygon = lshp.layoutPolygon(
+            self.newPolygon = lshp.layoutPolygon(
                 [self.mouseReleaseLoc, self.mouseReleaseLoc],
                 self.selectEdLayer,
             )
-            self.addUndoStack(self._newPolygon)
+            self.addUndoStack(self.newPolygon)
             # Create a guide line for the polygon
-            self._polygonGuideLine = QGraphicsLineItem(
-                QLineF(self._newPolygon.points[-2], self._newPolygon.points[-1])
+            self.polygonGuideLine = QGraphicsLineItem(
+                QLineF(self.newPolygon.points[-2], self.newPolygon.points[-1])
             )
-            self._polygonGuideLine.setPen(
+            self.polygonGuideLine.setPen(
                 QPen(QColor(255, 255, 0), 0.1 * fabproc.dbu, Qt.DashLine)
             )
-            self._polygonGuideLine.pen().setCosmetic(False)
-            self.addUndoStack(self._polygonGuideLine)
+            self.polygonGuideLine.pen().setCosmetic(False)
+            self.addUndoStack(self.polygonGuideLine)
         else:
-            self._newPolygon.addPoint(self.mouseReleaseLoc)
+            self.newPolygon.addPoint(self.mouseReleaseLoc)
 
     def addLayoutInstance(self):
         if self.newInstance is not None:
@@ -387,12 +537,12 @@ class layoutScene(editorScene):
             self.newInstance.setPos(self.mouseReleaseLoc - self.newInstance.start)
 
     def addLayoutLabel(self):
-        if self._newLabel is not None:
+        if self.newLabel is not None:
             self.newLabelTuple = None
-            self._newLabel = None
+            self.newLabel = None
         if self.newLabelTuple is not None:
-            self._newLabel = lshp.layoutLabel(self.mouseReleaseLoc, *self.newLabelTuple)
-            self.addUndoStack(self._newLabel)
+            self.newLabel = lshp.layoutLabel(self.mouseReleaseLoc, *self.newLabelTuple)
+            self.addUndoStack(self.newLabel)
 
     def drawLayoutPin(self):
         self.editorWindow.messageLine.setText("Pin mode.")
@@ -402,11 +552,11 @@ class layoutScene(editorScene):
                 self.undoStack.removeLastCommand()
             else:
                 self.editModes.setMode("addLabel")
-                self._newLabel = lshp.layoutLabel(
+                self.newLabel = lshp.layoutLabel(
                     self.mouseReleaseLoc, *self.newLabelTuple
                 )
-                self._newPin.label = self._newLabel
-                self.addUndoStack(self._newLabel)
+                self._newPin.label = self.newLabel
+                self.addUndoStack(self.newLabel)
             self._newPin = None
         self._newPin = lshp.layoutPin(
             self.mouseReleaseLoc, self.mouseReleaseLoc, *self.newPinTuple
@@ -416,61 +566,35 @@ class layoutScene(editorScene):
     def drawLayoutRect(self):
         self.editorWindow.messageLine.setText("Rectangle mode.")
         # Create a new rectangle
-        if self._newRect:
-            if self._newRect.rect.isNull():
-                self.removeItem(self._newRect)
+        if self.newRect:
+            if self.newRect.rect.isNull():
+                self.removeItem(self.newRect)
                 self.undoStack.removeLastCommand()
-            self._newRect = None
-        self._newRect = lshp.layoutRect(
+            self.newRect = None
+        self.newRect = lshp.layoutRect(
             self.mouseReleaseLoc,
             self.mouseReleaseLoc,
             self.selectEdLayer,
         )
-        self.addUndoStack(self._newRect)
+        self.addUndoStack(self.newRect)
 
     def drawLayoutPath(self):
         self.editorWindow.messageLine.setText("Path mode")
-        if self._newPath:
-            if self._newPath.draftLine.isNull():
+        if self.newPath:
+            if self.newPath.draftLine.isNull():
                 self.undoStack.removeLastCommand()
-            self._newPath = None
+            self.newPath = None
 
             # Create a new path
-        self._newPath = lshp.layoutPath(
+        self.newPath = lshp.layoutPath(
             QLineF(self.mousePressLoc, self.mousePressLoc),
             self.newPathTuple.layer,
             self.newPathTuple.width,
             int(self.newPathTuple.startExtend),
             int(self.newPathTuple.endExtend),
             self.newPathTuple.pathMode, )
-        self._newPath.name = self.newPathTuple.name
-        self.addUndoStack(self._newPath)
-
-    def chopShape(self):
-        selectedItems = self.selectedItems()
-        if selectedItems:
-            print("chopShape")
-        # drwLayer = ddef.layLayer(
-        #     name="draft",
-        #     purpose="drw",
-        #     pcolor=QColor(255, 0, 0, 127),
-        #     pwidth=1,
-        #     pstyle=Qt.SolidLine,
-        #     bcolor=QColor(255, 0, 0, 127),
-        #     # btexture="stipples/stipple1.txt",
-        #     z=1,
-        #     visible=True,
-        #     selectable=True,
-        #     gdsLayer=0,
-        # )
-        #
-        # if self._newRect:
-        #     self._newRect = None
-        # self._newRect = lshp.layoutRect(self.mouseReleaseLoc,
-        #                                 self.mouseReleaseLoc,
-        #                                 drwLayer, )
-        # for item in selectedItems:
-        #     pass
+        self.newPath.name = self.newPathTuple.name
+        self.addUndoStack(self.newPath)
 
     def addNewInstance(self) -> Union[lshp.layoutInstance, lshp.layoutPcell]:
         newInstance = self.instLayout(self.layoutInstanceTuple)
@@ -780,7 +904,7 @@ class layoutScene(editorScene):
                 float(dlg.topLeftEditY.text()) * fabproc.dbu,
                 float(dlg.rectWidthEdit.text()) * fabproc.dbu,
                 float(dlg.rectHeightEdit.text()) * fabproc.dbu,
-            )
+            ).toRect()
             self.undoStack.push(us.addDeleteShapeUndo(self, newRect, item))
 
     def layoutViaProperties(self, item):
@@ -1129,13 +1253,12 @@ class layoutScene(editorScene):
             # Clear the pcell parameters layout
             self.clearLayout(dlg.pcellParamsLayout)
 
-            # Create a new instance
-            new_instance = self.instLayout(new_item_tuple)
+            newInstance = self.instLayout(new_item_tuple)
 
             # Check the view type
             if new_item_tuple.viewItem.viewType == "pcell":
                 # Extract PCell instance parameters
-                line_edit_dict = self.extractPcellInstanceParameters(new_instance)
+                line_edit_dict = self.extractPcellInstanceParameters(newInstance)
 
                 # Add PCell parameters to the layout
                 if line_edit_dict:
@@ -1253,7 +1376,7 @@ class layoutScene(editorScene):
     def stretchPath(self, pathItem: lshp.layoutPath, stretchEnd: str):
         match stretchEnd:
             case "p2":
-                self._stretchPath = lshp.layoutPath(
+                self.stretchPathItem = lshp.layoutPath(
                     QLineF(pathItem.sceneEndPoints[0], pathItem.sceneEndPoints[1]),
                     pathItem.layer,
                     pathItem.width,
@@ -1262,7 +1385,7 @@ class layoutScene(editorScene):
                     pathItem.mode,
                 )
             case "p1":
-                self._stretchPath = lshp.layoutPath(
+                self.stretchPathItem = lshp.layoutPath(
                     QLineF(pathItem.sceneEndPoints[1], pathItem.sceneEndPoints[0]),
                     pathItem.layer,
                     pathItem.width,
@@ -1270,11 +1393,11 @@ class layoutScene(editorScene):
                     pathItem.endExtend,
                     pathItem.mode,
                 )
-        self._stretchPath.stretch = True
-        self._stretchPath.name = pathItem.name
+        self.stretchPathItem.stretch = True
+        self.stretchPathItem.name = pathItem.name
 
         addDeleteStretchNetCommand = us.addDeleteShapeUndo(
-            self, self._stretchPath, pathItem
+            self, self.stretchPathItem, pathItem
         )
         self.undoStack.push(addDeleteStretchNetCommand)
 

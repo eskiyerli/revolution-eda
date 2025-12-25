@@ -202,18 +202,6 @@ class layoutShape(QGraphicsItem):
         self._stretchPen = cached['stretchPen']
         self._stretchBrush = cached['stretchBrush']
 
-    # def _updateTransformedBrush(self, brush: QBrush, scale: float):
-    #     """Update transformed brush only when needed"""
-    #     # Round scale to reduce cache misses and artifacts
-    #     rounded_scale = round(scale, 2)
-    #
-    #     if self._transformedBrush is None or self._lastScale != rounded_scale:
-    #         self._transformedBrush = QBrush(brush)
-    #         # Use smooth scaling with proper filtering
-    #         transform = QTransform().scale(1 / rounded_scale,
-    #                                        1 / rounded_scale)
-    #         self._transformedBrush.setTransform(transform)
-    #         self._lastScale = rounded_scale
     def _updateTransformedBrush(self, brush: QBrush, scale: float):
         """Update transformed brush only when needed"""
         rounded_scale = max(round(scale, 2), 0.01)  # Prevent division by zero
@@ -523,6 +511,15 @@ class layoutRect(layoutShape):
         self.prepareGeometryChange()
         self._stretchSide = value
 
+    @property
+    def layer(self):
+        return self._layer
+
+    @layer.setter
+    def layer(self, layer: ddef.layLayer):
+        self.prepareGeometryChange()
+        self._layer = layer
+
     def mousePressEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         super().mousePressEvent(event)
 
@@ -729,35 +726,129 @@ class layoutLine(layoutShape):
     def __init__(
             self,
             draftLine: QLineF,
-            layer: ddef.layLayer,
-            width: float = 1.0,
+            width: float = 1,
+            mode: int = 0,
     ):
+        """
+        Initialize the TickLine object.
+
+        Args:
+            draftLine (QLineF): The draft line.
+            width (float): The width of the line.
+            mode (int, optional): The mode. Defaults to 0.
+        """
         super().__init__()
+
         self._draftLine = draftLine
-        self._layer = layer
-        self._width = width
-        self._pen = QPen(self._layer.pcolor, self._layer.pwidth, self._layer.pstyle)
-        self._selectedPen = QPen(QColor("yellow"), self._layer.pwidth, Qt.DashLine)
-        self._rect = (
-            QRectF(self._draftLine.p1(), self._draftLine.p2())
-            .normalized()
-            .adjusted(-2, -2, 2, 2)
-        )
-        self.setZValue(self._layer.z)
+        self._width: int = width
+        self._mode = mode
+        self._angle = 0
+        self._rect = QRect(0, 0, 0, 0)
+        penColour = QColor(255, 40, 40)
+        self._pen = QPen(penColour, self._width, Qt.SolidLine)
+        self._pen.setCosmetic(True)
+        self._selectedPen = QPen(Qt.red, self._width + 1, Qt.SolidLine)
+        self._selectedPen.setCosmetic(True)
+        self._determineAngle(self._draftLine.angle())
+        self.setZValue(999)
 
     def __repr__(self):
-        return f"layoutLine({self._draftLine}, {self._layer}, {self._width})"
+        return (
+            f"layoutLine({self._draftLine}, {self._width}, {self._mode})"
+        )
 
-    def paint(self, painter, option, widget):
+    def _determineAngle(self, angle: float):
+        match self._mode:
+            case 0:  # manhattan
+                self._createManhattanLine(angle)
+            case 1:  # diagonal
+                self._createDiagonalLine(angle)
+            case 2:
+                self._createAnyAngleLine(angle)
+        self._draftLine.setAngle(0)
+        self.setTransformOriginPoint(self.draftLine.p1())
+        self.setRotation(-self._angle)
+
+    def _createManhattanLine(self, angle):
+        if 0 <= angle <= 45 or 360 > angle > 315:
+            self._angle = 0
+        elif 45 < angle <= 135:
+            self._angle = 90
+        elif 135 < angle <= 225:
+            self._angle = 180
+        elif 225 < angle <= 315:
+            self._angle = 270
+
+    def _createDiagonalLine(self, angle):
+        if 0 <= angle <= 22.5 or 360 > angle > 337.5:
+            self._angle = 0
+        elif 22.5 < angle <= 67.5:
+            self._angle = 45
+        elif 67.5 < angle <= 112.5:
+            self._angle = 90
+        elif 112.5 < angle <= 157.5:
+            self._angle = 135
+        elif 157.5 < angle <= 202.5:
+            self._angle = 180
+        elif 202.5 < angle <= 247.5:
+            self._angle = 225
+        elif 247.5 < angle <= 292.5:
+            self._angle = 270
+        elif 292.5 < angle <= 337.5:
+            self._angle = 315
+
+    def _createAnyAngleLine(self, angle):
+        self._angle = angle
+
+    def boundingRect(self) -> QRectF:
+        half_w = self._width // 2 + 2
+        return QRectF(self._draftLine.p1(), self._draftLine.p2()).normalized().adjusted(-half_w, -half_w, half_w, half_w)
+
+    def paint(self, painter, option, widget=None):
         if self.isSelected():
             painter.setPen(self._selectedPen)
+            painter.drawRect(self.boundingRect())
         else:
             painter.setPen(self._pen)
         painter.drawLine(self._draftLine)
 
-    def boundingRect(self):
-        return self._rect
+    @property
+    def draftLine(self):
+        return self._draftLine
 
+    @draftLine.setter
+    def draftLine(self, line: QLineF):
+        self.prepareGeometryChange()
+        self._draftLine = line
+        angle = self._draftLine.angle()
+        self._determineAngle(angle)
+
+    @property
+    def angle(self) -> float:
+        return self._angle
+        
+    @property
+    def width(self):
+        return self._width
+
+    @width.setter
+    def width(self, width: float):
+        self._width = width
+
+    @property
+    def mode(self):
+        return self._mode
+
+    @mode.setter
+    def mode(self, value: int):
+        self._mode = value
+
+    @property
+    def sceneEndPoints(self):
+        return [
+            self.mapToScene(self._draftLine.p1()).toPoint(),
+            self.mapToScene(self._draftLine.p2()).toPoint(),
+        ]
 
 # "layer", "name", "mode", "width", "startExtend", "endExtend"
 
@@ -981,6 +1072,15 @@ class layoutPath(layoutShape):
         self.setRotation(-self._angle)
 
     @property
+    def layer(self):
+        return self._layer
+
+    @layer.setter
+    def layer(self, layer: ddef.layLayer):
+        self.prepareGeometryChange()
+        self._layer = layer
+
+    @property
     def sceneEndPoints(self):
         return [
             self.mapToScene(self._draftLine.p1()).toPoint(),
@@ -1003,7 +1103,7 @@ class layoutPath(layoutShape):
                     self._stretchSide = "p2"
                     self.setCursor(Qt.SizeHorCursor)
                 self.scene().stretchPath(self, self._stretchSide)
-                
+
 
 class layoutRuler(layoutShape):
     def __init__(
@@ -1036,7 +1136,6 @@ class layoutRuler(layoutShape):
         self._angle = 0
         self._rect = QRect(0, 0, 0, 0)
         penColour = QColor(255, 255, 40)
-        # penColour.setAlpha(128)
         self._pen = QPen(penColour, self._width, Qt.SolidLine)
         self._pen.setCosmetic(True)
         self._selectedPen = QPen(Qt.red, self._width + 1, Qt.SolidLine)
@@ -1151,13 +1250,9 @@ class layoutRuler(layoutShape):
         ).normalized()
 
     def boundingRect(self) -> QRectF:
-        # For vertical rulers (90° or 270°), swap width and height adjustments
-        if self._angle == 90 or self._angle == 270:
-            return QRectF(self._rect).normalized().adjusted(
-                -self._fontHeight, -self._fontWidth, self._fontHeight, self._fontWidth
-            )
+        margin = max(self._fontWidth, self._fontHeight, self._tickLength)
         return QRectF(self._rect).normalized().adjusted(
-            -self._fontWidth, -self._fontHeight, self._fontWidth, self._fontHeight
+            -margin, -margin, margin, margin
         )
 
     def paint(self, painter, option, widget=None):
@@ -1801,173 +1896,6 @@ class layoutViaArray(layoutShape):
         return self._via.width
 
 
-# class layoutViaArray(layoutShape):
-#     def __init__(
-#         self,
-#         start: QPoint,
-#         via: layoutVia,
-#         xs: float,
-#         ys: float,
-#         xnum: int,
-#         ynum: int,
-#     ):
-#         super().__init__()
-#         self._start = start
-#         self._via = via  # prototype via
-#         self._xnum = xnum
-#         self._ynum = ynum
-#         self._xs = xs
-#         self._ys = ys
-#         # Initialize flags and properties first
-#         self.setFiltersChildEvents(True)
-#         self.setHandlesChildEvents(True)
-#         self.setFlag(QGraphicsItem.ItemContainsChildrenInShape, True)
-#         self._selectedPen = QPen(QColor("yellow"), 1, Qt.DashLine)
-#         # Now place vias after parent is fully initialized
-#         self._placeVias(self._via, self._xnum, self._ynum)
-#         self._rect = self.childrenBoundingRect()
-#
-#     def _placeVias(self, via: layoutVia, xnum: int, ynum: int) -> None:
-#         for childVia in self.childItems():
-#             if self.scene():
-#                 self.scene().removeItem(childVia)
-#
-#         for i, j in itertools.product(range(xnum), range(ynum)):
-#             item = layoutVia(
-#                 QPoint(
-#                     int(self._start.x() + i * (self._xs + via.width)),
-#                     int(self._start.y() + j * (self._ys + via.height)),
-#                 ),
-#                 via.viaDefTuple,
-#                 int(via.width),
-#                 int(via.height),
-#             )
-#
-#             item.setFlag(QGraphicsItem.ItemIsSelectable, False)
-#             item.setFlag(QGraphicsItem.ItemStacksBehindParent, True)
-#             item.setParentItem(self)
-#
-#     def __repr__(self):
-#         return (f"layoutViaArray("
-#                 f"{self._start},{self._via}, {self._xs}, {self._ys},"
-#                 f" {self._xnum},"
-#                 f" {self._ynum})")
-#
-#     def boundingRect(self) -> QRectF:
-#         return self.childrenBoundingRect()
-#
-#     def paint(self, painter, option, widget):
-#         if self.isSelected():
-#             painter.setPen(self._selectedPen)
-#             painter.drawRect(self._rect)
-#         else:
-#             super().paint(painter,option,widget)
-#
-#     def shape(self) -> QPainterPath:
-#         path = QPainterPath()
-#         path.addRect(self._rect)
-#         return path
-#
-#     @property
-#     def start(self):
-#         return self._start
-#
-#     @start.setter
-#     def start(self, start: QPoint):
-#         self.prepareGeometryChange()
-#         self._start = start
-#         self._placeVias(self._via, self._xnum, self._ynum)
-#         self._rect = self.childrenBoundingRect()
-#
-#     @property
-#     def xnum(self) -> int:
-#         return self._xnum
-#
-#     @xnum.setter
-#     def xnum(self, value: int):
-#         self.prepareGeometryChange()
-#         self._xnum = value
-#         self._placeVias(self._via, self._xnum, self._ynum)
-#         self._rect = self.childrenBoundingRect()
-#
-#     @property
-#     def ynum(self) -> int:
-#         return self._ynum
-#
-#     @ynum.setter
-#     def ynum(self, value: int):
-#         self.prepareGeometryChange()
-#         self._ynum = value
-#         self._placeVias(self._via, self._xnum, self._ynum)
-#         self._rect = self.childrenBoundingRect()
-#
-#     @property
-#     def via(self):
-#         return self._via
-#
-#     @via.setter
-#     def via(self, value: layoutVia):
-#         self.prepareGeometryChange()
-#         self._via = value
-#         self._placeVias(self._via, self._xnum, self._ynum)
-#         self._rect = self.childrenBoundingRect()
-#
-#     @property
-#     def width(self):
-#         return self._via.width
-#
-#     @width.setter
-#     def width(self, value: float):
-#         self.prepareGeometryChange()
-#         self._via.width = value
-#         self._placeVias(self._via, self._xnum, self._ynum)
-#         self._rect = self.childrenBoundingRect()
-#
-#     @property
-#     def height(self):
-#         return self._via.height
-#
-#     @height.setter
-#     def height(self, value: float):
-#         self.prepareGeometryChange()
-#         self._via.height = value
-#         self._placeVias(self._via, self._xnum, self._ynum)
-#         self._rect = self.childrenBoundingRect()
-#
-#     @property
-#     def xs(self) -> float:
-#         return self._xs
-#
-#     @xs.setter
-#     def xs(self, value: float):
-#         self.prepareGeometryChange()
-#         self._xs = value
-#         self._placeVias(self._via, self._xnum, self._ynum)
-#         self._rect = self.childrenBoundingRect()
-#
-#     @property
-#     def ys(self) -> float:
-#         return self._ys
-#
-#     @ys.setter
-#     def ys(self, value: float):
-#         self.prepareGeometryChange()
-#         self._ys = value
-#         self._placeVias(self._via, self._xnum, self._ynum)
-#         self._rect = self.childrenBoundingRect()
-#
-#     @property
-#     def viaDefTuple(self):
-#         return self._via.viaDefTuple
-#
-#     @viaDefTuple.setter
-#     def viaDefTuple(self, value: ddef.viaDefTuple):
-#         self._via.viaDefTuple = value
-#         self.prepareGeometryChange()
-#         self._placeVias(self._via, self._xnum, self._ynum)
-#         self._rect = self.childrenBoundingRect()
-
-
 class layoutPolygon(layoutShape):
     __slots__ = ('_points', '_layer', '_polygon', '_selectedCorner', '_selectedCornerIndex')
 
@@ -2014,6 +1942,15 @@ class layoutPolygon(layoutShape):
         if self._polygon is None:
             self._polygon = QPolygonF(self._points)
         return self._polygon
+
+    @property
+    def layer(self):
+        return self._layer
+
+    @layer.setter
+    def layer(self, layer: ddef.layLayer):
+        self.prepareGeometryChange()
+        self._layer = layer
 
     @property
     def points(self) -> list:
