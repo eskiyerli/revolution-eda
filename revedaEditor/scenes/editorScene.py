@@ -22,12 +22,13 @@
 #    Licensor: Revolution Semiconductor (Registered in the Netherlands)
 
 from typing import List
-from PySide6.QtCore import (QEvent, QPoint, QRectF, Qt, QSizeF )
+from PySide6.QtCore import (QEvent, QPoint, QRectF, Qt, QSizeF)
 from PySide6.QtGui import (QGuiApplication, QTransform, QPainterPath, QPen, QColor)
 from PySide6.QtWidgets import (QGraphicsScene, QMenu, QGraphicsItem,
                                QDialog, QGraphicsRectItem,
-                               QCompleter,)
+                               QCompleter, )
 from contextlib import contextmanager
+from itertools import cycle
 import time
 import revedaEditor.backend.dataDefinitions as ddef
 import revedaEditor.backend.undoStack as us
@@ -81,14 +82,14 @@ class editorScene(QGraphicsScene):
 
         # Group selection-related attributes
         self.partialSelection = False
-        self._selectionRectItem = None
-        self._selectedItems = []
-        self._selectedItemGroup = None
+        self.selectionRectItem = None
+        self.selectedItemList = []
+        self.selectedItemGroup = None
         self._groupItems = []
+        self.itemsAtPress = []
         self._draftPen = QPen(Qt.DashLine)
         self._draftPen.setColor(QColor(0, 150, 0))
         self._draftPen.setWidth(int(self.snapGrid / 2))
-
 
         # Initialize UI elements
         self.origin = QPoint(0, 0)
@@ -108,14 +109,15 @@ class editorScene(QGraphicsScene):
         self.installEventFilter(self)
         self.setMinimumRenderSize(2)
         self._initialGroupPosList = []
-        self._initialGroupPos = QPoint(0,0)
-        self._finalGroupPosDiff = QPoint(0,0)
-
+        self._initialGroupPos = QPoint(0, 0)
+        self._finalGroupPosDiff = QPoint(0, 0)
+        self.itemCycler = None
+        
     def contextMenuEvent(self, event):
         if self.itemAt(event.scenePos(), QTransform()) is None:
             self.clearSelection()
-            self._selectedItems = []
-            self._selectedItemGroup = None
+            self.selectedItemList = []
+            self.selectedItemGroup = None
             self._groupItems = []
             self.messageLine.setText("No item selected")
         super().contextMenuEvent(event)
@@ -127,30 +129,34 @@ class editorScene(QGraphicsScene):
             self.mousePressLoc = event.scenePos().toPoint()
             if self.editModes.selectItem:
                 self.clearSelection()
-                if (modifiers == Qt.KeyboardModifier.ShiftModifier or 
-                    modifiers == Qt.KeyboardModifier.ControlModifier):
-                    self._selectionRectItem = QGraphicsRectItem()
-                    self._selectionRectItem.setRect(
+                if (modifiers == Qt.KeyboardModifier.ShiftModifier or
+                        modifiers == Qt.KeyboardModifier.ControlModifier):
+                    self.selectionRectItem = QGraphicsRectItem()
+                    self.selectionRectItem.setRect(
                         QRectF(self.mousePressLoc.x(), self.mousePressLoc.y(), 0, 0)
                     )
-                    self._selectionRectItem.setPen(self.draftPen)  # Use property
-                    self._selectionRectItem.setZValue(100)
-                    self.addItem(self._selectionRectItem)
+                    self.selectionRectItem.setPen(self.draftPen)  # Use property
+                    self.selectionRectItem.setZValue(100)
+                    self.addItem(self.selectionRectItem)
                 else:
-                    selectedItems = self.items(self.mousePressLoc)
-                    for item in selectedItems:
-                        item.setSelected(True)
-                    if not selectedItems:
+                    self.itemsAtPress = self.items(self.mousePressLoc)
+                    if self.itemsAtPress:
+                        self.itemCycler = cycle(self.itemsAtPress)
+                        item = next(self.itemCycler)
                         self.clearSelection()
-                        for item in self.items():
-                            item.setSelected(False)
+                        item.setSelected(True)
+                        self.selectedItemList = [item]
+
+
             if self.editModes.moveItem:
-                self._selectedItemGroup = self.createItemGroup(
+                self.selectedItemGroup = self.createItemGroup(
                     self.selectedItems())
-                
-                self._selectedItemGroup.setFlag(QGraphicsItem.ItemIsMovable, True)
-                self._initialGroupPos = QPoint(int(self._selectedItemGroup.pos().x()), int(self._selectedItemGroup.pos().y()))
-                self._initialGroupPosList = [QPoint(int(item.pos().x()), int(item.pos().y())) for item in self._selectedItemGroup.childItems()]
+
+                self.selectedItemGroup.setFlag(QGraphicsItem.ItemIsMovable, True)
+                self._initialGroupPos = QPoint(int(self.selectedItemGroup.pos().x()),
+                                               int(self.selectedItemGroup.pos().y()))
+                self._initialGroupPosList = [QPoint(int(item.pos().x()), int(item.pos().y())) for item in
+                                             self.selectedItemGroup.childItems()]
             elif self.editModes.panView:
                 self.centerViewOnPoint(self.mousePressLoc)
             self.messageLine.setText(self.messages.get(self.editModes.mode(), ""))
@@ -158,38 +164,39 @@ class editorScene(QGraphicsScene):
     def mouseMoveEvent(self, event):
         super().mouseMoveEvent(event)
         self.mouseMoveLoc = event.scenePos().toPoint()
-        if self.editModes.selectItem and self._selectionRectItem:
-            self._selectionRectItem.setRect(
+        if self.editModes.selectItem and self.selectionRectItem:
+            self.selectionRectItem.setRect(
                 QRectF(self.mousePressLoc, self.mouseMoveLoc).normalized()
             )
         # elif self.editModes.copyItem and self._selectedItemGroup:
         #     self._selectedItemGroup.setPos(self.mouseMoveLoc)
-        elif self.editModes.copyItem and self._selectedItemGroup:
+        elif self.editModes.copyItem and self.selectedItemGroup:
             offset = self.mouseMoveLoc - self.mousePressLoc
-            self._selectedItemGroup.setPos(offset)
+            self.selectedItemGroup.setPos(offset)
 
     def mouseReleaseEvent(self, event):
         super().mouseReleaseEvent(event)
         if event.button() != Qt.MouseButton.LeftButton:
             return
-        
+
         modifiers = QGuiApplication.keyboardModifiers()
         self.mouseReleaseLoc = event.scenePos().toPoint()
-        
-        if self.editModes.moveItem and self._selectedItemGroup:
-            _groupItems = self._selectedItemGroup.childItems()
-            self._finalGroupPosDiff = self._selectedItemGroup.pos().toPoint() - self._initialGroupPos
-            self.destroyItemGroup(self._selectedItemGroup)
-            self._selectedItemGroup = None
+
+        if self.editModes.moveItem and self.selectedItemGroup:
+            _groupItems = self.selectedItemGroup.childItems()
+            self._finalGroupPosDiff = self.selectedItemGroup.pos().toPoint() - self._initialGroupPos
+            self.destroyItemGroup(self.selectedItemGroup)
+            self.selectedItemGroup = None
             self.undoGroupMoveStack(_groupItems, self._initialGroupPosList, self._finalGroupPosDiff)
             [item.setSelected(False) for item in _groupItems]
             self.editModes.setMode("selectItem")
-        elif self.editModes.copyItem and self._selectedItemGroup:
-            self.destroyItemGroup(self._selectedItemGroup)
-            self._selectedItemGroup = None
+        elif self.editModes.copyItem and self.selectedItemGroup:
+            self.destroyItemGroup(self.selectedItemGroup)
+            self.selectedItemGroup = None
             self.editModes.setMode("selectItem")
-        elif self.editModes.selectItem and self._selectionRectItem:
-            self._handleSelectionRect(modifiers)
+        elif self.editModes.selectItem:
+            if self.selectionRectItem:
+                self._handleSelectionRect(modifiers)
         else:
             self._handleMouseRelease(self.mouseReleaseLoc, event.button())
         self.messageLine.setText(self.messages.get(self.editModes.mode(), ""))
@@ -202,7 +209,7 @@ class editorScene(QGraphicsScene):
             round(point.x() / xgrid) * xgrid,
             round(point.y() / ygrid) * ygrid
         )
-    
+
     def _snapPoint(self, pos: QPoint) -> QPoint:
         """
         Default snapping behavior. Subclasses can override this for more
@@ -218,7 +225,6 @@ class editorScene(QGraphicsScene):
         Restrict a number to the multiples of base
         """
         return int(round(float(number) / base)) * base
-
 
     def rotateSelectedItems(self, point: QPoint):
         """
@@ -252,7 +258,7 @@ class editorScene(QGraphicsScene):
             else Qt.ItemSelectionMode.ContainsItemShape
         )
         selectionPath = QPainterPath()
-        selectionPath.addRect(self._selectionRectItem.sceneBoundingRect())
+        selectionPath.addRect(self.selectionRectItem.sceneBoundingRect())
         match modifiers:
             case Qt.KeyboardModifier.ShiftModifier:
                 self.setSelectionArea(selectionPath, mode=selectionMode)
@@ -262,9 +268,18 @@ class editorScene(QGraphicsScene):
             case _:
                 for item in self.items(selectionPath, mode=selectionMode):
                     item.setSelected(True)
-        if self._selectionRectItem:
-            self.removeItem(self._selectionRectItem)
-            self._selectionRectItem = None
+        if self.selectionRectItem:
+            self.removeItem(self.selectionRectItem)
+            self.selectionRectItem = None
+
+    # def keyPressEvent(self, event):
+    #     if event.key() == Qt.Key_Up and self._itemsAtPress:
+    #         self._currentItemIndex = (self._currentItemIndex + 1) % len(self._itemsAtPress)
+    #         self.clearSelection()
+    #         self._itemsAtPress[self._currentItemIndex].setSelected(True)
+    #         self._selectedItems = [self._itemsAtPress[self._currentItemIndex]]
+    #     else:
+    #         super().keyPressEvent(event)
 
     def eventFilter(self, source, event):
         """
@@ -323,7 +338,6 @@ class editorScene(QGraphicsScene):
             except AttributeError:
                 self.messageLine.setText("Nothing selected")
 
-
     def reloadScene(self):
         # Disable updates temporarily for better performance
         for view in self.views():
@@ -348,7 +362,6 @@ class editorScene(QGraphicsScene):
             for view in self.views():
                 view.setUpdatesEnabled(True)
                 view.viewport().update()
-
 
     def fitItemsInView(self) -> None:
         self.setSceneRect(self.itemsBoundingRect().adjusted(-40, -40, 40, 40))
@@ -407,7 +420,7 @@ class editorScene(QGraphicsScene):
         self.undoStack.push(undoCommand)
 
     def undoGroupMoveStack(self, items: List[QGraphicsItem],
-                         startPos: List[QPoint],endPos: QPoint) -> None:
+                           startPos: List[QPoint], endPos: QPoint) -> None:
 
         undoCommand = us.undoGroupMove(self, items, startPos, endPos)
         self.undoStack.push(undoCommand)

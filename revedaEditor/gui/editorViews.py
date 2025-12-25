@@ -21,36 +21,53 @@
 #    License: Mozilla Public License 2.0
 #    Licensor: Revolution Semiconductor (Registered in the Netherlands)
 #
-import revedaEditor.common.net as net
-import revedaEditor.backend.undoStack as us
 from collections import Counter
-
+from itertools import cycle
 # import numpy as np
-from PySide6.QtCore import (QPoint, QRect, Qt, Signal, QLine, )
-from PySide6.QtGui import (QColor, QKeyEvent, QPainter, QWheelEvent, QPolygon, )
-from PySide6.QtWidgets import (QGraphicsView, )
-from PySide6.QtPrintSupport import (QPrinter, )
+from PySide6.QtCore import (
+    QLine,
+    QPoint,
+    Qt,
+    Signal,
+)
+from PySide6.QtGui import (
+    QColor,
+    QKeyEvent,
+    QPainter,
+    QPolygon,
+    QWheelEvent,
+)
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
+from PySide6.QtWidgets import (
+    QGraphicsView,
+)
+from revedaEditor.scenes.editorScene import editorScene
+from revedaEditor.scenes.layoutScene import layoutScene
+from revedaEditor.scenes.schematicScene import schematicScene
+from revedaEditor.scenes.symbolScene import symbolScene
+import revedaEditor.backend.undoStack as us
+import revedaEditor.common.net as net
 from revedaEditor.backend.pdkPaths import importPDKModule
 
-schlyr = importPDKModule('schLayers')
-fabproc = importPDKModule('process')
+schlyr = importPDKModule("schLayers")
+fabproc = importPDKModule("process")
 
 
 class editorView(QGraphicsView):
     """
     The qgraphicsview for qgraphicsscene. It is used for both schematic and layout editors.
     """
+
     keyPressedSignal = Signal(int)
 
     # zoomFactorChanged = Signal(float)
-    def __init__(self, scene, parent):
+    def __init__(self, scene:editorScene, parent):
         super().__init__(scene, parent)
 
         # Cache parent references
         self.parent = parent
         self.editor = parent.parent
-        self.scene = scene
+        self.viewScene = scene
         self.logger = scene.logger
 
         # Cache editor properties
@@ -151,18 +168,15 @@ class editorView(QGraphicsView):
                 painter.drawPoints(points)
 
             else:  # self.linebackg
-
                 painter.setPen(QColor("gray"))
 
                 # Create vertical and horizontal lines
                 vertical_lines = [
-                    QLine(int(x), self._top, int(x), self._bottom)
-                    for x in x_coords
+                    QLine(int(x), self._top, int(x), self._bottom) for x in x_coords
                 ]
 
                 horizontal_lines = [
-                    QLine(self._left, int(y), self._right, int(y))
-                    for y in y_coords
+                    QLine(self._left, int(y), self._right, int(y)) for y in y_coords
                 ]
 
                 # Draw all lines with minimal calls
@@ -206,31 +220,38 @@ class editorView(QGraphicsView):
 
     def keyPressEvent(self, event: QKeyEvent):
         self.keyPressedSignal.emit(event.key())
+
         match event.key():
-            case Qt.Key_M:
-                self.scene.editModes.setMode('moveItem')
-                self.editor.messageLine.setText('Move Item')
-            case Qt.Key_F:
-                self.scene.fitItemsInView()
-            case Qt.Key_Left:
-                self.scene.moveSceneLeft()
-            case Qt.Key_Right:
-                self.scene.moveSceneRight()
-            case Qt.Key_Up:
-                self.scene.moveSceneUp()
-            case Qt.Key_Down:
-                self.scene.moveSceneDown()
-            case Qt.Key_Escape:
-                self.scene.editModes.setMode("selectItem")
-                self.editor.messageLine.setText("Select Item")
-                self.scene.deselectAll()
-                self.scene._selectedItems = None
-                if self.scene._selectionRectItem:
-                    self.scene.removeItem(self.scene._selectionRectItem)
-                    self.scene._selectionRectItem = None
-                if self.scene._selectedItemGroup:
-                    self.scene.destroyItemGroup(self.scene._selectedItemGroup)
-                    self.scene._selectedItemGroup = None
+            case Qt.Key.Key_M:
+                self.viewScene.editModes.setMode("moveItem")
+                self.editor.messageLine.setText("Move Item")
+            case Qt.Key.Key_F:
+                self.viewScene.fitItemsInView()
+                self.editor.messageLine.setText("Fit Items In View")
+            case Qt.Key.Key_Left:
+                self.viewScene.moveSceneLeft()
+                self.editor.messageLine.setText("Move View Left")
+            case Qt.Key.Key_Right:
+                self.viewScene.moveSceneRight()
+                self.editor.messageLine.setText("Move View Right")
+            case Qt.Key.Key_Up:
+                self.viewScene.moveSceneUp()
+                self.editor.messageLine.setText("Move View Up")
+            case Qt.Key.Key_Down:
+                self.viewScene.moveSceneDown()
+                self.editor.messageLine.setText("Move View Down")
+            case Qt.Key.Key_PageUp:
+                self.cycleSelection(event)
+
+            case Qt.Key.Key_Escape:
+                self.viewScene.deselectAll()
+                self.viewScene.selectedItemList = []
+                if self.viewScene.selectionRectItem:
+                    self.viewScene.removeItem(self.viewScene.selectionRectItem)
+                    self.viewScene.selectionRectItem = None
+                if self.viewScene.selectedItemGroup:
+                    self.viewScene.destroyItemGroup(self.viewScene.selectedItemGroup)
+                    self.viewScene.selectedItemGroup = None
             case _:
                 super().keyPressEvent(event)
 
@@ -267,39 +288,45 @@ class editorView(QGraphicsView):
         # End painting
         painter.end()
 
+    def cycleSelection(self, event):
+        modifiers = event.modifiers()
+        if modifiers == Qt.KeyboardModifier.ShiftModifier and self.viewScene.itemCycler:
+            self.viewScene.clearSelection()
+            item = next(self.viewScene.itemCycler)
+            item.setSelected(True)
+            self.viewScene.selectedItemList = [item]
 
 class symbolView(editorView):
-    def __init__(self, scene, parent):
-        self.scene = scene
+    def __init__(self, scene: symbolScene, parent):
+        super().__init__(scene, self.parent)
+        self.viewScene: symbolScene = scene
         self.parent = parent
-        super().__init__(self.scene, self.parent)
 
     def keyPressEvent(self, event: QKeyEvent):
         super().keyPressEvent(event)
         match event.key():
-            case Qt.Key_Escape:
-                if self.scene._polygonGuideLine:
-                    self.scene.finishPolygon(event)
-                self.scene._newLine = None
-                self.scene._newCircle = None
-                self.scene._newPin = None
-                self.scene._newRect = None
-                self.scene._newArc = None
-                self.scene._newLabel = None
-                if self.scene._polygonGuideLine:
-                    self.scene.removeItem(self.scene._polygonGuideLine)
-                self.scene.editModes.setMode('selectItem')
+            case Qt.Key.Key_Escape:
+                if self.viewScene.polygonGuideLine:
+                    self.viewScene.finishPolygon(event)
+                self.viewScene.newLine = None
+                self.viewScene.newCircle = None
+                self.viewScene.newPin = None
+                self.viewScene.newRect = None
+                self.viewScene.newArc = None
+                self.viewScene.newLabel = None
+                if self.viewScene.polygonGuideLine:
+                    self.viewScene.removeItem(self.viewScene.polygonGuideLine)
+                self.viewScene.editModes.setMode("selectItem")
 
 
 class schematicView(editorView):
     _dotRadius = 10
 
     def __init__(self, scene, parent):
+        super().__init__(scene, parent)
+        self.viewScene: schematicScene = scene
         self.parent = parent
-        self.scene = scene
-        super().__init__(self.scene, self.parent)
-
-        self.scene.wireEditFinished.connect(self.mergeSplitViewNets)
+        self.viewScene.wireEditFinished.connect(self.mergeSplitViewNets)
 
     def mousePressEvent(self, event):
         self.viewRect = self.mapToScene(self.rect()).boundingRect().toRect()
@@ -315,31 +342,39 @@ class schematicView(editorView):
 
     def pruneShortNets(self):
         """Remove nets shorter than snap spacing."""
-        snapSpacing = self.scene.snapTuple[0]
-        netsInView = [netItem for netItem in self.scene.items(self.viewRect) if
-                      isinstance(netItem, net.schematicNet)]
+        snapSpacing = self.viewScene.snapTuple[0]
+        netsInView = [
+            netItem
+            for netItem in self.viewScene.items(self.viewRect)
+            if isinstance(netItem, net.schematicNet)
+        ]
         for netItem in netsInView:
             if netItem.scene() and netItem.draftLine.length() < snapSpacing:
-                self.scene.removeItem(netItem)
+                self.viewScene.removeItem(netItem)
 
     def mergeSplitViewNets(self):
-        netsInView = (netItem for netItem in self.scene.items(self.viewRect) if
-                      isinstance(netItem, net.schematicNet))
+        netsInView = (
+            netItem
+            for netItem in self.viewScene.items(self.viewRect)
+            if isinstance(netItem, net.schematicNet)
+        )
         for netItem in netsInView:
             if netItem.scene():
-                self.scene.mergeSplitNets(netItem)
+                self.viewScene.mergeSplitNets(netItem)
 
     def drawBackground(self, painter, rect):
         super().drawBackground(painter, rect)
 
         # Early exit for large views to avoid performance issues
-        if (self._right - self._left) > 2000 and (
-                self._bottom - self._top) > 2000:
+        if (self._right - self._left) > 2000 and (self._bottom - self._top) > 2000:
             return
 
         # Get nets in view with type filtering
-        netsInView = [item for item in self.scene.items(rect)
-                      if isinstance(item, net.schematicNet)]
+        netsInView = [
+            item
+            for item in self.viewScene.items(rect)
+            if isinstance(item, net.schematicNet)
+        ]
 
         if not netsInView:
             return
@@ -350,8 +385,7 @@ class schematicView(editorView):
             pointCounts.update(netItem.sceneEndPoints)
 
         # Filter junction points (count >= 3) and draw
-        junctionPoints = [point for point, count in pointCounts.items() if
-                          count >= 3]
+        junctionPoints = [point for point, count in pointCounts.items() if count >= 3]
 
         if junctionPoints:
             painter.setPen(schlyr.wirePen)
@@ -369,59 +403,77 @@ class schematicView(editorView):
         """
         if event.key() == Qt.Key_Escape:
             # Esc key pressed, remove snap rect and reset states
-            if self.scene._snapPointRect is not None:
-                self.scene._snapPointRect.setVisible(False)
-            if self.scene._newNet is not None:
-                self.scene.wireEditFinished.emit(self.scene._newNet)
-                self.scene._newNet = None
-            elif self.scene._stretchNet is not None:
+            if self.viewScene._snapPointRect is not None:
+                self.viewScene._snapPointRect.setVisible(False)
+            if self.viewScene._newNet is not None:
+                self.viewScene.wireEditFinished.emit(self.viewScene._newNet)
+                self.viewScene._newNet = None
+            elif self.viewScene._stretchNet is not None:
                 # Stretch net mode, cancel stretch
-                self.scene._stretchNet.setSelected(False)
-                self.scene._stretchNet.stretch = False
-                self.scene.mergeSplitNets(self.scene._stretchNet)
-                self.scene._stretchNet = None
-            self.scene._newInstance = None
-            self.scene._newPin = None
-            self.scene._newText = None
+                self.viewScene._stretchNet.setSelected(False)
+                self.viewScene._stretchNet.stretch = False
+                self.viewScene.mergeSplitNets(self.viewScene._stretchNet)
+                self.viewScene._stretchNet = None
+            self.viewScene._newInstance = None
+            self.viewScene._newPin = None
+            self.viewScene._newText = None
             # Set the edit mode to select item
-            self.scene.editModes.setMode("selectItem")
+            self.viewScene.editModes.setMode("selectItem")
 
         super().keyPressEvent(event)
 
 
 class layoutView(editorView):
-    def __init__(self, scene, parent):
+    def __init__(self, scene: layoutScene, parent):
         super().__init__(scene, parent)
+        self.viewScene: layoutScene = scene
+        self.parent = parent
         # # Configure OpenGL viewport for better performance
         glWidget = QOpenGLWidget()
         glWidget.setUpdateBehavior(QOpenGLWidget.PartialUpdate)
         self.setViewport(glWidget)
 
     def keyPressEvent(self, event: QKeyEvent):
-        if event.key() == Qt.Key_Escape:
-
-            if self.scene._newPath is not None:
-                self.scene._newPath = None
-            elif self.scene._newRect:
-                if self.scene._newRect.rect.isNull():
-                    self.scene.removeItem(self.scene._newRect)
-                    self.scene.undoStack.removeLastCommand()
-                self.scene._newRect = None
-            elif self.scene._stretchPath is not None:
-                self.scene._stretchPath.setSelected(False)
-                self.scene._stretchPath.stretch = False
-                self.scene._stretchPath = None
-            elif self.scene.editModes.drawPolygon:
-                self.scene.removeItem(self.scene._polygonGuideLine)
-                self.scene._newPolygon.points.pop(
-                    0)  # remove first duplicate point
-                self.scene._newPolygon = None
-            elif self.scene.editModes.addInstance:
-                self.scene.newInstance = None
-                self.scene.layoutInstanceTuple = None
-            elif self.scene.editModes.addLabel:
-                self.scene._newLabel = None
-                self.scene._newLabelTuple = None
-
-            self.scene.editModes.setMode("selectItem")
+        modifiers = event.modifiers()
+        if event.key() == Qt.Key.Key_Escape:
+            if self.viewScene.editModes.drawPath and self.viewScene.newPath is not None:
+                if self.viewScene.newPath.draftLine.isNull():
+                    self.viewScene.undoStack.removeLastCommand()
+                self.viewScene.newPath = None
+                self.viewScene.editModes.setMode("selectItem")
+            elif self.viewScene.editModes.drawRect and self.viewScene.newRect is not None:
+                if self.viewScene.newRect.rect.isNull():
+                    self.viewScene.removeItem(self.viewScene.newRect)
+                    self.viewScene.undoStack.removeLastCommand()
+                self.viewScene.newRect = None
+                self.viewScene.editModes.setMode("selectItem")
+            elif self.viewScene.editModes.stretchItem and self.viewScene.stretchPathItem is not None:
+                self.viewScene.stretchPathItem.setSelected(False)
+                self.viewScene.stretchPathItem.stretch = False
+                self.viewScene.stretchPathItem = None
+            elif self.viewScene.editModes.drawPolygon:
+                if self.viewScene.polygonGuideLine:
+                    self.viewScene.removeItem(self.viewScene.polygonGuideLine)
+                if self.viewScene.newPolygon and self.viewScene.newPolygon.points:
+                    self.viewScene.newPolygon.points.pop(0)  # remove first duplicate point
+                self.viewScene.newPolygon = None
+                self.viewScene.editModes.setMode("selectItem")
+            elif self.viewScene.editModes.addInstance:
+                self.viewScene.newInstance = None
+                self.viewScene.layoutInstanceTuple = None
+                self.viewScene.editModes.setMode("selectItem")
+            elif self.viewScene.editModes.addLabel:
+                self.viewScene.newLabel = None
+                self.viewScene.newLabelTuple = None
+                self.viewScene.editModes.setMode("selectItem")
+            elif self.viewScene.editModes.cutShape:
+                self.viewScene.finishCutLine()
+                self.viewScene.editModes.setMode("selectItem")
+            elif self.viewScene.editModes.addVia:
+                self.viewScene.arrayViaTuple = None
+                self.viewScene.arrayVia = None
+                self.viewScene.editModes.setMode("selectItem")
         super().keyPressEvent(event)
+
+            
+

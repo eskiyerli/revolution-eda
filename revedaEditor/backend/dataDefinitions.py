@@ -20,7 +20,7 @@
 
 from dataclasses import dataclass
 from typing import NamedTuple, Union
-
+from revedaEditor.backend import libBackEnd as libb
 from PySide6.QtCore import QPoint, QPointF, Qt
 from PySide6.QtGui import QColor
 from polars import int_range
@@ -123,7 +123,7 @@ class layoutModes(editModes):
     drawCircle: bool
     drawRuler: bool
     addInstance: bool
-    chopShape: bool
+    cutShape: bool
 
 
 @dataclass
@@ -166,12 +166,9 @@ class cellTuple(NamedTuple):
 
 
 class viewItemTuple(NamedTuple):
-    libraryItem: object
-    cellItem: object
-    viewItem: object
-
-
-
+    libraryItem: libb.libraryItem
+    cellItem: libb.cellItem
+    viewItem: libb.viewItem
 
 class layoutPinTuple(NamedTuple):
     pinName: str
