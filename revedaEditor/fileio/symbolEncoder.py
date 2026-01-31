@@ -23,12 +23,12 @@
 #
 
 import json
-
-import revedaEditor.common.shapes as shp
-import revedaEditor.common.labels as lbl
-
 from typing import Dict, Any
+
 from PySide6.QtCore import QPointF
+
+import revedaEditor.common.labels as lbl
+import revedaEditor.common.shapes as shp
 
 
 class symbolAttribute(object):
@@ -59,6 +59,7 @@ class symbolAttribute(object):
     def definition(self, value):
         assert isinstance(value, str)
         self._definition = value
+
 
 class symbolEncoder(json.JSONEncoder):
     def default(self, item: Any) -> Dict[str, Any]:
@@ -184,4 +185,3 @@ class symbolEncoder(json.JSONEncoder):
     @staticmethod
     def _subtract_point(point: QPointF, origin: QPointF) -> tuple:
         return (point - origin).toTuple()
-

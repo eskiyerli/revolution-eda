@@ -107,4 +107,3 @@ class revedaPrintDialog(QPrintDialog):
             hints |= QPainter.HighQualityAntialiasing
 
         return hints
-

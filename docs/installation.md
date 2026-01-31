@@ -1,11 +1,13 @@
 # Installation
 
-Revolution EDA can be used on Windows, Mac, and Linux systems. There are several installation methods depending on your preference and experience.
+Revolution EDA can be used on Windows, Mac, and Linux systems. There are several
+installation methods depending on your preference and experience.
 
 ## Prerequisites
 
 - Python 3.12 or 3.13
-- [Poetry](https://python-poetry.org/docs/#installation) dependency management tool (if installing from source)
+- [Poetry](https://python-poetry.org/docs/#installation) dependency management tool (if
+  installing from source)
 
 ## From PyPI (Recommended)
 
@@ -39,13 +41,18 @@ poetry run reveda
 
 ## Binary Releases
 
-Pre-compiled binaries are available for Windows and Linux, created using [Nuitka](https://nuitka.net). These standalone executables run without requiring a separate Python installation.
+Pre-compiled binaries are available for Windows and Linux, created
+using [Nuitka](https://nuitka.net). These standalone executables run without requiring a
+separate Python installation.
 
-Download from [Revolution EDA Releases](https://github.com/eskiyerli/revolution-eda/releases):
+Download
+from [Revolution EDA Releases](https://github.com/eskiyerli/revolution-eda/releases):
+
 - **Windows**: `reveda.exe`
 - **Linux**: `reveda.bin` (make executable with `chmod +x reveda.bin`)
 
-The binary releases consists of all files that need to start experimenting with Revolution EDA including a preliminary Global Foundries 180 MCU PDK for Revolution EDA. 
+The binary releases consists of all files that need to start experimenting with Revolution
+EDA including a preliminary Global Foundries 180 MCU PDK for Revolution EDA.
 
 ## PDK Installation
 
@@ -55,7 +62,8 @@ To use the preliminary IHP PDK:
 git clone https://github.com/eskiyerli/ihp_pdk.git
 ```
 
-Set the `REVEDA_PDK_PATH` environment variable in your `.env` file depending on where you installed it.
+Set the `REVEDA_PDK_PATH` environment variable in your `.env` file depending on where you
+installed it.
 For example, if it is installed in `/home/UserName/ihp_pdk`, you would need to set it to:
 
 ```
@@ -69,11 +77,14 @@ REVEDA_PDK_PATH=C:\Users\UserName\ihp_pdk
 ```
 
 Alternatively, you can use the *Revolution EDA Options* dialog by choosing *Options* menu
-from the *Revolution EDA* main window and selecting the directory where the PDK is installed. 
+from the *Revolution EDA* main window and selecting the directory where the PDK is
+installed.
 
 ![](assets/revedaOptionsDialogue.png)
 
-The IHP PDK installation directory also has schematic symbols under the `sg13g2_pr` directory that can be used in your designs. There is also a preliminary GF 180 PDK available.
+The IHP PDK installation directory also has schematic symbols under the `sg13g2_pr`
+directory that can be used in your designs. There is also a preliminary GF 180 PDK
+available.
 
 ## Example Libraries
 

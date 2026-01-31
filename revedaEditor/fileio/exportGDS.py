@@ -22,12 +22,14 @@
 #    Licensor: Revolution Semiconductor (Registered in the Netherlands)
 #
 
-import gdstk
-import revedaEditor.common.layoutShapes as lshp
 import inspect
-from typing import List, Dict, Tuple, Any
 from pathlib import Path
-from revedaEditor.backend.pdkPaths import importPDKModule
+from typing import List, Any
+
+import gdstk
+
+import revedaEditor.common.layoutShapes as lshp
+from revedaEditor.backend.pdkLoader import importPDKModule
 
 pcells = importPDKModule('pcells')
 
@@ -73,7 +75,8 @@ class gdsExporter:
         writer = startThread(lib.write_gds, str(self._outputFileObj))
         threadPool.start(writer)
 
-    def createCells(self, library: gdstk.Library, item: lshp.layoutShape, parentCell: gdstk.Cell):
+    def createCells(self, library: gdstk.Library, item: lshp.layoutShape,
+                    parentCell: gdstk.Cell):
         item_type = type(item)
         if item_type == lshp.layoutInstance:
             self._processInstance(library, item, parentCell)
@@ -143,7 +146,8 @@ class gdsExporter:
         parentCell.add(polygon)
 
     def _processViaArray(self, library, item, parentCell):
-        via_key = (item.via.width, item.via.height, item.via.layer.name, item.via.layer.purpose)
+        via_key = (item.via.width, item.via.height, item.via.layer.name,
+                   item.via.layer.purpose)
         if via_key not in self._cellCache:
             viaName = f"via_{item.via.width}_{item.via.height}_{item.via.layer.name}_{item.via.layer.purpose}"
             viaCell = library.new_cell(viaName)

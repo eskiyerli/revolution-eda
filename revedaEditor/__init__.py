@@ -27,10 +27,10 @@ __copyright__ = "Copyright 2025 Revolution Semiconductor"
 __license__ = "Mozilla Public License 2.0"
 __version__ = "0.8.2"
 __status__ = "Development"
+
 from . import backend
 from . import checks
 from . import common
 from . import fileio
 from . import gui
-from . import resources
 from . import scenes

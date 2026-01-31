@@ -2,11 +2,13 @@
 
 ## createNLPLabel method
 
-This `createNLPLabel` method parses **Natural Language Parameter (NLP) labels** used in Revolution EDA's symbol system.
+This `createNLPLabel` method parses **Natural Language Parameter (NLP) labels** used in
+Revolution EDA's symbol system.
 
 ## Purpose
 
-Converts label definitions like `[@width:W=%:W=10u]` into usable label components for display and parameter management.
+Converts label definitions like `[@width:W=%:W=10u]` into usable label components for
+display and parameter management.
 
 ## Input Format
 
@@ -19,9 +21,9 @@ Converts label definitions like `[@width:W=%:W=10u]` into usable label component
 1. **Validation**: Checks for proper `[@...]` bracket format
 2. **Parsing**: Splits on `:` to extract name, format, and default value
 3. **Context Handling**:
-   - Symbol editor: Returns raw definition
-   - Predefined labels: Uses special handling for system labels
-   - Regular labels: Processes format and default values
+    - Symbol editor: Returns raw definition
+    - Predefined labels: Uses special handling for system labels
+    - Regular labels: Processes format and default values
 
 ## Output Components
 

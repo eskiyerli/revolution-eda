@@ -32,14 +32,15 @@ from PySide6.QtCore import (
 from PySide6.QtWidgets import (
     QMainWindow,
 )
-import revedaEditor.common.labels as lbl
+
 import revedaEditor.backend.libBackEnd as scb
 import revedaEditor.backend.libraryMethods as libm
 import revedaEditor.backend.libraryModelView as lmview
+import revedaEditor.common.labels as lbl
 import revedaEditor.common.shapes as shp
 import revedaEditor.fileio.symbolEncoder as symenc
 import revedaEditor.gui.symbolEditor as symed
-from revedaEditor.backend.pdkPaths import importPDKModule
+from revedaEditor.backend.pdkLoader import importPDKModule
 
 cb = importPDKModule("callbacks")
 
@@ -50,11 +51,11 @@ class importXschemSym:
     """
 
     def __init__(
-        self,
-        parent: QMainWindow,
-        filePathObj: Path,
-        libraryView: lmview.BaseDesignLibrariesView,
-        libraryName: str,
+            self,
+            parent: QMainWindow,
+            filePathObj: Path,
+            libraryView: lmview.BaseDesignLibrariesView,
+            libraryName: str,
     ):
         self.parent = parent
         self.filePathObj = filePathObj
@@ -199,7 +200,6 @@ class importXschemSym:
 
         self.symbolWindow.checkSaveCell()
 
-
     @property
     def scaleFactor(self) -> float:
         return self._scaleFactor
@@ -215,7 +215,7 @@ class importXschemSym:
         if start == -1 or end == -1:
             return {}
         return dict(
-            pair.split("=", 1) for pair in line[start + 1 : end].split() if "=" in pair
+            pair.split("=", 1) for pair in line[start + 1: end].split() if "=" in pair
         )
 
     def parseTextLine(self, line: str):
@@ -271,9 +271,10 @@ class importXschemSym:
         Helper method to create and configure NLPLabels with common settings.
         '''
         label = lbl.symbolLabel(QPoint(location[0], location[1]), text,
-            lbl.symbolLabel.labelTypes[1], self._labelHeight,
-            lbl.symbolLabel.labelAlignments[0], lbl.symbolLabel.labelOrients[0],
-            lbl.symbolLabel.labelUses[0])
+                                lbl.symbolLabel.labelTypes[1], self._labelHeight,
+                                lbl.symbolLabel.labelAlignments[0],
+                                lbl.symbolLabel.labelOrients[0],
+                                lbl.symbolLabel.labelUses[0])
         label.labelDefs()
         label.labelVisible = True
         label.setOpacity(1)

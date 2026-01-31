@@ -40,7 +40,8 @@ class findProjectEditors(QDialog):
         self.parent = parent
         self.setWindowTitle("Find Related Editors")
         self.setMinimumWidth(300)
-        QBtn = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+
         self.mainLayout = QVBoxLayout()
         self.fLayout = QFormLayout()
         self.fLayout.setContentsMargins(10, 20, 10, 20)

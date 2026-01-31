@@ -23,6 +23,7 @@
 #
 
 
+import json
 import logging
 import pathlib
 import shutil
@@ -34,9 +35,13 @@ from PySide6.QtWidgets import (QAbstractItemView, QDialog, QMenu, QMessageBox, Q
                                QWidget, QApplication, QListView, QHBoxLayout, QVBoxLayout,
                                QLabel, )
 
+import revedaEditor.backend.dataDefinitions as ddef
 import revedaEditor.backend.libBackEnd as libb
 import revedaEditor.backend.libraryMethods as libm
 import revedaEditor.gui.fileDialogues as fd
+import revedaEditor.gui.layoutDialogues as ldlg
+import revedaEditor.gui.textEditor as ted
+from revedaEditor.gui.configEditor import configEditor
 
 
 class BaseDesignLibrariesView(QWidget):
@@ -75,10 +80,10 @@ class BaseDesignLibrariesView(QWidget):
         try:
             oldLibraryName = selectedLib.libraryName
             dlg = fd.renameLibDialog(self, oldLibraryName)
-            if dlg.exec() == QDialog.Accepted:
+            if dlg.exec() == QDialog.DialogCode.Accepted:
                 newLibraryName = dlg.newLibraryName.text().strip()
                 libraryItem = libm.getLibItem(self.libraryModel, oldLibraryName)
-                oldLibraryPath = libraryItem.data(Qt.UserRole + 2)
+                oldLibraryPath = libraryItem.data(Qt.ItemDataRole.UserRole + 2)
                 self.libraryModel.removeRow(libraryItem.row())
                 newLibraryPath = oldLibraryPath.parent.joinpath(newLibraryName)
                 oldLibraryPath.rename(newLibraryPath)
@@ -92,16 +97,185 @@ class BaseDesignLibrariesView(QWidget):
     def openView(self, selectedViewItem: libb.viewItem):
         try:
             cellItem = selectedViewItem.parent()
-            libItem = cellItem.parent()
-            self.libBrowsW.openCellView(selectedViewItem, cellItem, libItem)
+            self.openCellView(selectedViewItem)
         except Exception as e:
             self.logger.error(f"Error opening view: {e}")
-    
+
+    def createNewCellView(self, libItem, cellItem, viewItem):
+        from revedaEditor.gui.editorFactory import EditorFactory
+
+        viewTuple = ddef.viewTuple(libItem.libraryName, cellItem.cellName,
+                                   viewItem.viewName)
+
+        if viewItem.viewType in ["schematic", "symbol", "layout"]:
+            editor = EditorFactory.createEditor(viewItem.viewType, viewItem,
+                                                self.libraryDict,
+                                                self)
+            self.appMainW.openViews[viewTuple] = editor
+            if hasattr(editor, "loadSchematic"):
+                editor.loadSchematic()
+            elif hasattr(editor, "loadSymbol"):
+                editor.loadSymbol()
+            elif hasattr(editor, "loadLayout"):
+                editor.loadLayout()
+            editor.show()
+        elif viewItem.viewType == "veriloga":
+            editor = ted.verilogaEditor(
+                viewItem.viewPath.parent / f"{cellItem.cellName}.va")
+            editor.cellViewTuple = viewTuple
+            editor.closedSignal.connect(self.verilogaEditFinished)
+            self.appMainW.openViews[viewTuple] = editor
+            editor.show()
+        elif viewItem.viewType == "spice":
+            editor = ted.spiceEditor(viewItem.viewPath)
+            editor.cellViewTuple = viewTuple
+            editor.closedSignal.connect(self.spiceEditFinished)
+            self.appMainW.openViews[viewTuple] = editor
+            editor.show()
+        # elif viewItem.viewType == "revbench":
+        #     self.openRevbenchWindow(libItem, cellItem, viewItem)
+        elif viewItem.viewType == "config":
+            schViewsList = [cellItem.child(row).viewName for row in
+                            range(cellItem.rowCount()) if
+                            cellItem.child(row).viewType == "schematic"]
+            dlg = fd.createConfigViewDialogue(self.appMainW)
+            dlg.libraryNameEdit.setText(libItem.libraryName)
+            dlg.cellNameEdit.setText(cellItem.cellName)
+            dlg.viewNameCB.addItems(schViewsList)
+            dlg.switchViews.setText(", ".join(self.appMainW.switchViewList))
+            dlg.stopViews.setText(", ".join(self.appMainW.stopViewList))
+            if dlg.exec() == QDialog.DialogCode.Accepted:
+                from revedaEditor.gui.configEditor import createNewConfigView
+                configWindow = createNewConfigView(cellItem, viewItem, dlg,
+                                                   self.libraryDict,
+                                                   self)
+                self.appMainW.openViews[viewTuple] = configWindow
+                configWindow.show()
+        elif viewItem.viewType == "pcell":
+            dlg = ldlg.pcellLinkDialogue(self.appMainW, viewItem)
+            if dlg.exec() == QDialog.DialogCode.Accepted:
+                items = [{"cellView": "pcell"}, {"reference": dlg.pcellCB.currentText()}]
+                with viewItem.data(Qt.ItemDataRole.UserRole + 2).open(
+                        mode="w+") as pcellFile:
+                    json.dump(items, pcellFile, indent=4)
+            else:
+                try:
+                    viewItem.data(Qt.ItemDataRole.UserRole + 2).unlink()
+                    viewItem.parent().removeRow(viewItem.row())
+                except OSError as e:
+                    self.logger.warning(f"Error:{e.strerror}")
+        else:
+            self._app.pluginsObj.openCellView(viewItem)
+
     def reworkDesignLibrariesView(self, libraryDict: dict):
         """
         To be implemented by child classes.
         """
         pass
+
+    def _handle_spice_view(self, viewItem, openCellViewTuple):
+        """Handle spice view opening."""
+        with open(viewItem.viewPath) as tempFile:
+            items = json.load(tempFile)
+        if items[1]["filePath"]:
+            spiceFilePathObj = (
+                viewItem.parent().data(Qt.ItemDataRole.UserRole + 2).joinpath(
+                    items[1]["filePath"]))
+            spiceEditor = ted.spiceEditor(spiceFilePathObj)
+            self.appMainW.openViews[openCellViewTuple] = spiceEditor
+            spiceEditor.cellViewTuple = openCellViewTuple
+            spiceEditor.closedSignal.connect(self.spiceEditFinished)
+            spiceEditor.show()
+        else:
+            self.logger.warning("File path not defined.")
+
+    def _handle_veriloga_view(self, viewItem, openCellViewTuple):
+        """Handle veriloga view opening."""
+        with open(viewItem.viewPath) as tempFile:
+            items = json.load(tempFile)
+        if items[1]["filePath"]:
+            VerilogafilePathObj = (
+                viewItem.parent().data(Qt.ItemDataRole.UserRole + 2).joinpath(
+                    items[1]["filePath"]))
+            verilogaEditor = ted.verilogaEditor(VerilogafilePathObj)
+            self.appMainW.openViews[openCellViewTuple] = verilogaEditor
+            verilogaEditor.cellViewTuple = openCellViewTuple
+            verilogaEditor.closedSignal.connect(self.verilogaEditFinished)
+            verilogaEditor.show()
+        else:
+            self.logger.warning("File path not defined.")
+
+    def openCellView(self, viewItem: libb.viewItem):
+        from revedaEditor.gui.editorFactory import EditorFactory
+        if not viewItem:
+            return
+        cellItem = viewItem.parent()
+        if not cellItem:
+            return
+        libItem = cellItem.parent()
+        if not libItem:
+            return
+
+        viewName = viewItem.viewName
+        cellName = cellItem.cellName
+        libName = libItem.libraryName
+        openCellViewTuple = ddef.viewTuple(libName, cellName, viewName)
+
+        if openCellViewTuple in self.appMainW.openViews.keys():
+            self.appMainW.openViews[openCellViewTuple].show()
+            return openCellViewTuple
+
+        view_type = viewItem.viewType
+
+        # Handle standard editor types using factory
+        if view_type in EditorFactory.getSupportedViewTypes():
+            editor = EditorFactory.createEditor(view_type, viewItem, self.libraryDict,
+                                                self)
+
+            # Load content based on editor type - use view_type instead of hasattr
+            if view_type == 'layout':
+                editor.loadLayout()  # type: ignore[attr-defined]
+            elif view_type == 'schematic':
+                editor.loadSchematic()  # type: ignore[attr-defined]
+            elif view_type == 'symbol':
+                editor.loadSymbol()  # type: ignore[attr-defined]
+
+            editor.show()
+
+            # Fit items in view if available
+            if hasattr(editor, 'centralW') and hasattr(editor.centralW, 'scene'):
+                editor.centralW.scene.fitItemsInView()
+            self.appMainW.openViews[openCellViewTuple] = editor
+
+        # Handle special cases that require custom logic
+        elif view_type == "config":
+            editor = configEditor(viewItem, self.libraryDict,
+                                  self)
+            editor.loadConfig()
+        elif view_type == "spice":
+            editor = ted.spiceEditor(viewItem.viewPath)
+            editor.cellViewTuple = openCellViewTuple
+            editor.closedSignal.connect(self.spiceEditFinished)
+            self.appMainW.openViews[openCellViewTuple] = editor
+            editor.show()
+        elif view_type == "veriloga":
+            self._handle_veriloga_view(viewItem, openCellViewTuple)
+        # elif view_type == "revbench":
+        #     self._handle_revbench_view(viewItem, openCellViewTuple)
+        else:
+            self._app.pluginsObj.openCellView(viewItem)
+
+        return openCellViewTuple
+
+    def verilogaEditFinished(self, editor: ted.verilogaEditor):
+        import revedaEditor.fileio.importVeriloga as imva
+        imva.importVerilogaModule(editor.cellViewTuple, str(editor.filePathObj))
+        # self.appMainW.openViews.pop(editor.cellViewTuple)
+
+    def spiceEditFinished(self, editor: ted.spiceEditor):
+        import revedaEditor.fileio.importSpice as imsp
+        imsp.importSpiceSubckt(editor.cellViewTuple, str(editor.filePathObj))
+        # self.appMainW.openViews.pop(editor.cellViewTuple)
 
 
 class designLibrariesColumnView(BaseDesignLibrariesView):
@@ -168,7 +342,7 @@ class designLibrariesColumnView(BaseDesignLibrariesView):
         # Create new model for second list
         cellsModel = QStandardItemModel()
         cellsModel.setHorizontalHeaderLabels(["Cells"])
-        cellsModel.setSortRole(Qt.UserRole + 3)
+        cellsModel.setSortRole(Qt.ItemDataRole.UserRole + 3)
 
         # Get the selected item and its children
         self.selectedLib = self.libraryModel.itemFromIndex(indexes[0])
@@ -189,7 +363,7 @@ class designLibrariesColumnView(BaseDesignLibrariesView):
         clonedItem = item.clone()
         # Store reference to original item
         clonedItem.setData(item,
-                           Qt.UserRole + 10)  # Use a custom role to store the original item
+                           Qt.ItemDataRole.UserRole + 10)  # Use a custom role to store the original item
 
         if item.hasChildren():
             for i in range(item.rowCount()):
@@ -207,7 +381,8 @@ class designLibrariesColumnView(BaseDesignLibrariesView):
         if not indexes:
             return
         cellItem = (
-            self.cellsListView.model().itemFromIndex(indexes[0]).data(Qt.UserRole + 10))
+            self.cellsListView.model().itemFromIndex(indexes[0]).data(
+                Qt.ItemDataRole.UserRole + 10))
         # Create new model for third list
         viewsModel = self.createViewsListModel(cellItem=cellItem)
         self.viewsListView.setModel(viewsModel)
@@ -221,13 +396,13 @@ class designLibrariesColumnView(BaseDesignLibrariesView):
         """
         viewsModel = QStandardItemModel()
         viewsModel.setHorizontalHeaderLabels(["Cell Views"])
-        viewsModel.setSortRole(Qt.UserRole + 3)
+        viewsModel.setSortRole(Qt.ItemDataRole.UserRole + 3)
 
         if cellItem and cellItem.hasChildren():
             for i in range(cellItem.rowCount()):
                 child = cellItem.child(i)
                 cloned_child = child.clone()
-                cloned_child.setData(child, Qt.UserRole + 10)
+                cloned_child.setData(child, Qt.ItemDataRole.UserRole + 10)
                 viewsModel.appendRow(cloned_child)
         return viewsModel
 
@@ -258,7 +433,7 @@ class designLibrariesColumnView(BaseDesignLibrariesView):
         self.cellsListView.setModel(None)
         self.viewsListView.setModel(None)
 
-        # Update library model reference in parent
+        # Update library model reference in parentW
         self.libBrowsW.libraryModel = self.libraryModel
 
     def libsListContextMenuEvent(self, pos: QPoint):
@@ -285,7 +460,7 @@ class designLibrariesColumnView(BaseDesignLibrariesView):
         index = senderView.indexAt(pos)
         if index.isValid():
             selectedCloneCellItem = self.cellsListView.model().itemFromIndex(index)
-            selectedCellItem = selectedCloneCellItem.data(Qt.UserRole + 10)
+            selectedCellItem = selectedCloneCellItem.data(Qt.ItemDataRole.UserRole + 10)
             menu.addAction(QAction("Create CellView...", self,
                                    triggered=lambda: self.createCellView(
                                        selectedCloneCellItem), ))
@@ -309,7 +484,7 @@ class designLibrariesColumnView(BaseDesignLibrariesView):
         index = senderView.indexAt(pos)
         if index.isValid():
             selectedCloneViewItem = self.viewsListView.model().itemFromIndex(index)
-            selectedViewItem = selectedCloneViewItem.data(Qt.UserRole + 10)
+            selectedViewItem = selectedCloneViewItem.data(Qt.ItemDataRole.UserRole + 10)
             menu.addAction(QAction("Open View", self,
                                    triggered=lambda: self.openView(selectedViewItem)))
             menu.addAction(QAction("Copy View...", self, triggered=lambda: self.copyView(
@@ -330,10 +505,11 @@ class designLibrariesColumnView(BaseDesignLibrariesView):
         try:
             dlg = fd.createCellDialog(self, self.libraryModel)
             dlg.libNamesCB.setCurrentText(selectedLib.libraryName)
-            if dlg.exec() == QDialog.Accepted:
+            if dlg.exec() == QDialog.DialogCode.Accepted:
                 cellName = dlg.cellCB.currentText()
                 if cellName.strip() != "":
-                    selectedLib = libm.getLibItem(self.libraryModel, dlg.libNamesCB.currentText())
+                    selectedLib = libm.getLibItem(self.libraryModel,
+                                                  dlg.libNamesCB.currentText())
                     newCellItem = libb.createCell(self, selectedLib, cellName)
                     if newCellItem:
                         # add now a clone of newCellItem to temporary cellListModel
@@ -351,7 +527,7 @@ class designLibrariesColumnView(BaseDesignLibrariesView):
             dlg.libraryCB.setModel(self.libraryModel)
             dlg.libraryCB.setCurrentText(parentLib.libraryName)
             pass
-            if dlg.exec() == QDialog.Accepted:
+            if dlg.exec() == QDialog.DialogCode.Accepted:
                 success, newCellItem = libb.copyCell(self, self.libraryModel,
                                                      selectedCellItem, dlg.copyName.text(),
                                                      dlg.selectedLibPath, )
@@ -371,10 +547,10 @@ class designLibrariesColumnView(BaseDesignLibrariesView):
     def renameCell(self, cloneCellItem: libb.cellItem):
         try:
             oldName = cloneCellItem.cellName
-            cellItem = cloneCellItem.data(Qt.UserRole + 10)
+            cellItem = cloneCellItem.data(Qt.ItemDataRole.UserRole + 10)
             dlg = fd.renameCellDialog(self, cellItem)
             libName = cellItem.parent().libraryName
-            if dlg.exec() == QDialog.Accepted:
+            if dlg.exec() == QDialog.DialogCode.Accepted:
                 newName = dlg.nameEdit.text().strip()
                 libb.renameCell(self, cloneCellItem, newName)
                 # update the original cell item
@@ -386,8 +562,8 @@ class designLibrariesColumnView(BaseDesignLibrariesView):
 
     def deleteCell(self, selectedCloneCellItem: libb.cellItem):
         try:
-            originalCell = selectedCloneCellItem.data(Qt.UserRole + 10)
-            shutil.rmtree(selectedCloneCellItem.data(Qt.UserRole + 2))
+            originalCell = selectedCloneCellItem.data(Qt.ItemDataRole.UserRole + 10)
+            shutil.rmtree(selectedCloneCellItem.data(Qt.ItemDataRole.UserRole + 2))
             self.libraryModel.removeRow(originalCell.row())
             if self.cellsListView.model():
                 self.cellsListView.model().removeRow(selectedCloneCellItem.row())
@@ -398,18 +574,18 @@ class designLibrariesColumnView(BaseDesignLibrariesView):
             self.logger.warning(f"Error deleting cell: {e}")
 
     def copyView(self, selectedCloneViewItem: libb.viewItem):
-        selectedViewItem = selectedCloneViewItem.data(Qt.UserRole + 10)
+        selectedViewItem = selectedCloneViewItem.data(Qt.ItemDataRole.UserRole + 10)
         dlg = fd.copyViewDialog(self, self.libraryModel)
         dlg.libNamesCB.setCurrentText(selectedViewItem.parent().parent().libraryName)
         dlg.cellCB.setCurrentText(selectedViewItem.parent().cellName)
-        if dlg.exec() != QDialog.Accepted:
+        if dlg.exec() != QDialog.DialogCode.Accepted:
             return
 
-        if selectedViewItem.data(Qt.UserRole + 1) != "view":
+        if selectedViewItem.data(Qt.ItemDataRole.UserRole + 1) != "view":
             self.logger.error("Selected item is not a view.")
             return
 
-        viewPath = selectedViewItem.data(Qt.UserRole + 2)
+        viewPath = selectedViewItem.data(Qt.ItemDataRole.UserRole + 2)
         libName = dlg.libNamesCB.currentText()
         cellName = dlg.cellCB.currentText()
         newViewName = dlg.viewName.text().strip()
@@ -431,7 +607,8 @@ class designLibrariesColumnView(BaseDesignLibrariesView):
             self.logger.warning("View already exists. Delete cellview and try again.")
             return
 
-        newViewPath = cellItem.data(Qt.UserRole + 2).joinpath(f"{newViewName}.json")
+        newViewPath = cellItem.data(Qt.ItemDataRole.UserRole + 2).joinpath(
+            f"{newViewName}.json")
         try:
             newViewPath.parent.mkdir(parents=True, exist_ok=True)
             newViewItem = libb.viewItem(newViewPath)
@@ -444,12 +621,12 @@ class designLibrariesColumnView(BaseDesignLibrariesView):
             self.logger.error(f"Failed to copy view: {e}")
 
     def createCellView(self, selectedCloneCellItem: libb.cellItem):
-        cellItem = selectedCloneCellItem.data(Qt.UserRole + 10)
+        cellItem = selectedCloneCellItem.data(Qt.ItemDataRole.UserRole + 10)
         dlg = fd.newCellViewDialog(self, self.libraryModel)
         dlg.libNamesCB.setCurrentText(cellItem.parent().libraryName)
         dlg.cellCB.setCurrentText(cellItem.cellName)
         dlg.viewType.addItems(self.libBrowsW.cellViews)
-        if dlg.exec() == QDialog.Accepted:
+        if dlg.exec() == QDialog.DialogCode.Accepted:
             self.handleNewCellView(cellItem, dlg)
 
     def handleNewCellView(self, cellItem, dlg):
@@ -468,27 +645,27 @@ class designLibrariesColumnView(BaseDesignLibrariesView):
             if result == QMessageBox.Save:
                 self.viewsListView.model().removeRow(viewItem.row())
                 viewItem = libb.createCellView(self.appMainW, viewName, cellItem)
-                self.libBrowsW.createNewCellView(libItem, cellItem, viewItem)
+                self.createNewCellView(libItem, cellItem, viewItem)
                 # Add the new view item to the views list
                 cloneViewItem = viewItem.clone()
                 self.viewsListView.model().appendRow(cloneViewItem)
         else:
             viewItem = libb.createCellView(self.appMainW, viewName, cellItem)
             # cellItem.appendRow(viewItem)
-            self.libBrowsW.createNewCellView(libItem, cellItem, viewItem)
+            self.createNewCellView(libItem, cellItem, viewItem)
             # Add the new view item to the views list
             cloneViewItem = viewItem.clone()
             self.viewsListView.model().appendRow(cloneViewItem)
 
     def renameView(self, selectedCloneViewItem: libb.viewItem):
-        selectedViewItem = selectedCloneViewItem.data(Qt.UserRole + 10)
+        selectedViewItem = selectedCloneViewItem.data(Qt.ItemDataRole.UserRole + 10)
         oldViewName = selectedViewItem.viewName
         cellItem = selectedViewItem.parent()  # noqa: F811
         dlg = fd.renameViewDialog(self.libBrowsW, oldViewName)
-        if dlg.exec() == QDialog.Accepted:
+        if dlg.exec() == QDialog.DialogCode.Accepted:
             newName = dlg.newViewNameEdit.text()
             try:
-                viewPathObj = selectedViewItem.data(Qt.UserRole + 2)
+                viewPathObj = selectedViewItem.data(Qt.ItemDataRole.UserRole + 2)
                 newPathObj = viewPathObj.parent.joinpath(f"{newName}.json")
                 if newPathObj.exists():
                     raise FileExistsError
@@ -506,8 +683,8 @@ class designLibrariesColumnView(BaseDesignLibrariesView):
 
     def deleteView(self, selectedCloneViewItem: libb.viewItem):
         try:
-            selectedCloneViewItem.data(Qt.UserRole + 2).unlink()
-            selectedViewItem = selectedCloneViewItem.data(Qt.UserRole + 10)
+            selectedCloneViewItem.data(Qt.ItemDataRole.UserRole + 2).unlink()
+            selectedViewItem = selectedCloneViewItem.data(Qt.ItemDataRole.UserRole + 10)
             # Remove the original item from the model
             itemRow = selectedViewItem.row()
             cellItem = selectedViewItem.parent()
@@ -526,14 +703,14 @@ class designLibrariesColumnView(BaseDesignLibrariesView):
             self.logger.warning(f"Error:{e}")
 
     def showClonedItemFileInfo(self, selectedCloneItem: libb.viewItem):
-        selectedItem = selectedCloneItem.data(Qt.UserRole + 10)
-        viewPath = selectedItem.data(Qt.UserRole + 2)
+        selectedItem = selectedCloneItem.data(Qt.ItemDataRole.UserRole + 10)
+        viewPath = selectedItem.data(Qt.ItemDataRole.UserRole + 2)
         if viewPath.exists():
             dlg = fd.fileInfoDialogue(viewPath, self.libBrowsW)
         dlg.exec()
 
     def showItemFileInfo(self, selectedItem: libb.viewItem):
-        viewPath = selectedItem.data(Qt.UserRole + 2)
+        viewPath = selectedItem.data(Qt.ItemDataRole.UserRole + 2)
         if viewPath.exists():
             dlg = fd.fileInfoDialogue(viewPath, self.libBrowsW)
         dlg.exec()
@@ -542,7 +719,7 @@ class designLibrariesColumnView(BaseDesignLibrariesView):
 class designLibrariesTreeView(BaseDesignLibrariesView):
     def __init__(self, parent):
         super().__init__(parent=parent)
-        self.libraryModel.setSortRole(Qt.UserRole + 3)
+        self.libraryModel.setSortRole(Qt.ItemDataRole.UserRole + 3)
         self.treeView = QTreeView()
         self.treeView.setModel(self.libraryModel)
         self.treeView.setSelectionMode(QAbstractItemView.SingleSelection)
@@ -556,7 +733,7 @@ class designLibrariesTreeView(BaseDesignLibrariesView):
         try:
             dlg = fd.createCellDialog(self, self.libraryModel)
             dlg.libNamesCB.setCurrentText(selectedLib.libraryName)
-            if dlg.exec() == QDialog.Accepted:
+            if dlg.exec() == QDialog.DialogCode.Accepted:
                 cellName = dlg.cellCB.currentText()
                 if cellName.strip() != "":
                     libb.createCell(self, selectedLib, cellName)
@@ -570,7 +747,7 @@ class designLibrariesTreeView(BaseDesignLibrariesView):
             parentLibrary = selectedCellItem.parent()
             dlg = fd.copyCellDialog(self)
             dlg.libraryCB.setCurrentText(parentLibrary.libraryName)
-            if dlg.exec() == QDialog.Accepted:
+            if dlg.exec() == QDialog.DialogCode.Accepted:
                 success, newCellItem = libb.copyCell(self, self.libraryModel,
                                                      selectedCellItem, dlg.copyName.text(),
                                                      dlg.selectedLibPath, )
@@ -583,7 +760,7 @@ class designLibrariesTreeView(BaseDesignLibrariesView):
     def renameCell(self, selectedCell: libb.cellItem):
         try:
             dlg = fd.renameCellDialog(self, selectedCell)
-            if dlg.exec() == QDialog.Accepted:
+            if dlg.exec() == QDialog.DialogCode.Accepted:
                 oldName = selectedCell.cellName
                 libName = selectedCell.parent().libraryName
                 success = libb.renameCell(self, dlg.cellItem, dlg.nameEdit.text())
@@ -597,7 +774,7 @@ class designLibrariesTreeView(BaseDesignLibrariesView):
 
     def deleteCell(self, selectedCell: libb.cellItem):
         try:
-            shutil.rmtree(selectedCell.data(Qt.UserRole + 2))
+            shutil.rmtree(selectedCell.data(Qt.ItemDataRole.UserRole + 2))
             self.libraryModel.removeRow(selectedCell.row())
             self.logger.info(f"Cell {selectedCell.cellName} deleted.")
         except OSError as e:
@@ -609,7 +786,7 @@ class designLibrariesTreeView(BaseDesignLibrariesView):
             dlg.libNamesCB.setCurrentText(selectedCell.parent().libraryName)
             dlg.cellCB.setCurrentText(selectedCell.cellName)
             dlg.viewType.addItems(self.libBrowsW.cellViews)
-            if dlg.exec() == QDialog.Accepted:
+            if dlg.exec() == QDialog.DialogCode.Accepted:
                 self.handleNewCellView(selectedCell, dlg)
         except OSError as e:
             self.logger.warning(f"Error in creating cell view:{e}")
@@ -644,9 +821,9 @@ class designLibrariesTreeView(BaseDesignLibrariesView):
             dlg = fd.copyViewDialog(self, self.libraryModel)
             dlg.libNamesCB.setCurrentText(selectedView.parent().parent().libraryName)
             dlg.cellCB.setCurrentText(selectedView.parent().cellName)
-            if dlg.exec() == QDialog.Accepted:
-                if selectedView.data(Qt.UserRole + 1) == "view":
-                    viewPath = self.selectedItem.data(Qt.UserRole + 2)
+            if dlg.exec() == QDialog.DialogCode.Accepted:
+                if selectedView.data(Qt.ItemDataRole.UserRole + 1) == "view":
+                    viewPath = self.selectedItem.data(Qt.ItemDataRole.UserRole + 2)
                     selectedLibItem = libm.getLibItem(self.libraryModel,
                                                       dlg.libNamesCB.currentText())
                     cellName = dlg.cellCB.currentText()
@@ -667,7 +844,7 @@ class designLibrariesTreeView(BaseDesignLibrariesView):
                         self.logger.warning(
                             "View already exists. Delete cellview and try again.")
                     else:
-                        newViewPath = cellItem.data(Qt.UserRole + 2).joinpath(
+                        newViewPath = cellItem.data(Qt.ItemDataRole.UserRole + 2).joinpath(
                             f"{newViewName}.json")
                         shutil.copy(viewPath, newViewPath)
                         cellItem.appendRow(libb.viewItem(newViewPath))
@@ -678,11 +855,11 @@ class designLibrariesTreeView(BaseDesignLibrariesView):
         try:
             oldViewName = selectedView.viewName
             dlg = fd.renameViewDialog(self.libBrowsW, oldViewName)
-            if dlg.exec() == QDialog.Accepted:
+            if dlg.exec() == QDialog.DialogCode.Accepted:
                 newName = dlg.newViewNameEdit.text()
                 try:
-                    viewPathObj = selectedView.data(Qt.UserRole + 2)
-                    newPathObj = selectedView.data(Qt.UserRole + 2).rename(
+                    viewPathObj = selectedView.data(Qt.ItemDataRole.UserRole + 2)
+                    newPathObj = selectedView.data(Qt.ItemDataRole.UserRole + 2).rename(
                         viewPathObj.parent.joinpath(f"{newName}.json"))
                     selectedView.parent().appendRow(libb.viewItem(newPathObj))
                     selectedView.parent().removeRow(selectedView.row())
@@ -693,7 +870,7 @@ class designLibrariesTreeView(BaseDesignLibrariesView):
 
     def deleteView(self, selectedView: libb.viewItem):
         try:
-            selectedView.data(Qt.UserRole + 2).unlink()
+            selectedView.data(Qt.ItemDataRole.UserRole + 2).unlink()
             itemRow = selectedView.row()
             parent = selectedView.parent()
             parent.removeRow(itemRow)
@@ -710,7 +887,7 @@ class designLibrariesTreeView(BaseDesignLibrariesView):
         self.libBrowsW.libraryModel = self.libraryModel
 
     def showFileInfo(self, selectedItem: libb.viewItem):
-        viewPath = selectedItem.data(Qt.UserRole + 2)
+        viewPath = selectedItem.data(Qt.ItemDataRole.UserRole + 2)
         if viewPath.exists():
             dlg = fd.fileInfoDialogue(viewPath, self.libBrowsW)
         dlg.exec()
@@ -729,7 +906,7 @@ class designLibrariesTreeView(BaseDesignLibrariesView):
         index = self.treeView.indexAt(pos)
         if index.isValid():
             selectedItem = self.libraryModel.itemFromIndex(index)
-            if selectedItem.data(Qt.UserRole + 1) == "library":
+            if selectedItem.data(Qt.ItemDataRole.UserRole + 1) == "library":
                 menu.addAction(QAction("Rename Library", self.treeView,
                                        triggered=lambda: self.renameLib(selectedItem), ))
                 menu.addAction(QAction("Remove Library", self.treeView,
@@ -737,7 +914,7 @@ class designLibrariesTreeView(BaseDesignLibrariesView):
                                            selectedItem), ))
                 menu.addAction(QAction("Create Cell", self.treeView,
                                        triggered=lambda: self.createCell(selectedItem), ))
-            elif selectedItem.data(Qt.UserRole + 1) == "cell":
+            elif selectedItem.data(Qt.ItemDataRole.UserRole + 1) == "cell":
                 menu.addAction(QAction("Create CellView...", self,
                                        triggered=lambda: self.createCellView(
                                            selectedItem), ))
@@ -747,7 +924,7 @@ class designLibrariesTreeView(BaseDesignLibrariesView):
                                        triggered=lambda: self.renameCell(selectedItem), ))
                 menu.addAction(QAction("Delete Cell...", self.treeView,
                                        triggered=lambda: self.deleteCell(selectedItem), ))
-            elif selectedItem.data(Qt.UserRole + 1) == "view":
+            elif selectedItem.data(Qt.ItemDataRole.UserRole + 1) == "view":
                 menu.addAction(QAction("Open View", self.treeView,
                                        triggered=lambda: self.openView(selectedItem), ))
                 menu.addAction(QAction("Copy View...", self,
@@ -795,7 +972,7 @@ class designLibrariesModel(QStandardItemModel):
         libraryEntry = libb.libraryItem(designPath)
         for row in range(self.invisibleRootItem().rowCount()):
             existingItem = self.invisibleRootItem().child(row)
-            if existingItem.data(Qt.UserRole + 2) == designPath:
+            if existingItem.data(Qt.ItemDataRole.UserRole + 2) == designPath:
                 self.logger.warning(f"Library {designPath} already exists in the model.")
                 break
         else:
@@ -803,15 +980,17 @@ class designLibrariesModel(QStandardItemModel):
         return libraryEntry
 
     def removeLibraryFromModel(self, libraryItem: libb.libraryItem) -> None:
-        shutil.rmtree(libraryItem.data(Qt.UserRole + 2), ignore_errors=True)
+        shutil.rmtree(libraryItem.data(Qt.ItemDataRole.UserRole + 2), ignore_errors=True)
         self.invisibleRootItem().removeRow(libraryItem.row())
 
-    def addCellToModel(self, cellPath: pathlib.Path, parentItem: libb.libraryItem) -> libb.cellItem:
+    def addCellToModel(self, cellPath: pathlib.Path,
+                       parentItem: libb.libraryItem) -> libb.cellItem:
         cellEntry = libb.cellItem(cellPath)
         parentItem.appendRow(cellEntry)
         return cellEntry
 
-    def addViewToModel(self, viewPath:pathlib.Path, parentItem: libb.cellItem) -> libb.viewItem:
+    def addViewToModel(self, viewPath: pathlib.Path,
+                       parentItem: libb.cellItem) -> libb.viewItem:
         viewEntry = libb.viewItem(viewPath)
         parentItem.appendRow(viewEntry)
         return viewEntry
@@ -924,14 +1103,16 @@ class libraryCheckListView(QListView):
         return checkedLibraries
 
 
-def updateJSONFieldInLibrary(model: designLibrariesModel, libraryName: str, key: str,
-                             oldValue: str, newValue: str):
+def updateJSONFieldInLibrary(model: "designLibrariesModel", libraryName: str, key: str,
+                             oldValue: str, newValue: str) -> None:
     """
     Update a specific JSON field in all view files within a single library.
 
     Args:
+        model: The designLibrariesModel instance
         libraryName: Name of the library to process
         key: The JSON key to search for
+        oldValue: The old value to match
         newValue: The new value to set for the key
     """
     import json
@@ -958,14 +1139,17 @@ def updateJSONFieldInLibrary(model: designLibrariesModel, libraryName: str, key:
                         print(f"Error updating {viewItem.viewPath}: {str(e)}")
 
 
-def updateJSONFieldInCell(model: designLibrariesModel, libraryName: str, cellName: str,
-                          key: str, oldValue: str, newValue: str):
+def updateJSONFieldInCell(model: "designLibrariesModel", libraryName: str, cellName: str,
+                          key: str, oldValue: str, newValue: str) -> None:
     """
-    Update a specific JSON field in all view files within a single library.
+    Update a specific JSON field in all view files within a single cell.
 
     Args:
+        model: The designLibrariesModel instance
         libraryName: Name of the library to process
+        cellName: Name of the cell to process
         key: The JSON key to search for
+        oldValue: The old value to match
         newValue: The new value to set for the key
     """
     import json

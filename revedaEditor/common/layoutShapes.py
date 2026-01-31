@@ -28,41 +28,41 @@
 import itertools
 import math
 from pathlib import Path
-import numpy as np
 from typing import Tuple, Union
+
+import numpy as np
 from PySide6.QtCore import (
+    QLineF,
     QPoint,
+    QPointF,
     QRect,
     QRectF,
     Qt,
-    QPointF,
-    QLineF,
 )
 from PySide6.QtGui import (
-    QPen,
     QBrush,
     QColor,
-    QPixmap,
-    QFontMetrics,
     QFont,
-    QTextOption,
     QFontDatabase,
-    QPainterPath,
-    QPolygonF,
+    QFontMetrics,
     QImage,
     QPainter,
+    QPainterPath,
+    QPen,
+    QPixmap,
+    QPolygonF,
+    QTextOption,
     QTransform,
 )
 from PySide6.QtWidgets import (
-    QStyle,
     QGraphicsItem,
-    QGraphicsSceneMouseEvent,
     QGraphicsSceneHoverEvent,
+    QGraphicsSceneMouseEvent,
+    QStyle,
 )
 
 import revedaEditor.backend.dataDefinitions as ddef
-
-from revedaEditor.backend.pdkPaths import importPDKModule
+from revedaEditor.backend.pdkLoader import importPDKModule
 
 
 class textureCache:
@@ -95,6 +95,8 @@ class textureCache:
 
         # Create painter to draw on the image
         painter = QPainter(image)
+        if not painter.isActive():  # Add this check
+            return image
         painter.setPen(Qt.NoPen)
         # painter.setBrush(QBrush(color))
         # Create semi-transparent color (50% opacity)
@@ -136,10 +138,12 @@ class layoutShape(QGraphicsItem):
         super().__init__()
 
         # Batch flag operations for better performance
-        flags = (QGraphicsItem.ItemIsSelectable |
-                 QGraphicsItem.ItemSendsGeometryChanges |
-                 QGraphicsItem.ItemIsFocusable |
-                 QGraphicsItem.ItemUsesExtendedStyleOption)
+        flags = (
+                QGraphicsItem.ItemIsSelectable
+                | QGraphicsItem.ItemSendsGeometryChanges
+                | QGraphicsItem.ItemIsFocusable
+                | QGraphicsItem.ItemUsesExtendedStyleOption
+        )
         self.setFlags(flags)
 
         # Single method calls
@@ -171,12 +175,19 @@ class layoutShape(QGraphicsItem):
 
     def _definePensBrushes(self, layer):
         # Create cache key from layer properties
-        cache_key = (layer.name, layer.purpose, layer.pcolor.name(),
-                     layer.pwidth, layer.pstyle, layer.bcolor.name(), layer.btexture)
+        cache_key = (
+            layer.name,
+            layer.purpose,
+            layer.pcolor.name(),
+            layer.pwidth,
+            layer.pstyle,
+            layer.bcolor.name(),
+            layer.btexture,
+        )
 
         if cache_key not in self._pen_brush_cache:
             # Import PDK module when needed to avoid circular imports
-            laylyr = importPDKModule('layoutLayers')
+            laylyr = importPDKModule("layoutLayers")
             # Create objects only once per unique layer configuration
             texturePath = Path(laylyr.__file__).parent.joinpath(layer.btexture)
             _pixmap = textureCache.getCachedPixmap(texturePath, layer.bcolor)
@@ -185,22 +196,24 @@ class layoutShape(QGraphicsItem):
             red = self._get_cached_color("red")
 
             self._pen_brush_cache[cache_key] = {
-                'pen': QPen(layer.pcolor, layer.pwidth, layer.pstyle),
-                'brush': QBrush(layer.bcolor, _pixmap),
-                'selectedPen': QPen(yellow, layer.pwidth, Qt.DashLine),
-                'selectedBrush': QBrush(yellow, _pixmap),
-                'stretchPen': QPen(red, layer.pwidth, Qt.SolidLine),
-                'stretchBrush': QBrush(red, _pixmap)
+                "pen": QPen(layer.pcolor, layer.pwidth, layer.pstyle),
+                "brush": QBrush(layer.bcolor, _pixmap),
+                "selectedPen": QPen(yellow, layer.pwidth, Qt.DashLine),
+                "selectedBrush": QBrush(yellow, _pixmap),
+                "stretchPen": QPen(red, layer.pwidth, Qt.SolidLine),
+                "stretchBrush": QBrush(red, _pixmap),
             }
 
         # Assign from cache
         cached = self._pen_brush_cache[cache_key]
-        self._pen = cached['pen']
-        self._brush = cached['brush']
-        self._selectedPen = cached['selectedPen']
-        self._selectedBrush = cached['selectedBrush']
-        self._stretchPen = cached['stretchPen']
-        self._stretchBrush = cached['stretchBrush']
+        self._pen = cached["pen"]
+        self._brush = cached["brush"]
+        self._selectedPen = cached["selectedPen"]
+        self._selectedPen.setCosmetic(True)
+        self._selectedBrush = cached["selectedBrush"]
+        self._stretchPen = cached["stretchPen"]
+        self._stretchPen.setCosmetic(True)
+        self._stretchBrush = cached["stretchBrush"]
 
     def _updateTransformedBrush(self, brush: QBrush, scale: float):
         """Update transformed brush only when needed"""
@@ -273,12 +286,11 @@ class layoutShape(QGraphicsItem):
     #         self.setFlag(QGraphicsItem.ItemIsMovable, True)
 
     def mousePressEvent(self, event: QGraphicsSceneMouseEvent) -> None:
+        self.setSelected(True)
+        if self.scene() and self.scene().editModes.moveItem:
+            self.setFlag(QGraphicsItem.ItemIsMovable, True)
+
         super().mousePressEvent(event)
-        if self.scene():
-            self.scene().clearSelection()
-            self.setSelected(True)
-            if self.scene().editModes.moveItem:
-                self.setFlag(QGraphicsItem.ItemIsMovable, True)
 
     def sceneEvent(self, event):
         """
@@ -325,7 +337,7 @@ class layoutShape(QGraphicsItem):
             return
 
         # Cache center calculation
-        if not hasattr(self, '_cached_center'):
+        if not hasattr(self, "_cached_center"):
             self._cached_center = self.boundingRect().center()
         center = self._cached_center
 
@@ -377,14 +389,13 @@ class layoutRect(layoutShape):
             self.sides[0]: (lambda r: r.topLeft(), lambda r: r.bottomLeft()),
             self.sides[1]: (lambda r: r.topRight(), lambda r: r.bottomRight()),
             self.sides[2]: (lambda r: r.topLeft(), lambda r: r.topRight()),
-            self.sides[3]: (lambda r: r.bottomLeft(), lambda r: r.bottomRight())
+            self.sides[3]: (lambda r: r.bottomLeft(), lambda r: r.bottomRight()),
         }
 
     def __repr__(self):
         return f"layoutRect({self._start}, {self._end}, {self._layer})"
 
     def paint(self, painter, option, widget):
-        # Cache the rect to avoid multiple attribute lookups
         rect = self._rect
 
         # Get scale once and cache it
@@ -627,7 +638,7 @@ class layoutInstance(layoutShape):
         self._shapes = list()
 
     def __repr__(self):
-        return f"layoutInstance({self._shapes})"
+        return f"{self.__class__.__name__}({self._libraryName}, {self._cellName}, {self._viewName}, {self._instanceName})"
 
     def boundingRect(self):
         return self.childrenBoundingRect().normalized().adjusted(-2, -2, 2, 2)
@@ -635,6 +646,7 @@ class layoutInstance(layoutShape):
     def paint(self, painter, option, widget):
         painter.setRenderHint(QPainter.NonCosmeticBrushPatterns)
         if option.state & QStyle.State_Selected:
+            # if self in self.scene().selectedItemsSet:
             painter.setPen(self._selectedPen)
             painter.drawRect(self.childrenBoundingRect())
 
@@ -719,7 +731,7 @@ class layoutPcell(layoutInstance):
         super().__init__(shapes)
 
     def __repr__(self):
-        return f"layoutPcell({self._shapes}"
+        return f"{self.__class__.__name__}({self._libraryName}, {self._cellName}, {self._viewName}, {self._instanceName})"
 
 
 class layoutLine(layoutShape):
@@ -748,14 +760,12 @@ class layoutLine(layoutShape):
         self._pen = QPen(penColour, self._width, Qt.SolidLine)
         self._pen.setCosmetic(True)
         self._selectedPen = QPen(Qt.red, self._width + 1, Qt.SolidLine)
-        self._selectedPen.setCosmetic(True)
+        self._selectedPen.setCosmetic(False)
         self._determineAngle(self._draftLine.angle())
         self.setZValue(999)
 
     def __repr__(self):
-        return (
-            f"layoutLine({self._draftLine}, {self._width}, {self._mode})"
-        )
+        return f"layoutLine({self._draftLine}, {self._width}, {self._mode})"
 
     def _determineAngle(self, angle: float):
         match self._mode:
@@ -802,7 +812,11 @@ class layoutLine(layoutShape):
 
     def boundingRect(self) -> QRectF:
         half_w = self._width // 2 + 2
-        return QRectF(self._draftLine.p1(), self._draftLine.p2()).normalized().adjusted(-half_w, -half_w, half_w, half_w)
+        return (
+            QRectF(self._draftLine.p1(), self._draftLine.p2())
+            .normalized()
+            .adjusted(-half_w, -half_w, half_w, half_w)
+        )
 
     def paint(self, painter, option, widget=None):
         if self.isSelected():
@@ -826,7 +840,7 @@ class layoutLine(layoutShape):
     @property
     def angle(self) -> float:
         return self._angle
-        
+
     @property
     def width(self):
         return self._width
@@ -850,7 +864,9 @@ class layoutLine(layoutShape):
             self.mapToScene(self._draftLine.p2()).toPoint(),
         ]
 
+
 # "layer", "name", "mode", "width", "startExtend", "endExtend"
+
 
 class layoutPath(layoutShape):
     def __init__(
@@ -1229,7 +1245,7 @@ class layoutRuler(layoutShape):
                         ddef.rulerTuple(
                             tick_pos + perp_tick,
                             (tick_line.p1(), tick_line.p2()),
-                            str(float(i))
+                            str(float(i)),
                         )
                     )
 
@@ -1240,19 +1256,18 @@ class layoutRuler(layoutShape):
                 ddef.rulerTuple(
                     p2 + direction * 2,
                     (final_line.p1(), final_line.p2()),
-                    str(round(self._draftLine.length() / self._tickGap, 3))
+                    str(round(self._draftLine.length() / self._tickGap, 3)),
                 )
             )
 
         self._rect = QRectF(
-            self._draftLine.p1().toPoint(),
-            self._draftLine.p2().toPoint()
+            self._draftLine.p1().toPoint(), self._draftLine.p2().toPoint()
         ).normalized()
 
     def boundingRect(self) -> QRectF:
         margin = max(self._fontWidth, self._fontHeight, self._tickLength)
-        return QRectF(self._rect).normalized().adjusted(
-            -margin, -margin, margin, margin
+        return (
+            QRectF(self._rect).normalized().adjusted(-margin, -margin, margin, margin)
         )
 
     def paint(self, painter, option, widget=None):
@@ -1774,9 +1789,15 @@ class layoutVia(layoutShape):
 
 
 class layoutViaArray(layoutShape):
-    def __init__(self, start: QPoint, prototype_via, xs: float,
-                 ys: float, xnum: int, ynum: int,
-                 ):
+    def __init__(
+            self,
+            start: QPoint,
+            prototype_via,
+            xs: float,
+            ys: float,
+            xnum: int,
+            ynum: int,
+    ):
         super().__init__()
         self._prototype_via = prototype_via
         self._ynum = ynum  # number of rows
@@ -1788,7 +1809,7 @@ class layoutViaArray(layoutShape):
             self._start,
             self._prototype_via.viaDefTuple,
             self._prototype_via.width,
-            self._prototype_via.height
+            self._prototype_via.height,
         )
         self._via_array = []
         self._create_array()
@@ -1808,14 +1829,21 @@ class layoutViaArray(layoutShape):
         via_height = self._prototype_via.height
 
         # Create flat list using itertools.product
-        vias = [self._create_via(start_x + col * x_step, start_y + row * y_step,
-                                 via_def, via_width, via_height)
-                for row, col in
-                itertools.product(range(self._ynum), range(self._xnum))]
+        vias = [
+            self._create_via(
+                start_x + col * x_step,
+                start_y + row * y_step,
+                via_def,
+                via_width,
+                via_height,
+            )
+            for row, col in itertools.product(range(self._ynum), range(self._xnum))
+        ]
 
         # Reshape into 2D array
-        self._via_array = [vias[i:i + self._xnum] for i in
-                           range(0, len(vias), self._xnum)]
+        self._via_array = [
+            vias[i: i + self._xnum] for i in range(0, len(vias), self._xnum)
+        ]
 
     def _create_via(self, x, y, via_def, width, height):
         via = layoutVia(QPoint(x, y), via_def, width, height)
@@ -1823,27 +1851,6 @@ class layoutViaArray(layoutShape):
         via.setFlag(QGraphicsItem.ItemStacksBehindParent, True)
         via.setParentItem(self)
         return via
-
-    # def _create_array(self):
-    #     self._via_array = []
-    #     for row in range(self._ynum):
-    #         via_row = []
-    #         for col in range(self._xnum):
-    #             x = self._start.x() + col * (self._xs +
-    #                                          self._prototype_via.width)
-    #             y = self._start.y() + row * (self._ys +
-    #                                          self._prototype_via.height)
-    #             via = layoutVia(
-    #                 QPoint(x, y),
-    #                 self._prototype_via.viaDefTuple,
-    #                 self._prototype_via.width,
-    #                 self._prototype_via.height
-    #             )
-    #             via.setFlag(QGraphicsItem.ItemIsSelectable, False)
-    #             via.setFlag(QGraphicsItem.ItemStacksBehindParent, True)
-    #             via.setParentItem(self)
-    #             via_row.append(via)
-    #         self._via_array.append(via_row)
 
     def boundingRect(self) -> QRectF:
         return self.childrenBoundingRect()
@@ -1897,7 +1904,13 @@ class layoutViaArray(layoutShape):
 
 
 class layoutPolygon(layoutShape):
-    __slots__ = ('_points', '_layer', '_polygon', '_selectedCorner', '_selectedCornerIndex')
+    __slots__ = (
+        "_points",
+        "_layer",
+        "_polygon",
+        "_selectedCorner",
+        "_selectedCornerIndex",
+    )
 
     def __init__(self, points: list, layer: ddef.layLayer):
         super().__init__()
@@ -2010,3 +2023,113 @@ class layoutPolygon(layoutShape):
             self._stretchSide = None
             self.setCursor(Qt.ArrowCursor)
             self._selectedCornerIndex = 999
+
+
+class alignLine(layoutShape):
+    def __init__(
+            self,
+            draftLine: QLineF,
+            width: int = 1,
+            mode: int = 0,
+    ):
+        """
+        Initialize the TickLine object.
+
+        Args:
+            draftLine (QLineF): The draft line.
+            width (float): The width of the line.
+            mode (int, optional): The mode. Defaults to 0.
+        """
+        super().__init__()
+
+        self._draftLine = draftLine
+        self._width: int = width
+        self._mode = mode
+        self._angle = 0
+        self._rect = QRect(0, 0, 0, 0)
+        penColour = QColor(255, 40, 40)
+        self._pen = QPen(penColour, self._width, Qt.SolidLine)
+        self._pen.setCosmetic(True)
+        self._selectedPen = QPen(Qt.red, self._width + 1, Qt.SolidLine)
+        self._selectedPen.setCosmetic(True)
+        self._determineAngle(self._draftLine.angle())
+        self.setZValue(999)
+
+    def __repr__(self):
+        return f"alignLine({self._draftLine}, {self._width}, {self._mode})"
+
+    def _determineAngle(self, angle: float):
+        match self._mode:
+            case 0:  # horizontal
+                self._createHorizontalLine(angle)
+            case 1:  # vertical
+                self._createVerticalLine(angle)
+        self._draftLine.setAngle(0)
+        self.setTransformOriginPoint(self.draftLine.p1())
+        self.setRotation(-self._angle)
+
+    def _createHorizontalLine(self, angle):
+        if 0 <= angle <= 90 or 360 > angle > 270:
+            self._angle = 0
+        elif 90 < angle <= 270:
+            self._angle = 180
+
+    def _createVerticalLine(self, angle):
+        if 0 <= angle < 180:
+            self._angle = 90
+        elif 180 < angle <= 360:
+            self._angle = 270
+
+    def boundingRect(self) -> QRectF:
+        half_w = self._width // 2 + 2
+        return (
+            QRectF(self._draftLine.p1(), self._draftLine.p2())
+            .normalized()
+            .adjusted(-half_w, -half_w, half_w, half_w)
+        )
+
+    def paint(self, painter, option, widget=None):
+        if self.isSelected():
+            painter.setPen(self._selectedPen)
+            painter.drawRect(self.boundingRect())
+        else:
+            painter.setPen(self._pen)
+        painter.drawLine(self._draftLine)
+
+    @property
+    def draftLine(self):
+        return self._draftLine
+
+    @draftLine.setter
+    def draftLine(self, line: QLineF):
+        self.prepareGeometryChange()
+        self._draftLine = line
+        angle = self._draftLine.angle()
+        self._determineAngle(angle)
+
+    @property
+    def angle(self) -> float:
+        return self._angle
+
+    @property
+    def width(self):
+        return self._width
+
+    @width.setter
+    def width(self, width: float):
+        self._width = width
+
+    @property
+    def mode(self):
+        return self._mode
+
+    @mode.setter
+    def mode(self, value: int):
+        self._mode = value
+
+    @property
+    def sceneEndPoints(self):
+        return [
+            self.mapToScene(self._draftLine.p1()).toPoint(),
+            self.mapToScene(self._draftLine.p2()).toPoint(),
+        ]

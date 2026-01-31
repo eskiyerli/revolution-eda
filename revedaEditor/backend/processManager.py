@@ -22,11 +22,12 @@
 #    Licensor: Revolution Semiconductor (Registered in the Netherlands)
 
 
-from PySide6.QtCore import QObject, QProcess, Slot
-from PySide6.QtGui import QWindow
 from collections import deque
 from dataclasses import dataclass
 from typing import List
+
+from PySide6.QtCore import QObject, QProcess, Slot
+from PySide6.QtGui import QWindow
 
 
 @dataclass
@@ -129,4 +130,5 @@ class ProcessRunner():
             self.parent.logger.info(line)
 
     def process_finished(self, exit_code, exit_status):
-        self.parent.logger.info(f"Process finished with exit code {exit_code} and status {exit_status}")
+        self.parent.logger.info(
+            f"Process finished with exit code {exit_code} and status {exit_status}")

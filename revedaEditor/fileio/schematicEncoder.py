@@ -23,12 +23,13 @@
 #
 
 import json
+from typing import Dict, Any
+
+from PySide6.QtCore import QPointF
 
 import revedaEditor.common.net as net
 import revedaEditor.common.shapes as shp
 
-from typing import Dict, Any
-from PySide6.QtCore import QPointF
 
 class schematicEncoder(json.JSONEncoder):
     def default(self, item: Any) -> Dict[str, Any]:

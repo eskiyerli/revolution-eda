@@ -22,8 +22,7 @@
 #    Licensor: Revolution Semiconductor (Registered in the Netherlands)
 #
 from collections import Counter
-from itertools import cycle
-# import numpy as np
+
 from PySide6.QtCore import (
     QLine,
     QPoint,
@@ -41,13 +40,13 @@ from PySide6.QtOpenGLWidgets import QOpenGLWidget
 from PySide6.QtWidgets import (
     QGraphicsView,
 )
+
+import revedaEditor.common.net as net
+from revedaEditor.backend.pdkLoader import importPDKModule
 from revedaEditor.scenes.editorScene import editorScene
 from revedaEditor.scenes.layoutScene import layoutScene
 from revedaEditor.scenes.schematicScene import schematicScene
 from revedaEditor.scenes.symbolScene import symbolScene
-import revedaEditor.backend.undoStack as us
-import revedaEditor.common.net as net
-from revedaEditor.backend.pdkPaths import importPDKModule
 
 schlyr = importPDKModule("schLayers")
 fabproc = importPDKModule("process")
@@ -61,17 +60,17 @@ class editorView(QGraphicsView):
     keyPressedSignal = Signal(int)
 
     # zoomFactorChanged = Signal(float)
-    def __init__(self, scene:editorScene, parent):
+    def __init__(self, scene: editorScene, parent):
         super().__init__(scene, parent)
 
-        # Cache parent references
-        self.parent = parent
-        self.editor = parent.parent
+        # Cache parentW references
+        self.centralW = parent
+        self.editorWindow = self.centralW.editorWindow
         self.viewScene = scene
         self.logger = scene.logger
 
         # Cache editor properties
-        editor = self.editor
+        editor = self.editorWindow
         self.majorGrid = editor.majorGrid
         self.snapGrid = editor.snapGrid
         self.snapTuple = editor.snapTuple
@@ -172,11 +171,13 @@ class editorView(QGraphicsView):
 
                 # Create vertical and horizontal lines
                 vertical_lines = [
-                    QLine(int(x), self._top, int(x), self._bottom) for x in x_coords
+                    QLine(int(x), self._top, int(x), self._bottom) for x in
+                    x_coords
                 ]
 
                 horizontal_lines = [
-                    QLine(self._left, int(y), self._right, int(y)) for y in y_coords
+                    QLine(self._left, int(y), self._right, int(y)) for y in
+                    y_coords
                 ]
 
                 # Draw all lines with minimal calls
@@ -224,34 +225,44 @@ class editorView(QGraphicsView):
         match event.key():
             case Qt.Key.Key_M:
                 self.viewScene.editModes.setMode("moveItem")
-                self.editor.messageLine.setText("Move Item")
+                self.editorWindow.messageLine.setText("Move Item")
             case Qt.Key.Key_F:
                 self.viewScene.fitItemsInView()
-                self.editor.messageLine.setText("Fit Items In View")
+                self.editorWindow.messageLine.setText("Fit Items In View")
             case Qt.Key.Key_Left:
                 self.viewScene.moveSceneLeft()
-                self.editor.messageLine.setText("Move View Left")
+                self.editorWindow.messageLine.setText("Move View Left")
             case Qt.Key.Key_Right:
                 self.viewScene.moveSceneRight()
-                self.editor.messageLine.setText("Move View Right")
+                self.editorWindow.messageLine.setText("Move View Right")
             case Qt.Key.Key_Up:
                 self.viewScene.moveSceneUp()
-                self.editor.messageLine.setText("Move View Up")
+                self.editorWindow.messageLine.setText("Move View Up")
             case Qt.Key.Key_Down:
                 self.viewScene.moveSceneDown()
-                self.editor.messageLine.setText("Move View Down")
+                self.editorWindow.messageLine.setText("Move View Down")
             case Qt.Key.Key_PageUp:
                 self.cycleSelection(event)
+            case Qt.Key.Key_Z:
+                if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+                    self.viewScene.zoomInBy2()
+                if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
+                    self.viewScene.zoomOutBy2()
+                else:
+                    self.viewScene.editModes.setMode("zoomView")
 
             case Qt.Key.Key_Escape:
                 self.viewScene.deselectAll()
-                self.viewScene.selectedItemList = []
+                self.viewScene.selectedItemsSet = set()
                 if self.viewScene.selectionRectItem:
                     self.viewScene.removeItem(self.viewScene.selectionRectItem)
                     self.viewScene.selectionRectItem = None
                 if self.viewScene.selectedItemGroup:
-                    self.viewScene.destroyItemGroup(self.viewScene.selectedItemGroup)
+                    self.viewScene.destroyItemGroup(
+                        self.viewScene.selectedItemGroup)
                     self.viewScene.selectedItemGroup = None
+                self.viewScene.editModes.setMode('selectItem')
+                self.viewScene.messageLine.setText("Select Item")
             case _:
                 super().keyPressEvent(event)
 
@@ -268,8 +279,8 @@ class editorView(QGraphicsView):
         restores the gridbackg and linebackg attributes to their original state.
         """
         # Store original states
-        original_gridbackg = self.gridbackg
-        original_linebackg = self.linebackg
+        originalGridbackg = self.gridbackg
+        originalLinebackg = self.linebackg
 
         # Set both to False for printing
         self.gridbackg = False
@@ -277,28 +288,41 @@ class editorView(QGraphicsView):
         self._transparent = True
         painter = QPainter()
         painter.begin(printer)
-        painter.setRenderHint(QPainter.Antialiasing, True)
-        painter.setRenderHint(QPainter.TextAntialiasing, True)
-        painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
         self.render(painter)
         # Restore original states
-        self.gridbackg = original_gridbackg
-        self.linebackg = original_linebackg
+        self.gridbackg = originalGridbackg
+        self.linebackg = originalLinebackg
         self._transparent = False
         # End painting
         painter.end()
 
     def cycleSelection(self, event):
         modifiers = event.modifiers()
-        if modifiers == Qt.KeyboardModifier.ShiftModifier and self.viewScene.itemCycler:
-            self.viewScene.clearSelection()
+        if self.viewScene.itemCycler:
             item = next(self.viewScene.itemCycler)
-            item.setSelected(True)
-            self.viewScene.selectedItemList = [item]
+            if modifiers == Qt.KeyboardModifier.ShiftModifier:
+                self.viewScene.selectedItemsSet.add(item)
+                item.setSelected(True)
+            elif modifiers == Qt.KeyboardModifier.ControlModifier:
+                try:
+                    item.setSelected(False)
+                    self.viewScene.selectedItemsSet.remove(item)
+                except KeyError:
+                    pass
+            elif not event.modifiers():
+                if self.viewScene.selectedItemsSet:
+                    [setItem.setSelected(False) for setItem in
+                     self.viewScene.selectedItemsSet]
+                item.setSelected(True)
+                self.viewScene.selectedItemsSet = {item}
+
 
 class symbolView(editorView):
     def __init__(self, scene: symbolScene, parent):
-        super().__init__(scene, self.parent)
+        super().__init__(scene, parent)
         self.viewScene: symbolScene = scene
         self.parent = parent
 
@@ -322,7 +346,7 @@ class symbolView(editorView):
 class schematicView(editorView):
     _dotRadius = 10
 
-    def __init__(self, scene, parent):
+    def __init__(self, scene: schematicScene, parent):
         super().__init__(scene, parent)
         self.viewScene: schematicScene = scene
         self.parent = parent
@@ -366,7 +390,8 @@ class schematicView(editorView):
         super().drawBackground(painter, rect)
 
         # Early exit for large views to avoid performance issues
-        if (self._right - self._left) > 2000 and (self._bottom - self._top) > 2000:
+        if (self._right - self._left) > 2000 and (
+                self._bottom - self._top) > 2000:
             return
 
         # Get nets in view with type filtering
@@ -385,7 +410,8 @@ class schematicView(editorView):
             pointCounts.update(netItem.sceneEndPoints)
 
         # Filter junction points (count >= 3) and draw
-        junctionPoints = [point for point, count in pointCounts.items() if count >= 3]
+        junctionPoints = [point for point, count in pointCounts.items() if
+                          count >= 3]
 
         if junctionPoints:
             painter.setPen(schlyr.wirePen)
@@ -401,7 +427,7 @@ class schematicView(editorView):
             event (QKeyEvent): The key press event to handle.
 
         """
-        if event.key() == Qt.Key_Escape:
+        if event.key() == Qt.Key.Key_Escape:
             # Esc key pressed, remove snap rect and reset states
             if self.viewScene._snapPointRect is not None:
                 self.viewScene._snapPointRect.setVisible(False)
@@ -430,7 +456,7 @@ class layoutView(editorView):
         self.parent = parent
         # # Configure OpenGL viewport for better performance
         glWidget = QOpenGLWidget()
-        glWidget.setUpdateBehavior(QOpenGLWidget.PartialUpdate)
+        glWidget.setUpdateBehavior(QOpenGLWidget.UpdateBehavior.PartialUpdate)
         self.setViewport(glWidget)
 
     def keyPressEvent(self, event: QKeyEvent):
@@ -455,7 +481,8 @@ class layoutView(editorView):
                 if self.viewScene.polygonGuideLine:
                     self.viewScene.removeItem(self.viewScene.polygonGuideLine)
                 if self.viewScene.newPolygon and self.viewScene.newPolygon.points:
-                    self.viewScene.newPolygon.points.pop(0)  # remove first duplicate point
+                    self.viewScene.newPolygon.points.pop(
+                        0)  # remove first duplicate point
                 self.viewScene.newPolygon = None
                 self.viewScene.editModes.setMode("selectItem")
             elif self.viewScene.editModes.addInstance:
@@ -474,6 +501,3 @@ class layoutView(editorView):
                 self.viewScene.arrayVia = None
                 self.viewScene.editModes.setMode("selectItem")
         super().keyPressEvent(event)
-
-            
-

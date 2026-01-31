@@ -22,6 +22,8 @@
 #    Licensor: Revolution Semiconductor (Registered in the Netherlands)
 #
 
+from __future__ import annotations
+
 # import numpy as np
 from PySide6.QtCore import (
     Qt,
@@ -30,15 +32,15 @@ from PySide6.QtWidgets import (
     QDialog,
     QGridLayout,
     QToolBar,
-    QWidget,
 )
 
-import revedaEditor.backend.libraryModelView as lmview
+import revedaEditor.backend.dataDefinitions as ddef
 import revedaEditor.backend.libBackEnd as libb
-import revedaEditor.scenes.symbolScene as symscn
+import revedaEditor.backend.libraryModelView as lmview
 import revedaEditor.gui.editorViews as edv
-import revedaEditor.gui.propertyDialogues as pdlg
 import revedaEditor.gui.editorWindow as edw
+import revedaEditor.gui.propertyDialogues as pdlg
+import revedaEditor.scenes.symbolScene as symscn
 
 
 # from hashlib import new
@@ -66,11 +68,11 @@ class symbolEditor(edw.editorWindow):
 
     def _createShortcuts(self):
         super()._createShortcuts()
-        self.stretchAction.setShortcut(Qt.Key_S)
-        self.createRectAction.setShortcut(Qt.Key_R)
-        self.createLineAction.setShortcut(Qt.Key_W)
-        self.createLabelAction.setShortcut(Qt.Key_L)
-        self.createPinAction.setShortcut(Qt.Key_P)
+        self.stretchAction.setShortcut(Qt.Key.Key_S)
+        self.createRectAction.setShortcut(Qt.Key.Key_R)
+        self.createLineAction.setShortcut(Qt.Key.Key_W)
+        self.createLabelAction.setShortcut(Qt.Key.Key_L)
+        self.createPinAction.setShortcut(Qt.Key.Key_P)
 
     def _createToolBars(self):  # redefine the toolbar in the editorWindow class
         super()._createToolBars()
@@ -95,6 +97,9 @@ class symbolEditor(edw.editorWindow):
         self.menuCreate.addAction(self.createArcAction)
         self.menuCreate.addAction(self.createLabelAction)
         self.menuCreate.addAction(self.createPinAction)
+
+        if hasattr(self._app, 'pluginsObj'):
+            self._app.pluginsObj.applyPluginMenus(self)
 
     def _createTriggers(self):
         super()._createTriggers()
@@ -146,7 +151,7 @@ class symbolEditor(edw.editorWindow):
 
     def createPinClick(self, s):
         createPinDlg = pdlg.createPinDialog(self)
-        if createPinDlg.exec() == QDialog.Accepted:
+        if createPinDlg.exec() == QDialog.DialogCode.Accepted:
             modeList = [False for _ in range(8)]
             modeList[0] = True
             self.centralW.scene.pinName = createPinDlg.pinName.text()
@@ -172,13 +177,20 @@ class symbolEditor(edw.editorWindow):
         """
         symbol is loaded to the scene.
         """
-        self.centralW.scene.loadDesign(self.file)
+        try:
+            self.logger.info(f'Loading symbol from {self.cellName} - {self.viewName}')
+            self.centralW.scene.loadDesign(self.file)
+            viewNameTuple = ddef.viewTuple(self.libItem.libraryName, self.cellItem.cellName,
+                                           self.viewName)
+            self.appMainW.openViews[viewNameTuple] = self
+        except Exception as e:
+            self.logger.error(f"Error during loading symbol for {self.cellName}: {e}")
 
     def createLabelClick(self):
         createLabelDlg = pdlg.createSymbolLabelDialog(self)
         self.messageLine.setText("Place a label")
         createLabelDlg.labelHeightEdit.setText("12")
-        if createLabelDlg.exec() == QDialog.Accepted:
+        if createLabelDlg.exec() == QDialog.DialogCode.Accepted:
             self.centralW.scene.editModes.setMode("addLabel")
             # directly setting scene class attributes here to pass the information.
             self.centralW.scene.labelDefinition = createLabelDlg.labelDefinition.text()
@@ -207,15 +219,23 @@ class symbolEditor(edw.editorWindow):
         """
         Closes the application.
         """
-        self.centralW.scene.saveSymbolCell(self.file)
-        event.accept()
-        super().closeEvent(event)
+        try:
+            self.centralW.scene.saveSymbolCell(self.file)
+            cellViewNameTuple = ddef.viewTuple(self.libName, self.cellName,
+                                               self.viewName)
+            self.appMainW.openViews.pop(cellViewNameTuple, None)
+        except Exception as e:
+            self.appMainW.logger.error(
+                f"Error in closing symbol window for {self.cellName}: {e}")
+        finally:
+            event.accept()
+            super().closeEvent(event)
 
 
-class symbolContainer(QWidget):
+class symbolContainer(edw.editorContainer):
     def __init__(self, parent):
         super().__init__(parent=parent)
-        self.parent = parent
+        self.editorWindow = parent
         self.scene = symscn.symbolScene(self)
         self.view = edv.symbolView(self.scene, self)
         self.init_UI()
@@ -227,10 +247,4 @@ class symbolContainer(QWidget):
         gLayout.addWidget(self.view, 0, 0)
         gLayout.setColumnStretch(0, 5)
         gLayout.setRowStretch(0, 6)
-        gLayout.addWidget(self.parent.aiTerminal, 1, 0)
-        self.parent.aiTerminal.hide()
-        if self.parent.aiTerminal.isVisible():
-            gLayout.setRowStretch(1, 1)
-        else:
-            gLayout.setRowStretch(1, 0)
         self.setLayout(gLayout)

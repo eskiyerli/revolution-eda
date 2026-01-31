@@ -43,8 +43,9 @@ wireLayer = ddef.edLayer(
     visible=True,
     selectable=True,
 )
-wireErrorLayer = replace(wireLayer, name="wireError", pcolor=QColor("red"), bcolor= QColor("red"), z=1)
-selectedWireLayer = replace(wireLayer, name="selectedWire", pcolor=QColor("blue"), bcolor =
+wireErrorLayer = replace(wireLayer, name="wireError", pcolor=QColor("red"),
+                         bcolor=QColor("red"), z=1)
+selectedWireLayer = replace(wireLayer, name="selectedWire", pcolor=QColor("blue"), bcolor=
 QColor("blue"), z=2)
 wireHilightLayer = ddef.edLayer(
     name="wireHilightLayer",
@@ -79,8 +80,8 @@ selectedSchematicPinLayer = replace(
 selectedTextLayer = replace(
     textLayer, name="selectedText", pcolor=QColor("yellow"), z=5
 )
-schematicPinNameLayer = replace(schematicPinLayer, name="schematicPin", pcolor = QColor(
-    'yellow'), bcolor = QColor('yellow'))
+schematicPinNameLayer = replace(schematicPinLayer, name="schematicPin", pcolor=QColor(
+    'yellow'), bcolor=QColor('yellow'))
 
 ignoreSymbolLayer = ddef.edLayer(
     name="ignoreLayer",
@@ -154,4 +155,3 @@ draftBrush = QBrush(draftLayer.bcolor, draftLayer.bstyle)
 
 # crossing dot diameter
 crossingDotDiameter = 2
-

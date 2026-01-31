@@ -21,9 +21,11 @@
 #    License: Mozilla Public License 2.0
 #    Licensor: Revolution Semiconductor (Registered in the Netherlands)
 #
+import os
 import pathlib
 from pathlib import Path
 
+import numpy as np
 from PySide6.QtCore import (Signal, Qt, QModelIndex)
 from PySide6.QtGui import (
     QPainter,
@@ -34,12 +36,14 @@ from PySide6.QtGui import (
     QPixmap,
     QImage,
 )
-from PySide6.QtWidgets import (QTableView, QMenu, QGraphicsItem, QStyledItemDelegate, QStyleOptionViewItem, QStyle)
-import numpy as np
-import os
-from revedaEditor.backend.pdkPaths import importPDKModule
+from PySide6.QtWidgets import (QTableView, QStyledItemDelegate,
+                               QStyle)
+
+from revedaEditor.backend.pdkLoader import importPDKModule
+
 fabproc = importPDKModule('process')
 laylyr = importPDKModule('layoutLayers')
+
 
 class layerDataModel(QStandardItemModel):
     _file_content_cache = {}
@@ -51,11 +55,11 @@ class layerDataModel(QStandardItemModel):
         self.setColumnCount(5)  # Set the number of columns
 
         # Set the headers for the columns
-        self.setHeaderData(0, Qt.Horizontal, "")
-        self.setHeaderData(1, Qt.Horizontal, "Layer")
-        self.setHeaderData(2, Qt.Horizontal, "Purp.")
-        self.setHeaderData(3, Qt.Horizontal, "V")
-        self.setHeaderData(4, Qt.Horizontal, "S")
+        self.setHeaderData(0, Qt.Orientation.Horizontal, "")
+        self.setHeaderData(1, Qt.Orientation.Horizontal, "Layer")
+        self.setHeaderData(2, Qt.Orientation.Horizontal, "Purp.")
+        self.setHeaderData(3, Qt.Orientation.Horizontal, "V")
+        self.setHeaderData(4, Qt.Orientation.Horizontal, "S")
 
         for row, layer in enumerate(self._data):
             self.insertRow(row)
@@ -69,7 +73,7 @@ class layerDataModel(QStandardItemModel):
 
             texturePath = reveda_pdk_pathobj.joinpath(layer.btexture)
             _pixmap = QPixmap.fromImage(self.createImage(texturePath,
-                                                         layer.bcolor,1))
+                                                         layer.bcolor, 1))
             # Create a brush with black background
             brush = QBrush(QColor('black'))
             # Set the texture pattern over the black background
@@ -115,18 +119,17 @@ class layerDataModel(QStandardItemModel):
                 print(f"Error reading Stipple file {filePath}: {e}")
                 return ""
         return cls._file_content_cache[filePath]
-    
 
     @classmethod
-    def createImage(cls,filePath: Path, color: QColor, scale: int = 1):
+    def createImage(cls, filePath: Path, color: QColor, scale: int = 1):
         content = cls.readFileContent(str(filePath))
 
         # Use numpy's loadtxt for faster parsing of text data
         data = np.loadtxt(content.splitlines(), dtype=np.uint8)
-        
+
         # Scale up the pattern by repeating each pixel
         data_scaled = np.repeat(np.repeat(data, scale, axis=0), scale, axis=1)
-        
+
         height, width = data_scaled.shape
 
         # Create QImage with Format_ARGB32 (not premultiplied)
@@ -164,6 +167,7 @@ class TextureDelegate(QStyledItemDelegate):
             return
         super().paint(painter, option, index)
 
+
 class layerViewTable(QTableView):
     columnTexture = 0
     columnName = 1
@@ -181,7 +185,7 @@ class layerViewTable(QTableView):
         self.parent = parent
         self.layoutScene = self.parent.scene
         self.setModel(self._model)
-        
+
         self.setupUi()
         self.connectSignals()
 

@@ -22,13 +22,14 @@
 #    Licensor: Revolution Semiconductor (Registered in the Netherlands)
 #
 
-import json
 import inspect
-import revedaEditor.common.layoutShapes as lshp
-from revedaEditor.backend.pdkPaths import importPDKModule
-
+import json
 from typing import Dict, Any
+
 from PySide6.QtCore import QPointF
+
+import revedaEditor.common.layoutShapes as lshp
+from revedaEditor.backend.pdkLoader import importPDKModule
 
 laylyr = importPDKModule('layoutLayers')
 pcells = importPDKModule('pcells')
@@ -169,39 +170,42 @@ class layoutEncoder(json.JSONEncoder):
     @staticmethod
     def _subtract_point(point: QPointF, origin: QPointF) -> tuple:
         return (point - origin).toTuple()
-    
+
 
 class gdsImportEncoder(json.JSONEncoder):
     def default(self, item):
         common = {"ang": item.angle, "fl": item.flipTuple}
-        
+
         match type(item):
             case lshp.layoutInstance:
-                return {"type": "Inst", "lib": item.libraryName, "cell": item.cellName, 
-                       "view": item.viewName, "nam": item.instanceName, "ic": item.counter,
-                       "loc": item.pos().toTuple(), **common}
+                return {"type": "Inst", "lib": item.libraryName, "cell": item.cellName,
+                        "view": item.viewName, "nam": item.instanceName, "ic": item.counter,
+                        "loc": item.pos().toTuple(), **common}
             case lshp.layoutPath:
-                return {"type": "Path", "dfl1": item.mapToScene(item.draftLine.p1()).toTuple(),
-                       "dfl2": item.mapToScene(item.draftLine.p2()).toTuple(),
-                       "ln": laylyr.pdkAllLayers.index(item.layer), "w": item.width,
-                       "se": item.startExtend, "ee": item.endExtend, "md": item.mode,
-                       "nam": item.name, **common}
+                return {"type": "Path",
+                        "dfl1": item.mapToScene(item.draftLine.p1()).toTuple(),
+                        "dfl2": item.mapToScene(item.draftLine.p2()).toTuple(),
+                        "ln": laylyr.pdkAllLayers.index(item.layer), "w": item.width,
+                        "se": item.startExtend, "ee": item.endExtend, "md": item.mode,
+                        "nam": item.name, **common}
             case lshp.layoutViaArray:
                 return {"type": "Via", "st": item.mapToScene(item.start).toTuple(),
-                       "via": {"st": item.via.mapToScene(item.via.start).toTuple(),
-                               "vdt": item.via.viaDefTuple.netName, "w": item.via.width,
-                               "h": item.via.height, **common},
-                       "xs": item.xs, "ys": item.ys, "xn": item.xnum, "yn": item.ynum}
+                        "via": {"st": item.via.mapToScene(item.via.start).toTuple(),
+                                "vdt": item.via.viaDefTuple.netName, "w": item.via.width,
+                                "h": item.via.height, **common},
+                        "xs": item.xs, "ys": item.ys, "xn": item.xnum, "yn": item.ynum}
             case lshp.layoutPin:
                 return {"type": "Pin", "tl": item.mapToScene(item.rect.topLeft()).toTuple(),
-                       "br": item.mapToScene(item.rect.bottomRight()).toTuple(),
-                       "pn": item.pinName, "pd": item.pinDir, "pt": item.pinType,
-                       "ln": laylyr.pdkAllLayers.index(item.layer), **common}
+                        "br": item.mapToScene(item.rect.bottomRight()).toTuple(),
+                        "pn": item.pinName, "pd": item.pinDir, "pt": item.pinType,
+                        "ln": laylyr.pdkAllLayers.index(item.layer), **common}
             case lshp.layoutLabel:
                 return {"type": "Label", "st": item.mapToScene(item.start).toTuple(),
-                       "lt": item.labelText, "ff": item.fontFamily, "fs": item.fontStyle,
-                       "fh": item.fontHeight, "la": item.labelAlign, "lo": item.labelOrient,
-                       "ln": laylyr.pdkAllLayers.index(item.layer), **common}
+                        "lt": item.labelText, "ff": item.fontFamily, "fs": item.fontStyle,
+                        "fh": item.fontHeight, "la": item.labelAlign,
+                        "lo": item.labelOrient,
+                        "ln": laylyr.pdkAllLayers.index(item.layer), **common}
             case lshp.layoutPolygon:
-                return {"type": "Polygon", "ps": [item.mapToScene(point).toTuple() for point in item.points],
-                       "ln": laylyr.pdkAllLayers.index(item.layer), **common}
+                return {"type": "Polygon",
+                        "ps": [item.mapToScene(point).toTuple() for point in item.points],
+                        "ln": laylyr.pdkAllLayers.index(item.layer), **common}

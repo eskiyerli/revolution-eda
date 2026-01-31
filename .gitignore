@@ -1,7 +1,6 @@
 *.png
 *.pyc*
 *.zip
-*.json
 *.spec
 *.log
 *.xml

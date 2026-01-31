@@ -1,13 +1,14 @@
-import sys
-import os
+import re
 from pathlib import Path
-from PySide6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QWidget, QTextBrowser, QDialog, QToolBar, QPushButton, QLabel,)
-from PySide6.QtCore import QUrl, Qt
-from PySide6.QtGui import (QDesktopServices, QPixmap, QAction, QIcon)
-from PySide6.QtPrintSupport import (QPrinter,  QPrintDialog)
+
 import PySide6.QtWebEngineWidgets  # noqa: F401
 import markdown
-import re
+from PySide6.QtCore import QUrl, Qt
+from PySide6.QtGui import (QDesktopServices, QAction, QIcon)
+from PySide6.QtPrintSupport import (QPrinter, QPrintDialog)
+from PySide6.QtWidgets import (QMainWindow, QVBoxLayout, QWidget,
+                               QTextBrowser, QDialog, QPushButton, QLabel, )
+
 
 # from revedaEditor.gui.startThread import startThread
 
@@ -16,27 +17,27 @@ class MarkdownViewer(QTextBrowser):
         super().__init__()
         self.basePath = Path(basePath)
         self.currentFile = None
-        
+
         # Enable link clicking
         self.setOpenLinks(False)  # We'll handle links ourselves
         self.anchorClicked.connect(self.handleLinkClick)
-        
+
         # Load initial file
         self.loadMarkdownFile("index.md")
-    
+
     def loadMarkdownFile(self, filename):
         """Load a markdown file and render it"""
         try:
             filePath = self.basePath / filename
             filePath = filePath.resolve()  # Resolve to absolute path
-            
+
             if not filePath.exists():
                 self.setHtml(f"<h1>Error</h1><p>File not found: {filename}</p>")
                 return
-            
+
             with open(filePath, "r", encoding="utf-8") as f:
                 text = f.read()
-            
+
             # Convert markdown to HTML
             html = markdown.markdown(text, extensions=[
                 'markdown.extensions.tables',
@@ -44,35 +45,36 @@ class MarkdownViewer(QTextBrowser):
                 'markdown.extensions.codehilite',
                 'markdown.extensions.toc'
             ])
-            
+
             # Process images to use absolute file paths
             html = self.processImages(html, filePath.parent)
-            
+
             # Add styling and set base URL for relative links
             styledHtml = self.addStyling(html)
-            
+
             # Set the HTML content
             self.setHtml(styledHtml)
-            
+
             # Update current file reference
             self.currentFile = filePath
-            
+
         except Exception as e:
             self.setHtml(f"<h1>Error</h1><p>Could not load file: {str(e)}</p>")
-    
+
     def processImages(self, html, baseDir):
         """Process image tags to use absolute file paths"""
+
         def replaceImageSrc(match):
             imgTag = match.group(0)
             srcMatch = re.search(r'src=["\']([^"\']+)["\']', imgTag)
-            
+
             if srcMatch:
                 src = srcMatch.group(1)
-                
+
                 # Skip if already absolute URL or file path
                 if src.startswith(('http://', 'https://', 'file://', '/')):
                     return imgTag
-                
+
                 # Convert relative path to absolute file path
                 absPath = baseDir / src
                 if absPath.exists():
@@ -80,16 +82,16 @@ class MarkdownViewer(QTextBrowser):
                     return imgTag.replace(srcMatch.group(0), f'src="{fileUrl}"')
                 else:
                     print(f"Warning: Image not found: {absPath}")
-                    
+
             return imgTag
-        
+
         # Replace all img tags
         return re.sub(r'<img[^>]*>', replaceImageSrc, html)
-    
+
     def handleLinkClick(self, url):
         """Handle clicking on links in the markdown"""
         urlString = url.toString()
-        
+
         # Check if it's a markdown file link
         if urlString.endswith('.md') or urlString.endswith('.markdown'):
             # Handle relative paths
@@ -98,26 +100,26 @@ class MarkdownViewer(QTextBrowser):
                 if self.currentFile:
                     # Resolve relative to current file's directory
                     linkPath = (self.currentFile.parent / urlString).resolve()
-                    
+
                     # Check if the target file exists
                     if linkPath.exists() and linkPath.is_relative_to(self.basePath):
                         # Load the new markdown file
                         relativePath = linkPath.relative_to(self.basePath)
                         self.loadMarkdownFile(str(relativePath))
                         return
-                
+
                 # If relative path resolution failed, try from base path
                 baseLinkPath = self.basePath / urlString
                 if baseLinkPath.exists():
                     self.loadMarkdownFile(urlString)
                     return
-        
+
         # For external links or non-markdown files, open in default browser
         if urlString.startswith('http'):
             QDesktopServices.openUrl(url)
         else:
             print(f"Could not resolve link: {urlString}")
-    
+
     def addStyling(self, htmlContent):
         """Add CSS styling to the HTML"""
         return f"""
@@ -235,78 +237,79 @@ class MarkdownViewer(QTextBrowser):
         </html>
         """
 
+
 class helpBrowser(QMainWindow):
     def __init__(self, _parent):
-        super().__init__(parent= _parent)
+        super().__init__(parent=_parent)
         self.appMainW = _parent
         self.setWindowTitle("Revolution EDA Documentation Viewer")
         self.setGeometry(100, 100, 1000, 700)
-        
+
         # Navigation history
         self.history = []
         self.historyIndex = -1
-        
+
         # Create toolbar
         toolbar = self.addToolBar("Navigation")
-        
+
         # Home button
-        homeAction = QAction(QIcon(":/icons/home.png"),"Home", self)
+        homeAction = QAction(QIcon(":/icons/home.png"), "Home", self)
         homeAction.triggered.connect(self.goHome)
         toolbar.addAction(homeAction)
-        
+
         # Back button
-        self.backAction = QAction(QIcon(":/icons/arrow-180.png"),"Back", self)
+        self.backAction = QAction(QIcon(":/icons/arrow-180.png"), "Back", self)
         self.backAction.triggered.connect(self.goBack)
         self.backAction.setEnabled(False)
         toolbar.addAction(self.backAction)
         self.backAction.setToolTip('Go back')
-        
+
         # Forward button
-        self.forwardAtion = QAction(QIcon(":/icons/arrow.png"),"Forward", self)
+        self.forwardAtion = QAction(QIcon(":/icons/arrow.png"), "Forward", self)
         self.forwardAtion.triggered.connect(self.goForward)
         self.forwardAtion.setEnabled(False)
         toolbar.addAction(self.forwardAtion)
-        
+
         toolbar.addSeparator()
-        
+
         # Print button
         printAction = QAction(QIcon(":/icons/printer--arrow.png"), "Print", self)
         printAction.triggered.connect(self.printDocument)
         toolbar.addAction(printAction)
-        
+
         # Create central widget
         centralW = QWidget()
         self.setCentralWidget(centralW)
         layout = QVBoxLayout(centralW)
-  
+
         # Create markdown viewer
         self.markdownViewer = MarkdownViewer("docs")
         self.markdownViewer.anchorClicked.connect(self.handleNavigation)
         layout.addWidget(self.markdownViewer)
-        
+
         # Add initial page to history
         self.addToHistory("index.md")
-    
+
     def addToHistory(self, filename):
         """Add a page to navigation history"""
         # Remove forward history if we're not at the end
         if self.historyIndex < len(self.history) - 1:
             self.history = self.history[:self.historyIndex + 1]
-        
+
         self.history.append(filename)
         self.historyIndex = len(self.history) - 1
         self.updateNavigationButtons()
-    
+
     def updateNavigationButtons(self):
         """Update the enabled state of navigation buttons"""
         self.backAction.setEnabled(self.historyIndex > 0)
         self.forwardAtion.setEnabled(self.historyIndex < len(self.history) - 1)
-    
+
     def goHome(self):
         """Navigate to home page"""
         self.markdownViewer.loadMarkdownFile("index.md")
         self.addToHistory("index.md")
-    
+
     def goBack(self):
         """Navigate back in history"""
         if self.historyIndex > 0:
@@ -314,7 +317,7 @@ class helpBrowser(QMainWindow):
             filename = self.history[self.historyIndex]
             self.markdownViewer.loadMarkdownFile(filename)
             self.updateNavigationButtons()
-    
+
     def goForward(self):
         """Navigate forward in history"""
         if self.historyIndex < len(self.history) - 1:
@@ -322,19 +325,19 @@ class helpBrowser(QMainWindow):
             filename = self.history[self.historyIndex]
             self.markdownViewer.loadMarkdownFile(filename)
             self.updateNavigationButtons()
-    
+
     def handleNavigation(self, url):
         """Handle navigation and update history"""
         urlString = url.toString()
         if urlString.endswith('.md') or urlString.endswith('.markdown'):
             self.addToHistory(urlString)
         self.markdownViewer.handleLinkClick(url)
-    
+
     def printDocument(self):
         """Print the current document"""
         printer = QPrinter(QPrinter.HighResolution)
         dialog = QPrintDialog(printer, self)
-        
+
         if dialog.exec() == QPrintDialog.Accepted:
             self.markdownViewer.print_(printer)
 

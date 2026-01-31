@@ -22,23 +22,22 @@
 #    Licensor: Revolution Semiconductor (Registered in the Netherlands)
 #
 
-import copy
 import math
 from collections import OrderedDict
 from functools import cached_property
-from typing import Dict, List, NamedTuple, Set, Tuple, Union
+from typing import Dict, NamedTuple, Tuple, Union
 
-from PySide6.QtCore import (QLine, QLineF, QPoint, QPointF, QRect, QRectF, Qt)
+from PySide6.QtCore import (QLine, QLineF, QPoint, QRect, QRectF, Qt, )
 from PySide6.QtGui import (QBrush, QFont, QFontDatabase, QFontMetrics,
                            QPainterPath, QPolygon, QPolygonF, QTextOption,
-                           QTransform)
+                           QTransform, QPen, QColor)
 from PySide6.QtWidgets import (QGraphicsItem, QGraphicsPolygonItem,
                                QGraphicsRectItem, QGraphicsScene,
                                QGraphicsSceneHoverEvent, QGraphicsSceneMouseEvent,
                                QGraphicsSimpleTextItem, QStyle)
 
 import revedaEditor.common.net as net
-from revedaEditor.backend.pdkPaths import importPDKModule
+from revedaEditor.backend.pdkLoader import importPDKModule
 from revedaEditor.common.labels import symbolLabel
 
 schlyr = importPDKModule("schLayers")
@@ -125,13 +124,9 @@ class symbolShape(QGraphicsItem):
             return True
 
     def itemChange(self, change, value):
-        if self.scene():
-            match change:
-                case QGraphicsItem.ItemSelectedHasChanged:
-                    if value:
-                        self.setZValue(self.zValue() + 10)
-                    else:
-                        self.setZValue(self.zValue() - 10)
+        if change == QGraphicsItem.ItemSelectedHasChanged and self.scene():
+            # Direct z-value calculation without conditional
+            self.setZValue(self.zValue() + (20 * value - 10))
         return super().itemChange(change, value)
 
     def mouseMoveEvent(self, event: QGraphicsSceneMouseEvent) -> None:
@@ -142,14 +137,14 @@ class symbolShape(QGraphicsItem):
         super().mouseReleaseEvent(event)
 
     def hoverEnterEvent(self, event: QGraphicsSceneHoverEvent) -> None:
-        self.setCursor(Qt.ArrowCursor)
+        self.setCursor(Qt.CursorShape.ArrowCursor)
         self.setOpacity(0.75)
         self.setFocus()
         super().hoverEnterEvent(event)
 
     def hoverLeaveEvent(self, event: QGraphicsSceneHoverEvent) -> None:
         super().hoverLeaveEvent(event)
-        self.setCursor(Qt.CrossCursor)
+        self.setCursor(Qt.CursorShape.CrossCursor)
         self.setOpacity(1)
         self.clearFocus()
 
@@ -573,20 +568,25 @@ class symbolArc(symbolShape):
         brect = QRectF(0, 0, 0, 0)
         if self._arcType == symbolArc.arcTypes[0]:
             brect = QRectF(self._rect.left(), self._rect.top(),
-                self._rect.width(), 0.5 * self._rect.height()).adjusted(-2, -2, 2,
-                                                                        2)
+                           self._rect.width(),
+                           0.5 * self._rect.height()).adjusted(-2, -2,
+                                                               2,
+                                                               2)
         elif self._arcType == symbolArc.arcTypes[1]:
             brect = QRectF(self._rect.left(), self._rect.top(),
-                0.5 * self._rect.width(), self._rect.height()).adjusted(-2, -2, 2,
-                                                                        2)
+                           0.5 * self._rect.width(),
+                           self._rect.height()).adjusted(-2, -2,
+                                                         2,
+                                                         2)
         elif self._arcType == symbolArc.arcTypes[2]:
             brect = QRectF(self._rect.left(),
-                self._rect.top() + self._rect.height() * 0.5, self._rect.width(),
-                0.5 * self._rect.height()).adjusted(-2, -2, 2, 2)
+                           self._rect.top() + self._rect.height() * 0.5,
+                           self._rect.width(),
+                           0.5 * self._rect.height()).adjusted(-2, -2, 2, 2)
         elif self._arcType == symbolArc.arcTypes[3]:
             brect = QRectF(self._rect.left() + 0.5 * self._rect.width(),
-                self._rect.top(), 0.5 * self._rect.width(),
-                self._rect.height()).adjusted(-2, -2, 2, 2)
+                           self._rect.top(), 0.5 * self._rect.width(),
+                           self._rect.height()).adjusted(-2, -2, 2, 2)
         return brect
 
     #
@@ -1121,6 +1121,7 @@ class symbolPin(symbolShape):
             self._pinNameItem.setTransform(pinNameTransform)
         self.update()
 
+
 class text(symbolShape):
     """
     This class is for text annotations on symbol or schematics.
@@ -1331,7 +1332,7 @@ class schematicSymbol(symbolShape):
         self.pinNetMap: dict[str, str] = dict()  # pinName: netName
         self._snapLines: dict[symbolPin, set[net.guideLine]] = dict()
 
-        self._pinNetDict: dict[symbolPin, set[net.schematicNet]]=dict()
+        self._pinNetDict: dict[symbolPin, set[net.schematicNet]] = dict()
         self._setup_graphics()
         self.addShapes()
         self._start = self.childrenBoundingRect().bottomLeft()
@@ -1380,7 +1381,6 @@ class schematicSymbol(symbolShape):
             path.addRect(self.mapRectFromScene(bounding_rect))
 
         return path
-
 
     def itemChange(self, change: QGraphicsItem.GraphicsItemChange, value):
         if not (scene := self.scene()):
@@ -1456,8 +1456,9 @@ class schematicSymbol(symbolShape):
                 scene = self.scene()
                 for snapLinesSet in self._snapLines.values():
                     for snapLine in snapLinesSet:
-                        newNets = scene.addStretchWires(snapLine.line().p1().toPoint(),
-                                                        snapLine.line().p2().toPoint())
+                        newNets = scene.addStretchWires(
+                            snapLine.line().p1().toPoint(),
+                            snapLine.line().p2().toPoint())
                         if newNets:
                             for netItem in newNets:
                                 netItem.inherit(snapLine)
@@ -1471,7 +1472,7 @@ class schematicSymbol(symbolShape):
     def paint(self, painter, option, widget):
         # The shape() method is expensive. It's better to use boundingRect()
         # which is cached by Qt's graphics framework.
-        shapeBoundingRect = self.boundingRect().adjusted(5,5,-5,-5)
+        shapeBoundingRect = self.boundingRect().adjusted(5, 5, -5, -5)
 
         is_selected = option.state & QStyle.State_Selected
 
@@ -1491,7 +1492,6 @@ class schematicSymbol(symbolShape):
 
     def boundingRect(self):
         return self.childrenBoundingRect()
-
 
     def mousePressEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         super().mousePressEvent(event)
@@ -1630,16 +1630,14 @@ class schematicSymbol(symbolShape):
 
         if not invertible:
             return
-        if self.flipTuple[0]<0: # Only shift if horizontally flipped
-            inverseTransform.translate(-10,0)
+        if self.flipTuple[0] < 0:  # Only shift if horizontally flipped
+            inverseTransform.translate(-10, 0)
         for pin in self._pins.values():
             pin.pinNameItem.setTransform(inverseTransform)
         if self.flipTuple[0] < 0:  # Only shift if horizontally flipped
             inverseTransform.translate(-20, 0)
         for label in self.labels.values():
             label.setTransform(inverseTransform)
-
-
 
     @property
     def start(self):
@@ -1731,7 +1729,6 @@ class schematicPin(symbolShape):
         return QPolygonF(
             [QPoint(x + dx, y + dy) for dx, dy in polygons[self.pinDir]])
 
-
     def itemChange(self, change, value):
         if change == QGraphicsItem.ItemSelectedHasChanged:
             if value:
@@ -1756,7 +1753,6 @@ class schematicPin(symbolShape):
         path.addRect(pin_rect)
         return path
 
-
     def generatePinNetDict(self):
         # unfortunate choice of method name to be compatible with schematicSymbol
         # implementation
@@ -1765,7 +1761,6 @@ class schematicPin(symbolShape):
         for netItem in self.collidingItems(Qt.IntersectsItemBoundingRect):
             if isinstance(netItem, net.schematicNet):
                 self._pinNetSet.add(netItem)
-
 
     def initializeSnapLines(self, scene):
         self._snapLines = set()
@@ -1776,7 +1771,8 @@ class schematicPin(symbolShape):
         for netItem in self._pinNetSet:
             endPoint = None
             for point in netItem.sceneEndPoints:
-                if (centrePoint - point).manhattanLength() < max(self.PIN_HEIGHT, self.PIN_WIDTH):
+                if (centrePoint - point).manhattanLength() < max(self.PIN_HEIGHT,
+                                                                 self.PIN_WIDTH):
                     endPoint = netItem.sceneOtherEnd(point)
                     break
             if endPoint:
@@ -1785,7 +1781,6 @@ class schematicPin(symbolShape):
                 self._snapLines.add(snapLine)
                 scene.deleteUndoStack(netItem)
                 scene.addItem(snapLine)
-
 
     def updateSnapLines(self):
         if not self._snapLines:
@@ -1810,8 +1805,9 @@ class schematicPin(symbolShape):
             try:
                 scene = self.scene()
                 for snapLine in self._snapLines:
-                    newNets = scene.addStretchWires(snapLine.line().p1().toPoint(),
-                                                    snapLine.line().p2().toPoint())
+                    newNets = scene.addStretchWires(
+                        snapLine.line().p1().toPoint(),
+                        snapLine.line().p2().toPoint())
                     if newNets:
                         for netItem in newNets:
                             netItem.inherit(snapLine)
@@ -1949,6 +1945,118 @@ class schematicPin(symbolShape):
 
         # Set the new transformation
         self._pinItem.setTransform(transform, combine=False)
+
+
+class alignLine(symbolShape):
+    def __init__(
+            self,
+            draftLine: QLineF,
+            width: int = 1,
+            mode: int = 0,
+    ):
+        """
+        Initialize the TickLine object.
+
+        Args:
+            draftLine (QLineF): The draft line.
+            width (float): The width of the line.
+            mode (int, optional): The mode. Defaults to 0.
+        """
+        super().__init__()
+
+        self._draftLine = draftLine
+        self._width: int = width
+        self._mode = mode
+        self._angle = 0
+        self._rect = QRect(0, 0, 0, 0)
+        penColour = QColor(255, 40, 40)
+        self._pen = QPen(penColour, self._width, Qt.SolidLine)
+        self._pen.setCosmetic(False)
+        self._selectedPen = QPen(Qt.red, self._width + 1, Qt.SolidLine)
+        self._selectedPen.setCosmetic(False)
+        self._determineAngle(self._draftLine.angle())
+        self.setZValue(999)
+
+    def __repr__(self):
+        return (
+            f"alignLine({self._draftLine}, {self._width}, {self._mode})"
+        )
+
+    def _determineAngle(self, angle: float):
+        match self._mode:
+            case 0:  # horizontal
+                self._createHorizontalLine(angle)
+            case 1:  # vertical
+                self._createVerticalLine(angle)
+        self._draftLine.setAngle(0)
+        self.setTransformOriginPoint(self.draftLine.p1())
+        self.setRotation(-self._angle)
+
+    def _createHorizontalLine(self, angle):
+        if 0 <= angle <= 90 or 360 > angle > 270:
+            self._angle = 0
+        elif 90 < angle <= 270:
+            self._angle = 180
+
+    def _createVerticalLine(self, angle):
+        if 0 <= angle < 180:
+            self._angle = 90
+        elif 180 < angle <= 360:
+            self._angle = 270
+
+    def boundingRect(self) -> QRectF:
+        half_w = self._width // 2 + 2
+        return QRectF(self._draftLine.p1(),
+                      self._draftLine.p2()).normalized().adjusted(
+            -half_w, -half_w, half_w, half_w)
+
+    def paint(self, painter, option, widget=None):
+
+        if self.isSelected():
+            painter.setPen(self._selectedPen)
+            painter.drawRect(self.boundingRect())
+        else:
+            painter.setPen(self._pen)
+        painter.drawLine(self._draftLine)
+
+    @property
+    def draftLine(self):
+        return self._draftLine
+
+    @draftLine.setter
+    def draftLine(self, line: QLineF):
+        self.prepareGeometryChange()
+        self._draftLine = line
+        angle = self._draftLine.angle()
+        self._determineAngle(angle)
+
+    @property
+    def angle(self) -> float:
+        return self._angle
+
+    @property
+    def width(self):
+        return self._width
+
+    @width.setter
+    def width(self, width: float):
+        self._width = width
+
+    @property
+    def mode(self):
+        return self._mode
+
+    @mode.setter
+    def mode(self, value: int):
+        self._mode = value
+
+    @property
+    def sceneEndPoints(self):
+        return [
+            self.mapToScene(self._draftLine.p1()).toPoint(),
+            self.mapToScene(self._draftLine.p2()).toPoint(),
+        ]
+
 
 class pinNetIndexTuple(NamedTuple):
     pin: Union[symbolPin, schematicPin]

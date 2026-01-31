@@ -66,22 +66,22 @@ class LineEdit(QLineEdit):
         buffer.  Emit newline signal when return key is pressed.
         """
         if ev.type() == QEvent.KeyPress:
-            if ev.key() == int(Qt.Key_Tab):
+            if ev.key() == int(Qt.Key.Key_Tab):
                 self.insert("    ")
                 return True
-            elif ev.key() == int(Qt.Key_Up):
+            elif ev.key() == int(Qt.Key.Key_Up):
                 self.recall(self.historyindex - 1)
                 return True
-            elif ev.key() == int(Qt.Key_Down):
+            elif ev.key() == int(Qt.Key.Key_Down):
                 self.recall(self.historyindex + 1)
                 return True
-            elif ev.key() == int(Qt.Key_Home):
+            elif ev.key() == int(Qt.Key.Key_Home):
                 self.recall(0)
                 return True
-            elif ev.key() == int(Qt.Key_End):
+            elif ev.key() == int(Qt.Key.Key_End):
                 self.recall(len(self.historylist) - 1)
                 return True
-            elif ev.key() == int(Qt.Key_Return):
+            elif ev.key() == int(Qt.Key.Key_Return):
                 self.returnkey()
                 return True
         return super().event(ev)

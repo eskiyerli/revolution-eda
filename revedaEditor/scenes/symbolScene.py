@@ -24,10 +24,10 @@
 
 # from hashlib import new
 import json
-
 # from hashlib import new
 import pathlib
 from copy import deepcopy
+from typing import List, Dict
 
 # import numpy as np
 from PySide6.QtCore import (
@@ -35,6 +35,7 @@ from PySide6.QtCore import (
     QPoint,
     QPointF,
     Qt,
+    Signal,
 )
 from PySide6.QtGui import (
     QColor,
@@ -53,10 +54,10 @@ import revedaEditor.common.labels as lbl
 import revedaEditor.common.shapes as shp  # import the shapes
 import revedaEditor.fileio.loadJSON as lj
 import revedaEditor.fileio.symbolEncoder as symenc
+import revedaEditor.gui.alignItems as alg
 import revedaEditor.gui.propertyDialogues as pdlg
-from revedaEditor.backend.pdkPaths import importPDKModule
+from revedaEditor.backend.pdkLoader import importPDKModule
 from revedaEditor.scenes.editorScene import editorScene
-from typing import List, Dict
 
 symlyr = importPDKModule('symLayers')
 
@@ -66,10 +67,10 @@ class symbolScene(editorScene):
     """
     Scene for Symbol editor.
     """
+    alignLineFinished = Signal(shp.alignLine)
 
     def __init__(self, parent):
         super().__init__(parent)
-        self.parent = parent
         # drawing modes
         self.editModes = ddef.symbolModes(
             selectItem=True,
@@ -79,6 +80,7 @@ class symbolScene(editorScene):
             rotateItem=False,
             changeOrigin=False,
             panView=False,
+            zoomView=False,
             drawPin=False,
             drawArc=False,
             drawRect=False,
@@ -87,6 +89,7 @@ class symbolScene(editorScene):
             drawCircle=False,
             drawPolygon=False,
             stretchItem=False,
+            alignItems=False,
         )
 
         self.messages = {
@@ -97,6 +100,7 @@ class symbolScene(editorScene):
             "rotateItem": "Click on item to rotate.",
             "changeOrigin": "Click to set new origin.",
             "panView": "Click and drag to pan view.",
+            'zoomView': 'Draw rectangle to zoom in',
             "drawPin": "Add a pin.",
             "drawArc": "Click for the first point of Arc.",
             "drawRect": "Click for the first point of Rectangle.",
@@ -105,6 +109,7 @@ class symbolScene(editorScene):
             "drawCircle": "Click for the centre of Circle.",
             "drawPolygon": "Click for the first point of Polygon.",
             "stretchItem": "Click and drag to stretch item.",
+            "alignItems": "Select Align Option."
         }
 
         self.symbolShapes = ["line", "arc", "rect", "circle", "pin", "label", "polygon"]
@@ -132,6 +137,8 @@ class symbolScene(editorScene):
         self._newPolygon = None
         self.polygonGuideLine = None
 
+        self.alignLineFinished.connect(alg.alignToLine)
+
     @property
     def drawMode(self):
         return any(
@@ -145,9 +152,9 @@ class symbolScene(editorScene):
             )
         )
 
-    def mouseMoveEvent(self, mouse_event: QGraphicsSceneMouseEvent) -> None:
-        super().mouseMoveEvent(mouse_event)
-        self.mouseMoveLoc = self.snapToGrid(mouse_event.scenePos().toPoint())
+    def mouseMoveEvent(self, event: QGraphicsSceneMouseEvent) -> None:
+        super().mouseMoveEvent(event)
+        self.mouseMoveLoc = self.snapToGrid(event.scenePos().toPoint())
 
         # Update message only when needed
         message = None
@@ -179,28 +186,28 @@ class symbolScene(editorScene):
             self.polygonGuideLine.setLine(
                 QLineF(self._newPolygon.points[-1], self.mouseMoveLoc)
             )
-
+        elif self.newAlignLine and self.editModes.alignItems:
+            self.newAlignLine.draftLine = QLineF(
+                self.newAlignLine.draftLine.p1(), self.mouseMoveLoc)
         if message:
             self.editorWindow.messageLine.setText(message)
 
-        self.statusLine.showMessage(f"Cursor Position: {(self.mouseMoveLoc - self.origin).toTuple()}")
+        self.statusLine.showMessage(
+            f"Cursor Position: {(self.mouseMoveLoc - self.origin).toTuple()}")
 
-    def mouseReleaseEvent(self, mouse_event: QGraphicsSceneMouseEvent) -> None:
-        super().mouseReleaseEvent(mouse_event)
-        if mouse_event.button() == Qt.LeftButton:
-            self.mouseReleaseLoc = mouse_event.scenePos().toPoint()
-            modifiers = QGuiApplication.keyboardModifiers()
-            if self.editModes.selectItem and self.selectionRectItem:
-                self._handleSelectionRect(modifiers)
-            else:
-                self._handleMouseRelease(self.mouseReleaseLoc, mouse_event.button())
+    def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent) -> None:
+        super().mouseReleaseEvent(event)
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.mouseReleaseLoc = event.scenePos().toPoint()
+
+            self._handleMouseRelease(self.mouseReleaseLoc, event.button())
 
     def _handleMouseRelease(self, mousePos: QPoint, button: Qt.MouseButton) -> None:
+        modifiers = QGuiApplication.keyboardModifiers()
         try:
             if self.editModes.changeOrigin:
                 self.origin = mousePos
             elif self.editModes.drawLine:
-
                 if self.newLine:
                     if self.newLine.length <= 1:
                         self.undoStack.removeLastCommand()
@@ -253,9 +260,10 @@ class symbolScene(editorScene):
                     self._newPolygon.addPoint(mousePos)
                 else:
                     self._newPolygon, self.polygonGuideLine = self.startPolygon(mousePos)
-
             elif self.editModes.rotateItem:
-                self.rotateSelectedItems(self.mousePressLoc)
+                self.rotateSelectedItems(mousePos)
+            elif self.editModes.alignItems:
+                self._handleAlignItemLine(mousePos)
             self.messageLine.setText(self.messages.get(self.editModes.mode(), ""))
         except Exception as e:
             self.logger.error(f"Error in Mouse Release Event: {e} ")
@@ -269,9 +277,10 @@ class symbolScene(editorScene):
 
     def lineDraw(self, start: QPoint, current: QPoint):
         line = shp.symbolLine(start, current)
+        self.addUndoStack(line)
         # self.addItem(line)
-        undoCommand = us.addShapeUndo(self, line)
-        self.undoStack.push(undoCommand)
+        # undoCommand = us.addShapeUndo(self, line)
+        # self.undoStack.push(undoCommand)
         return line
 
     def rectDraw(self, start: QPoint, end: QPoint):
@@ -279,9 +288,9 @@ class symbolScene(editorScene):
         Draws a rectangle on the scene
         """
         rect = shp.symbolRectangle(start, end)
-        # self.addItem(rect)
-        undoCommand = us.addShapeUndo(self, rect)
-        self.undoStack.push(undoCommand)
+        self.addUndoStack(rect)
+        # undoCommand = us.addShapeUndo(self, rect)
+        # self.undoStack.push(undoCommand)
         return rect
 
     def circleDraw(self, start: QPoint, end: QPoint):
@@ -289,7 +298,7 @@ class symbolScene(editorScene):
         Draws a circle on the scene
         """
         circle = shp.symbolCircle(start, end)
-        # self.addItem(circle)
+
         self.addUndoStack(circle)
         return circle
 
@@ -298,7 +307,7 @@ class symbolScene(editorScene):
         Draws an arc inside the rectangle defined by start and end points.
         """
         arc = shp.symbolArc(start, end)
-        # self.addItem(arc)
+
         self.addUndoStack(arc)
         return arc
 
@@ -334,7 +343,6 @@ class symbolScene(editorScene):
         return label
 
     def addProperty(self, labelDefinition: str):
-        pass
         # Extract core expression between [@ and ]
         if labelDefinition.startswith("[@") and labelDefinition.endswith("]"):
             core = labelDefinition[2:-1]
@@ -346,15 +354,15 @@ class symbolScene(editorScene):
         newPolygon = shp.symbolPolygon([startLoc, startLoc])
         self.addUndoStack(newPolygon)
         # Create guide line
-        guide_line = QLineF(newPolygon.points[-2], newPolygon.points[-1])
-        polygonGuideLine = QGraphicsLineItem(guide_line)
+        guideLine = QLineF(newPolygon.points[-2], newPolygon.points[-1])
+        polygonGuideLine = QGraphicsLineItem(guideLine)
         polygonGuideLine.setPen(QPen(QColor(255, 255, 0), 1, Qt.DashLine))
         self.addUndoStack(polygonGuideLine)
         return newPolygon, polygonGuideLine
 
     def finishPolygon(self, event):
-        if hasattr(event,
-                   'button') and event.button() == Qt.LeftButton and self.editModes.drawPolygon and self._newPolygon:
+        if (hasattr(event, 'button') and event.button() == Qt.MouseButton.LeftButton
+                and self.editModes.drawPolygon and self._newPolygon):
             self._newPolygon.polygon.remove(0)
             self._newPolygon.points.pop(0)
             self.editModes.setMode("selectItem")
@@ -363,12 +371,36 @@ class symbolScene(editorScene):
             self.polygonGuideLine = None
             self.editorWindow.messageLine.setText('Select Item.')
 
+    def _handleAlignItemLine(self, eventLoc: QPoint) -> None:
+
+        if self.newAlignLine:
+            if not self.newAlignLine.draftLine.isNull():
+                self.alignLineFinished.emit(self.newAlignLine)
+        else:
+            from PySide6.QtWidgets import (QApplication, )
+            alignDialogs = [w for w in QApplication.topLevelWidgets() if isinstance(w,
+                                                                                    alg.alignItemsDialogue) and w.isVisible() and w.scene == self]
+            if not alignDialogs:
+                self.logger.warning("No align items dialogue found")
+                return
+            alignDlg = alignDialogs[0]
+            if alignDlg.horizontalAlignButton.isChecked():
+                self.newAlignLine = shp.alignLine(QLineF(eventLoc, eventLoc), 1,
+                                                  0)  # horizontal
+            else:
+                self.newAlignLine = shp.alignLine(QLineF(eventLoc, eventLoc), 1,
+                                                  1)
+            self.addUndoStack(self.newAlignLine)
+
+            # self.newAlignLine.draftLine = QLineF(
+            #     self.newAlignLine.draftLine.p1(), eventLoc)
+
     def moveBySelectedItems(self):
         if self.selectedItems():
             dlg = pdlg.moveByDialogue(self.editorWindow)
             dlg.xEdit.setText("0")
             dlg.yEdit.setText("0")
-            if dlg.exec() == QDialog.Accepted:
+            if dlg.exec() == QDialog.DialogCode.Accepted:
                 for item in self.selectedItems():
                     item.moveBy(
                         self.snapToBase(float(dlg.xEdit.text()), self.snapTuple[0]),
@@ -408,7 +440,7 @@ class symbolScene(editorScene):
         queryDlg.rectTopLine.setText(str(sceneTopLeftPoint.y()))
         queryDlg.rectWidthLine.setText(str(width))  # str(width))
         queryDlg.rectHeightLine.setText(str(height))  # str(height))
-        if queryDlg.exec() == QDialog.Accepted:
+        if queryDlg.exec() == QDialog.DialogCode.Accepted:
             newRectItem = shp.symbolRectangle(QPoint(0, 0), QPoint(0, 0))
             newRectItem.left = self.snapToBase(
                 float(queryDlg.rectLeftLine.text()), self.snapTuple[0]
@@ -432,7 +464,7 @@ class symbolScene(editorScene):
         queryDlg.centerXEdit.setText(str(centre[0]))
         queryDlg.centerYEdit.setText(str(centre[1]))
         queryDlg.radiusEdit.setText(str(radius))
-        if queryDlg.exec() == QDialog.Accepted:
+        if queryDlg.exec() == QDialog.DialogCode.Accepted:
             newCircleItem = shp.symbolCircle(QPoint(0, 0), QPoint(0, 0))
             centerX = self.snapToBase(
                 float(queryDlg.centerXEdit.text()), self.snapTuple[0]
@@ -455,7 +487,7 @@ class symbolScene(editorScene):
         queryDlg.startYLine.setText(str(sceneLineStartPoint.y()))
         queryDlg.endXLine.setText(str(sceneLineEndPoint.x()))
         queryDlg.endYLine.setText(str(sceneLineEndPoint.y()))
-        if queryDlg.exec() == QDialog.Accepted:
+        if queryDlg.exec() == QDialog.DialogCode.Accepted:
             startX = self.snapToBase(
                 float(queryDlg.startXLine.text()), self.snapTuple[0]
             )
@@ -479,7 +511,7 @@ class symbolScene(editorScene):
         queryDlg.widthEdit.setText(str(item.width))
         queryDlg.heightEdit.setText(str(item.height))
         arcType = item.arcType
-        if queryDlg.exec() == QDialog.Accepted:
+        if queryDlg.exec() == QDialog.DialogCode.Accepted:
             startX = int(float(queryDlg.startXEdit.text()))
             startY = int(float(queryDlg.startYEdit.text()))
             start = self.snapToGrid(QPoint(startX, startY))
@@ -512,7 +544,7 @@ class symbolScene(editorScene):
         sceneStartPoint = item.pos()
         queryDlg.labelXLine.setText(str(sceneStartPoint.x()))
         queryDlg.labelYLine.setText(str(sceneStartPoint.y()))
-        if queryDlg.exec() == QDialog.Accepted:
+        if queryDlg.exec() == QDialog.DialogCode.Accepted:
             startX = int(float(queryDlg.labelXLine.text()))
             startY = int(float(queryDlg.labelYLine.text()))
             start = self.snapToGrid(QPoint(startX, startY))
@@ -552,7 +584,7 @@ class symbolScene(editorScene):
         sceneStartPoint = item.mapToScene(item.start).toPoint()
         queryDlg.pinXLine.setText(str(sceneStartPoint.x()))
         queryDlg.pinYLine.setText(str(sceneStartPoint.y()))
-        if queryDlg.exec() == QDialog.Accepted:
+        if queryDlg.exec() == QDialog.DialogCode.Accepted:
             sceneStartX = int(float(queryDlg.pinXLine.text()))
             sceneStartY = int(float(queryDlg.pinYLine.text()))
             start = self.snapToGrid(
@@ -568,7 +600,7 @@ class symbolScene(editorScene):
         queryDlg = pdlg.symbolPolygonProperties(
             self.editorWindow, pointsTupleList
         )
-        if queryDlg.exec() == QDialog.Accepted:
+        if queryDlg.exec() == QDialog.DialogCode.Accepted:
             tempPoints = []
             for i in range(queryDlg.tableWidget.rowCount()):
                 xcoor = queryDlg.tableWidget.item(i, 1).text()
@@ -613,55 +645,6 @@ class symbolScene(editorScene):
             self.blockSignals(False)
             self.update()
 
-        # try:
-        #     # Load file contents
-        #     with open(self.editorWindow.file) as file:
-        #         itemsList = json.load(file)
-        #
-        #     # Disable updates
-        #     self.blockSignals(True)
-        #
-        #     # Fast grid setup
-        #     if (len(itemsList) > 1) and (itemsList[1].get("snapGrid") is not None):
-        #         self.snapGrid = itemsList[1].get("snapGrid")
-        #         self.snapTuple = (self.snapGrid, self.snapGrid)
-        #         self.snapDistance = self.snapGrid << 1
-        #
-        #
-        #     # Create factory once
-        #     factory = lj.symbolItems(self)
-        #
-        #     # Reset attribute list
-        #     self.attributeList = []
-        #
-        #     # Process items directly
-        #     for item in itemsList[2:]:
-        #         if not item:
-        #             continue
-        #
-        #         itemType = item.get("type")
-        #
-        #         if itemType in self.symbolShapes:
-        #             shape = factory.create(item)
-        #             if isinstance(shape, lbl.symbolLabel):
-        #                 shape.setOpacity(1)
-        #             self.addItem(shape)
-        #         elif itemType == "attr":
-        #             self.attributeList.append(
-        #                 factory.createSymbolAttribute(item)
-        #             )
-        #
-        # except Exception as e:
-        #     self.logger.error(f"Load failed: {e}")
-        #     # Optionally reset scene state
-        #     self.clear()
-        #     self.attributeList = []
-        #     raise
-
-        # finally:
-        #     self.blockSignals(False)
-        #     self.update()
-
     def createSymbolItems(self, itemsList: List[Dict]):
         factory = lj.symbolItems(self)
         for itemDict in itemsList:
@@ -690,8 +673,12 @@ class symbolScene(editorScene):
         try:
             self.itemsRefSet = set(self.items())
             # Filter items and process labels in one pass
-            sceneItems = [item for item in self.items()
-                          if isinstance(item, shp.symbolPolygon) or item.parentItem() is None]
+
+            symbolClasses = (shp.symbolPolygon, shp.symbolRectangle, shp.symbolArc,
+                             shp.symbolLine, shp.symbolPin, lbl.symbolLabel,
+                             shp.symbolCircle, shp.text)
+            sceneItems = [item for item in self.items() if isinstance(item,
+                                                                      symbolClasses)]
             # Build save data
             save_data = [
                 {"viewType": "symbol"},
@@ -720,7 +707,7 @@ class symbolScene(editorScene):
         symbolPropDialogue = pdlg.symbolLabelsDialogue(
             self.editorWindow, self.items(), attributeListCopy
         )
-        if symbolPropDialogue.exec() == QDialog.Accepted:
+        if symbolPropDialogue.exec() == QDialog.DialogCode.Accepted:
             for i, item in enumerate(symbolPropDialogue.labelItemList):
                 # label name is not changed.
                 item.labelHeight = int(

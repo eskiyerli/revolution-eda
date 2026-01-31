@@ -21,10 +21,9 @@
 #    License: Mozilla Public License 2.0
 #    Licensor: Revolution Semiconductor (Registered in the Netherlands)
 #
-from contextlib import contextmanager
 from typing import Callable
+
 from PySide6.QtCore import QRunnable, Slot, Signal, QObject
-import time
 
 
 class workerSignals(QObject):

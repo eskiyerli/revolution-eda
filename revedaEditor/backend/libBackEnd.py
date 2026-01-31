@@ -20,16 +20,15 @@
 #   Licensor: Revolution Semiconductor (Registered in the Netherlands)
 
 import json
-
 # schematic editor backend
 import pathlib
 import shutil
 from pathlib import Path
+from typing import Union, Optional
 
 from PySide6.QtCore import (Qt, )
 from PySide6.QtGui import (QStandardItem, )
 from PySide6.QtWidgets import QMessageBox, QWidget
-from typing import Union, Optional
 
 
 class libraryItem(QStandardItem):
@@ -38,9 +37,9 @@ class libraryItem(QStandardItem):
         self._libraryName = libraryPath.name
         super().__init__(self.libraryName)
         self.setEditable(False)
-        self.setData(libraryPath, Qt.UserRole + 2)
-        self.setData("library", Qt.UserRole + 1)
-        self.setData(self.libraryName, Qt.UserRole + 3)
+        self.setData(libraryPath, Qt.ItemDataRole.UserRole + 2)
+        self.setData("library", Qt.ItemDataRole.UserRole + 1)
+        self.setData(self.libraryName, Qt.ItemDataRole.UserRole + 3)
 
     def type(self):
         return Qt.StandardItem.UserType
@@ -72,9 +71,9 @@ class cellItem(QStandardItem):
         self._cellName = cellPath.stem
         super().__init__(self.cellName)
         self.setEditable(False)
-        self.setData("cell", Qt.UserRole + 1)
-        self.setData(cellPath, Qt.UserRole + 2)
-        self.setData(self.cellName, Qt.UserRole + 3)
+        self.setData("cell", Qt.ItemDataRole.UserRole + 1)
+        self.setData(cellPath, Qt.ItemDataRole.UserRole + 2)
+        self.setData(self.cellName, Qt.ItemDataRole.UserRole + 3)
 
     def type(self):
         return QStandardItem.UserType + 1
@@ -84,7 +83,6 @@ class cellItem(QStandardItem):
 
     def __repr__(self):
         return f"{type(self).__name__}({self.cellPath})"
-
 
     def delete(self):
         """
@@ -107,8 +105,8 @@ class cellItem(QStandardItem):
         Clone the cell item and return a new cell item with the same path.
         """
         newCellItem = cellItem(self.cellPath)
-        newCellItem.setData('clone', Qt.UserRole + 4)
-        newCellItem.setData(self, Qt.UserRole + 10)
+        newCellItem.setData('clone', Qt.ItemDataRole.UserRole + 4)
+        newCellItem.setData(self, Qt.ItemDataRole.UserRole + 10)
         return newCellItem
 
 
@@ -118,10 +116,10 @@ class viewItem(QStandardItem):
         self.viewName = viewPath.stem
         super().__init__(self.viewPath.stem)
         self.setEditable(False)
-        self.setData("view", Qt.UserRole + 1)
+        self.setData("view", Qt.ItemDataRole.UserRole + 1)
         # set the data to the item to be the path to the view.
-        self.setData(viewPath, Qt.UserRole + 2)
-        self.setData(self.viewName, Qt.UserRole + 3)
+        self.setData(viewPath, Qt.ItemDataRole.UserRole + 2)
+        self.setData(self.viewName, Qt.ItemDataRole.UserRole + 3)
 
     def type(self):
         return QStandardItem.UserType + 1
@@ -131,7 +129,6 @@ class viewItem(QStandardItem):
 
     def __repr__(self):
         return f"{type(self).__name__}(pathlib.Path({self.viewPath}))"
-
 
     def delete(self):
         """
@@ -172,12 +169,12 @@ class viewItem(QStandardItem):
         """
         newViewItem = viewItem(self.viewPath)
         newViewItem.setEditable(False)
-        newViewItem.setData('clone', Qt.UserRole + 4)
-        newViewItem.setData(self, Qt.UserRole + 10)
+        newViewItem.setData('clone', Qt.ItemDataRole.UserRole + 4)
+        newViewItem.setData(self, Qt.ItemDataRole.UserRole + 10)
         return newViewItem
 
 
-# def createLibrary(parent, model, libraryDir: str, libraryName: str) -> libraryItem:
+# def createLibrary(parentW, model, libraryDir: str, libraryName: str) -> libraryItem:
 #     """
 #     Create a library item with the given parameters and add it to the model.
 #     If the library name is empty, show a warning message.
@@ -186,16 +183,17 @@ class viewItem(QStandardItem):
 #     Return the newly created library item.
 #     """
 #     if libraryName.strip() == "":
-#         QMessageBox.warning(parent, "Error", "Please enter a library name")
+#         QMessageBox.warning(parentW, "Error", "Please enter a library name")
 #     else:
 #         libraryPath = Path(libraryDir).joinpath(libraryName)
 #         if libraryPath.exists():
-#             QMessageBox.warning(parent, "Error", "Library already exits.")
+#             QMessageBox.warning(parentW, "Error", "Library already exits.")
 #         else:
 #             newLibraryItem = createNewLibraryItem(model, libraryPath)
-#             parent.logger.info(f"Created {libraryPath}")
+#             parentW.logger.info(f"Created {libraryPath}")
 #     return newLibraryItem
-def createLibrary(parent, model, libraryDir: str, libraryName: str) -> Union[libraryItem, None]:
+def createLibrary(parent, model, libraryDir: str, libraryName: str) -> Union[
+    libraryItem, None]:
     """
     Create a library item with the given parameters and add it to the model.
     If the library name is empty, show a warning message.
@@ -220,15 +218,15 @@ def createLibrary(parent, model, libraryDir: str, libraryName: str) -> Union[lib
 def createNewLibraryItem(model, libraryPath):
     libraryPath.mkdir()
     newLibraryItem = libraryItem(libraryPath)
-    newLibraryItem.setData(libraryPath, Qt.UserRole + 2)
-    newLibraryItem.setData("library", Qt.UserRole + 1)
+    newLibraryItem.setData(libraryPath, Qt.ItemDataRole.UserRole + 2)
+    newLibraryItem.setData("library", Qt.ItemDataRole.UserRole + 1)
     model.appendRow(newLibraryItem)
     return newLibraryItem
 
 
 def createCell(parent, selectedLib: libraryItem, cellName: str) -> Union[cellItem, None]:
-    if selectedLib.data(Qt.UserRole + 1) == "library":
-        selectedLibPath = selectedLib.data(Qt.UserRole + 2)
+    if selectedLib.data(Qt.ItemDataRole.UserRole + 1) == "library":
+        selectedLibPath = selectedLib.data(Qt.ItemDataRole.UserRole + 2)
         cellPath = selectedLibPath.joinpath(cellName)
         if cellName.strip() == "":
             QMessageBox.warning(parent, "Error", "Please enter a cell name")
@@ -260,7 +258,7 @@ def createCellView(parent: QWidget, viewName: str, cellItem: cellItem) -> viewIt
     if viewName.strip() == "":
         QMessageBox.warning(parent, "Error", "Please enter a view name")
         return None
-    viewPath = cellItem.data(Qt.UserRole + 2).joinpath(f"{viewName}.json")
+    viewPath = cellItem.data(Qt.ItemDataRole.UserRole + 2).joinpath(f"{viewName}.json")
     if viewPath.exists():
         parent.logger.warning("Replacing the cell view.")
         oldView = [cellItem.child(row) for row in range(cellItem.rowCount()) if
@@ -297,9 +295,10 @@ def createCellviewItem(viewName, viewPath):
     return newViewItem
 
 
-def copyCell(parent, model, origCellItem: cellItem, copyName, selectedLibPath) -> tuple[bool, Optional[cellItem]]:
+def copyCell(parent, model, origCellItem: cellItem, copyName, selectedLibPath) -> tuple[
+    bool, Optional[cellItem]]:
     """Copy a cell to a new location with a new name."""
-    cellPath = origCellItem.data(Qt.UserRole + 2)
+    cellPath = origCellItem.data(Qt.ItemDataRole.UserRole + 2)
     copyName = copyName or "newCell"
     copyPath = selectedLibPath.joinpath(copyName)
 
@@ -329,20 +328,20 @@ def copyCell(parent, model, origCellItem: cellItem, copyName, selectedLibPath) -
 
 
 # # function for copying a cell
-# def copyCell(parent, model, origCellItem: cellItem, copyName, selectedLibPath) -> bool:
+# def copyCell(parentW, model, origCellItem: cellItem, copyName, selectedLibPath) -> bool:
 #     """
-#     parent: the parent widget
+#     parentW: the parentW widget
 #     model: the model
 #     cellItem: the cell item in the model
 #     copyName: the name of the new cell
 #     selectedLibPath: the path of the selected library
 #     """
-#     cellPath = origCellItem.data(Qt.UserRole + 2)  # get the cell path from item user data
+#     cellPath = origCellItem.data(Qt.ItemDataRole.UserRole + 2)  # get the cell path from item user data
 #     if copyName == "":  # assign a default name for the cell
 #         copyName = "newCell"
 #     copyPath = selectedLibPath.joinpath(copyName)
 #     if copyPath.exists():
-#         QMessageBox.warning(parent, "Error", "Cell already exits.")
+#         QMessageBox.warning(parentW, "Error", "Cell already exits.")
 #         return False
 #     else:
 #         assert cellPath.exists()
@@ -352,8 +351,8 @@ def copyCell(parent, model, origCellItem: cellItem, copyName, selectedLibPath) -
 #         # create new cell item
 #         newCellItem = cellItem(copyPath)
 #         newCellItem.setEditable(False)
-#         newCellItem.setData("cell", Qt.UserRole + 1)
-#         newCellItem.setData(copyPath, Qt.UserRole + 2)
+#         newCellItem.setData("cell", Qt.ItemDataRole.UserRole + 1)
+#         newCellItem.setData(copyPath, Qt.ItemDataRole.UserRole + 2)
 #         # go through view list and add to cell item
 #         addedViewList = [viewItem(viewPath) for viewPath in copyPath.iterdir() if
 #             viewPath.suffix == ".json"]
@@ -367,15 +366,15 @@ def copyCell(parent, model, origCellItem: cellItem, copyName, selectedLibPath) -
 
 def renameCell(parent, oldCell: cellItem, newName: str) -> bool:
     """
-    Function to rename a cell in the parent with a new name.
+    Function to rename a cell in the parentW with a new name.
     Parameters:
-    - parent: the parent of the cell
+    - parentW: the parentW of the cell
     - oldCell: the cell to be renamed
     - newName: the new name for the cell
     Returns:
     - bool: True if the cell is successfully renamed, False otherwise
     """
-    cellPath = oldCell.data(Qt.UserRole + 2)
+    cellPath = oldCell.data(Qt.ItemDataRole.UserRole + 2)
     if newName.strip() == "":
         QMessageBox.warning(parent, "Error", "Please enter a cell name")
         return False
