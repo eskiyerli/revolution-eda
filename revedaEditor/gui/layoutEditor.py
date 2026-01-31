@@ -127,9 +127,9 @@ class layoutEditor(edw.editorWindow):
         self.hierMenu.addAction(self.goUpAction)
         self.hierMenu.addAction(self.goDownAction)
 
-        if hasattr(self._app, 'pluginsObj'):
+        if hasattr(self._app, 'pluginsObj') and hasattr(self._app.pluginsObj, 'applyPluginMenus'):
             self._app.pluginsObj.applyPluginMenus(self)
-        if hasattr(self._app, 'pdkConfigObj'):
+        if hasattr(self._app, 'pdkConfigObj') and hasattr(self._app.pdkConfigObj, 'applyPDKMenus'):
             self._app.pdkConfigObj.applyPDKMenus(self)
 
     def _layoutContextMenu(self):

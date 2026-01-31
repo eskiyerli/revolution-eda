@@ -137,7 +137,7 @@ class schematicEditor(edw.editorWindow):
         self.simulationMenu.addAction(self.netlistAction)
         self.editorMenuBar.insertMenu(self.menuHelp.menuAction(), self.simulationMenu)
         # self.menuHelp = self.editorMenuBar.addMenu("&Help")
-        if hasattr(self._app, 'pluginsObj'):
+        if hasattr(self._app, 'pluginsObj') and hasattr(self._app.pluginsObj, 'applyPluginMenus'):
             self._app.pluginsObj.applyPluginMenus(self)
 
     def _createTriggers(self):

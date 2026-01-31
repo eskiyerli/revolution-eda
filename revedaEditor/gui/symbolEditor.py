@@ -98,7 +98,7 @@ class symbolEditor(edw.editorWindow):
         self.menuCreate.addAction(self.createLabelAction)
         self.menuCreate.addAction(self.createPinAction)
 
-        if hasattr(self._app, 'pluginsObj'):
+        if hasattr(self._app, 'pluginsObj') and hasattr(self._app.pluginsObj, 'applyPluginMenus'):
             self._app.pluginsObj.applyPluginMenus(self)
 
     def _createTriggers(self):
