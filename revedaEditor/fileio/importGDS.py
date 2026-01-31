@@ -1,19 +1,20 @@
-from PySide6.QtWidgets import (
-    QMainWindow,
-)
+import json
+import pathlib
+
+import gdstk
 from PySide6.QtCore import (
     QPoint,
 )
-import pathlib
-import json
-import revedaEditor.fileio.layoutEncoder as layenc
+from PySide6.QtWidgets import (
+    QMainWindow,
+)
 from numpy import pi
 
-import gdstk
-import revedaEditor.common.layoutShapes as lshp
-import revedaEditor.backend.libBackEnd as libb
 import revedaEditor.backend.dataDefinitions as ddef
-from revedaEditor.backend.pdkPaths import importPDKModule
+import revedaEditor.backend.libBackEnd as libb
+import revedaEditor.common.layoutShapes as lshp
+import revedaEditor.fileio.layoutEncoder as layenc
+from revedaEditor.backend.pdkLoader import importPDKModule
 
 fabproc = importPDKModule("process")
 laylyr = importPDKModule("layoutLayers")
@@ -25,13 +26,12 @@ gdsUnit = float(fabproc.gdsUnit)
 gdsPrecision = float(fabproc.gdsPrecision)
 
 
-
 class gdsImporter:
     def __init__(
-        self,
-        parent: QMainWindow,
-        inputFile: pathlib.Path,
-        importLibItem: libb.libraryItem,
+            self,
+            parent: QMainWindow,
+            inputFile: pathlib.Path,
+            importLibItem: libb.libraryItem,
     ):
         self._parent = parent
         self.inputFile = inputFile
@@ -52,7 +52,8 @@ class gdsImporter:
             viewItem = libb.createCellviewItem("layout", viewPath)
             self._processInstance(cell, viewItem)
         self._parent.logger.info(f"Imported {self.inputFile.stem} GDS File")
-        self._parent.libraryBrowser.designView.reworkDesignLibrariesView(self._parent.libraryBrowser.designView.libraryModel.libraryDict)
+        self._parent.libraryBrowser.designView.reworkDesignLibrariesView(
+            self._parent.libraryBrowser.designView.libraryModel.libraryDict)
 
     def _processInstance(self, cell: gdstk.Cell, viewItem: libb.viewItem):
         # Open file in context manager and write header
@@ -64,17 +65,17 @@ class gdsImporter:
             file.write(snapGridLine)
             # Track if we need to write comma between items
             need_comma = False
-            
+
             # Process instances
             for shape in self._processShapes(cell, viewItem):
                 if need_comma:
                     file.write(",\n")
                 json.dump(shape, file, cls=layenc.gdsImportEncoder, indent=4)
                 need_comma = True
-            
+
             # Close the JSON array
             file.write("\n]")
-        
+
         return True  # Or return some status if needed
 
     def _processShapes(self, cell: gdstk.Cell, viewItem: libb.viewItem):
@@ -86,16 +87,16 @@ class gdsImporter:
             viewPath = cellItem.cellPath.joinpath("layout.json")
             # Process nested instance first
             self._processInstance(ref.cell, libb.createCellviewItem("layout", viewPath))
-            
+
             layoutInstance = lshp.layoutInstance([])
             layoutInstance.libraryName = cellItem.parent().libraryName
             layoutInstance.cellName = cellItem.cellName
             layoutInstance.viewName = viewItem.viewName
             layoutInstance.counter = 1
             layoutInstance.instanceName = 'I1'
-            layoutInstance.setPos(ref.origin[0]*dbu, ref.origin[1]*dbu)
+            layoutInstance.setPos(ref.origin[0] * dbu, ref.origin[1] * dbu)
             layoutInstance.angle = ref.rotation * 180 / pi
-            layoutInstance.flipTuple = (1,1)
+            layoutInstance.flipTuple = (1, 1)
             yield layoutInstance
 
         # Process polygons
@@ -104,7 +105,8 @@ class gdsImporter:
                 laylyr.pdkAllLayers, polygon.layer, polygon.datatype
             )
             if layoutLayer:
-                points = [QPoint(point[0]*dbu, point[1]*dbu) for point in polygon.points]
+                points = [QPoint(point[0] * dbu, point[1] * dbu) for point in
+                          polygon.points]
                 yield lshp.layoutPolygon(points, layoutLayer)
 
         # Process paths
@@ -114,7 +116,8 @@ class gdsImporter:
                     laylyr.pdkAllLayers, polygon.layer, polygon.datatype
                 )
                 if layoutLayer:
-                    points = [QPoint(point[0]*dbu, point[1]*dbu) for point in polygon.points]
+                    points = [QPoint(point[0] * dbu, point[1] * dbu) for point in
+                              polygon.points]
                     yield lshp.layoutPolygon(points, layoutLayer)
         # Process labels
         for gds_label in cell.labels:
@@ -122,9 +125,9 @@ class gdsImporter:
                 laylyr.pdkAllLayers, gds_label.layer, 0)
             if not textLayer:
                 continue
-            origin = QPoint(gds_label.origin[0]*dbu, gds_label.origin[1]*dbu)
+            origin = QPoint(gds_label.origin[0] * dbu, gds_label.origin[1] * dbu)
             angle = gds_label.rotation * 180 / pi
-            layout_label = lshp.layoutLabel(origin, gds_label.text, "Arial", "Regular", "10", "Center", "R0", textLayer)
+            layout_label = lshp.layoutLabel(origin, gds_label.text, "Arial", "Regular",
+                                            "10", "Center", "R0", textLayer)
             layout_label.angle = angle
             yield layout_label
-

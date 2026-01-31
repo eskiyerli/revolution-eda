@@ -22,10 +22,6 @@
 #    Licensor: Revolution Semiconductor (Registered in the Netherlands)
 #
 
-import revedaEditor.backend.dataDefinitions as ddef
-import revedaEditor.backend.hdlBackEnd as hdl
-# import revedaEditor.backend.libBackEnd as scb  # import the backend
-import revedaEditor.common.shapes as shp
 # import revedaEditor.fileio.symbolEncoder as se
 # import revedaEditor.gui.propertyDialogues as pdlg
 # import revedaEditor.gui.fileDialogues as fd
@@ -34,9 +30,15 @@ import revedaEditor.common.shapes as shp
 from PySide6.QtCore import Qt, QPoint
 from PySide6.QtWidgets import QMainWindow, QDialog
 
-from revedaEditor.backend import dataDefinitions as ddef, hdlBackEnd as hdl, libBackEnd as scb
+import revedaEditor.backend.dataDefinitions as ddef
+import revedaEditor.backend.hdlBackEnd as hdl
+# import revedaEditor.backend.libBackEnd as scb  # import the backend
+import revedaEditor.common.shapes as shp
+from revedaEditor.backend import dataDefinitions as ddef, hdlBackEnd as hdl, \
+    libBackEnd as scb
 from revedaEditor.fileio import symbolEncoder as se
-from revedaEditor.gui import libraryBrowser as libw, fileDialogues as fd, symbolEditor as syed, \
+from revedaEditor.gui import libraryBrowser as libw, fileDialogues as fd, \
+    symbolEditor as syed, \
     propertyDialogues as pdlg
 
 
@@ -172,17 +174,17 @@ def drawBaseSymbol(symbolScene, dlg):
 
 
 def createVaSymbol(
-    parent: QMainWindow,
-    vaItemTuple: ddef.viewItemTuple,
-    libraryDict: dict,
-    libraryBrowser: libw.libraryBrowser,
-    importedVaObj: hdl.verilogaC,
+        parent: QMainWindow,
+        vaItemTuple: ddef.viewItemTuple,
+        libraryDict: dict,
+        libraryBrowser: libw.libraryBrowser,
+        importedVaObj: hdl.verilogaC,
 ) -> None:
     """
     Creates a symbol for a given view item in the library.
 
     Args:
-        parent (QMainWindow): The parent window.
+        parent (QMainWindow): The parentW window.
         vaItemTuple (ddef.viewItemTuple): The view item tuple.
         libraryDict (dict): The library dictionary.
         libraryBrowser (edw.libraryBrowser): The library browser.
@@ -199,12 +201,12 @@ def createVaSymbol(
     )
     symbolNameDlg.viewComboBox.setCurrentText("symbol")
     symbolNameDlg.nameEdit.setText("symbol")
-    if symbolNameDlg.exec() == QDialog.Accepted:
+    if symbolNameDlg.exec() == QDialog.DialogCode.Accepted:
         symbolViewName = symbolNameDlg.nameEdit.text().strip()
         symbolViewItem = scb.createCellView(
             parent, symbolViewName, vaItemTuple.cellItem
         )
-        newVaFilePathObj = vaItemTuple.cellItem.data(Qt.UserRole + 2).joinpath(
+        newVaFilePathObj = vaItemTuple.cellItem.data(Qt.ItemDataRole.UserRole + 2).joinpath(
             importedVaObj.pathObj.name
         )
         symbolWindow = syed.symbolEditor(
@@ -219,7 +221,7 @@ def createVaSymbol(
         dlg.rightPinsEdit.setText(",".join(importedVaObj.outPins))
         dlg.topPinsEdit.setText(",".join(importedVaObj.inoutPins))
 
-        if dlg.exec() == QDialog.Accepted:
+        if dlg.exec() == QDialog.DialogCode.Accepted:
             rectXDim, rectYDim = drawBaseSymbol(symbolScene, dlg)
             # vaFileLabel = symbolScene.labelDraw(
             #     QPoint(int(0.25 * rectXDim), int(0.6 * rectYDim)),
@@ -255,7 +257,7 @@ def createVaSymbol(
             instParamNum = len(importedVaObj.instanceParams)
             if instParamNum > 0:
                 for index, (key, value) in enumerate(
-                    importedVaObj.instanceParams.items()
+                        importedVaObj.instanceParams.items()
                 ):
                     symbolScene.labelDraw(
                         QPoint(
@@ -305,11 +307,11 @@ def createVaSymbol(
 
 
 def createSpiceSymbol(
-    parent: QMainWindow,
-    spiceItemTuple: ddef.viewItemTuple,
-    libraryDict: dict,
-    libraryBrowser: libw.libraryBrowser,
-    importedSpiceObj: hdl.spiceC,
+        parent: QMainWindow,
+        spiceItemTuple: ddef.viewItemTuple,
+        libraryDict: dict,
+        libraryBrowser: libw.libraryBrowser,
+        importedSpiceObj: hdl.spiceC,
 ):
     symbolNameDlg = fd.newCellViewDialog(
         parent, libraryBrowser.designView.libraryModel
@@ -318,12 +320,13 @@ def createSpiceSymbol(
     symbolNameDlg.cellCB.setCurrentText(spiceItemTuple.cellItem.cellName)
     symbolNameDlg.viewType.addItems(["symbol"])
     symbolNameDlg.viewName.setText("symbol")
-    if symbolNameDlg.exec() == QDialog.Accepted:
+    if symbolNameDlg.exec() == QDialog.DialogCode.Accepted:
         symbolViewName = symbolNameDlg.viewName.text().strip()
         symbolViewItem = scb.createCellView(
             parent, symbolViewName, spiceItemTuple.cellItem
         )
-        newSpiceFilePathObj = spiceItemTuple.cellItem.data(Qt.UserRole + 2).joinpath(
+        newSpiceFilePathObj = spiceItemTuple.cellItem.data(
+            Qt.ItemDataRole.UserRole + 2).joinpath(
             importedSpiceObj.pathObj.name
         )
         symbolWindow = syed.symbolEditor(
@@ -335,7 +338,7 @@ def createSpiceSymbol(
         dlg = pdlg.symbolCreateDialog(parent)
         dlg.leftPinsEdit.setText(", ".join(importedSpiceObj.subcktParams["pins"]))
 
-        if dlg.exec() == QDialog.Accepted:
+        if dlg.exec() == QDialog.DialogCode.Accepted:
             rectXDim, rectYDim = drawBaseSymbol(symbolScene, dlg)
             symbolFileLabel = symbolScene.labelDraw(
                 QPoint(int(0.25 * rectXDim), int(-0.2 * rectYDim)),
@@ -349,7 +352,7 @@ def createSpiceSymbol(
             symbolFileLabel.labelVisible = False
             instParamNum = len(importedSpiceObj.subcktParams["params"])
             for index, (key, value) in enumerate(
-                importedSpiceObj.subcktParams["params"].items()
+                    importedSpiceObj.subcktParams["params"].items()
             ):
                 symbolScene.labelDraw(
                     QPoint(

@@ -33,7 +33,8 @@ from dotenv import load_dotenv
 from quantiphy import Quantity
 
 load_dotenv()
-from revedaEditor.backend.pdkPaths import importPDKModule # noqa: E402
+
+from revedaEditor.backend.pdkLoader import importPDKModule
 
 schlyr = importPDKModule("schLayers")
 symlyr = importPDKModule("symLayers")
@@ -60,14 +61,14 @@ class symbolLabel(QGraphicsSimpleTextItem):
     ]
 
     def __init__(
-        self,
-        start: QPoint,
-        labelDefinition: str,
-        labelType: str,
-        labelHeight: int,
-        labelAlign: str,
-        labelOrient: str,
-        labelUse: str,
+            self,
+            start: QPoint,
+            labelDefinition: str,
+            labelType: str,
+            labelHeight: int,
+            labelAlign: str,
+            labelOrient: str,
+            labelUse: str,
     ):
         super().__init__("")
         self._start = start  # top left corner
@@ -298,13 +299,14 @@ class symbolLabel(QGraphicsSimpleTextItem):
             self._labelValue = self._labelDefinition
             self._labelText = self._labelDefinition
         elif self._labelType == symbolLabel.labelTypes[1]:  # NLPLabel
-            (self._labelName, self._labelText, self._labelValue) = self.createNLPLabel(self._labelDefinition, self._labelValue)
+            (self._labelName, self._labelText, self._labelValue) = self.createNLPLabel(
+                self._labelDefinition, self._labelValue)
         elif self._labelType == symbolLabel.labelTypes[2]:  # pyLabel
             self.createPyLabel()
         self.setText(self._labelText)
 
-
-    def createNLPLabel(self, labelDefinition: str, labelValue: str = "") -> Tuple[str, str, str]:
+    def createNLPLabel(self, labelDefinition: str, labelValue: str = "") -> Tuple[
+        str, str, str]:
         """
         Parse NLP label definition and return (labelName, labelText, labelValue).
 
@@ -343,19 +345,22 @@ class symbolLabel(QGraphicsSimpleTextItem):
 
             # Extract format string and default value
             formatString = parts[1].strip() if len(parts) > 1 else labelName
-            defaultValue = self._extractDefaultValue(parts[2].strip()) if len(parts) > 2 else ""
+            defaultValue = self._extractDefaultValue(parts[2].strip()) if len(
+                parts) > 2 else ""
 
             # Use default value if no current value
             finalValue = labelValue or defaultValue
 
             # Generate label text
-            labelText = formatString.replace("%", finalValue) if "%" in formatString else formatString
+            labelText = formatString.replace("%",
+                                             finalValue) if "%" in formatString else formatString
 
             return (labelName, labelText, finalValue)
 
         except Exception as e:
             if self.scene():
-                self.scene().logger.error(f"Error parsing label definition: {labelDefinition}, {e}")
+                self.scene().logger.error(
+                    f"Error parsing label definition: {labelDefinition}, {e}")
             return ("", "", "")
 
     def _extractDefaultValue(self, defaultString: str) -> str:
@@ -370,34 +375,34 @@ class symbolLabel(QGraphicsSimpleTextItem):
 
         match labelName:
             case "@cellName":
-                # Set label name to "cellName" and value and text to parent item's cell name
+                # Set label name to "cellName" and value and text to parentW item's cell name
                 labelValue = self.parentItem().cellName
             case "@instName":
-                # Set label name to "instName" and value and text to parent item's counter with prefix "I"
+                # Set label name to "instName" and value and text to parentW item's counter with prefix "I"
                 labelValue = getattr(
                     self.parentItem(), "instanceName", f"I{self.parentItem().counter}"
                 )
 
             case "@libName":
-                # Set label name to "libName" and value and text to parent item's library name
+                # Set label name to "libName" and value and text to parentW item's library name
                 labelValue = self.parentItem().libraryName
 
             case "@viewName":
-                # Set label name to "viewName" and value and text to parent item's view name
+                # Set label name to "viewName" and value and text to parentW item's view name
                 labelValue = self.parentItem().viewName
 
             case "@modelName":
-                # Set label name to "modelName" and value and text to parent item's "modelName" attribute
+                # Set label name to "modelName" and value and text to parentW item's "modelName" attribute
                 labelValue = self.parentItem().symattrs.get("modelName", "")
 
             case "@elementNum":
-                # Set label name to "elementNum" and value and text to parent item's counter
+                # Set label name to "elementNum" and value and text to parentW item's counter
                 labelValue = f"{self.parentItem().counter}"
         return labelName, labelValue, labelValue
 
     def createPyLabel(self):
         """
-        Create a PyLabel using the label definition and parent item information.
+        Create a PyLabel using the label definition and parentW item information.
         """
         try:
             labelName, labelFunction = map(str.strip, self._labelDefinition.split("="))
@@ -409,7 +414,8 @@ class symbolLabel(QGraphicsSimpleTextItem):
                 callbackClass = getattr(cb, parentItem.cellName)
                 callbackObj = callbackClass(parentItem.labels)
                 if hasattr(callbackObj, labelFunction):
-                    self._labelValue =  Quantity(getattr(callbackObj, labelFunction)()).render(prec=3)
+                    self._labelValue = Quantity(
+                        getattr(callbackObj, labelFunction)()).render(prec=3)
 
             self._labelText = f"{labelName}={self._labelValue}"
 

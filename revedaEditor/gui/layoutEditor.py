@@ -21,13 +21,16 @@
 #    License: Mozilla Public License 2.0
 #    Licensor: Revolution Semiconductor (Registered in the Netherlands)
 #
-import json
+from __future__ import annotations
+
+# import json
 import pathlib
 
 # import numpy as np
 from PySide6.QtCore import (Qt, )
 from PySide6.QtGui import (QAction, QIcon, )
-from PySide6.QtWidgets import (QApplication, QDialog, QMenu, QSplitter, QToolBar,
+from PySide6.QtWidgets import (QApplication, )
+from PySide6.QtWidgets import (QDialog, QSplitter, QToolBar,
                                QVBoxLayout, QWidget)
 from quantiphy import Quantity
 
@@ -35,15 +38,12 @@ import revedaEditor.backend.dataDefinitions as ddef
 import revedaEditor.backend.libBackEnd as libb
 import revedaEditor.backend.libraryMethods as libm
 import revedaEditor.backend.libraryModelView as lmview
-
-# import revedaEditor.fileio.layoutEncoder as layenc
-import revedaEditor.fileio.loadJSON as lj
 import revedaEditor.gui.editorViews as edv
 import revedaEditor.gui.editorWindow as edw
 import revedaEditor.gui.fileDialogues as fd
 import revedaEditor.gui.layoutDialogues as ldlg
 import revedaEditor.gui.lsw as lsw
-from revedaEditor.backend.pdkPaths import importPDKModule
+from revedaEditor.backend.pdkLoader import importPDKModule
 from revedaEditor.scenes.layoutScene import layoutScene
 
 fabproc = importPDKModule('process')
@@ -71,33 +71,36 @@ class layoutEditor(edw.editorWindow):
         self._previousPolygons = []
 
     def init_UI(self):
-        super().init_UI()
+
+        self.resize(1600, 800)
+        self._createActions()
+        self._createMenuBar()
+        self._createToolBars()
+        self._addActions()
+        self._createTriggers()
+        self._createShortcuts()
         # create container to position all widgets
         self.centralW = layoutContainer(self)
         self.setCentralWidget(self.centralW)
 
     def _createMenuBar(self):
         super()._createMenuBar()
-        self.alignMenu = QMenu("Align", self)
-        self.alignMenu.setIcon(QIcon("icons/layers-alignment-middle.png"))
-        self.klayoutVerMenu = QMenu('KLayout DRC/LVS')
-        self.menuTools.addMenu(self.klayoutVerMenu)
         self.propertyMenu = self.menuEdit.addMenu("Properties")
 
     def _createActions(self):
         super()._createActions()
-        chopIcon = QIcon(":/icons/cutter.png")
-        self.chopAction = QAction(chopIcon, "Cut", self)
-        self.chopAction.setToolTip("Cut selected objects")
+        self.renumberInstanceAction = QAction("Renumber Instances", self)
+        self.renumberInstanceAction.setToolTip("Renumber Instances")
+        cutIcon = QIcon(":/icons/cutter.png")
+        self.cutAction = QAction(cutIcon, "Cut Item", self)
+        self.cutAction.setToolTip("Cut selected objects")
         self.exportGDSAction = QAction("Export GDS", self)
         self.exportGDSAction.setToolTip("Export GDS from Layout")
-        self.klayoutDRCAction = QAction("KLayout DRC...", self)
-        self.klayoutDRCAction.setToolTip("DRC with KLayout")
+        # self.klayoutDRCAction = QAction("KLayout DRC...", self)
+        # self.klayoutDRCAction.setToolTip("DRC with KLayout")
 
     def _addActions(self):
         super()._addActions()
-        self.menuEdit.addMenu(self.alignMenu)
-        # self.menuUtilities.addMenu(self.selectMenu)
         self.selectMenu.addAction(self.selectDeviceAction)
         self.selectMenu.addAction(self.selectWireAction)
         self.selectMenu.addSeparator()
@@ -105,7 +108,7 @@ class layoutEditor(edw.editorWindow):
 
         self.propertyMenu.addAction(self.objPropAction)
         self.menuEdit.addAction(self.stretchAction)
-        self.menuEdit.addAction(self.chopAction)
+        self.menuEdit.addAction(self.cutAction)
         self.menuCreate.addAction(self.createInstAction)
         self.menuCreate.addAction(self.createRectAction)
         self.menuCreate.addAction(self.createPathAction)
@@ -116,13 +119,18 @@ class layoutEditor(edw.editorWindow):
         self.menuCreate.addSeparator()
         self.menuCreate.addAction(self.rulerAction)
         self.menuCreate.addAction(self.delRulerAction)
+        self.menuTools.addAction(self.renumberInstanceAction)
         self.menuTools.addAction(self.exportGDSAction)
-        self.klayoutVerMenu.addAction(self.klayoutDRCAction)
 
         # hierarchy submenu
         self.hierMenu = self.menuEdit.addMenu("Hierarchy")
         self.hierMenu.addAction(self.goUpAction)
         self.hierMenu.addAction(self.goDownAction)
+
+        if hasattr(self._app, 'pluginsObj'):
+            self._app.pluginsObj.applyPluginMenus(self)
+        if hasattr(self._app, 'pdkConfigObj'):
+            self._app.pdkConfigObj.applyPDKMenus(self)
 
     def _layoutContextMenu(self):
         super()._editorContextMenu()
@@ -151,11 +159,10 @@ class layoutEditor(edw.editorWindow):
 
     def _createTriggers(self):
         super()._createTriggers()
-
         self.createInstAction.triggered.connect(self.createInstClick)
         self.createRectAction.triggered.connect(self.createRectClick)
         self.exportGDSAction.triggered.connect(self.exportGDSClick)
-        self.chopAction.triggered.connect(self.chopClick)
+        self.cutAction.triggered.connect(self.cutClick)
         self.createPathAction.triggered.connect(self.createPathClick)
         self.createPinAction.triggered.connect(self.createPinClick)
         self.createLabelAction.triggered.connect(self.createLabelClick)
@@ -165,8 +172,9 @@ class layoutEditor(edw.editorWindow):
         self.delRulerAction.triggered.connect(self.delRulerClick)
         self.deleteAction.triggered.connect(self.deleteClick)
         self.objPropAction.triggered.connect(self.objPropClick)
-        self.klayoutDRCAction.triggered.connect(self.klayoutDRCClick)
+        # self.klayoutDRCAction.triggered.connect(self.klayoutDRCClick)
         self.goDownAction.triggered.connect(self.goDownClick)
+        self.renumberInstanceAction.triggered.connect(self.renumberInstanceClick)
 
     def _createShortcuts(self):
         super()._createShortcuts()
@@ -180,9 +188,9 @@ class layoutEditor(edw.editorWindow):
         self.stretchAction.setShortcut(Qt.Key.Key_S)
         self.rulerAction.setShortcut(Qt.Key.Key_K)
         self.delRulerAction.setShortcut("Shift+K")
-        self.chopAction.setShortcut("Shift+C")
+        self.cutAction.setShortcut("Shift+C")
 
-    def chopClick(self):
+    def cutClick(self):
         self.centralW.scene.editModes.setMode("cutShape")
 
     def createRectClick(self, s):
@@ -224,7 +232,7 @@ class layoutEditor(edw.editorWindow):
         dlg.startExtendEdit.setText(str(fabproc.processPaths[0].minWidth / 2))
         dlg.endExtendEdit.setText(str(fabproc.processPaths[0].minWidth / 2))
 
-        if dlg.exec() == QDialog.Accepted:
+        if dlg.exec() == QDialog.DialogCode.Accepted:
             self.centralW.scene.editModes.setMode("drawPath")
             if dlg.manhattanButton.isChecked():
                 pathMode = 0
@@ -285,7 +293,7 @@ class layoutEditor(edw.editorWindow):
                 self.centralW.scene.newLabelTuple.labelAlign)
             dlg.labelOrientCB.setCurrentText(
                 self.centralW.scene.newLabelTuple.labelOrient)
-        if dlg.exec() == QDialog.Accepted:
+        if dlg.exec() == QDialog.DialogCode.Accepted:
             self.centralW.scene.editModes.setMode("drawPin")
             pinName = dlg.pinName.text()
             pinDir = dlg.pinDir.currentText()
@@ -318,7 +326,7 @@ class layoutEditor(edw.editorWindow):
         textLayersNames = [f"{item.name} [{item.purpose}]" for item in
                            laylyr.pdkTextLayers]
         dlg.labelLayerCB.addItems(textLayersNames)
-        if dlg.exec() == QDialog.Accepted:
+        if dlg.exec() == QDialog.DialogCode.Accepted:
             self.centralW.scene.editModes.setMode("addLabel")
             labelName = dlg.labelName.text()
             labelLayerName = dlg.labelLayerCB.currentText().split()[0]
@@ -348,7 +356,7 @@ class layoutEditor(edw.editorWindow):
         dlg.arrayViaHeightEdit.setText(str(fabproc.processVias[0].minHeight))
         dlg.arrayXspacingEdit.setText(str(fabproc.processVias[0].minSpacing))
         dlg.arrayYspacingEdit.setText(str(fabproc.processVias[0].minSpacing))
-        if dlg.exec() == QDialog.Accepted:
+        if dlg.exec() == QDialog.DialogCode.Accepted:
             self.centralW.scene.editModes.setMode("addVia")
             self.centralW.scene.addVia = True
             if dlg.singleViaRB.isChecked():
@@ -394,7 +402,9 @@ class layoutEditor(edw.editorWindow):
         self.centralW.scene.goDownHier()
 
     def checkSaveCell(self):
-        self.centralW.scene.saveLayoutCell(self.file)  
+        # need to add checks
+        self.centralW.scene.saveLayoutCell(self.file)
+
     def saveCell(self):
         self.centralW.scene.saveLayoutCell(self.file)
 
@@ -404,8 +414,12 @@ class layoutEditor(edw.editorWindow):
         QApplication.setOverrideCursor(Qt.WaitCursor)
         QApplication.processEvents()
         try:
-
             self.centralW.scene.loadDesign(self.file)
+            viewNameTuple = ddef.viewTuple(self.libItem.libraryName, self.cellItem.cellName,
+                                           self.viewName)
+            self.appMainW.openViews[viewNameTuple] = self
+        except Exception as e:
+            self.logger.error(f"Error during loading layout for {self.cellName}: {e}")
         finally:
             QApplication.restoreOverrideCursor()
 
@@ -417,7 +431,7 @@ class layoutEditor(edw.editorWindow):
             self.layoutChooser.show()
         else:
             self.layoutChooser.raise_()
-        if self.layoutChooser.exec() == QDialog.Accepted:
+        if self.layoutChooser.exec() == QDialog.DialogCode.Accepted:
             self.centralW.scene.editModes.setMode("addInstance")
             libItem = libm.getLibItem(libraryModel,
                                       self.layoutChooser.libNamesCB.currentText())
@@ -436,7 +450,7 @@ class layoutEditor(edw.editorWindow):
         dlg.precisionEdit.setText(fabproc.gdsPrecision.render())
         dlg.exportPathEdit.setText(str(self.gdsExportDirObj))
 
-        if dlg.exec() == QDialog.Accepted:
+        if dlg.exec() == QDialog.DialogCode.Accepted:
             self.gdsExportDir = pathlib.Path(dlg.exportPathEdit.text().strip())
             gdsUnit = Quantity(dlg.unitEdit.text().strip()).real
             gdsPrecision = Quantity(
@@ -456,106 +470,8 @@ class layoutEditor(edw.editorWindow):
         # Remember current polygons (store reference)
         self._previousPolygons = polygons
 
-    def klayoutDRCClick(self):
-        klayoutDRCModule = importPDKModule("klayoutDRC")
-        if klayoutDRCModule is None:
-            self.logger.error('PDK does not allow DRC verification with KLayout.')
-            return
-
-        def saveRunSet(dlg):
-            klayoutPath = dlg.klayoutPathEdit.text().strip()
-            cellName = dlg.cellNameEdit.text().strip()
-            drcRunSetName = dlg.DRCRunSetCB.currentText().strip()
-            drcRunLimit = dlg.DRCRunLimitEdit.text().strip()
-            drcRunPath = dlg.DRCRunPathEdit.text().strip()
-            gdsExport = 1 if dlg.gdsExportBox.isChecked() else 0
-            gdsUnit = Quantity(dlg.unitEdit.text().strip()).real
-            gdsPrecision = Quantity(dlg.precisionEdit.text().strip()).real
-            drcRunPathObj = pathlib.Path(drcRunPath)
-            drcRunPathObj.mkdir(parents=True, exist_ok=True)
-            settingsPathObj = drcRunPathObj / 'drcSettings.json'
-            with settingsPathObj.open('w') as f:
-                json.dump({'klayoutPath': klayoutPath, 'cellName': cellName,
-                           'drcRunSetName': drcRunSetName, 'drcRunLimit':
-                               drcRunLimit, 'drcRunPath': drcRunPath,
-                           'gdsExport': gdsExport, 'gdsUnit': gdsUnit,
-                           'gdsPrecision': gdsPrecision}, f, indent=4)
-
-        def DRCProcessFinished(filePath: pathlib.Path):
-            dlg = ldlg.drcErrorsDialogue(self, filePath.resolve())
-            dlg.drcTable.polygonSelected.connect(self.handlePolygonSelection)
-            dlg.show()
-
-        def runKlayoutDRC(dlg):
-            klayoutPath = dlg.klayoutPathEdit.text().strip()
-            cellName = dlg.cellNameEdit.text().strip()
-            drcRunSetName = dlg.DRCRunSetCB.currentText().strip()
-            drcRunLimit = dlg.DRCRunLimitEdit.text().strip()
-            drcRunPath = dlg.DRCRunPathEdit.text().strip()
-            gdsExport = 1 if dlg.gdsExportBox.isChecked() else 0
-            gdsUnit = Quantity(dlg.unitEdit.text().strip()).real
-            gdsPrecision = Quantity(dlg.precisionEdit.text().strip()).real
-            drcRunPathObj = pathlib.Path(drcRunPath)
-            drcRunPathObj.mkdir(parents=True, exist_ok=True)
-            if gdsExport:
-                self.centralW.scene.exportCellGDS(drcRunPathObj, gdsUnit,
-                                                  gdsPrecision, fabproc.dbu)
-            if (drcRunPathObj / f'{cellName}.gds').exists():
-                gdsPath = drcRunPathObj.joinpath(f'{cellName}.gds')
-                drcPath = pathlib.Path(drc.__file__).parent.resolve()
-                drcRuleFilePath = drcPath.joinpath(f'{drcRunSetName}.lydrc')
-                drcReportFilePath = drcRunPathObj.joinpath(f'{cellName}.lyrdb')
-                argumentsList = ['-b', '-r',
-                                 f'{drcRuleFilePath}',
-                                 '-rd',
-                                 f'in_gds={gdsPath}',
-                                 '-rd',
-                                 f'report_file={drcReportFilePath}']
-                self.processManager.maxProcesses = int(drcRunLimit)
-                drcProcess = self.processManager.add_process(klayoutPath,
-                                                             argumentsList)
-                drcProcess.process.finished.connect(
-                    lambda: DRCProcessFinished(drcReportFilePath))
-            else:
-                self.logger.error('GDS file can not be found')
-
-        dlg = klayoutDRCModule.drcKLayoutDialogue(self)
-        drc = importPDKModule("drc")
-        if drc is None:
-            self.logger.error('PDK does not have DRC module.')
-            return
-        drcPath = pathlib.Path(drc.__file__).parent.resolve()
-        rulesFiles = [pathItem.stem for pathItem in list(drcPath.glob("*.lydrc"))]
-        dlg.DRCRunSetCB.addItems(rulesFiles)
-        dlg.saveButton.clicked.connect(lambda: saveRunSet(dlg))
-        dlg.runButton.clicked.connect(lambda: runKlayoutDRC(dlg))
-        settingsPathObj = (self.gdsExportDirObj / 'drcSettings.json')
-        if settingsPathObj.exists():
-            try:
-                with settingsPathObj.open('r') as f:
-                    settings = json.load(f)
-                    dlg.klayoutPathEdit.setText(settings['klayoutPath'])
-                    dlg.cellNameEdit.setText(settings['cellName'])
-                    dlg.DRCRunSetCB.setCurrentText(settings['drcRunSetName'])
-                    dlg.DRCRunLimitEdit.setText(settings['drcRunLimit'])
-                    dlg.DRCRunPathEdit.setText(settings['drcRunPath'])
-                    dlg.gdsExportBox.setChecked(bool(settings['gdsExport']))
-                    dlg.unitEdit.setText(str(settings['gdsUnit']))
-                    dlg.precisionEdit.setText(str(settings['gdsPrecision']))
-            except Exception as e:
-                self.logger.error(e)
-        else:
-            dlg.gdsExportBox.setChecked(False)
-            dlg.cellNameEdit.setText(self.cellName)
-            dlg.DRCRunSetCB.setCurrentIndex(0)
-            dlg.DRCRunLimitEdit.setText('2')
-            dlg.DRCRunPathEdit.setText(str(self.gdsExportDirObj))
-            if hasattr(fabproc, "gdsUnit"):
-                dlg.unitEdit.setText(fabproc.gdsUnit.render())
-            if hasattr(fabproc, "gdsPrecision"):
-                dlg.precisionEdit.setText(fabproc.gdsPrecision.render())
-
-        dlg.show()
+    def renumberInstanceClick(self, s):
+        self.centralW.scene.renumberInstances()
 
     def dispConfigEdit(self):
         import revedaEditor.gui.propertyDialogues as pdlg
@@ -563,7 +479,7 @@ class layoutEditor(edw.editorWindow):
         dcd.dbuEntry.setText(str(self.dbu))
         dcd.majorGridEntry.setText(str(self.majorGrid))
         dcd.snapGridEdit.setText(str(self.snapGrid))
-        if dcd.exec() == QDialog.Accepted:
+        if dcd.exec() == QDialog.DialogCode.Accepted:
             self.configureGridSettings(
                 (int(dcd.majorGridEntry.text()), int(dcd.snapGridEdit.text())))
             if dcd.dotType.isChecked():
@@ -576,14 +492,27 @@ class layoutEditor(edw.editorWindow):
                 self.centralW.view.gridbackg = False
                 self.centralW.view.linebackg = False
 
+    def closeEvent(self, event):
+        try:
+            self.centralW.scene.saveLayoutCell(self.file)
+            cellViewNameTuple = ddef.viewTuple(self.libName, self.cellName,
+                                               self.viewName)
+            self.appMainW.openViews.pop(cellViewNameTuple, None)
+        except Exception as e:
+            self.appMainW.logger.error(f"Error in closing layout editor window"
+                                       f":{self.cellName}-{self.viewName}:{e}")
+        finally:
+            event.accept()
+            super().closeEvent(event)
+
     # def _createSignalConnections(self):
     #     super()._createSignalConnections()  
 
 
-class layoutContainer(QWidget):
+class layoutContainer(edw.editorContainer):
     def __init__(self, parent: layoutEditor):
         super().__init__(parent=parent)
-        self.parent = parent
+        self.editorWindow = parent
         self.scene = layoutScene(self)
         self.view = edv.layoutView(self.scene, self)
         self.lswModel = lsw.layerDataModel(laylyr.pdkAllLayers)
@@ -601,59 +530,62 @@ class layoutContainer(QWidget):
         # there could be other widgets in the grid layout, such as edLayer
         # viewer/editor.
         vLayout = QVBoxLayout(self)
+        vLayout.setContentsMargins(0, 0, 0, 0)
+        vLayout.setSpacing(0)
+        self.setContentsMargins(0, 0, 0, 0)
         splitter = QSplitter()
-        splitter.setOrientation(Qt.Horizontal)
+        splitter.setContentsMargins(0, 0, 0, 0)
+        splitter.setOrientation(Qt.Orientation.Horizontal)
         splitter.insertWidget(0, self.lswWidget)
         splitter.insertWidget(1, self.view)
         # ratio of first column to second column is 5
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 5)
-        vLayout.addWidget(splitter, stretch=5)
-        vLayout.addWidget(self.parent.aiTerminal)
-        self.parent.aiTerminal.hide()
-        if self.parent.aiTerminal.isVisible():
-            vLayout.setStretch(1, 1)
-        else:
-            vLayout.setStretch(1, 0)
+        vLayout.addWidget(splitter)
         self.setLayout(vLayout)
 
-    def selectLayer(self, layerName: str, layerPurpose: str):
-        self.scene.selectEdLayer = self.findSelectedLayer(layerName, layerPurpose)
-
-    def findSelectedLayer(self, layerName: str, layerPurpose: str):
+    def findSelectedLayer(self, layerName: str, layerPurpose: str) -> ddef.layLayer:
         for layer in laylyr.pdkAllLayers:
             if layer.name == layerName and layer.purpose == layerPurpose:
                 return layer
         return laylyr.pdkAllLayers[0]
 
+    def selectLayer(self, layerName: str, layerPurpose: str):
+        self.scene.selectEdLayer = self.findSelectedLayer(layerName, layerPurpose)
+
     def layerSelectableChange(self, layerName: str, layerPurpose: str,
                               layerSelectable: bool):
         selectedLayer = self.findSelectedLayer(layerName, layerPurpose)
-        if selectedLayer:
-            selectedLayer.selectable = layerSelectable
+        selectedLayer.selectable = layerSelectable
 
         for item in self.scene.items():
-            if (hasattr(item,
-                        "layer") and item.layer == selectedLayer and item.parentItem() is None):
+            if hasattr(item,
+                       "layer") and item.layer == selectedLayer and item.parentItem() is None:
                 item.setEnabled(layerSelectable)
-                item.update()
 
     def layerVisibleChange(self, layerName: str, layerPurpose: str,
                            layerVisible: bool):
         selectedLayer = self.findSelectedLayer(layerName, layerPurpose)
-        if selectedLayer:
-            selectedLayer.visible = layerVisible
+        selectedLayer.visible = layerVisible
 
-            for item in self.scene.items():
-                if hasattr(item, "layer") and item.layer == selectedLayer:
-                    item.setVisible(layerVisible)
-                    item.update()
+        for item in self.scene.items():
+            if hasattr(item, "layer") and item.layer == selectedLayer:
+                item.setVisible(layerVisible)
 
 
 class lswWindow(QWidget):
     def __init__(self, lswTable: lsw.layerViewTable):
         super().__init__()
         self.lswTable = lswTable
+
+        # ensure widget has an opaque background so the underlying scene
+        # doesn't show through in the top-left corner
+        from PySide6.QtGui import QPalette
+        self.setAutoFillBackground(True)
+        pal = self.palette()
+        pal.setColor(QPalette.Window, pal.color(QPalette.Window))
+        self.setPalette(pal)
+
         layout = QVBoxLayout()
         toolBar = QToolBar()
         avIcon = QIcon(":/icons/eye.png")

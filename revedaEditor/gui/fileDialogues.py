@@ -23,8 +23,8 @@
 #
 
 
-import revedaEditor.backend.libraryMethods as libm
-import revedaEditor.gui.editFunctions as edf
+import datetime
+import pathlib
 
 from PySide6.QtCore import Qt, QDir
 from PySide6.QtGui import QStandardItemModel, QStandardItem
@@ -46,9 +46,9 @@ from PySide6.QtWidgets import (
     QMenu,
     QCheckBox,
 )
-import pathlib
-import datetime
 
+import revedaEditor.backend.libraryMethods as libm
+import revedaEditor.gui.editFunctions as edf
 
 
 class createCellDialog(QDialog):
@@ -70,11 +70,13 @@ class createCellDialog(QDialog):
         self.layout.addRow(edf.boldLabel("Library:"), self.libNamesCB)
         self.cellCB = QComboBox()
         libItem = libm.getLibItem(self.model, self.libNamesCB.currentText())
-        self.cellList = sorted([libItem.child(i).cellName for i in range(libItem.rowCount())])
+        self.cellList = sorted(
+            [libItem.child(i).cellName for i in range(libItem.rowCount())])
         self.cellCB.addItems(self.cellList)
         self.cellCB.setEditable(True)
         self.layout.addRow(edf.boldLabel("Cell Name:"), self.cellCB)
-        QBtn = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+
         self.buttonBox = QDialogButtonBox(QBtn)
         self.buttonBox.accepted.connect(self.accept)
         self.buttonBox.rejected.connect(self.reject)
@@ -112,6 +114,7 @@ class newCellViewDialog(createCellDialog):
     def setCurrentViewName(self):
         self.viewName.setText(self.viewType.currentText())
 
+
 class selectCellViewDialog(createCellDialog):
     def __init__(self, parent, model):
         super().__init__(parent=parent, model=model)
@@ -142,6 +145,7 @@ class selectCellViewDialog(createCellDialog):
         self.viewCB.clear()
         self.viewCB.addItems(viewList)
 
+
 class renameCellDialog(QDialog):
     def __init__(self, parent, cellItem):
         super().__init__(parent=parent)
@@ -158,7 +162,8 @@ class renameCellDialog(QDialog):
         self.nameEdit.setPlaceholderText("Cell Name")
         self.nameEdit.setFixedWidth(200)
         layout.addRow(edf.boldLabel("Cell Name:"), self.nameEdit)
-        QBtn = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+
         self.buttonBox = QDialogButtonBox(QBtn)
         self.buttonBox.accepted.connect(self.accept)
         self.buttonBox.rejected.connect(self.reject)
@@ -179,14 +184,15 @@ class copyCellDialog(QDialog):
         layout = QFormLayout()
         layout.setSpacing(10)
         self.libraryCB = QComboBox()
-        self.selectedLibPath = self.libraryCB.itemData(0, Qt.UserRole + 2)
+        self.selectedLibPath = self.libraryCB.itemData(0, Qt.ItemDataRole.UserRole + 2)
         self.libraryCB.currentTextChanged.connect(self.selectLibrary)
         layout.addRow(edf.boldLabel("Library:"), self.libraryCB)
         self.copyName = QLineEdit()
         self.copyName.setPlaceholderText("Enter Cell Name")
         self.copyName.setFixedWidth(130)
         layout.addRow(edf.boldLabel("Cell Name:"), self.copyName)
-        QBtn = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+
         self.buttonBox = QDialogButtonBox(QBtn)
         self.buttonBox.accepted.connect(self.accept)
         self.buttonBox.rejected.connect(self.reject)
@@ -195,8 +201,9 @@ class copyCellDialog(QDialog):
 
     def selectLibrary(self):
         self.selectedLibPath = self.libraryCB.itemData(
-            self.libraryCB.currentIndex(), Qt.UserRole + 2
+            self.libraryCB.currentIndex(), Qt.ItemDataRole.UserRole + 2
         )
+
 
 class copyViewDialog(createCellDialog):
     def __init__(self, parent, model):
@@ -216,7 +223,7 @@ class closeLibDialog(QDialog):
         super().__init__(parent, *args)
         self.libraryDict = libraryDict
         self.setWindowTitle("Select Library to close")
-        QBtn = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
 
         self.buttonBox = QDialogButtonBox(QBtn)
         self.buttonBox.accepted.connect(self.accept)
@@ -238,7 +245,8 @@ class renameLibDialog(QDialog):
         super().__init__(parent, *args)
         self.oldLibraryName = oldLibraryName
         self.setWindowTitle(f"Change {oldLibraryName} to:")
-        QBtn = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+
         self.buttonBox = QDialogButtonBox(QBtn)
 
         self.buttonBox.accepted.connect(self.accept)
@@ -270,7 +278,8 @@ class renameViewDialog(QDialog):
         formLayout.addRow(edf.boldLabel("New View Name:"), self.newViewNameEdit)
         self.layout.addLayout(formLayout)
         self.layout.setSpacing(10)
-        QBtn = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+
         self.buttonBox = QDialogButtonBox(QBtn)
         self.buttonBox.accepted.connect(self.accept)
         self.buttonBox.rejected.connect(self.reject)
@@ -283,7 +292,7 @@ class deleteSymbolDialog(QDialog):
     def __init__(self, cellName, viewName, *args):
         super().__init__(*args)
         self.setWindowTitle(f"Delete {cellName}-{viewName} CellView?")
-        QBtn = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
 
         self.buttonBox = QDialogButtonBox(QBtn)
         self.buttonBox.accepted.connect(self.accept)
@@ -302,7 +311,8 @@ class netlistExportDialogue(QDialog):
         self.parent = parent
         self.setWindowTitle(f"Export Netlist for {parent.cellName}-{parent.viewName}")
         # self.setMinimumSize(500, 100)
-        QBtn = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+
         self.buttonBox = QDialogButtonBox(QBtn)
         self.buttonBox.accepted.connect(self.accept)
         self.buttonBox.rejected.connect(self.reject)
@@ -364,7 +374,8 @@ class gdsExportDialogue(QDialog):
         self.parent = parent
         self.setWindowTitle(f"Export GDS for {parent.cellName}-{parent.viewName}")
         self.setMinimumWidth(500)
-        QBtn = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+
         self.buttonBox = QDialogButtonBox(QBtn)
         self.buttonBox.accepted.connect(self.accept)
         self.buttonBox.rejected.connect(self.reject)
@@ -402,13 +413,15 @@ class gdsExportDialogue(QDialog):
                 f"{dirName}/{self.parent.cellName}"
             )
 
+
 class gdsImportDialogue(QDialog):
     def __init__(self, parent):
         super().__init__(parent)
         self.parent = parent
         self.setWindowTitle(f"Import GDS File")
         self.setMinimumWidth(500)
-        QBtn = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+
         self.buttonBox = QDialogButtonBox(QBtn)
         self.buttonBox.accepted.connect(self.accept)
         self.buttonBox.rejected.connect(self.reject)
@@ -443,11 +456,13 @@ class gdsImportDialogue(QDialog):
         self.setLayout(self.mainLayout)
 
     def onFileButtonClicked(self):
-        gdsFileName, _ = QFileDialog.getOpenFileName(self, caption="Select GDS file.", filter="GDS files (*.gds)")
+        gdsFileName, _ = QFileDialog.getOpenFileName(self, caption="Select GDS file.",
+                                                     filter="GDS files (*.gds)")
         if gdsFileName:
             self.inputFileEdit.setText(
                 gdsFileName
             )
+
 
 class goDownHierDialogue(QDialog):
     def __init__(
@@ -480,7 +495,8 @@ class goDownHierDialogue(QDialog):
         self.buttonGroup.addButton(self.readOnlyButton, id=2)
         self.buttonGroup.buttonClicked.connect(self.onButtonClicked)
         _mainLayout.addWidget(buttonGroupBox)
-        QBtn = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+
         buttonBox = QDialogButtonBox(QBtn)
         buttonBox.accepted.connect(self.accept)
         buttonBox.rejected.connect(self.reject)
@@ -497,7 +513,7 @@ class importVerilogaCellDialogue(QDialog):
         self._parent = parent
         self.setWindowTitle("Import a Verilog-a Module File")
         self._model = model
-        self.setMinimumSize(500, 200)
+        self.setMinimumSize(500, 400)
         mainLayout = QVBoxLayout()
         fileDialogLayout = QHBoxLayout()
         fileDialogLayout.addWidget(edf.boldLabel("Select Verilog-A file:"), 1)
@@ -536,7 +552,8 @@ class importVerilogaCellDialogue(QDialog):
         symbolGroupBox.setLayout(symbolGBLayout)
         mainLayout.addWidget(symbolGroupBox)
         mainLayout.addSpacing(20)
-        QBtn = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+
         self.buttonBox = QDialogButtonBox(QBtn)
         self.buttonBox.accepted.connect(self.accept)
         self.buttonBox.rejected.connect(self.reject)
@@ -609,7 +626,8 @@ class importSpiceCellDialogue(QDialog):
         symbolGroupBox.setLayout(symbolGBLayout)
         mainLayout.addWidget(symbolGroupBox)
         mainLayout.addSpacing(20)
-        QBtn = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+
         self.buttonBox = QDialogButtonBox(QBtn)
         self.buttonBox.accepted.connect(self.accept)
         self.buttonBox.rejected.connect(self.reject)
@@ -666,7 +684,8 @@ class createConfigViewDialogue(QDialog):
         self.stopViews = edf.longLineEdit()
         viewGroupLayout.addRow(edf.boldLabel("Stop List:"), self.stopViews)
         self.mainLayout.addWidget(viewGroup)
-        QBtn = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+
         self.buttonBox = QDialogButtonBox(QBtn)
         self.buttonBox.accepted.connect(self.accept)
         self.buttonBox.rejected.connect(self.reject)
@@ -741,7 +760,8 @@ class appProperties(QDialog):
         performanceGroup = QGroupBox("Performance Settings")
         performanceLayout = QFormLayout()
         self.threadPoolEdit = edf.shortLineEdit()
-        performanceLayout.addRow(edf.boldLabel("Thread Pool Max Count:"), self.threadPoolEdit)
+        performanceLayout.addRow(edf.boldLabel("Thread Pool Max Count:"),
+                                 self.threadPoolEdit)
         performanceGroup.setLayout(performanceLayout)
         mainLayout.addWidget(performanceGroup)
         saveGroupBox = QGroupBox("Save Options")
@@ -751,7 +771,8 @@ class appProperties(QDialog):
         saveGroupBox.setLayout(saveGBLayout)
         mainLayout.addWidget(saveGroupBox)
         mainLayout.addSpacing(20)
-        QBtn = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+
         self.buttonBox = QDialogButtonBox(QBtn)
         self.buttonBox.accepted.connect(self.accept)
         self.buttonBox.rejected.connect(self.reject)
@@ -782,6 +803,7 @@ class appProperties(QDialog):
         self.vaModulePathEdit.setText(
             QFileDialog.getExistingDirectory(self, caption="Verilog-a Modules path:")
         )
+
 
 class libraryPathsModel(QStandardItemModel):
     def __init__(self, libraryDict):
@@ -863,7 +885,8 @@ class libraryPathEditorDialog(QDialog):
         self.tableView = libraryPathsTableView(self.pathsModel, self.logger)
         self.boxLayout.addWidget(self.tableView)
         self.mainLayout.addWidget(self.pathsBox)
-        QBtn = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+
         self.buttonBox = QDialogButtonBox(QBtn)
         self.buttonBox.accepted.connect(self.accept)
         self.buttonBox.rejected.connect(self.reject)
@@ -903,7 +926,8 @@ class klayoutLaypImportDialogue(QDialog):
         mainLayout.addWidget(fileBox)
         mainLayout.addSpacing(20)
 
-        QBtn = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+
         self.buttonBox = QDialogButtonBox(QBtn)
         self.buttonBox.accepted.connect(self.accept)
         self.buttonBox.rejected.connect(self.reject)
@@ -927,6 +951,7 @@ class klayoutLaypImportDialogue(QDialog):
         if dirDialog.selectedFiles():
             self.outputFileEdit.setText(dirDialog.selectedFiles()[0])
 
+
 class klayoutLaytImportDialogue(QDialog):
     def __init__(self, parent):
         super().__init__(parent)
@@ -946,7 +971,8 @@ class klayoutLaytImportDialogue(QDialog):
         fileDialogLayout.addWidget(self.laytFileButton)
         fileBox.setLayout(fileDialogLayout)
         mainLayout.addWidget(fileBox)
-        QBtn = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+
         self.buttonBox = QDialogButtonBox(QBtn)
         self.buttonBox.accepted.connect(self.accept)
         self.buttonBox.rejected.connect(self.reject)
@@ -999,7 +1025,8 @@ class xschemSymIimportDialogue(QDialog):
         parameterBoxLayout.addRow(edf.boldLabel("Scale Factor"), self.scaleEdit)
         parameterBox.setLayout(parameterBoxLayout)
         mainLayout.addWidget(parameterBox)
-        QBtn = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+
         self.buttonBox = QDialogButtonBox(QBtn)
         self.buttonBox.accepted.connect(self.accept)
         self.buttonBox.rejected.connect(self.reject)
@@ -1014,6 +1041,7 @@ class xschemSymIimportDialogue(QDialog):
             symFileNames = fileDialog.selectedFiles()
             if symFileNames:
                 self.symFileEdit.setText(', '.join(symFileNames))
+
 
 class fileInfoDialogue(QDialog):
     def __init__(self, filePath: pathlib.Path, parent=None):
@@ -1032,7 +1060,8 @@ class fileInfoDialogue(QDialog):
         layout.addRow("Size:", QLabel(f"{size:,} bytes"))
         layout.addRow("Created:", QLabel(created.strftime("%Y-%m-%d %H:%M:%S")))
         layout.addRow("Modified:", QLabel(modified.strftime("%Y-%m-%d %H:%M:%S")))
-        layout.addRow("Accessed:", QLabel(datetime.datetime.fromtimestamp(stats.st_atime).strftime("%Y-%m-%d %H:%M:%S")))
+        layout.addRow("Accessed:", QLabel(
+            datetime.datetime.fromtimestamp(stats.st_atime).strftime("%Y-%m-%d %H:%M:%S")))
         layout.addRow("Permissions:", QLabel(oct(stats.st_mode)[-3:]))
         # layout.addRow("Owner:", QLabel(str(stats.st_uid)))
         self.buttonBox = QDialogButtonBox(QDialogButtonBox.Ok)

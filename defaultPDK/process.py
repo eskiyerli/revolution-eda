@@ -21,20 +21,22 @@
 #    License: Mozilla Public License 2.0
 #    Licensor: Revolution Semiconductor (Registered in the Netherlands)
 #
-import revedaEditor.backend.dataDefinitions as ddef
-from revedaEditor.backend.pdkPaths import importPDKModule
 from quantiphy import Quantity
 
-fabproc = importPDKModule('process')
+import revedaEditor.backend.dataDefinitions as ddef
+from revedaEditor.backend.pdkLoader import importPDKModule
 
-laylyr = importPDKModule('layoutLayers')
+fabproc = importPDKModule("process")
+
+laylyr = importPDKModule("layoutLayers")
 
 # common process parameters
 dbu = 1000  # distance between two points, 1um/1000=1n
-snapGrid = 50 # 50nm
-majorGrid = 100 # 100nm
+snapGrid = 50  # 50nm
+majorGrid = 100  # 100nm
+layoutScaler = 1e6 * dbu
 gdsUnit = Quantity("1 um")
-gdsPrecision = Quantity("1 num")
+gdsPrecision = Quantity("1 nm")
 
 # Some predefined rules
 # via defintions

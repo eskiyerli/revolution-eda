@@ -29,55 +29,34 @@ import revedaEditor.backend.libBackEnd as scb
 
 
 def getLibItem(
-    libraryModel: QStandardItemModel, libName: str
+        libraryModel: QStandardItemModel, libName: str
 ) -> Union[scb.libraryItem, None]:
-    try:
-        libItem = [
-            item
-            for item in libraryModel.findItems(libName)
-            if item.data(Qt.UserRole + 1) == "library"
-        ][0]
-    except IndexError:
-        return libraryModel.item(0, 0)
-    return libItem
+    return next((item for item in libraryModel.findItems(libName)
+                 if item.data(Qt.ItemDataRole.UserRole + 1) == "library"), None)
 
 
 def getCellItem(
-    libItem: scb.libraryItem, cellNameInp: str
+        libItem: Union[scb.libraryItem, None], cellNameInp: str
 ) -> Union[scb.cellItem, None]:
-    cellItems = [
-        libItem.child(i)
-        for i in range(libItem.rowCount())
-        if libItem.child(i).cellName == cellNameInp
-    ]
-    if cellItems:
-        return cellItems[0]
-    return None
+    if libItem is None:
+        return None
+    return next((libItem.child(i) for i in range(libItem.rowCount())
+                 if libItem.child(i) and libItem.child(i).cellName == cellNameInp), None)
 
 
-# def getViewItem(cellItem: scb.cellItem, viewNameInp: str) -> Union[scb.viewItem, None]:
-#     if cellItem is not None:
-#         viewItems = [
-#             cellItem.child(i)
-#             for i in range(cellItem.rowCount())
-#             if cellItem.child(i).text() == viewNameInp
-#         ]
-#     if viewItems:
-#         return viewItems[0]
-#     return None
-def getViewItem(cellItem: scb.cellItem, viewNameInp: str) -> Union[scb.viewItem, None]:
+def getViewItem(cellItem: Union[scb.cellItem, None], viewNameInp: str) -> Union[
+    scb.viewItem, None]:
     if cellItem is None:
         return None
-    for i in range(cellItem.rowCount()):
-        child = cellItem.child(i)
-        if child.text() == viewNameInp:
-            return child
-    return None
+    return next((cellItem.child(i) for i in range(cellItem.rowCount())
+                 if cellItem.child(i) and cellItem.child(i).text() == viewNameInp), None)
 
 
-def findViewItem(libraryModel, libName: str, cellName: str, viewName: str):
+def findViewItem(libraryModel, libName: str, cellName: str, viewName: str) -> Union[
+    scb.viewItem, None]:
     libItem = getLibItem(libraryModel, libName)
     if libItem:
         cellItem = getCellItem(libItem, cellName)
-    if cellItem:
-        return getViewItem(cellItem, viewName)
+        if cellItem:
+            return getViewItem(cellItem, viewName)
+    return None

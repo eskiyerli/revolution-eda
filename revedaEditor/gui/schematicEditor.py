@@ -22,6 +22,8 @@
 #    Licensor: Revolution Semiconductor (Registered in the Netherlands)
 #
 
+from __future__ import annotations
+
 import datetime
 import json
 import pathlib
@@ -29,10 +31,9 @@ import re
 from copy import deepcopy
 from typing import List
 
-from PySide6.QtCore import (QPoint, Qt, QThreadPool, )
+from PySide6.QtCore import (QPoint, Qt, )
 from PySide6.QtGui import (QAction, QIcon, )
-from PySide6.QtWidgets import (QApplication, QDialog, QGridLayout, QMenu,
-                               QToolBar, QWidget, )
+from PySide6.QtWidgets import (QApplication, QDialog, QGridLayout, QMenu, QToolBar, )
 
 import revedaEditor.backend.dataDefinitions as ddef
 import revedaEditor.backend.libBackEnd as libb
@@ -46,21 +47,19 @@ import revedaEditor.gui.fileDialogues as fd
 import revedaEditor.gui.propertyDialogues as pdlg
 import revedaEditor.gui.toolsDialogues as tdlg
 import revedaEditor.scenes.schematicScene as schscn
-from revedaEditor.backend.startThread import startThread
+from revedaEditor.gui.editorFactory import EditorFactory
 
 
 class schematicEditor(edw.editorWindow):
     MAJOR_GRID_DEFAULT = 20
     SNAP_GRID_DEFAULT = 10
 
-    def __init__(self, viewItem: libb.viewItem, libraryDict: dict,
-                 libraryView) -> None:
+    def __init__(self, viewItem: libb.viewItem, libraryDict: dict, libraryView) -> None:
         super().__init__(viewItem, libraryDict, libraryView)
-        self.setWindowTitle(
-            f"Schematic Editor - {self.cellName} - {self.viewName}")
+        self.setWindowTitle(f"Schematic Editor - {self.cellName} - {self.viewName}")
         self.setWindowIcon(QIcon(":/icons/edLayer-shape.png"))
         self.configDict = dict()
-        self.processedCells = set()  # cells included in config view
+        # self.processedCells = set()  # cells included in config view
         self.symbolChooser = None
         self.majorGrid = self.MAJOR_GRID_DEFAULT  # dot/line grid spacing
         self.snapGrid = self.SNAP_GRID_DEFAULT  # snapping grid size
@@ -70,9 +69,13 @@ class schematicEditor(edw.editorWindow):
         self._schematicContextMenu()
 
     def init_UI(self):
-        super().init_UI()
         self.resize(1600, 800)
-        # create container to position all widgets
+        self._createActions()
+        self._createMenuBar()
+        self._createToolBars()
+        self._addActions()
+        self._createTriggers()
+        self._createShortcuts()
         self.centralW = schematicContainer(self)
         self.setCentralWidget(self.centralW)
 
@@ -83,15 +86,14 @@ class schematicEditor(edw.editorWindow):
         super()._createActions()
         self.netNameAction = QAction("Net Name", self)
         self.netNameAction.setToolTip("Set Net Name")
-        self.netNameAction.setShortcut(Qt.Key_L)
+        self.netNameAction.setShortcut(Qt.Key.Key_L)
         self.hilightNetAction = QAction("Highlight Net", self)
         self.hilightNetAction.setToolTip("Highlight Selected Net Connections")
         self.hilightNetAction.setCheckable(True)
         self.renumberInstanceAction = QAction("Renumber Instances", self)
         self.renumberInstanceAction.setToolTip("Renumber Instances")
         simulationIcon = QIcon("icons/application-run.png")
-        self.simulateAction = QAction(simulationIcon, "Revolution EDA SAE...",
-                                      self)
+        self.simulateAction = QAction(simulationIcon, "Revolution EDA SAE...", self)
         self.findRelatedEditors = QAction("Find Related Editors", self)
 
     def _addActions(self):
@@ -133,11 +135,10 @@ class schematicEditor(edw.editorWindow):
         self.simulationMenu = QMenu("&Simulation")
         # help menu
         self.simulationMenu.addAction(self.netlistAction)
-        self.editorMenuBar.insertMenu(self.menuHelp.menuAction(),
-                                      self.simulationMenu)
+        self.editorMenuBar.insertMenu(self.menuHelp.menuAction(), self.simulationMenu)
         # self.menuHelp = self.editorMenuBar.addMenu("&Help")
-        if self._app.plugins.get('revedasim'):
-            self.simulationMenu.addAction(self.simulateAction)
+        if hasattr(self._app, 'pluginsObj'):
+            self._app.pluginsObj.applyPluginMenus(self)
 
     def _createTriggers(self):
         super()._createTriggers()
@@ -151,7 +152,6 @@ class schematicEditor(edw.editorWindow):
 
         self.objPropAction.triggered.connect(self.objPropClick)
         self.netlistAction.triggered.connect(self.createNetlistClick)
-        self.simulateAction.triggered.connect(self.startSimClick)
         self.ignoreAction.triggered.connect(self.ignoreClick)
         self.goDownAction.triggered.connect(self.goDownClick)
         self.viewErrorsAction.triggered.connect(self.checkErrorsClick)
@@ -162,8 +162,7 @@ class schematicEditor(edw.editorWindow):
         self.selectDeviceAction.triggered.connect(self.selectDeviceClick)
         self.selectNetAction.triggered.connect(self.selectNetClick)
         self.selectPinAction.triggered.connect(self.selectPinClick)
-        self.removeSelectFilterAction.triggered.connect(
-            self.removeSelectFilterClick)
+        self.removeSelectFilterAction.triggered.connect(self.removeSelectFilterClick)
         self.renumberInstanceAction.triggered.connect(self.renumberInstanceClick)
         self.findRelatedEditors.triggered.connect(self.findRelatedEditorsClick)
 
@@ -197,9 +196,9 @@ class schematicEditor(edw.editorWindow):
 
     def _createShortcuts(self):
         super()._createShortcuts()
-        self.createInstAction.setShortcut(Qt.Key_I)
-        self.createNetAction.setShortcut(Qt.Key_W)
-        self.createPinAction.setShortcut(Qt.Key_P)
+        self.createInstAction.setShortcut(Qt.Key.Key_I)
+        self.createNetAction.setShortcut(Qt.Key.Key_W)
+        self.createPinAction.setShortcut(Qt.Key.Key_P)
         self.goDownAction.setShortcut("Shift+E")
 
     def createNetClick(self, s):
@@ -216,11 +215,10 @@ class schematicEditor(edw.editorWindow):
             self.symbolChooser.show()
         else:
             self.symbolChooser.raise_()
-        if self.symbolChooser.exec() == QDialog.Accepted:
-            instanceTuple = ddef.viewTuple(
-                self.symbolChooser.libNamesCB.currentText(),
-                self.symbolChooser.cellCB.currentText(),
-                self.symbolChooser.viewCB.currentText(), )
+        if self.symbolChooser.exec() == QDialog.DialogCode.Accepted:
+            instanceTuple = ddef.viewTuple(self.symbolChooser.libNamesCB.currentText(),
+                                           self.symbolChooser.cellCB.currentText(),
+                                           self.symbolChooser.viewCB.currentText(), )
 
             self.centralW.scene.newInstanceTuple = instanceTuple
 
@@ -228,7 +226,7 @@ class schematicEditor(edw.editorWindow):
 
     def createPinClick(self, s):
         createPinDlg = pdlg.createSchematicPinDialog(self)
-        if createPinDlg.exec() == QDialog.Accepted:
+        if createPinDlg.exec() == QDialog.DialogCode.Accepted:
             self.centralW.scene.pinName = createPinDlg.pinName.text()
             self.centralW.scene.pinType = createPinDlg.pinType.currentText()
             self.centralW.scene.pinDir = createPinDlg.pinDir.currentText()
@@ -236,17 +234,15 @@ class schematicEditor(edw.editorWindow):
 
     def createNoteClick(self, s):
         textDlg = pdlg.noteTextEdit(self)
-        if textDlg.exec() == QDialog.Accepted:
+        if textDlg.exec() == QDialog.DialogCode.Accepted:
             noteText = textDlg.plainTextEdit.toPlainText()
             noteFontFamily = textDlg.familyCB.currentText()
             noteFontSize = textDlg.fontsizeCB.currentText()
             noteFontStyle = textDlg.fontStyleCB.currentText()
             noteAlign = textDlg.textAlignmCB.currentText()
             noteOrient = textDlg.textOrientCB.currentText()
-            self.centralW.scene.textTuple = (noteText, noteFontFamily,
-                                             noteFontStyle, noteFontSize,
-                                             noteAlign,
-                                             noteOrient,)
+            self.centralW.scene.textTuple = (noteText, noteFontFamily, noteFontStyle,
+                                             noteFontSize, noteAlign, noteOrient,)
             self.centralW.scene.editModes.setMode("drawText")
 
     def createSymbolClick(self, s):
@@ -255,69 +251,6 @@ class schematicEditor(edw.editorWindow):
     def objPropClick(self, s):
         self.centralW.scene.editModes.setMode("selectItem")
         self.centralW.scene.viewObjProperties()
-
-    def startSimClick(self, s):
-        try:
-            simdlg = self._app.plugins.get('revedasim').dialogueWindows
-            revbenchdlg = simdlg.createRevbenchDialogue(self,
-                                                        self.libraryView.libraryModel,
-                                                        self.cellItem)
-            revbenchdlg.libNamesCB.setCurrentText(self.libName)
-            revbenchdlg.cellCB.setCurrentText(self.cellName)
-            revbenchdlg.viewCB.setCurrentText(self.viewName)
-            # now first create the revbenchview item and populate it
-            if revbenchdlg.exec() == QDialog.Accepted:
-                try:
-                    libItem = libm.getLibItem(self.libraryView.libraryModel,
-                                              revbenchdlg.libNamesCB.currentText())
-                    cellItem = libm.getCellItem(libItem,
-                                                revbenchdlg.cellCB.currentText())
-                    revbenchName = revbenchdlg.benchCB.currentText()
-                    if not (libItem and cellItem):
-                        raise ValueError(
-                            f"library={libItem} or cell={cellItem} is not found")
-                    revbenchItem = libm.findViewItem(
-                        self.libraryView.libraryModel, libItem.libraryName,
-                        cellItem.cellName, revbenchName, )
-                    if not revbenchItem:  # if not found, create a new one
-                        revbenchItem = libb.createCellView(self,
-                                                           revbenchdlg.benchCB.currentText(),
-                                                           cellItem)
-                        items = []
-                        libraryName = self.libItem.data(Qt.UserRole + 2).name
-                        cellName = self.cellItem.data(Qt.UserRole + 2).name
-                        items.append({"viewType": "revbench"})
-                        items.append({"lib": libraryName})
-                        items.append({"cell": cellName})
-                        items.append({"view": revbenchdlg.viewCB.currentText()})
-                        items.append({"settings": []})
-                        with revbenchItem.data(Qt.UserRole + 2).open(
-                                mode="w") as benchFile:
-                            json.dump(items, benchFile, indent=4)
-                except Exception as e:
-                    self.logger.error(f"Error during simulation setup: {e}")
-
-                    # simmwModule = importlib.import_module("revedasim.simMainWindow",  #                                       str(self._app.revedasim_pathObj))
-
-                simmwModule = self._app.plugins.get('revedasim')
-                if simmwModule:
-                    cellViewTuple = ddef.viewTuple(self.libItem.libraryName,
-                                                   self.cellItem.cellName,
-                                                   revbenchItem.viewName)
-                    if self.appMainW.openViews.get(cellViewTuple):
-                        simmw = self.appMainW.openViews[cellViewTuple]
-                    else:
-                        simmw = simmwModule.SimMainWindow(revbenchItem,
-                                                          self.libraryView.libraryModel,
-                                                          self.libraryView)
-                        self.appMainW.openViews[cellViewTuple] = simmw
-                    simmw.show()
-                else:
-                    self.logger.error('Revedasim plugin is not installed.')
-
-
-        except ImportError or NameError:
-            self.logger.error("Reveda SAE is not installed.")
 
     def renumberInstanceClick(self, s):
         self.centralW.scene.renumberInstances()
@@ -332,51 +265,63 @@ class schematicEditor(edw.editorWindow):
         self.centralW.scene.saveSchematic(self.file)
 
     def loadSchematic(self):
-        self.centralW.scene.loadDesign(self.file)
+        try:
+            self.logger.info(f'Loading schematic from {self.cellName} - {self.viewName}')
+            self.centralW.scene.loadDesign(self.file)
+            viewNameTuple = ddef.viewTuple(self.libItem.libraryName, self.cellItem.cellName,
+                                           self.viewName)
+            self.appMainW.openViews[viewNameTuple] = self
+        except Exception as e:
+            self.logger.error(f"Error during loading schematic for {self.cellName}: {e}")
 
-    def createConfigView(self, configItem: libb.viewItem, configDict: dict,
-                         newConfigDict: dict, processedCells: set, ):
+    def createConfigView(self, configItem: libb.viewItem, newConfigDict: dict,
+                         processedCells: set):
         sceneSymbolSet = self.centralW.scene.findSceneSymbolSet()
         for item in sceneSymbolSet:
-            libItem = libm.getLibItem(self.libraryView.libraryModel,
-                                      item.libraryName)
+            libItem = libm.getLibItem(self.libraryView.libraryModel, item.libraryName)
             cellItem = libm.getCellItem(libItem, item.cellName)
-            viewItems = [cellItem.child(row) for row in
-                         range(cellItem.rowCount())]
+            viewItems = [cellItem.child(row) for row in range(cellItem.rowCount())]
             viewNames = [viewItem.viewName for viewItem in viewItems]
-            netlistableViews = [viewItemName for viewItemName in
-                                self.switchViewList if viewItemName in viewNames]
+            netlistableViews = [viewItemName for viewItemName in self.switchViewList if
+                                viewItemName in viewNames]
             itemSwitchViewList = deepcopy(netlistableViews)
             viewDict = dict(zip(viewNames, viewItems))
             itemCellTuple = ddef.cellTuple(libItem.libraryName, cellItem.cellName)
             if itemCellTuple not in processedCells:
-                if cellLine := configDict.get(cellItem.cellName):
+                if cellLine := newConfigDict.get(cellItem.cellName):
                     netlistableViews = [cellLine[1]]
                 for viewName in netlistableViews:
                     match viewDict[viewName].viewType:
                         case "schematic":
-                            newConfigDict[cellItem.cellName] = [
-                                libItem.libraryName, viewName,
-                                itemSwitchViewList, ]
+                            newConfigDict[cellItem.cellName] = [libItem.libraryName,
+                                                                viewName,
+                                                                itemSwitchViewList, ]
                             schematicObj = schematicEditor(viewDict[viewName],
                                                            self.libraryDict,
                                                            self.libraryView, )
                             schematicObj.loadSchematic()
-                            schematicObj.createConfigView(configItem, configDict,
-                                                          newConfigDict,
-                                                          processedCells, )
+                            schematicObj.createConfigView(configItem, newConfigDict,
+                                                          processedCells)
                             break
                         case _:
-                            newConfigDict[cellItem.cellName] = [
-                                libItem.libraryName, viewName,
-                                itemSwitchViewList, ]
+                            newConfigDict[cellItem.cellName] = [libItem.libraryName,
+                                                                viewName,
+                                                                itemSwitchViewList, ]
                             break
                 processedCells.add(itemCellTuple)
 
     def closeEvent(self, event):
-        self.centralW.scene.saveSchematic(self.file)
-        event.accept()
-        super().closeEvent(event)
+        try:
+            self.centralW.scene.saveSchematic(self.file)
+            cellViewNameTuple = ddef.viewTuple(self.libName, self.cellName,
+                                               self.viewName)
+            self.appMainW.openViews.pop(cellViewNameTuple, None)
+        except Exception as e:
+            self.appMainW.logger.error(f"Error in closing schematic editor window"
+                                       f":{self.cellName}-{self.viewName}:{e}")
+        finally:
+            event.accept()
+            super().closeEvent(event)
 
     def createNetlistClick(self, s):
         dlg = fd.netlistExportDialogue(self)
@@ -388,17 +333,16 @@ class schematicEditor(edw.editorWindow):
         if hasattr(self.appMainW, "outputPrefixPath"):
             dlg.netlistDirEdit.setText(str(self.appMainW.outputPrefixPath))
 
-        if dlg.exec() == QDialog.Accepted:
+        if dlg.exec() == QDialog.DialogCode.Accepted:
             self._startNetlisting(dlg)
 
     def _getNetlistableViews(self):
         views = [self.viewItem.viewName]
-        config_items = [self.cellItem.child(row) for row in
-                        range(self.cellItem.rowCount()) if
-                        self.cellItem.child(row).viewType == "config"]
+        config_items = [self.cellItem.child(row) for row in range(self.cellItem.rowCount())
+                        if self.cellItem.child(row).viewType == "config"]
 
         for item in config_items:
-            with item.data(Qt.UserRole + 2).open(mode="r") as f:
+            with item.data(Qt.ItemDataRole.UserRole + 2).open(mode="r") as f:
                 config = json.load(f)
                 if config[1]["reference"] == self.viewItem.viewName:
                     views.append(item.viewName)
@@ -407,8 +351,7 @@ class schematicEditor(edw.editorWindow):
 
     def _startNetlisting(self, dlg: fd.netlistExportDialogue):
         # try:
-        self.appMainW.simulationOutputPath = pathlib.Path(
-            dlg.netlistDirEdit.text())
+        self.appMainW.simulationOutputPath = pathlib.Path(dlg.netlistDirEdit.text())
         selectedViewName = dlg.viewNameCombo.currentText()
 
         self.switchViewList = [item.strip() for item in
@@ -424,26 +367,25 @@ class schematicEditor(edw.editorWindow):
         else:
             topSubCkt = False
 
-        netlistObj = self.createNetlistObject(selectedViewName, netlistFilePath,
-                                              topSubCkt)
+        netlistObj = self.createNetlistObject(self.viewItem, netlistFilePath, topSubCkt)
 
         if netlistObj:
             # self.runNetlisting(netlistObj, self.appMainW.threadPool)
             with self.measureDuration():
                 netlistObj.writeNetlist()
 
-    def createNetlistObject(self, view_name: str, filePath: pathlib.Path,
+    def createNetlistObject(self, viewItem: libb.viewItem, filePath: pathlib.Path,
                             topSubCkt: bool):
-        if "schematic" in view_name:
+        if viewItem.viewType == "schematic":
             return xyceNetlist(self, filePath, False, topSubCkt)
-        elif "config" in view_name:
-            netlist_obj = xyceNetlist(self, filePath, True, topSubCkt)
-            config_item = libm.findViewItem(self.libraryView.libraryModel,
-                                            self.libName, self.cellName,
-                                            view_name)
-            with config_item.data(Qt.UserRole + 2).open(mode="r") as f:
-                netlist_obj.configDict = json.load(f)[2]
-            return netlist_obj
+        elif viewItem.viewType == "config":
+            netlistObj = xyceNetlist(self, filePath, True, topSubCkt)
+            configItem = libm.findViewItem(self.libraryView.libraryModel, self.libName,
+                                           self.cellName, viewItem.viewName)
+            if configItem:
+                with configItem.data(Qt.ItemDataRole.UserRole + 2).open(mode="r") as f:
+                    netlistObj.configDict = json.load(f)[2]
+            return netlistObj
         return None
 
     # def runNetlisting(self, netlist_obj, threadPool: QThreadPool = None):
@@ -471,7 +413,7 @@ class schematicEditor(edw.editorWindow):
 
     def createNetNameClick(self, s):
         dlg = pdlg.netNameDialog(self)
-        if dlg.exec() == QDialog.Accepted:
+        if dlg.exec() == QDialog.DialogCode.Accepted:
             self.centralW.scene.netNameString = dlg.netNameEdit.text().strip()
             self.centralW.scene.editModes.setMode('nameNet')
         self.messageLine.setText("Select a net to attach the name")
@@ -501,16 +443,15 @@ class schematicEditor(edw.editorWindow):
         """
         oldSymbolItem = False
 
-        askViewNameDlg = pdlg.symbolNameDialog(self.file.parent, self.cellName,
-                                               self, )
-        if askViewNameDlg.exec() == QDialog.Accepted:
+        askViewNameDlg = pdlg.symbolNameDialog(self.file.parent, self.cellName, self, )
+        if askViewNameDlg.exec() == QDialog.DialogCode.Accepted:
             symbolViewName = askViewNameDlg.symbolViewsCB.currentText()
             if symbolViewName in askViewNameDlg.symbolViewNames:
                 oldSymbolItem = True
             if oldSymbolItem:
-                deleteSymViewDlg = fd.deleteSymbolDialog(self.cellName,
-                                                         symbolViewName, self)
-                if deleteSymViewDlg.exec() == QDialog.Accepted:
+                deleteSymViewDlg = fd.deleteSymbolDialog(self.cellName, symbolViewName,
+                                                         self)
+                if deleteSymViewDlg.exec() == QDialog.DialogCode.Accepted:
                     self.generateSymbol(symbolViewName)
             else:
                 self.generateSymbol(symbolViewName)
@@ -525,14 +466,13 @@ class schematicEditor(edw.editorWindow):
         return {
             'input': [pin.pinName for pin in schematic_pins if pin.pinDir == pin_dirs[0]],
             'output': [pin.pinName for pin in schematic_pins if pin.pinDir == pin_dirs[1]],
-            'inout': [pin.pinName for pin in schematic_pins if pin.pinDir == pin_dirs[2]]
-        }
+            'inout': [pin.pinName for pin in schematic_pins if pin.pinDir == pin_dirs[2]]}
 
     def _create_pin_map(self, schematic_pins: list[shp.schematicPin]) -> dict:
         """Create mapping from pin name to pin object."""
         return {pin.pinName: pin for pin in schematic_pins}
 
-    def _draw_pins(self, symbol_scene, pin_names: list[str], locations: list[QPoint], 
+    def _draw_pins(self, symbol_scene, pin_names: list[str], locations: list[QPoint],
                    offsets: QPoint, pin_map: dict) -> None:
         """Draw pins and their connecting lines."""
         for name, loc in zip(pin_names, locations):
@@ -544,83 +484,83 @@ class schematicEditor(edw.editorWindow):
         schematic_pins = list(self.centralW.scene.findSceneSchemPinsSet())
         pin_categories = self._categorize_pins(schematic_pins)
         pin_map = self._create_pin_map(schematic_pins)
-        
+
         # Setup dialog with categorized pins
         dlg = pdlg.symbolCreateDialog(self)
         dlg.leftPinsEdit.setText(", ".join(pin_categories['input']))
         dlg.rightPinsEdit.setText(", ".join(pin_categories['output']))
         dlg.topPinsEdit.setText(", ".join(pin_categories['inout']))
-        
-        if dlg.exec() != QDialog.Accepted:
+
+        if dlg.exec() != QDialog.DialogCode.Accepted:
             return
 
         # Create symbol view and editor
         libItem = libm.getLibItem(self.libraryView.libraryModel, self.libName)
         cellItem = libm.getCellItem(libItem, self.cellName)
         symbolViewItem = libb.createCellView(self, symbolViewName, cellItem)
-        
-        from revedaEditor.gui.symbolEditor import symbolEditor
-        symbolWindow = symbolEditor(symbolViewItem, self.libraryDict, self.libraryView)
-        
+
+        symbolWindow = EditorFactory.createEditor("symbol", symbolViewItem,
+                                                  self.libraryDict, self.libraryView)
+
         try:
             # Parse pin configurations
-            pin_names = {
-                'left': self._parse_pin_names(dlg.leftPinsEdit.text()),
-                'right': self._parse_pin_names(dlg.rightPinsEdit.text()),
-                'top': self._parse_pin_names(dlg.topPinsEdit.text()),
-                'bottom': self._parse_pin_names(dlg.bottomPinsEdit.text())
-            }
-            
+            pin_names = {'left': self._parse_pin_names(dlg.leftPinsEdit.text()),
+                         'right': self._parse_pin_names(dlg.rightPinsEdit.text()),
+                         'top': self._parse_pin_names(dlg.topPinsEdit.text()),
+                         'bottom': self._parse_pin_names(dlg.bottomPinsEdit.text())}
+
             stub_length = int(float(dlg.stubLengthEdit.text().strip()))
             pin_distance = int(float(dlg.pinDistanceEdit.text().strip()))
-            
+
             # Calculate rectangle dimensions
-            rect_x_dim = (max(len(pin_names['top']), len(pin_names['bottom'])) + 1) * pin_distance
-            rect_y_dim = (max(len(pin_names['left']), len(pin_names['right'])) + 1) * pin_distance
-            
+            rect_x_dim = (max(len(pin_names['top']),
+                              len(pin_names['bottom'])) + 1) * pin_distance
+            rect_y_dim = (max(len(pin_names['left']),
+                              len(pin_names['right'])) + 1) * pin_distance
+
         except ValueError:
             self.logger.error("Enter valid value")
             return
 
         # Draw symbol components
-        symbol_scene = symbolWindow.centralW.scene
-        symbol_scene.rectDraw(QPoint(0, 0), QPoint(rect_x_dim, rect_y_dim))
-        
+        sceneSymbol = symbolWindow.centralW.scene
+        sceneSymbol.rectDraw(QPoint(0, 0), QPoint(rect_x_dim, rect_y_dim))
+
         # Add labels
-        symbol_scene.labelDraw(
-            QPoint(int(0.25 * rect_x_dim), int(0.4 * rect_y_dim)), 
-            "[@cellName]", "NLPLabel", "12", "Center", "R0", "Instance")
-        symbol_scene.labelDraw(
-            QPoint(int(rect_x_dim), int(-0.1 * rect_y_dim)),
-            "[@instName]", "NLPLabel", "12", "Center", "R0", "Instance")
-        
+        sceneSymbol.labelDraw(QPoint(int(0.25 * rect_x_dim), int(0.4 * rect_y_dim)),
+                              "[@cellName]", "NLPLabel", "12", "Center", "R0", "Instance")
+        sceneSymbol.labelDraw(QPoint(int(rect_x_dim), int(-0.1 * rect_y_dim)),
+                              "[@instName]", "NLPLabel", "12", "Center", "R0", "Instance")
+
         # Calculate pin locations and draw pins
-        pin_configs = [
-            (pin_names['left'], [QPoint(-stub_length, (i + 1) * pin_distance) 
-                                for i in range(len(pin_names['left']))], QPoint(stub_length, 0)),
-            (pin_names['right'], [QPoint(rect_x_dim + stub_length, (i + 1) * pin_distance) 
-                                 for i in range(len(pin_names['right']))], QPoint(-stub_length, 0)),
-            (pin_names['top'], [QPoint((i + 1) * pin_distance, -stub_length) 
-                              for i in range(len(pin_names['top']))], QPoint(0, stub_length)),
-            (pin_names['bottom'], [QPoint((i + 1) * pin_distance, rect_y_dim + stub_length) 
-                                  for i in range(len(pin_names['bottom']))], QPoint(0, -stub_length))
-        ]
-        
+        pin_configs = [(pin_names['left'],
+                        [QPoint(-stub_length, (i + 1) * pin_distance) for i in
+                         range(len(pin_names['left']))], QPoint(stub_length, 0)),
+                       (pin_names['right'],
+                        [QPoint(rect_x_dim + stub_length, (i + 1) * pin_distance) for i in
+                         range(len(pin_names['right']))], QPoint(-stub_length, 0)),
+                       (pin_names['top'],
+                        [QPoint((i + 1) * pin_distance, -stub_length) for i in
+                         range(len(pin_names['top']))], QPoint(0, stub_length)),
+                       (pin_names['bottom'],
+                        [QPoint((i + 1) * pin_distance, rect_y_dim + stub_length) for i in
+                         range(len(pin_names['bottom']))], QPoint(0, -stub_length))]
+
         for names, locations, offset in pin_configs:
-            self._draw_pins(symbol_scene, names, locations, offset, pin_map)
-        
+            self._draw_pins(sceneSymbol, names, locations, offset, pin_map)
+
         # Add symbol attributes
         all_pin_names = [pin.pinName for pin in schematic_pins]
-        symbol_scene.attributeList = [
+        sceneSymbol.attributeList = [
             symenc.symbolAttribute("SpiceNetlistLine", "X@instName %pinOrder @cellName"),
-            symenc.symbolAttribute("SpectreNetlistLine", "X@instName  ( %pinOrder ) @cellName"),
-            symenc.symbolAttribute("pinOrder", ", ".join(all_pin_names))
-        ]
-        
+            symenc.symbolAttribute("SpectreNetlistLine",
+                                   "X@instName  ( %pinOrder ) @cellName"),
+            symenc.symbolAttribute("pinOrder", ", ".join(all_pin_names))]
+
         # Finalize and show
         symbolWindow.checkSaveCell()
         self.libraryView.reworkDesignLibrariesView(self.appMainW.libraryDict)
-        
+
         openCellViewTuple = ddef.viewTuple(self.libName, self.cellName, symbolViewName)
         self.appMainW.openViews[openCellViewTuple] = symbolWindow
         symbolWindow.show()
@@ -652,7 +592,7 @@ class schematicEditor(edw.editorWindow):
         relatedEditorNameList = [editor.cellName for editor in relatedEditors]
         dlg.relatedEditorsCB.addItems(relatedEditorNameList)
         dlg.relatedEditorsCB.setCurrentIndex(0)
-        if dlg.exec() == QDialog.Accepted:
+        if dlg.exec() == QDialog.DialogCode.Accepted:
             relatedEditorName = dlg.relatedEditorsCB.currentText()
             relatedEditor = next((editor for editor in relatedEditors if
                                   editor.cellName == relatedEditorName), None)
@@ -662,10 +602,10 @@ class schematicEditor(edw.editorWindow):
                 relatedEditor.activateWindow()
 
 
-class schematicContainer(QWidget):
+class schematicContainer(edw.editorContainer):
     def __init__(self, parent: schematicEditor):
         super().__init__(parent=parent)
-        self.parent = parent
+        self.editorWindow = parent
         self.scene = schscn.schematicScene(self)
         self.view = edv.schematicView(self.scene, self)
         self.init_UI()
@@ -673,29 +613,25 @@ class schematicContainer(QWidget):
     def init_UI(self):
         # layout statements, using a grid layout
         gLayout = QGridLayout()
-        gLayout.setSpacing(10)
+        gLayout.setSpacing(5)
+        gLayout.setContentsMargins(0, 0, 0, 0)  # remove outer gaps
         gLayout.addWidget(self.view, 0, 0)
         gLayout.setColumnStretch(0, 5)
         gLayout.setRowStretch(0, 6)
-        gLayout.addWidget(self.parent.aiTerminal, 1, 0)
-        self.parent.aiTerminal.hide()
-        if self.parent.aiTerminal.isVisible():
-            gLayout.setRowStretch(1, 1)
-        else:
-            gLayout.setRowStretch(1, 0)
         self.setLayout(gLayout)
 
 
 class xyceNetlist:
-    def __init__(self, schematic, filePathObj: pathlib.Path,
-                 useConfig: bool = False, topSubckt: bool = False):
+    def __init__(self, schematic, filePathObj: pathlib.Path, useConfig: bool = False,
+                 topSubckt: bool = False):
         self.filePathObj = filePathObj
         self.schematic = schematic
-        self._use_config = useConfig
+        self._useConfig = useConfig
         self._scene = self.schematic.centralW.scene
         self.libraryDict = self.schematic.libraryDict
         self.libraryView = self.schematic.libraryView
-        self._configDict = None
+        self._configDict = {}
+        self.topSubckt = topSubckt
         self.libItem = libm.getLibItem(self.schematic.libraryView.libraryModel,
                                        self.schematic.libName, )
         self.cellItem = libm.getCellItem(self.libItem, self.schematic.cellName)
@@ -706,10 +642,9 @@ class xyceNetlist:
         self.includeLines = set()  # keeps track of include lines.
         self.vamodelLines = set()  # keeps track of vamodel lines.
         self.vahdlLines = set()  # keeps track of *.HDL lines.
-        self.topSubckt = topSubckt
 
     def __repr__(self):
-        return f"xyceNetlist(filePathObj={self.filePathObj}, schematic={self.schematic}, useConfig={self._use_config})"
+        return f"xyceNetlist(filePathObj={self.filePathObj}, schematic={self.schematic}, useConfig={self._useConfig})"
 
     @property
     def switchViewList(self) -> List[str]:
@@ -727,15 +662,22 @@ class xyceNetlist:
     def stopViewList(self, value: List[str]):
         self._stopViewList = value
 
+    @property
+    def configDict(self):
+        return self._configDict
+
+    @configDict.setter
+    def configDict(self, value: dict):
+        self._configDict = value
+
     def writeNetlist(self):
         with self.filePathObj.open(mode="w") as cirFile:
-            cirFile.write("*".join(
-                ["\n", 80 * "*", "\n", "* Revolution EDA CDL Netlist\n",
-                 f"* Library: {self.schematic.libName}\n",
-                 f"* Top Cell Name: {self.schematic.cellName}\n",
-                 f"* View Name: {self.schematic.viewName}\n",
-                 f"* Date: {datetime.datetime.now()}\n", 80 * "*", "\n",
-                 ".GLOBAL gnd!\n\n", ]))
+            cirFile.write("*".join(["\n", 80 * "*", "\n", "* Revolution EDA CDL Netlist\n",
+                                    f"* Library: {self.schematic.libName}\n",
+                                    f"* Top Cell Name: {self.schematic.cellName}\n",
+                                    f"* View Name: {self.schematic.viewName}\n",
+                                    f"* Date: {datetime.datetime.now()}\n", 80 * "*", "\n",
+                                    ".GLOBAL gnd!\n\n", ]))
 
             # Initialize subcircuit definitions list
             self.subcircuitDefs = []
@@ -776,8 +718,7 @@ class xyceNetlist:
                     content.extend(lines if isinstance(lines, list) else [lines])
                     schematicItem = libm.getViewItem(cellItem, netlistView)
                     if netlistView not in self._stopViewList:
-                        schematicObj = schematicEditor(schematicItem,
-                                                       self.libraryDict,
+                        schematicObj = schematicEditor(schematicItem, self.libraryDict,
                                                        self.libraryView)
                         schematicObj.loadSchematic()
                         viewTuple = ddef.viewTuple(schematicObj.libName,
@@ -789,8 +730,7 @@ class xyceNetlist:
                             expandedPinsString = self.expandPinNames(
                                 list(elementSymbol.pinNetMap.keys()))
                             subcktContent = []
-                            self.collectSubcircuitContent(schematicObj,
-                                                          subcktContent)
+                            self.collectSubcircuitContent(schematicObj, subcktContent)
                             subcktDef = f".SUBCKT {schematicObj.cellName} {expandedPinsString}\n" + '\n'.join(
                                 subcktContent) + "\n.ENDS\n"
                             self.subcircuitDefs.append(subcktDef)
@@ -804,27 +744,17 @@ class xyceNetlist:
                     lines = self.createVerilogaLine(elementSymbol)
                     content.extend(lines if isinstance(lines, list) else [lines])
             elif elementSymbol.netlistIgnore:
-                content.append(
-                    f"*{elementSymbol.instanceName} is marked to be ignored\n")
+                content.append(f"*{elementSymbol.instanceName} is marked to be ignored\n")
             elif not elementSymbol.symattrs.get("XyceNetlistPass", False):
                 content.append(
                     f"*{elementSymbol.instanceName} has no XyceNetlistLine attribute\n")
-
-    @property
-    def configDict(self):
-        return self._configDict
-
-    @configDict.setter
-    def configDict(self, value: dict):
-        self._configDict = value
 
     def recursiveNetlisting(self, schematicEdObj: schematicEditor, cirFile):
         """
         Recursively traverse all sub-circuits and netlist them.
         """
         if self.topSubckt:
-            viewTuple = ddef.viewTuple(schematicEdObj.libName,
-                                       schematicEdObj.cellName,
+            viewTuple = ddef.viewTuple(schematicEdObj.libName, schematicEdObj.cellName,
                                        schematicEdObj.viewName)
             self.netlistedViewsSet.add(viewTuple)
             schematicPinsSet = schematicEdObj.centralW.scene.findSceneSchemPinsSet()
@@ -855,8 +785,7 @@ class xyceNetlist:
             # Create the netlist line for the item.
             self.createItemLine(cirFile, elementSymbol, cellItem, netlistView)
         elif elementSymbol.netlistIgnore:
-            cirFile.write(
-                f"*{elementSymbol.instanceName} is marked to be ignored\n")
+            cirFile.write(f"*{elementSymbol.instanceName} is marked to be ignored\n")
         elif not elementSymbol.symattrs.get("XyceNetlistPass", False):
             cirFile.write(
                 f"*{elementSymbol.instanceName} has no XyceNetlistLine attribute\n")
@@ -865,7 +794,7 @@ class xyceNetlist:
         viewItems = [cellItem.child(row) for row in range(cellItem.rowCount())]
         viewNames = [view.viewName for view in viewItems]
 
-        if self._use_config:
+        if self._useConfig:
             return self.configDict.get(elementSymbol.cellName)[1]
         else:
             # Iterate over the switch view list to determine the appropriate netlist view.
@@ -887,8 +816,7 @@ class xyceNetlist:
                                                self.libraryView)
                 schematicObj.loadSchematic()
 
-                viewTuple = ddef.viewTuple(schematicObj.libName,
-                                           schematicObj.cellName,
+                viewTuple = ddef.viewTuple(schematicObj.libName, schematicObj.cellName,
                                            schematicObj.viewName)
 
                 if viewTuple not in self.netlistedViewsSet:
@@ -915,8 +843,8 @@ class xyceNetlist:
             for line in verilogaLines:
                 cirFile.write(f"{line}\n")
 
-    def _createNetlistLine(self, elementSymbol: shp.schematicSymbol,
-                           netlistLineKey: str) -> list[str]:
+    def _createNetlistLine(self, elementSymbol: shp.schematicSymbol, netlistLineKey: str) -> \
+            list[str]:
         """Shared netlist line creation logic."""
         try:
             instNameLabel = elementSymbol.labels.get('@instName')
@@ -968,14 +896,11 @@ class xyceNetlist:
 
             # Generate instance lines
             if arraySize == 1:
-                symbolLines.append(
-                    processLine(createInstanceLine(baseInstName), netsList))
+                symbolLines.append(processLine(createInstanceLine(baseInstName), netsList))
             else:
-                for i in range(arrayTuple[0], arrayTuple[1] + arrayStep,
-                               arrayStep):
+                for i in range(arrayTuple[0], arrayTuple[1] + arrayStep, arrayStep):
                     symbolLines.append(
-                        processLine(createInstanceLine(f"{baseInstName}<{i}>"),
-                                    netsList))
+                        processLine(createInstanceLine(f"{baseInstName}<{i}>"), netsList))
 
             return symbolLines
 
@@ -986,16 +911,14 @@ class xyceNetlist:
             return [
                 f"*Netlist line is not defined for symbol of {elementSymbol.instanceName}\n"]
 
-    def createXyceSymbolLine(self, elementSymbol: shp.schematicSymbol) -> list[
-        str]:
+    def createXyceSymbolLine(self, elementSymbol: shp.schematicSymbol) -> list[str]:
         return self._createNetlistLine(elementSymbol, "SpiceNetlistLine")
 
     def createSpiceLine(self, elementSymbol: shp.schematicSymbol):
         try:
             spiceLines = self.createXyceSymbolLine(elementSymbol)
-            self.includeLines.add(
-                elementSymbol.symattrs.get("incLine",
-                                           "* no include line is found for {item.cellName}").strip())
+            self.includeLines.add(elementSymbol.symattrs.get("incLine",
+                                                             "* no include line is found for {item.cellName}").strip())
             return spiceLines
         except Exception as e:
             self._scene.logger.error(f"Spice subckt netlist error: {e}")
@@ -1003,14 +926,11 @@ class xyceNetlist:
 
     def createVerilogaLine(self, elementSymbol):
         try:
-            symbolLines = self._createNetlistLine(elementSymbol,
-                                                  "XyceVerilogaNetlistLine")
-            self.vamodelLines.add(
-                elementSymbol.symattrs.get("vaModelLine",
-                                           "* no model line is found for {item.cellName}").strip())
-            self.vahdlLines.add(
-                elementSymbol.symattrs.get("vaHDLLine",
-                                           "* no hdl line is found for {item.cellName}").strip())
+            symbolLines = self._createNetlistLine(elementSymbol, "XyceVerilogaNetlistLine")
+            self.vamodelLines.add(elementSymbol.symattrs.get("vaModelLine",
+                                                             "* no model line is found for {item.cellName}").strip())
+            self.vahdlLines.add(elementSymbol.symattrs.get("vaHDLLine",
+                                                           "* no hdl line is found for {item.cellName}").strip())
             return symbolLines
         except Exception as e:
             self._scene.logger.error(e)
@@ -1033,8 +953,7 @@ class xyceNetlist:
             return name, (-1, -1)
 
         baseName = name.split('<')[0]  # Extract the base name before '<'
-        indexRange = name.split('<')[1].split('>')[
-            0]  # Extract the content inside '<>'
+        indexRange = name.split('<')[1].split('>')[0]  # Extract the content inside '<>'
 
         # Check if it's a single index (e.g., 'name<0>')
         if ':' not in indexRange:
@@ -1057,251 +976,3 @@ class xyceNetlist:
                 for i in range(pinTuple[0], pinTuple[1] + pinStep):
                     expandedPinNameList.append(f'{pinBaseName}<{i}>')
         return ' '.join(expandedPinNameList)
-
-
-class vacaskNetlist():
-    def __init__(self, schematic: schematicEditor, filePathObj: pathlib.Path,
-                 useConfig: bool = False, ):
-        self.filePathObj = filePathObj
-        self.schematic = schematic
-        self._use_config = useConfig
-        self._scene = self.schematic.centralW.scene
-        self.libraryDict = self.schematic.libraryDict
-        self.libraryView = self.schematic.libraryView
-        self._configDict = None
-        self.libItem = libm.getLibItem(self.schematic.libraryView.libraryModel,
-                                       self.schematic.libName, )
-        self.cellItem = libm.getCellItem(self.libItem, self.schematic.cellName)
-
-        self._switchViewList = schematic.switchViewList
-        self._stopViewList = schematic.stopViewList
-        self.netlistedViewsSet = set()  # keeps track of netlisted views.
-
-    def __repr__(self):
-        return f"xyceNetlist(filePathObj={self.filePathObj}, schematic={self.schematic}, useConfig={self._use_config})"
-
-    @property
-    def switchViewList(self) -> List[str]:
-        return self._switchViewList
-
-    @switchViewList.setter
-    def switchViewList(self, value: List[str]):
-        self._switchViewList = value
-
-    @property
-    def stopViewList(self) -> List[str]:
-        return self._stopViewList
-
-    @stopViewList.setter
-    def stopViewList(self, value: List[str]):
-        self._stopViewList = value
-
-    def writeNetlist(self):
-        with self.filePathObj.open(mode="w") as cirFile:
-            cirFile.write("*".join(
-                ["\n", 80 * "/", "\n", "// Revolution EDA VACASK Netlist\n",
-                 f"// Library: {self.schematic.libName}\n",
-                 f"// Top Cell Name: {self.schematic.cellName}\n",
-                 f"// View Name: {self.schematic.viewName}\n",
-                 f"// Date: {datetime.datetime.now()}\n", 80 * "/", "\n",
-                 "ground 0\n\n", ]))
-
-            # now go down the rabbit hole to track all circuit elements.
-            self.recursiveNetlisting(self.schematic, cirFile)
-
-            for line in self.includeLines:
-                cirFile.write(f"{line}\n")
-            for line in self.vamodelLines:
-                cirFile.write(f"{line}\n")
-            for line in self.vahdlLines:
-                cirFile.write(f"{line}\n")
-
-    @property
-    def configDict(self):
-        return self._configDict
-
-    @configDict.setter
-    def configDict(self, value: dict):
-        self._configDict = value
-
-    def recursiveNetlisting(self, schematic: schematicEditor, cirFile):
-        """
-        Recursively traverse all sub-circuits and netlist them.
-        """
-        schematicScene = schematic.centralW.scene
-        schematicScene.nameSceneNets()  # name all nets in the schematic
-        sceneSymbolSet = schematicScene.findSceneSymbolSet()
-        schematicScene.generatePinNetMap(sceneSymbolSet)
-        for elementSymbol in sceneSymbolSet:
-            self.processElementSymbol(elementSymbol, schematic, cirFile)
-
-    def processElementSymbol(self, elementSymbol, schematic, cirFile):
-        if elementSymbol.symattrs.get("vacaskNetlistPass") != "1" and (
-                not elementSymbol.netlistIgnore):
-            libItem = libm.getLibItem(schematic.libraryView.libraryModel,
-                                      elementSymbol.libraryName)
-            cellItem = libm.getCellItem(libItem, elementSymbol.cellName)
-            netlistView = self.determineNetlistView(elementSymbol, cellItem)
-
-            # Create the netlist line for the item.
-            self.createItemLine(cirFile, elementSymbol, cellItem, netlistView)
-        elif elementSymbol.netlistIgnore:
-            cirFile.write(
-                f"//{elementSymbol.instanceName} is marked to be ignored\n")
-        elif not elementSymbol.symattrs.get("vacaskNetlistPass", False):
-            cirFile.write(
-                f"*{elementSymbol.instanceName} has no VacaskNetlistLine attribute\n")
-
-    def determineNetlistView(self, elementSymbol, cellItem):
-        viewItems = [cellItem.child(row) for row in range(cellItem.rowCount())]
-        viewNames = [view.viewName for view in viewItems]
-
-        if self._use_config:
-            return self.configDict.get(elementSymbol.cellName)[1]
-        else:
-            # Iterate over the switch view list to determine the appropriate netlist view.
-            for viewName in self._switchViewList:
-                if viewName in viewNames:
-                    return viewName
-            return "symbol"
-
-    def createItemLine(self, cirFile, elementSymbol: shp.schematicSymbol,
-                       cellItem: libb.cellItem, netlistView: str, ):
-        if "schematic" in netlistView:
-            # First write subckt call in the netlist.
-            cirFile.write(self.createXyceSymbolLine(elementSymbol))
-            schematicItem = libm.getViewItem(cellItem, netlistView)
-            if netlistView not in self._stopViewList:
-                # now load the schematic
-                schematicObj = schematicEditor(schematicItem, self.libraryDict,
-                                               self.libraryView)
-                schematicObj.loadSchematic()
-
-                viewTuple = ddef.viewTuple(schematicObj.libName,
-                                           schematicObj.cellName,
-                                           schematicObj.viewName)
-
-                if viewTuple not in self.netlistedViewsSet:
-                    self.netlistedViewsSet.add(viewTuple)
-                    pinList = elementSymbol.symattrs.get("pinOrder",
-                                                         ", ").replace(",", " ")
-                    cirFile.write(f"subckt {schematicObj.cellName} {pinList}\n")
-                    self.recursiveNetlisting(schematicObj, cirFile)
-                    cirFile.write("ends\n")
-        elif "symbol" in netlistView:
-            cirFile.write(self.createVacaskSymbolLine(elementSymbol))
-        elif "spice" in netlistView:
-            cirFile.write("Cannot import spice to Vacask netlists yet\n")
-        elif "veriloga" in netlistView:
-            cirFile.write(self.createVerilogaLine(elementSymbol))
-
-    def createVacaskSymbolLine(self, elementSymbol: shp.schematicSymbol) -> str:
-        """
-        Create a netlist line from a Vacask device format line.
-
-        Args:
-            elementSymbol (shp.schematicSymbol): The schematic symbol containing netlist information
-
-        Returns:
-            str: The formatted netlist line
-
-        Raises:
-            KeyError: If required VacaskSymbolNetlistLine attribute is missing
-        """
-        try:
-            # Get the base netlist format line
-            try:
-                netlist_line = elementSymbol.symattrs[
-                    "VacaskSymbolNetlistLine"].strip()
-            except KeyError:
-                raise KeyError(
-                    "Missing required VacaskSymbolNetlistLine attribute")
-
-            # Create a mapping for all replacements at once
-            replacements = {}
-
-            # Add label replacements
-            replacements.update({label.labelName: label.labelValue for label in
-                                 elementSymbol.labels.values()})
-
-            # Add attribute replacements
-            replacements.update({f"%{attr}": value for attr, value in
-                                 elementSymbol.symattrs.items()})
-
-            # Add pin list replacement
-            pin_list = f'({" ".join(elementSymbol.pinNetMap.values())})'
-            replacements["@pinList"] = pin_list
-
-            # Perform all replacements in one pass
-            for old, new in replacements.items():
-                netlist_line = netlist_line.replace(old, new)
-
-            return netlist_line + "\n"
-
-        except Exception as e:
-            raise Exception(f"Error creating Vacask netlist line: {str(e)}")
-
-    # def createVacaskSymbolLine(self, elementSymbol: shp.schematicSymbol):
-    #     """
-    #     Create a netlist line from a nlp device format line.
-    #     """
-    #     try:
-    #         vacaskNetlistFormatLine = elementSymbol.symattrs[
-    #             "VacaskSymbolNetlistLine"].strip()
-    #
-    #         # Process labels
-    #         for labelItem in elementSymbol.labels.values():
-    #             vacaskNetlistFormatLine = vacaskNetlistFormatLine.replace(labelItem.labelName,
-    #                                                                   labelItem.labelValue)
-    #
-    #         # Process attributes
-    #         for attrb, value in elementSymbol.symattrs.items():
-    #             vacaskNetlistFormatLine = vacaskNetlistFormatLine.replace(f"%{attrb}", value)
-    #         # Add pin list with parantheses
-    #         pinList = f'({" ".join(elementSymbol.pinNetMap.values())})'
-    #         xyceNetlistFormatLine = (
-    #                     vacaskNetlistFormatLine.replace("@pinList", pinList) + "\n")
-    #
-    #         return vacaskNetlistFormatLine
-    #
-    #     except Exception as e:
-    #         self._scene.logger.error(
-    #             f"Error creating netlist line for {elementSymbol.instanceName}: {e}")
-    #         return (
-    #             f"*Netlist line is not defined for symbol of {elementSymbol.instanceName}\n")
-
-    def createVerilogaLine(self, elementSymbol):
-        """
-        Create a netlist line from a nlp device format line.
-        """
-        try:
-            verilogaNetlistFormatLine = elementSymbol.symattrs[
-                "XyceVerilogaNetlistLine"].strip()
-            for labelItem in elementSymbol.labels.values():
-                if labelItem.labelName in verilogaNetlistFormatLine:
-                    verilogaNetlistFormatLine = verilogaNetlistFormatLine.replace(
-                        labelItem.labelName,
-                        labelItem.labelValue)
-
-            for attrb, value in elementSymbol.symattrs.items():
-                if f"%{attrb}" in verilogaNetlistFormatLine:
-                    verilogaNetlistFormatLine = verilogaNetlistFormatLine.replace(
-                        f"%{attrb}", value)
-            pinList = " ".join(elementSymbol.pinNetMap.values())
-            verilogaNetlistFormatLine = (
-                    verilogaNetlistFormatLine.replace("@pinList",
-                                                      pinList) + "\n")
-            self.vamodelLines.add(
-                elementSymbol.symattrs.get("vaModelLine",
-                                           "* no model line is found for {item.cellName}").strip())
-            self.vahdlLines.add(
-                elementSymbol.symattrs.get("vaHDLLine",
-                                           "* no hdl line is found for {item.cellName}").strip())
-            return verilogaNetlistFormatLine
-        except Exception as e:
-            self._scene.logger.error(e)
-            self._scene.logger.error(
-                f"Netlist line is not defined for {elementSymbol.instanceName}")
-            # if there is no NLPDeviceFormat line, create a warning line
-            return (
-                f"*Netlist line is not defined for symbol of {elementSymbol.instanceName}\n")

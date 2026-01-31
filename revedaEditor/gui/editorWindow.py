@@ -23,26 +23,35 @@
 #
 
 
+from __future__ import annotations
+
 import pathlib
-from contextlib import contextmanager
 import time
+from contextlib import contextmanager
 from logging import getLogger
+from typing import TYPE_CHECKING, Optional
+
 from PySide6.QtCore import (Qt, QSize, )
 from PySide6.QtGui import (QAction, QIcon, QImage, QKeySequence)
 from PySide6.QtPrintSupport import QPrintDialog, QPrinter, QPrintPreviewDialog
 from PySide6.QtWidgets import (QApplication, QDialog, QFileDialog, QGraphicsScene,
-                               QLabel, QMainWindow,
+                               QLabel, QMainWindow, QDialogButtonBox,
                                QMenu, QToolBar, QWidget)
 
 import revedaEditor.backend.dataDefinitions as ddef
-import revedaEditor.backend.libraryModelView as lmview
 import revedaEditor.backend.libBackEnd as libb
+import revedaEditor.backend.libraryModelView as lmview
+import revedaEditor.backend.processManager as prm
+import revedaEditor.gui.alignItems as alg
 import revedaEditor.gui.helpBrowser as hlp
+import revedaEditor.gui.propertyDialogues as pdlg
 import revedaEditor.resources.resources  # noqa: F401
 from revedaEditor.backend.startThread import startThread
-import revedaEditor.gui.propertyDialogues as pdlg
-import revedaEditor.backend.processManager as prm
-import revedaEditor.gui.aiTerminal as ait
+from revedaEditor.gui.editorViews import editorView
+from revedaEditor.scenes.editorScene import editorScene
+
+if TYPE_CHECKING:
+    from revedaEditor.gui.editorTypes import EditorContainer
 
 
 class editorWindow(QMainWindow):
@@ -54,13 +63,12 @@ class editorWindow(QMainWindow):
     SNAP_GRID_DEFAULT = 10
 
     def __init__(self, viewItem: libb.viewItem, libraryDict: dict,
-                 libraryView: lmview.BaseDesignLibrariesView, ):
+                 libraryView: lmview.BaseDesignLibrariesView) -> None:
         super().__init__()
-        self.centralW = QWidget()
-        self.setCentralWidget(self.centralW)
+
         self.viewItem = viewItem
         self.file: pathlib.Path = self.viewItem.data(
-            Qt.UserRole + 2)  # pathlib Path object
+            Qt.ItemDataRole.UserRole + 2)  # pathlib Path object
         self.cellItem: libb.cellItem = self.viewItem.parent()
         self.cellName = self.cellItem.cellName
         self.libItem: libb.libraryItem = self.cellItem.parent()
@@ -68,7 +76,7 @@ class editorWindow(QMainWindow):
         self.viewName: str = self.viewItem.viewName
         self.libraryDict = libraryDict
         self.libraryView = libraryView
-        self.parentEditor: editorWindow | None = None  # type: editorWindow
+        self.parentEditor: Optional[editorWindow] = None
         self.parentObj = None  # type symbol or layoutInstance
         self._app = QApplication.instance()  # main application pointer
         self.appMainW = self._app.mainW
@@ -82,14 +90,15 @@ class editorWindow(QMainWindow):
         self.snapGrid = self.SNAP_GRID_DEFAULT  # snapping grid size
         self.snapTuple = (self.snapGrid, self.snapGrid)
         self.processManager = prm.ProcessManager(3, self)
-        self.aiTerminal = ait.aiTerminal(self)
         self.init_UI()
         self._createSignalConnections()
 
     def __repr__(self):
         return f'editorWindow({self.libName}-{self.cellName}-{self.viewName})'
 
-    def init_UI(self):
+    def init_UI(self) -> None:
+        self.centralW: EditorContainer = editorContainer(self)
+        self.setCentralWidget(self.centralW)
         self.resize(1600, 800)
         self._createActions()
         self._createMenuBar()
@@ -178,23 +187,9 @@ class editorWindow(QMainWindow):
         self.delRulerAction = QAction(delRulerIcon, "Delete Rulers", self)
         self.delRulerAction.setToolTip("Delete all the rulers from the layout")
 
-        alignTopIcon = QIcon(":/icons/layers-alignment.png")
-        self.alignTopAction = QAction(alignTopIcon, "Top Align", self)
-        self.alignTopAction.setToolTip("Align top of selected objects")
-
-        alignVerticalIcon = QIcon(":/icons/layers-alignment-center.png")
-        self.alignVerticalAction = QAction(alignVerticalIcon, "Vertical Align",
-                                           self)
-        self.alignVerticalAction.setToolTip(
-            "Align selected objects vertically at the centre")
-
-        alignRightIcon = QIcon(":/icons/layers-alignment-center.png")
-        self.alignRightAction = QAction(alignRightIcon, "Right Align", self)
-        self.alignRightAction.setToolTip("Align right of selected objects")
-
-        alignLeftIcon = QIcon(":/icons/layers-alignment-left.png")
-        self.alignLeftAction = QAction(alignLeftIcon, "Left Align", self)
-        self.alignLeftAction.setToolTip("Align left of selected objects")
+        alignIcon = QIcon(":/icons/layers-alignment-middle.png")
+        self.alignItemsAction = QAction(alignIcon, "Align Items...", self)
+        self.alignItemsAction.setToolTip("Align selected items")
 
         # display options
         dispConfigIcon = QIcon(":/icons/grid-snap-dot.png")
@@ -405,12 +400,6 @@ class editorWindow(QMainWindow):
 
         self.aboutIcon = QIcon(":/icons/information.png")
         self.aboutAction = QAction(self.aboutIcon, "About", self)
-        self.aboutAction.setToolTip("About Revolution EDA")
-
-        aiTerminalIcon = QIcon(":/icons/terminal.png")
-        self.aiTerminalAction = QAction(aiTerminalIcon, "AI Terminal", self)
-        self.aiTerminalAction.setToolTip("Open AI Agent Terminal")
-        self.aiTerminalAction.setCheckable(True)
 
     def _createToolBars(self):
         # Create tools bar called "main toolbar"
@@ -470,6 +459,7 @@ class editorWindow(QMainWindow):
         self.menuEdit.addAction(self.rotateAction)
         self.menuEdit.addAction(self.horizontalFlipAction)
         self.menuEdit.addAction(self.verticalFlipAction)
+        self.menuEdit.addAction(self.alignItemsAction)
         self.selectMenu = QMenu('Selection', self)
         self.selectMenu.setIcon(QIcon('icons/node-select.png'))
         self.menuEdit.addMenu(self.selectMenu)
@@ -479,7 +469,6 @@ class editorWindow(QMainWindow):
         # self.menuCheck.addAction(self.viewCheckAction)
         self.menuOptions.addAction(self.dispConfigAction)
         self.menuOptions.addAction(self.selectConfigAction)
-        self.menuTools.addAction(self.aiTerminalAction)
         self.menuHelp.addAction(self.helpAction)
         self.menuHelp.addAction(self.aboutAction)
 
@@ -520,22 +509,23 @@ class editorWindow(QMainWindow):
         self.rotateAction.triggered.connect(self.rotateItemClick)
         self.verticalFlipAction.triggered.connect(self.verticalFlipClick)
         self.horizontalFlipAction.triggered.connect(self.horizontalFlipClick)
+        self.alignItemsAction.triggered.connect(self.alignItemsClick)
         self.goUpAction.triggered.connect(self.goUpHierarchy)
-        self.aiTerminalAction.triggered.connect(self.toggleAITerminal)
         self.helpAction.triggered.connect(self.helpClick)
         self.aboutAction.triggered.connect(self.aboutClick)
 
     def _createShortcuts(self):
         self.redoAction.setShortcut("Shift+U")
-        self.undoAction.setShortcut(Qt.Key_U)
-        self.objPropAction.setShortcut(Qt.Key_Q)
-        self.copyAction.setShortcut(Qt.Key_C)
+        self.undoAction.setShortcut(Qt.Key.Key_U)
+        self.objPropAction.setShortcut(Qt.Key.Key_Q)
+        self.copyAction.setShortcut(Qt.Key.Key_C)
         self.rotateAction.setShortcut("Ctrl+R")
         self.createTextAction.setShortcut("Shift+L")
-        self.fitAction.setShortcut(Qt.Key_F)
-        self.deleteAction.setShortcut(QKeySequence.Delete)
+        self.fitAction.setShortcut(Qt.Key.Key_F)
+        self.deleteAction.setShortcut(QKeySequence.StandardKey.Delete)
         self.selectAllAction.setShortcut("Ctrl+A")
-        self.stretchAction.setShortcut(Qt.Key_S)
+        self.stretchAction.setShortcut(Qt.Key.Key_S)
+        self.alignItemsAction.setShortcut("Shift+A")
 
     def _editorContextMenu(self):
         self.centralW.scene.itemContextMenu.addAction(self.copyAction)
@@ -549,12 +539,18 @@ class editorWindow(QMainWindow):
         self.centralW.scene.itemContextMenu.addAction(self.selectAllAction)
         self.centralW.scene.itemContextMenu.addAction(self.deselectAllAction)
 
+    def checkSaveCell(self):
+        pass
+
+    def saveCell(self):
+        pass
+
     def dispConfigEdit(self):
 
         dcd = pdlg.displayConfigDialog(self)
         dcd.majorGridEntry.setText(str(self.majorGrid))
         dcd.snapGridEdit.setText(str(self.snapGrid))
-        if dcd.exec() == QDialog.Accepted:
+        if dcd.exec() == QDialog.DialogCode.Accepted:
             self.configureGridSettings(
                 (int(dcd.majorGridEntry.text()), int(dcd.snapGridEdit.text())))
             if dcd.dotType.isChecked():
@@ -587,7 +583,7 @@ class editorWindow(QMainWindow):
                     if hasattr(obj, 'snapTuple'):
                         obj.snapTuple = (self.snapGrid, self.snapGrid)
                 self.centralW.scene.invalidate(self.centralW.scene.sceneRect(),
-                                               QGraphicsScene.BackgroundLayer)
+                                               QGraphicsScene.SceneLayer.BackgroundLayer)
         except Exception as e:
             self.logger.info(f'Problem with grid settings: {e}')
 
@@ -597,7 +593,7 @@ class editorWindow(QMainWindow):
             scd.partialSelection.setChecked(True)
         else:
             scd.fullSelection.setChecked(True)
-        if scd.exec() == QDialog.Accepted:
+        if scd.exec() == QDialog.DialogCode.Accepted:
             self.centralW.scene.partialSelection = scd.partialSelection.isChecked()
 
     def readOnlyCellClick(self):
@@ -610,7 +606,7 @@ class editorWindow(QMainWindow):
 
     def printClick(self):
         dlg = QPrintDialog(self)
-        if dlg.exec() == QDialog.Accepted:
+        if dlg.exec() == QDialog.DialogCode.Accepted:
             printer = dlg.printer()
             printRunner = startThread(self.centralW.view.printView(printer))
             self.appMainW.threadPool.start(printRunner)
@@ -618,8 +614,8 @@ class editorWindow(QMainWindow):
                 "Printing started")  # self.centralW.view.printView(printer)
 
     def printPreviewClick(self):
-        printer = QPrinter(QPrinter.ScreenResolution)
-        printer.setOutputFormat(QPrinter.PdfFormat)
+        printer = QPrinter(QPrinter.PrinterMode.ScreenResolution)
+        printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
         ppdlg = QPrintPreviewDialog(self)
         ppdlg.paintRequested.connect(self.centralW.view.printView)
         ppdlg.exec()
@@ -630,10 +626,10 @@ class editorWindow(QMainWindow):
         self.centralW.view.printView(image)
         fdlg = QFileDialog(self, caption="Select or create an image file")
         fdlg.setDefaultSuffix("png")
-        fdlg.setFileMode(QFileDialog.AnyFile)
-        fdlg.setViewMode(QFileDialog.Detail)
+        fdlg.setFileMode(QFileDialog.FileMode.AnyFile)
+        fdlg.setViewMode(QFileDialog.ViewMode.Detail)
         fdlg.setNameFilter("Image Files (*.png *.jpg *.bmp *.gif *.jpeg)")
-        if fdlg.exec() == QDialog.Accepted:
+        if fdlg.exec() == QDialog.DialogCode.Accepted:
             imageFile = fdlg.selectedFiles()[0]
             image.save(imageFile)
 
@@ -675,6 +671,20 @@ class editorWindow(QMainWindow):
         self.centralW.scene.editModes.setMode("panView")
         self.messageLine.setText(self.centralW.scene.messages[
                                      self.centralW.scene.editModes.mode()])
+
+    def alignItemsClick(self):
+        self.messageLine.setText("Select Items will be aligned.")
+        dlg = alg.alignItemsDialogue(self)
+        dlg.buttonBox.button(
+            QDialogButtonBox.StandardButton.Apply).clicked.connect(
+            lambda: alg.handleAlignAction(dlg, False))
+        dlg.buttonBox.button(QDialogButtonBox.StandardButton.Ok).clicked.connect(
+            lambda: alg.handleAlignAction(dlg, True))
+        dlg.alignLineButton.pressed.connect(
+            lambda: alg.startLineAlign(self.centralW.scene, dlg))
+        dlg.alignEdgesButton.pressed.connect(
+            lambda: alg.startEdgeAlign(self.centralW.scene, dlg))
+        dlg.show()
 
     def goUpHierarchy(self):
         self.saveCell()
@@ -752,13 +762,25 @@ class editorWindow(QMainWindow):
         self.centralW.scene.selectionChanged.connect(
             self.appMainW.selectionChangedScene)
         self.centralW.view.keyPressedSignal.connect(self.appMainW.viewKeyPressed)
-        self.aiTerminal.reloadRequested.connect(self.updateDesignScene)
 
-    def toggleAITerminal(self):
-        if self.aiTerminal.isVisible():
-            self.aiTerminal.hide()
-        else:
-            self.aiTerminal.show()
+    def addPluginAction(self, menu_name: str, action_name: str, callback, shortcut=None):
+        """Add plugin action to specified menu"""
+        menu = None
+        for action in self.menuBar().actions():
+            if action.text() == menu_name:
+                menu = action.menu()
+                break
+
+        if not menu:
+            menu = self.menuBar().addMenu(menu_name)
+
+        action = QAction(action_name, self)
+        action.triggered.connect(callback)
+        if shortcut:
+            action.setShortcut(shortcut)
+
+        menu.addAction(action)
+        return action
 
     @contextmanager
     def measureDuration(self):
@@ -769,3 +791,11 @@ class editorWindow(QMainWindow):
             end_time = time.perf_counter()
             self.logger.info(
                 f"Total processing time: {(end_time - start_time) * 1000:.3f} milliseconds")
+
+
+class editorContainer(QWidget):
+    def __init__(self, parent: editorWindow):
+        super().__init__(parent=parent)
+        self.editorWindow = parent
+        self.scene = editorScene(self)
+        self.view = editorView(self.scene, self)

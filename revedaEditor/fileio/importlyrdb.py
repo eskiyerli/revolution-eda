@@ -4,17 +4,18 @@ KLayout DRC XML report to dictionary converter using lxml.
 Handles nested categories, cells, and DRC violations with polygons.
 """
 
-
-from lxml import etree
-from typing import Dict, Any, List
 import sys
-from PySide6.QtGui import (QPolygonF, QPen, QColor)
-from PySide6.QtWidgets import (QGraphicsPolygonItem, )
+from typing import Dict, Any, List
+
 from PySide6.QtCore import (QPoint, Qt, )
-from revedaEditor.backend.pdkPaths import importPDKModule
+from PySide6.QtGui import (QPolygonF, QPen, QColor)
+from PySide6.QtWidgets import (QApplication, )
+from PySide6.QtWidgets import (QGraphicsPolygonItem, )
+from lxml import etree
+
+app = QApplication.instance()
+
 fabproc = importPDKModule('process')
-
-
 
 
 class DRCErrorPolygon(QGraphicsPolygonItem):
@@ -143,7 +144,7 @@ class DRCOutput():
                     if ',' in pt:
                         try:
                             x, y = map(float, pt.split(','))
-                            coords.append(QPoint(x*fabproc.dbu, y*fabproc.dbu))
+                            coords.append(QPoint(x * fabproc.dbu, y * fabproc.dbu))
                         except ValueError:
                             continue
                 return coords

@@ -22,19 +22,18 @@
 #    Licensor: Revolution Semiconductor (Registered in the Netherlands)
 #
 import pathlib
+import re
 import sys
+from pathlib import Path
 
 from PySide6.QtCore import QObject
-from PySide6.QtWidgets import (QApplication, QMainWindow, QTextEdit, QFileDialog, QToolBar,
-                               QFontDialog, QInputDialog, QMessageBox, QLabel, )
+from PySide6.QtCore import (Signal, )
 from PySide6.QtGui import (QTextCharFormat, QColor, QFont, QSyntaxHighlighter, QAction,
                            QIcon, )
+from PySide6.QtWidgets import (QApplication, QMainWindow, QTextEdit, QFileDialog, QToolBar,
+                               QFontDialog, QInputDialog, QMessageBox, QLabel, )
 
-from PySide6.QtCore import (Signal, )
-import re
-import revedaEditor.resources.resources
 import revedaEditor.backend.dataDefinitions as ddef
-from pathlib import Path
 
 
 class BaseHighlighter(QSyntaxHighlighter):
@@ -184,6 +183,7 @@ class textEditor(QMainWindow):
         self.filePathObj = filePathObj if filePathObj.exists() else pathlib.Path.cwd()
         self.textEdit = QTextEdit()
         self.setCentralWidget(self.textEdit)
+        self.appMainW = QApplication.instance().mainW
 
         self.createActions()
         self.createMenus()
@@ -209,7 +209,7 @@ class textEditor(QMainWindow):
         self.openAction.setShortcut("Ctrl+O")
         self.openAction.setStatusTip("Open File")
         self.openAction.triggered.connect(self.openFile)
-        
+
         reloadIcon = QIcon(":/icons/arrow-circle.png")
         self.reloadAction = QAction(reloadIcon, "&Reload", self)
         self.reloadAction.setShortcut("F5")
@@ -309,8 +309,9 @@ class textEditor(QMainWindow):
         toolbar.addAction(self.replaceAction)
 
     def openFile(self):
-        (fileName, _) = QFileDialog.getOpenFileName(self, "Open File", str(self.filePathObj),
-                                                         "JSON Files (*.json);;All Files (*)")
+        (fileName, _) = QFileDialog.getOpenFileName(self, "Open File",
+                                                    str(self.filePathObj),
+                                                    "JSON Files (*.json);;All Files (*)")
         if fileName:
             self.filePathObj = Path(fileName)
             if self.filePathObj.exists():
@@ -327,7 +328,8 @@ class textEditor(QMainWindow):
             self.saveAsFile()
 
     def saveAsFile(self):
-        (fileName, _) = QFileDialog.getSaveFileName(self, "Save File", str(self.filePathObj),
+        (fileName, _) = QFileDialog.getSaveFileName(self, "Save File",
+                                                    str(self.filePathObj),
                                                     "JSON Files (*.json);;All Files (*)")
         if fileName:
             self.filePathObj = Path(fileName)
@@ -335,7 +337,7 @@ class textEditor(QMainWindow):
                 with self.filePathObj.open("w") as file:
                     text = self.textEdit.toPlainText()
                     file.write(text)
-                
+
     def reloadFile(self):
         if self.filePathObj.exists():
             cursor_position = self.textEdit.textCursor().position()
@@ -385,6 +387,7 @@ class textEditor(QMainWindow):
 
     def closeEvent(self, event):
         self.closedSignal.emit(self)
+        self.appMainW.openViews.pop(self.cellViewTuple, None)
         super().closeEvent(event)
 
 
@@ -411,7 +414,7 @@ class verilogaEditor(textEditor):
 
     def openFile(self):
         (fileName, _) = QFileDialog.getOpenFileName(self, "Open File", "",
-                                                         "Verilog-A Files (*.va);;All Files (*)")
+                                                    "Verilog-A Files (*.va);;All Files (*)")
         if fileName:
             self.filePathObj = Path(fileName)
             if self.filePathObj.exists():
@@ -419,10 +422,10 @@ class verilogaEditor(textEditor):
                     text = file.read()
                     self.textEdit.setPlainText(text)
 
-
     def saveAsFile(self):
-        (fileName, _) = QFileDialog.getSaveFileName(self, "Save File", str(self.filePathObj),
-                                                         "Verilog-A Files (*.va);;All Files (*)")
+        (fileName, _) = QFileDialog.getSaveFileName(self, "Save File",
+                                                    str(self.filePathObj),
+                                                    "Verilog-A Files (*.va);;All Files (*)")
         if fileName:
             self.filePathObj = Path(fileName)
             if self.filePathObj.exists():
@@ -432,7 +435,7 @@ class verilogaEditor(textEditor):
 
 
 class spiceEditor(textEditor):
-    def __init__(self, filePathObj:Path):
+    def __init__(self, filePathObj: Path):
         super().__init__(filePathObj)
         self.initEditor()
         self.setWindowTitle("Xyce/SPICE Editor")
@@ -443,7 +446,7 @@ class spiceEditor(textEditor):
 
     def openFile(self):
         (fileName, _) = QFileDialog.getOpenFileName(self, "Open File", "",
-                                                         "Xyce Files (*.sp);;All Files (*)")
+                                                    "Xyce Files (*.sp);;All Files (*)")
         if fileName:
             self.filePathObj = Path(fileName)
             if self.filePathObj.exists():
@@ -453,8 +456,9 @@ class spiceEditor(textEditor):
 
     def saveAsFile(self):
 
-        (fileName, _) = QFileDialog.getSaveFileName(self, "Save File", str(self.filePathObj),
-                                                         "Xyce Files (*.sp);;All Files (*)")
+        (fileName, _) = QFileDialog.getSaveFileName(self, "Save File",
+                                                    str(self.filePathObj),
+                                                    "Xyce Files (*.sp);;All Files (*)")
         if fileName:
             self.filePathObj = Path(fileName)
             if self.filePathObj:

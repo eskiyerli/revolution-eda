@@ -1,68 +1,118 @@
 # Revolution EDA Layout Editor
 
-Layout editor is a recent addition to Revolution EDA and allows the basic editing functions necessary in the physical layout of custom integrated circuits. Currently, the layout editor can create:
+The layout editor in Revolution EDA provides a comprehensive suite of tools for designing
+the physical layout of custom integrated circuits. It supports hierarchical design through
+cell instantiation and includes advanced features like parametric cells, design rule
+checking (DRC), and GDS import/export.
 
-1. Instances of other layouts on the current layout to create hierarchical layouts.
-2. Rectangles on any layer
-3. Wires
-4. Pins including a pin rectangle and a label
-5. Labels
-6. Vias to connect two layers vertically
-7. Polygons
+## Supported Editing Elements
 
-Revolution EDA layout editor also allows use parametric layout cells to programmatically create layout instances of cells defined as `pcell` cellview.
+The layout editor enables creation and editing of:
 
-There is a on-screen ruler that allows the measurement of dimensions of and distance between physical layout elements.
+1. **Instances** of other layout cells to create hierarchical layouts
+2. **Rectangles** on any layout layer
+3. **Paths (Wires)** with configurable width, orientation, and extensions
+4. **Pins** including pin rectangles and labels for connectivity
+5. **Labels** for net names, port labels, and annotations
+6. **Vias** (single and array) to vertically connect different layers
+7. **Polygons** with arbitrary corners and complex shapes
+8. **Parametric Cells (pcells)** for programmatically generated layout instances
+9. **Rulers** for on-screen measurement of dimensions and distances
 
-Layout Editor Window has two main areas below the menu and toolbar areas:
+## Layout Editor Interface
 
-1. LSW (Layer Selection Window) on the left side where layer related information is presented in five columns:
+The Layout Editor Window consists of the following main areas below the menu and toolbar:
 
-   1. Layer Stipple: This is a sample of layer texture drawn in the layout editor. It can be created using the `Stipple Editor` accessible from `Tools` menu 
-   2. Layer Name: Name of the layer. This usually corresponds to a particular GDS layer.
-   3. Layer Purpose: Purpose of the layer, for example: drawing, pin, text, etc. This usually corresponds to a datatype in GDS output.
-   4. Visibility: Whether a layer is visible. If the checkbox is checked the layer is visible.
-   5. Selectable: Whether a layer is selectable. If the checkbox is checked the layer is selectable.
+### Layer Selection Window (LSW)
 
-2. Layout Editor Scene: This is where the editing actions are performed.
+Located on the left side, the LSW presents layer information in five columns:
 
-   <img src="assets/layoutEditorWindowAnnotated.png" class="image fit"/>
+1. **Layer Stipple**: Visual texture sample of the layer (created via the Stipple Editor in
+   Tools menu)
+2. **Layer Name**: Name of the layer, typically corresponding to a GDS layer number
+3. **Layer Purpose**: Layer purpose such as "drawing", "pin", "text", etc. (corresponds to
+   GDS datatype)
+4. **Visibility**: Checkbox to toggle layer visibility in the layout view
+5. **Selectable**: Checkbox to toggle whether shapes on this layer can be selected
 
+### Layout Editor Scene
 
+The main editing area where all layout operations are performed. The scene provides:
+
+- Multi-layer editing with layer-based filtering
+- Grid-based snapping for precise placement
+- Zoom and pan capabilities
+- Selection and manipulation of layout elements
+
+<img src="assets/layoutEditorWindowAnnotated.png" class="image fit"/>
+
+## Additional Editing Tools
+
+### Align Items
+
+Align selected layout elements to common edges or centers for organized, professional
+layouts.
+
+**Usage**:
+
+1. Select multiple items (rectangles, paths, instances, etc.)
+2. Press `Shift+A` or select `Edit→Align Items`
+3. Choose alignment type:
+    - **Align Left**: Align left edges
+    - **Align Right**: Align right edges
+    - **Align Top**: Align top edges
+    - **Align Bottom**: Align bottom edges
+    - **Center Horizontally**: Distribute centers horizontally
+    - **Center Vertically**: Distribute centers vertically
+
+### Cut Shape
+
+Cut shapes from the layout using boolean operations.
+
+**Usage**:
+
+1. Select a shape (path, rectangle or polygon) to cut from
+2. Press `Shift+C` or select `Edit→Cut Item`
+3. Enter cut mode and define cutting line.
+4. Cut line could be diagonal, vertical or horizontal.
+5. A path would be divided into two paths, while rectangles and polygons would be divided
+   into two polygons.
+
+This is useful for creating complex layouts by subtracting areas from rectangles or
+polygons.
 
 ## PDK creation for Layout Editor
 
-A process design kit for the physical layout of an integrated circuit requires extensive information. Among others, a PDK should include:
+A process design kit for the physical layout of an integrated circuit requires extensive
+information. Among others, a PDK should include:
 
 1. Layout layers information
 2. Process information such as database units (dbu), via definitions, via layers, etc
 3. Layout parametric cells
 4. Layout design rules for Design Rules (DRC) checking.
 5. Layout extraction rules for layout-versus-schematic checks (LVS).
-6. Layout parasitics extraction, i.e. resistive, capacitive and inductive parasitic elements due to physical layout.  
+6. Layout parasitics extraction, i.e. resistive, capacitive and inductive parasitic elements
+   due to physical layout.
 
-At the moment, Revolution EDA only includes the infrastructure for the first three items. DRC and LVS can be performed on exported GDS netlists using either commercial tools or open-source tools such as [KLayout](https://www.klayout.de 'KLayout') with DRC and LVS scripts for a particular technology.
+**Current Support**: Revolution EDA infrastructure currently includes the first four items.
+LVS verification functionality will be soon integrated to Revolution EDA. Layout parasitics
+extraction is planned to be implemented after version 1.0.
 
-Revolution EDA does not yet provide a commercial PDK. As the layout editor is relatively new, its PDK format may evolve. The PDK is currently structured in several distinct Python modules that are part of the `pdk` package.
+**PDK Structure**: PDKs are Python modules structured in several distinct files. The PDK
+folder is referenced via the `REVEDA_PDK_PATH` environment variable (or `.env` file), making
+it easy to support multiple PDKs or project-specific configurations.
 
-The PDK module folder should be named `pdk`. However, this folder can be placed anywhere in the file system as its path is determined by the `REVEDA_PDK_PATH` environment variable. If you don't want to set environment variables in your system, a convenient mechanism using a `.env` file at the root path of the Revolution EDA installation is provided. For example, the `.env` file can include the following variables:
+**Example Configuration** in `.env`:
 
 ```bash
-# development settings
-#REVEDASIM_PATH = ./revedasim
-REVEDAEDIT_PATH = ./revedaEditor
-REVEDA_PDK_PATH = ./pdk
+REVEDA_PDK_PATH = ./pdk  # or absolute path, or ../gf180_pdk, etc.
 ```
 
-Note that `REVEDA_PDK_PATH` is set to `./pdk`. However, it can be set to any other path (absolute or relative). This makes it easy to support multiple PDKs or project-specific PDK configurations.
+## PDK Module Structure
 
-The example `pdk` module is currently organised as below:
+A Revolution EDA PDK consists of the following Python modules:
 
-<img src="assets/pdkOrganisation.png" class="image fit" />
-
-### LayoutLayers
-
-This module includes the information on the layout layers. Each layout layer is defined as data class of Python. The layout layer data class is defined as:
+### LayoutLayers (`layoutLayers.py`)
 
 ```python
 @dataclass
@@ -81,7 +131,8 @@ class layLayer:
     datatype: int = 0  # gds datatype
 ```
 
-Note that all the relevant information for a layer is collated in a single definition. A layout layer definition entry in `layoutLayers.py` module will look like this:
+Note that all the relevant information for a layer is collated in a single definition. A
+layout layer definition entry in `layoutLayers.py` module will look like this:
 
 ```python
 odLayer_drw = ddef.layLayer(
@@ -105,15 +156,84 @@ odLayer_drw = ddef.layLayer(
 - pwidth: Pen width
 - pstyle: Pen style
 - *bcolor*: Similarly colour ofbrush is defined by `bcolor` property.
-- *btexture*: This property defines the texture of brush defined in a stipple png file. There is a separate stipple editor that can be accessed from the main Revolution EDA window using `Tools->Create Stipple…` menu item. 
-- *z*: This property is used to give the vertical stacking order of the layers. It is not used at the moment.
-- *visible*: Used to determine whether this layer is visible.
-- *selectable*: Used to determine whether this layer is selectable.
-- *gdsLayer*: GDS Layer number.
+- *btexture*: This property defines the texture of brush defined in a stipple png file.
+  There is a separate stipple editor that can be accessed from the main Revolution EDA
+  window using `Tools->Create Stipple…` menu item.
+- **z**: Stacking order (higher values appear on top)
+- **gdsLayer/datatype**: GDS layer/datatype numbers for foundry compatibility
 
-### Pcells
+### Parametric Cells (`pcells.py`)
 
-This file defines the parametric layout cells as Python classes. A sample NMOS parametric cell code is provided to guide PDK engineers in creating new parametric layout cells. Important point is that this class has a `__call__` dunder method defined that allows it to be called with a number of parameters like a function to update itself. When an instance of parametric layout cell is first initialized, there are no shapes associated with it. It needs to be called with proper parameters so that the layout instance is created. Everytime the parameters are changed, the instance shape will be recreated.
+Defines parametric layout cells as Python classes. These cells programmatically generate
+geometry based on parameters, enabling:
+
+- Reusable device definitions (NMOS, PMOS, capacitors, etc.)
+- Automatic recalculation when parameters change
+- Consistent design rule compliance
+
+**Key Concepts**:
+
+- Inherits from `lshp.layoutPcell` (layout shape base class)
+- Implements `__call__()` method to regenerate shapes when parameters change
+- Initially created empty; shapes generated when called with parameters
+- Parameters can include device W/L/M and other PDK-specific values
+
+**Example**: NMOS Parametric Cell
+
+```python
+class nmos(lshp.layoutPcell):
+    # Design rule constants (in grid units)
+    cut = int(0.17 * fabproc.dbu)
+    poly_to_cut = int(0.055 * fabproc.dbu)
+    diff_ovlp_cut = int(0.06 * fabproc.dbu)
+    # ... more constants ...
+
+    def __init__(self, width: str = "4.0", length: str = "0.13", nf: str = "1"):
+        """Initialize with default parameters; shapes created empty."""
+        self._deviceWidth = float(width)
+        self._drawnWidth = int(fabproc.dbu * self._deviceWidth)
+        self._deviceLength = float(length)
+        self._drawnLength = int(fabproc.dbu * self._deviceLength)
+        self._nf = int(float(nf))  # Number of fingers
+        self._widthPerFinger = int(self._drawnWidth / self._nf)
+        self._shapes = []  # Empty initially
+        super().__init__(self._shapes)
+
+    def __call__(self, width: float, length: float, nf: int):
+        """
+        Called to update parameters and regenerate shapes.
+        Removes old shapes and creates new geometry based on parameters.
+        """
+        self._deviceWidth = float(width)
+        self._drawnWidth = int(self._deviceWidth * fabproc.dbu)
+        self._deviceLength = float(length)
+        self._drawnLength = int(self._deviceLength * fabproc.dbu)
+        self._nf = int(float(nf))
+        self._widthPerFinger = self._drawnWidth / self._nf
+        self.shapes = self.createGeometry()  # Regenerate layout
+
+    def createGeometry(self) -> list[lshp.layoutShape]:
+        """Create and return list of layout shapes (rectangles, paths, etc.)."""
+        # Example: Create active area rectangle
+        activeRect = lshp.layoutRect(
+            QPoint(0, 0),
+            QPoint(self._widthPerFinger, ...),
+            laylyr.odLayer_drw,  # On OD (diffusion) layer
+        )
+        # Create poly fingers
+        polyFingers = [...]  # Multiple poly rectangles
+        return [activeRect, *polyFingers]
+```
+
+**Usage in Layout Editor**:
+
+1. Create parametric cell instance via `Create→Create Instance`
+2. Select pcell from library
+3. Instance appears as a single unit but contains all generated shapes
+4. Edit instance properties to change W/L/M parameters
+5. Geometry automatically regenerates based on new parameters
+
+### Process (`process.py`)
 
 ```python
 from PySide6.QtCore import (
@@ -230,137 +350,312 @@ class nmos(lshp.layoutPcell):
         self._nf = value
 ```
 
-### Process
+### Process (`process.py`)
 
-This module is used to define the parameters that will be used in the PDK definition. For example, *database units per micrometer (dbu)* or the via dimensions and layers, etc. 
+Defines PDK-specific constants and process parameters:
 
-### Schematic Layers
+**Database Units (dbu)**: Conversion factor between user coordinates and GDS grid
 
-This module defines the layer properties used in the schematics such as wire, text, pin, etc. It has the same format as the layout properties module based on  `schLayer` dataclass.
+- Typically: 1 dbu = 1 nanometer or 1 picometer
+- Example: `dbu = 1e-9` (1 nm grid)
 
-### Symbol Layers
+**Via Definitions**: Specifies via layers and geometry for vertical interconnection
 
-Similar to schematic or layout layers modules, this module describes the layer properties used for symbol drawing.
+- `processVias`: List of via definitions with layer pairs and dimensions
+- Minimal and maximal spacing constraints
 
-Revolution EDA’s PDK structure is still a work-in-progress and more modules might be added by the PDK developers as needed.
+**Path Definitions**: Configures available metal/polysilicon layers for routing paths
+
+- `processPaths`: List of path types with width and extension constraints
+- Minimum width and spacing rules
+
+**GDS Export Settings**:
+
+- `gdsUnit`: GDS database unit (typically 1e-6 = 1 μm)
+- `gdsPrecision`: Coordinate precision (typically 1e-9 = 1 nm)
+
+### Schematic Layers (`schLayers.py`)
+
+Defines layer properties used in schematic views (wire, pin, text, etc.). Uses the same
+`edLayer` dataclass as used elsewhere in the codebase. Schematic layers define:
+
+- Wire net layer appearance
+- Pin and port symbols
+- Text annotation layers
+- Connection points and junction markers
+
+### Symbol Layers (`symLayers.py`)
+
+Defines layer properties for symbol representations (visual schematic symbols). Similar to
+schematic layers, uses `edLayer` dataclass and controls:
+
+- Symbol pin appearance
+- Symbol shape rendering
+- Text label styling
+- Visual distinction for different symbol types
 
 ## Editing Functions
 
+All editing operations are accessible via:
+
+- Menu items under `Create` and `Edit` menus
+- Toolbar buttons for quick access
+- Keyboard shortcuts for efficient workflow
+
 ### Rectangles
 
-A rectangle on any layer can be created by:
+Create rectangles on any layer by:
 
-1. Selecting `Create->Rectangle` menu item,
-2. Pressing `Create Rectangle` icon on the layout toolbar,
-3. Finally, pressing `r` key
+1. Selecting `Create→Rectangle` menu item
+2. Pressing the `Create Rectangle` toolbar button
+3. Pressing the `r` key
 
-A rectangle will be created such that its diagonal will be between the first location the right mouse button is clicked and the second location the right mouse button is clicked. It is not necessary to hold right mouse button pressed. Rectangle will be created on the layer selected in the LSW.
+**Creation**: Click the right mouse button at one diagonal corner, then at the opposite
+corner. Rectangle is created on the selected layer in the LSW.
+
+**Properties Dialog**: Select a rectangle and press `q` or choose
+`Edit→Properties→Object Properties` to modify:
+
+- Width and height
+- Top-left corner coordinates (in μm)
+- Layer assignment
 
 <img src="assets/drawingLayoutRectangles.png" class="image fit" />
-
-If the user wants to change any properties of a rectangle such as width, height, layer or top left point coordinates (in um), he or she needs to select the rectangle press `q` or  select `Edit->Properties->Object Properties` menu item. A dialogue will be shown:
-
 <img src="assets/layoutRectanglePropertiesDialogue.png" style="zoom: 67%;" />
-
-Any changes can be entered in the dialogue and once `OK` button is pressed these changes will be applied to the selected rectangle.
 
 ### Paths (Wires)
 
-A wire path in Revolution EDA layout editor can be drawn using `Create-> Create Path..`menu item or `Create Path` toolbar button or simply pressing on `w` key on anywhere in the editor window. This will bring up the `Create Path`dialogue:
+Draw paths by:
+
+- Selecting `Create→Create Path...` menu item
+- Pressing the `Create Path` toolbar button
+- Pressing the `w` key
+
+This opens the **Create Path Dialog** with configurable settings:
+
+**Path Orientation Options**:
+
+- **Manhattan**: 0°, 90°, 180°, 270° angles only
+- **Diagonal**: 45° step angles (0°, 45°, 90°, 135°, etc.)
+- **Any**: Arbitrary angles
+- **Horizontal**: 0° and 180° angles only
+- **Vertical**: 90° and 270° angles only
+
+**Settings**:
+
+1. **Path Layer**: Choose from available drawing layers (default: first drawing layer)
+2. **Path Width**: Minimum width defaults from PDK process definition
+3. **Start Extend**: Extension behind starting point (default: width/2)
+4. **End Extend**: Extension beyond ending point (default: width/2)
+
+**Editing After Creation**:
+
+- Modify with `Path Properties Dialog` after drawing
+- Use **Stretch Mode** (`s` key) to adjust endpoints interactively
+    - Select path, press `s`, click endpoint (cursor shows double-arrow)
+    - Move mouse to desired location, press `Esc` to finish
 
 <img src="assets/createPathDialogue.png" style="zoom:67%;" />
-
-Paths can be only drawn on `drawing` layers as designated in `layoutLayer.py`module by `pdkDrawingLayers` list. 
-There are in total six settings in `Create Path` dialogue.
-
-1. Path Orientation: 
-   1. *Manhattan*: Paths can be drawn in Manhattan orientation, i.e. 0, 90, 180 and 270 degree angles.
-   2. *Diagonal*: Paths angles can be changed in 45 degree steps: 0, 45, 90...335 and 360 degree angles.
-   3. *Any*: Paths can have any angle.
-   4. Horizontal: Path angle can only 0 and 180 degree angles with respect to horizontal.
-   5. Vertical: Path angle can only 90 and 270 degree angles with respect to horizontal.
-2. Path Layer: As explained above any of the drawing layers can be used to draw paths. 
-3. Path Width: Path width can be entered here, it defaults to 1um.
-4. Start Extend: This field shows how much the path is extended behind the starting point, it defaults to 0.5 um.
-5. End Extend: This field shows  how much the path is extended beyond the end point, it defaults to 0.5 um.
-
 <img src="assets/pathEditExamples.png" class="image fit" />
-
-The properties of a path can also be changed after its drawn using `Path Properties Dialogue`. 
-
 <img src="assets/layoutPathPropertiesDialogue.png" class="small-image" />
-
-A path can also be edited using `Stretch` mode. Just select the layout path, click `s` key or select `Edit->Stretch` menu item and click on one of the end points of the path. The cursor will change to a double sided arrow cursor and now you can move your mouse to stretch the path. Once the path is stretched to the desired point, press `Esc` key to stop stretch action.
-
 <img src="assets/layoutPathStretch.png" class="small-image" />
 
 ### Pins
 
-In Revolution EDA, pins have two components:
+Pins in Revolution EDA consist of two components:
 
-1. The rectangle at which pin shape is defined. Normally it will be defined at a dedicated layer with `pin` purpose, but it does not have to.
-2. The pin label, which defines the name of the pin.
+1. **Pin Rectangle**: Defines the pin boundary/shape on a pin layer
+2. **Pin Label**: Defines the pin name and its position
 
-Note that most LVS tools such as Calibre do only use label information and placement to define the pin locations.
+Most LVS (Layout-versus-Schematic) tools use label information and placement to verify pin
+locations.
 
-To create a pin, press `p` key or select `Create->Create Pin…` menu item. Alternatively one could select the `Create Pin` button at the layout toolbar. A dialogue titled `Create Layout Pin` will be shown. In this dialogue,  all the related attributes of a layout pin can be defined such as pin name, direction, type, and layer, followed by label  properties such layer, font name, size, height, alignment and orientation. Pin layer and label layer will default to first members of `pdkPinLayers` and `pdkTextLayers` lists defined in `layoutLayers.py` module.
+**Creation**:
+
+1. Press `p` key, select `Create→Create Pin...`, or click the `Create Pin` toolbar button
+2. Configure pin properties in the dialog:
+    - **Pin Name**: Required; must match schematic port names
+    - **Pin Direction**: Input, Output, Inout, or Power
+    - **Pin Type**: Signal, Power, Ground, etc.
+    - **Pin Layer**: Defaults to first pin layer (from `pdkPinLayers`)
+    - **Label Properties**: Font, size, height, alignment, orientation
+
+    - Pin layer defaults to first member of `pdkPinLayers` list in `layoutLayers.py`
+    - Label layer defaults to first member of `pdkTextLayers` list
+
+3. Click `OK`, then:
+    - Right-click for first corner of pin rectangle
+    - Drag and right-click again for opposite corner
+    - Label appears at cursor location
+    - Right-click to place label within pin rectangle
+    - Press `Esc` to finish
 
 <img src="assets/createLayoutPinDialogue.png" class="small-image" />
-
-Enter the desired values for each property. Default values can be used except for pin name. Note that Revolution EDA will list all the monospaced fonts installed in the system. Whether these fonts are available between different operating systems must be determined beforehand. After entering the pin name, click `OK` button.
-
-Now click right mouse button for the first point of the pin shape rectangle and then pull the mouse cursor while pressing right mouse button to the other end of rectangle diagonal and unpress the right mouse button to finish the editing the pin shape rectangle. Immediately, the pin name label will be shown at the cursor location. Press the mouse button once more in the pin shape rectangle to place pin label (name) and press `Esc` key to finish the edit.
-
 <img src="assets/layoutPinEntry.png" class="small-image" />
-
 
 ### Labels
 
-Labels also can be created without using pin shape. Press `L` key or select `Create->Create Label...`or press `Create Label` button on layout toolbar.
+Create standalone labels (without pin shapes) by:
 
-In this dialogue, enter the label name and choose the label layer. The label layer combobox will list all the layers defined in `pdkTextLayers` layer list in the `layoutLayers.py` module. Once `OK` button is clicked, the label with the selected font will follow mouse cursor. Press right mouse button at the desired location. Note that labels are normally used by LVS tools such as Calibre to define the connectivity.
+- Pressing `Shift+L` or `L` key
+- Selecting `Create→Create Label...`
+- Clicking the `Create Label` toolbar button
 
-<img src="assets/layoutLabelCreateDialogue.png" lass="small-image" />
+**In the Label Dialog**:
+
+1. Enter label name
+2. Choose label layer from available text layers (`pdkTextLayers`)
+3. Click `OK`
+
+The label follows your cursor and is placed by right-clicking at the desired location.
+Labels are used by LVS tools to define net connectivity and are essential for layout
+verification.
+
+<img src="assets/layoutLabelCreateDialogue.png" class="small-image" />
 
 ### Polygons
 
-Polygons are any closed shape that can have number of corners or sides between three (3) and essentially infinite. A polygon is defined sequentially starting from the first corner and adding additional corners. After adding a corner, there will be a guide line drawn between the last point and where the cursor is on the screen:
+Create arbitrary closed shapes with 3 or more corners by:
+
+- Pressing `Shift+P` or relevant menu item
+- Selecting `Create→Create Polygon`
+
+**Editing Process**:
+
+1. Right-click to place each corner sequentially
+2. A guide line shows connection to cursor position after each click
+3. Continue adding corners as needed
+4. Right-click on the first corner again to close the polygon
+5. Press `Esc` to finish
+
+**Editing Existing Polygons**:
+
+- Use **Stretch Mode** (`s` key) to move individual corners:
+    - Select polygon, press `s`
+    - Right-click on corner to move
+    - Drag while holding right-click
+    - Release to place at new location
+- Use `Layout Polygon Properties` dialog to:
+    - Edit corner coordinates directly
+    - Change polygon layer
+    - Modify other properties
 
 <img src="assets/layoutPolygonEditingFirst.png" class="vertical-image" />
-
-If the right mouse button is clicked once more where the new corner of the polygon is desired to be placed, the polygon will be reshaped to include the new corner:
-
 <img src="assets/layoutPolygonEditingSecond.png" class="vertical-image" />
-
-This process could be continued as many times as needed. Of course, a layout polygon can be edited after its drawn. Like a symbol polygon, a layout polygon can be *stretched* using `stretch` mode when it is selected by pressing `s` button or selecting relevant menu item or layout toolbar button. Then select one of the corners by pressing right mouse button. Move that corner to its new location while pressing right mouse button and release the button. Alternatively, you could edit the point locations using `Layout Polygon Properties` dialogue. Using this dialogue also allows changing the layer of the polygon.
-
 <img src="assets/layoutPolygonPropertiesDialogue.png" class="small-image" /> 
-
 
 ### Rulers
 
-In custom IC layout design editing, rulers are extensively used and thus Revolution EDA also offers the ruler addition. A ruler measures the length between two points on the layout. Layout rulers in Revolution EDA can be orthogonal but not yet diagonal. A ruler can be started by pressing `K`, pressing `Create->Add Ruler` menu item or `Add Ruler` button on layout toolbar.
+Rulers measure distances between two points on the layout. Revolution EDA supports
+orthogonal (horizontal/vertical) rulers.
 
-Press right mouse button where you want to ruler to start from, release mouse button and then right click again on right mouse where you want ruler should measure to. To finish ruler addition, press `ESC` key or select another editing function. 
+**Creation**:
+
+- Press `k` key
+- Select `Create→Add Ruler`
+- Click `Add Ruler` toolbar button
+
+**Usage**:
+
+1. Right-click at first measurement point
+2. Right-click at second measurement point (ruler measures between points)
+3. Press `Esc` or select another editing function to finish
+
+**Management**:
+
+- **Delete All Rulers**: Press `Shift+K`, or select `Delete Rulers` menu item/toolbar button
+- **Move Rulers**: Select a ruler and drag to new position
+- **Delete Individual Ruler**: Select and delete with `Delete` key
 
 <img src="assets/layoutRulerAddition.png" class="image fit" />
 
-A ruler can be selected and moved or deleted. If you want to remove all the rulers on the layout, just press `Shift` and `K` keys simultaneously or select `Delete Rulers` menu item or layout toolbar button.
+### Vias
+
+Vias electrically connect different metal layers vertically. Revolution EDA supports both
+single vias and via arrays configured through the PDK's via definitions.
+
+**Creating Vias**:
+
+- Press `v` key
+- Select `Create→Create Via...`
+- Click `Create Via` toolbar button
+
+Opens the **Create Via Dialog** allowing you to:
+
+1. Select via type from PDK definitions
+2. Choose between **Single Via** or **Via Array** mode
+3. Configure array parameters (spacing and repetition)
+
+**Single Via**: Click right mouse button at desired location to place.
+
+**Via Array**:
+
+- Specify X and Y spacing between via centers
+- Define number of vias in X and Y directions
+- Useful for creating regular interconnect patterns with proper spacing constraints
 
 ### Instantiating Layout Cells
 
-By creating layout cells including other layout cells, rectangles, paths, pins, labels, polygons and parametric layout cells (pcells), a hierarchic layout design can be accomplished. A layout cell can be instantiated similar to a schematic cell either by pressing `I` key, or selecting `Create->Create Instance` menu item.
+By creating layout cells including other layout cells, rectangles, paths, pins, labels,
+polygons and parametric layout cells (pcells), a hierarchic layout design can be
+accomplished. A layout cell can be instantiated similar to a schematic cell either by
+pressing `I` key, or selecting `Create->Create Instance` menu item.
 
 <img src="assets/layoutInstance.png" class="image fit"/>
 
-## GDS Export
+## GDS Export and Design Verification
 
-GDS is standard output format for the integrated circuit foundries. Revolution EDA can export hierarchical binary GDS files. To export a GDS file of the layout, select `Tools->Export GDS` menu item. The dialogue will ask you the database unit, precision and export file location in the file system. The database unit and precision fields are prefilled with the values from `process.py` file. GDS export is handled by excellent `gdstk` package.
+### GDS Export
+
+GDS (Graphical Data System) is the standard output format for integrated circuit foundries.
+Revolution EDA exports hierarchical binary GDS files using the industry-standard `gdstk`
+package.
+
+**Exporting to GDS**:
+
+1. Select `Tools→Export GDS` menu item
+2. In the export dialog, configure:
+    - **Database Unit**: Defaults from `process.py` (typically 1e-6 meters or 1 micron)
+    - **Precision**: Resolution for GDS coordinates (default from PDK)
+    - **Export Location**: Directory where GDS file will be saved
+
+3. Click `OK` to export hierarchical GDS file
+
+The exported GDS can be further processed, viewed in KLayout, and used for DRC/LVS
+verification.
 
 <img src="assets/GDSExport.png" class="image fit"/>
 
-The resulting GDS file can be viewed and further processed for DRC/LVS by kLayout. Currently, GDS exports can only be hierarchical.
+### KLayout Design Rule Checking (DRC)
 
-<img src="assets/exportedGDSKlayout.png" class="image fit" />
+For PDKs with DRC support, Revolution EDA integrates KLayout's DRC engine for rule
+verification. DRC checking requires:
+
+- KLayout installed on your system
+- PDK with DRC rules (`klayoutDRC` module and `.lydrc` rule files)
+
+**Running KLayout DRC**:
+
+1. Select `Tools→KLayout DRC/LVS→KLayout DRC...`
+2. In the DRC Configuration Dialog, specify:
+    - **KLayout Path**: Location of KLayout executable
+    - **Cell Name**: Name of cell to verify (auto-filled)
+    - **DRC Rule Set**: Select from available rule files (minimal, maximal, etc.)
+    - **Run Limit**: Number of parallel DRC processes
+    - **Output Directory**: Where DRC report files are saved
+
+3. **GDS Export**: Optionally auto-export GDS during DRC run
+4. Click **Run** to execute DRC verification
+
+**DRC Results**:
+
+- Results displayed in DRC Errors Dialog showing rule violations
+- Violations can be highlighted by layer/rule type
+- Clicking violations highlights corresponding layout polygons in real-time
+- Results saved to `.lyrdb` (KLayout report database) format and can also be viewed in
+  KLayout if so preferred.
+
+This enables efficient design verification within the Revolution EDA workflow without manual
+KLayout interaction.
 
 

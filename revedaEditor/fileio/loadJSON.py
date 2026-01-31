@@ -27,33 +27,28 @@
 
 import functools
 import json
-import orjson
 import pathlib
 from typing import Any, List
 
+import orjson
 from PySide6.QtCore import QPoint, QLineF, QRect
-from PySide6.QtGui import (
-    QColor,
-    QFont,
-)
 from PySide6.QtWidgets import (
     QGraphicsScene,
-    QGraphicsItem,
     QGraphicsRectItem,
     QGraphicsSimpleTextItem,
 )
-# from methodtools import lru_cache
 
 import revedaEditor.common.labels as lbl
 import revedaEditor.common.layoutShapes as lshp
 import revedaEditor.common.net as net
 import revedaEditor.common.shapes as shp
 import revedaEditor.fileio.symbolEncoder as se
-from revedaEditor.backend.pdkPaths import importPDKModule
+from revedaEditor.backend.pdkLoader import importPDKModule
 
 laylyr = importPDKModule('layoutLayers')
 pcells = importPDKModule('pcells')
 fabproc = importPDKModule('process')
+
 
 class symbolItems:
     def __init__(self, scene: QGraphicsScene):
@@ -89,8 +84,6 @@ class symbolItems:
                     return self.createTextItem(item)
                 case "polygon":
                     return self.createPolygonItem(item)
-            
-
 
     @staticmethod
     def createRectItem(item: dict):
@@ -103,8 +96,8 @@ class symbolItems:
         rect.setPos(
             QPoint(item["loc"][0], item["loc"][1]),
         )
-        rect.angle = item.get("ang",0)
-        rect.flipTuple = item.get('fl',(1,1))
+        rect.angle = item.get("ang", 0)
+        rect.flipTuple = item.get('fl', (1, 1))
         return rect
 
     @staticmethod
@@ -117,8 +110,8 @@ class symbolItems:
         circle.setPos(
             QPoint(item["loc"][0], item["loc"][1]),
         )
-        circle.angle = item.get("ang",0)
-        circle.flipTuple = item.get('fl',(1,1))
+        circle.angle = item.get("ang", 0)
+        circle.flipTuple = item.get('fl', (1, 1))
         return circle
 
     @staticmethod
@@ -130,7 +123,7 @@ class symbolItems:
         # for scene
         arc.setPos(QPoint(item["loc"][0], item["loc"][1]))
         arc.angle = item.get("ang", 0)
-        arc.flipTuple = item.get('fl',(1,1))
+        arc.flipTuple = item.get('fl', (1, 1))
         arc.arcType = shp.symbolArc.arcTypes[item["at"]]
         return arc
 
@@ -141,8 +134,8 @@ class symbolItems:
 
         line = shp.symbolLine(start, end)
         line.setPos(QPoint(item["loc"][0], item["loc"][1]))
-        line.angle = item.get("ang",0)
-        line.flipTuple = item.get('fl',(1,1))
+        line.angle = item.get("ang", 0)
+        line.flipTuple = item.get('fl', (1, 1))
         return line
 
     @staticmethod
@@ -151,7 +144,7 @@ class symbolItems:
         pin = shp.symbolPin(start, item["nam"], item["pd"], item["pt"])
         pin.setPos(QPoint(item["loc"][0], item["loc"][1]))
         pin.angle = item["ang"]
-        pin.flipTuple = item.get('fl',(1,1))
+        pin.flipTuple = item.get('fl', (1, 1))
         return pin
 
     @staticmethod
@@ -192,7 +185,7 @@ class symbolItems:
     def createPolygonItem(item: dict):
         pointsList = [QPoint(point[0], point[1]) for point in item["ps"]]
         polygon = shp.symbolPolygon(pointsList)
-        polygon.flipTuple = item.get('fl',(1,1))
+        polygon.flipTuple = item.get('fl', (1, 1))
         return polygon
 
     @staticmethod
@@ -237,42 +230,42 @@ class schematicItems:
                     # return self.unknownItem()
 
     def _createText(self, item):
-        start = QPoint(0,0)
+        start = QPoint(0, 0)
         text = shp.text(
-                        start,
-                        item["tc"],
-                        item["ff"],
-                        item["fs"],
-                        item["th"],
-                        item["ta"],
-                        item["to"],
-                    )
+            start,
+            item["tc"],
+            item["ff"],
+            item["fs"],
+            item["th"],
+            item["ta"],
+            item["to"],
+        )
         text.setPos(QPoint(item["st"][0], item["st"][1]))
-        text.flipTuple = item.get('fl', (1,1))
+        text.flipTuple = item.get('fl', (1, 1))
         text.angle = item.get('ang', 0)
 
         return text
 
     def _createPin(self, item):
-        start = QPoint(0,0)
+        start = QPoint(0, 0)
         pinName = item["pn"]
         pinDir = item["pd"]
         pinType = item["pt"]
         pinItem = shp.schematicPin(
-                        start,
-                        pinName,
-                        pinDir,
-                        pinType,
-                    )
+            start,
+            pinName,
+            pinDir,
+            pinType,
+        )
         pinItem.setPos(QPoint(item["st"][0], item["st"][1]))
         pinItem.angle = item.get('ang', 0)
-        pinItem.flipTuple = item.get('fl', (1,1))
+        pinItem.flipTuple = item.get('fl', (1, 1))
         return pinItem
 
     def _createNet(self, item):
         start = QPoint(item["st"][0], item["st"][1])
         end = QPoint(item["end"][0], item["end"][1])
-        width = item.get('w',0)
+        width = item.get('w', 0)
         netItem = net.schematicNet(start, end, width)
         netItem.name = item["nam"]
         match item["ns"]:
@@ -357,7 +350,7 @@ class schematicItems:
                             for labelItem in symbolInstance.labels.values()
                         ]
                         symbolInstance.angle = item.get("ang", 0)
-                        symbolInstance.flipTuple = item.get('fl', (1,1))
+                        symbolInstance.flipTuple = item.get('fl', (1, 1))
                         return symbolInstance
                     except json.decoder.JSONDecodeError:
                         self.scene.logger.error(
@@ -386,7 +379,6 @@ class schematicItems:
         rectItem = QGraphicsRectItem(QRect(0, 0, *self.snapTuple))
         rectItem.setVisible(False)
         return rectItem
-
 
 
 class PCellCache:
@@ -459,7 +451,7 @@ class layoutItems:
     def _get_library_path(self, lib_name):
         """Common method to get and validate library path"""
         return self._get_library_path_cached(lib_name, tuple(self.libraryDict.items()))
-    
+
     @functools.lru_cache(maxsize=32)
     def _get_library_path_cached(self, lib_name, library_dict_items):
         """Cached library path lookup"""
@@ -536,10 +528,11 @@ class layoutItems:
         shapes_data = file_contents[2:]
         item_shapes = []
         item_shapes_append = item_shapes.append  # Cache method
-        
+
         for shape in shapes_data:
             try:
-                created_shape = self.create(shape)  # Reuse self instead of creating new instance
+                created_shape = self.create(
+                    shape)  # Reuse self instead of creating new instance
                 if created_shape:
                     item_shapes_append(created_shape)
             except Exception:

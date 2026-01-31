@@ -21,3 +21,11 @@
 #    License: Mozilla Public License 2.0
 #    Licensor: Revolution Semiconductor (Registered in the Netherlands)
 #
+
+# Revolution EDA GUI Module
+# Initialize editor factory and register all editor types
+
+from revedaEditor.gui.editorFactory import registerEditors
+
+# Register all editor types when module is imported
+registerEditors()

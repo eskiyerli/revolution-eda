@@ -20,10 +20,11 @@
 
 from dataclasses import dataclass
 from typing import NamedTuple, Union
-from revedaEditor.backend import libBackEnd as libb
+
 from PySide6.QtCore import QPoint, QPointF, Qt
 from PySide6.QtGui import QColor
-from polars import int_range
+
+from revedaEditor.backend import libBackEnd as libb
 
 
 @dataclass
@@ -59,7 +60,7 @@ class layLayer:
 
     @classmethod
     def filterByGDSLayer(
-        cls, layer_list, gdsLayer: int, gdsDatatype: int
+            cls, layer_list, gdsLayer: int, gdsDatatype: int
     ) -> "layLayer":
         for layer in layer_list:
             if layer.gdsLayer == gdsLayer and layer.datatype == gdsDatatype:
@@ -76,7 +77,9 @@ class editModes:
     rotateItem: bool
     changeOrigin: bool
     panView: bool
+    zoomView: bool
     stretchItem: bool
+    alignItems: bool
 
     def setMode(self, attribute):
         for key in self.__dict__.keys():
@@ -170,6 +173,7 @@ class viewItemTuple(NamedTuple):
     cellItem: libb.cellItem
     viewItem: libb.viewItem
 
+
 class layoutPinTuple(NamedTuple):
     pinName: str
     pinDir: str
@@ -245,6 +249,7 @@ class layoutPathDefTuple(NamedTuple):
     maxLength: float
     minSpacing: float
     maxSpacing: float
+
 
 class layoutPathTuple(NamedTuple):
     name: str

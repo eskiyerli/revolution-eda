@@ -21,9 +21,10 @@
 #    License: Mozilla Public License 2.0
 #    Licensor: Revolution Semiconductor (Registered in the Netherlands)
 
-from revedaEditor.common.shapes import schematicSymbol
-from itertools import combinations, product
+from itertools import combinations
 from typing import Set
+
+from revedaEditor.common.shapes import schematicSymbol
 
 
 def checkSymbolOverlaps(symbolSet: Set[schematicSymbol]):

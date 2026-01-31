@@ -15,12 +15,6 @@
 #    Commons Clause License Condition notice.
 #
 import json
-#
-#    Software: Revolution EDA
-#    License: Mozilla Public License 2.0
-#    Licensor: Revolution Semiconductor (Registered in the Netherlands)
-#
-
 import pathlib
 import shutil
 
@@ -33,6 +27,13 @@ from revedaEditor.backend import dataDefinitions as ddef, hdlBackEnd as hdl, \
     libraryModelView as lmview
 from revedaEditor.fileio.createSymbols import createSpiceSymbol
 from revedaEditor.gui import fileDialogues as fd
+
+
+#
+#    Software: Revolution EDA
+#    License: Mozilla Public License 2.0
+#    Licensor: Revolution Semiconductor (Registered in the Netherlands)
+#
 
 
 def importSpiceSubckt(viewT: ddef.viewTuple, filePath: str):
@@ -60,12 +61,13 @@ def importSpiceSubckt(viewT: ddef.viewTuple, filePath: str):
     else:
         importDlg.spiceViewName.setText("spice")
     # Execute the import dialog and check if it was accepted
-    if importDlg.exec() == QDialog.Accepted:
+    if importDlg.exec() == QDialog.DialogCode.Accepted:
         # Create the SPICE object from the file path
         importedSpiceObj = hdl.spiceC(pathlib.Path(importDlg.spiceFileEdit.text()))
 
         # Create the SPICE view item tuple
-        spiceViewItemTuple = createSpiceView(mainWindow, importDlg, libraryModel, importedSpiceObj)
+        spiceViewItemTuple = createSpiceView(mainWindow, importDlg, libraryModel,
+                                             importedSpiceObj)
 
         # Check if the symbol checkbox is checked
         if importDlg.symbolCheckBox.isChecked():
@@ -75,16 +77,16 @@ def importSpiceSubckt(viewT: ddef.viewTuple, filePath: str):
 
 
 def createSpiceView(
-    parent: QMainWindow,
-    importDlg: QDialog,
-    libraryModel: lmview.designLibrariesModel,
-    importedSpiceObj: hdl.spiceC,
-):
+        parent: QMainWindow,
+        importDlg: QDialog,
+        libraryModel: lmview.designLibrariesModel,
+        importedSpiceObj: hdl.spiceC,
+) -> ddef.viewItemTuple:
     """
     Create a new Spice view.
 
     Args:
-        parent (QMainWindow): The parent window.
+        parent (QMainWindow): The parentW window.
         importDlg (QDialog): The import dialog window.
         libraryModel (edw.designLibrariesModel): The model for the design libraries.
         importedSpiceObj (hdl.spiceC): The imported Spice object.
@@ -113,7 +115,7 @@ def createSpiceView(
 
         # Get the cell item
     cellItem = libm.getCellItem(libItem, cellName)
-    newSpiceFilePathObj = cellItem.data(Qt.UserRole + 2).joinpath(
+    newSpiceFilePathObj = cellItem.data(Qt.ItemDataRole.UserRole + 2).joinpath(
         importedSpiceFilePathObj.name
     )
     # Create the Spice item view
@@ -133,10 +135,8 @@ def createSpiceView(
     items.insert(2, {"subcktParams": importedSpiceObj.subcktParams})
 
     # Write the items to the Verilog-A item data file
-    with spiceItem.data(Qt.UserRole + 2).open(mode="w") as f:
+    with spiceItem.data(Qt.ItemDataRole.UserRole + 2).open(mode="w") as f:
         json.dump(items, f, indent=4)
 
     # Return the tuple of library item, cell item, and Verilog-A item
     return ddef.viewItemTuple(libItem, cellItem, spiceItem)
-
-

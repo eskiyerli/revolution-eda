@@ -249,9 +249,9 @@ class spiceC:
 
             # Check if the line starts with '+' and is the next line after the subcircuit start line
             if (
-                subcktLines
-                and linenumber == subcktStart + increment
-                and line.startswith("+")
+                    subcktLines
+                    and linenumber == subcktStart + increment
+                    and line.startswith("+")
             ):
                 subcktLines = f"{subcktLines} {line[1:].strip()}"
                 increment += 1
@@ -267,7 +267,7 @@ class spiceC:
         capSubcktLine = subcktLine.upper()
         if "PARAM:" in capSubcktLine:
             subcktDict["pins"] = tokens[2: capSubcktLine.split().index("PARAM:")]
-            paramsStringList = tokens[capSubcktLine.split().index("PARAM:") + 1 :]
+            paramsStringList = tokens[capSubcktLine.split().index("PARAM:") + 1:]
             for index, paramString in enumerate(paramsStringList):
                 if paramString.strip() == "=":
                     subcktDict["params"][

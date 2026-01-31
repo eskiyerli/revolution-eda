@@ -25,7 +25,7 @@
 # net class definition.
 from enum import IntEnum
 from functools import cached_property
-from typing import Dict, List, Set, Type, Union
+from typing import Dict, List, Set, Union
 
 from PySide6.QtCore import (
     QLineF,
@@ -50,7 +50,7 @@ from PySide6.QtWidgets import (
     QGraphicsSimpleTextItem,
 )
 
-from revedaEditor.backend.pdkPaths import importPDKModule
+from revedaEditor.backend.pdkLoader import importPDKModule
 
 schlyr = importPDKModule("schLayers")
 
@@ -240,12 +240,12 @@ class schematicNet(QGraphicsItem):
             elif self._stretch:
                 eventPos = event.pos().toPoint()
                 if (
-                    eventPos - self._draftLine.p1().toPoint()
+                        eventPos - self._draftLine.p1().toPoint()
                 ).manhattanLength() <= scene.snapDistance:
                     self.setCursor(Qt.SizeHorCursor)
                     scene.stretchNet.emit(self, "p1")
                 elif (
-                    eventPos - self._draftLine.p2().toPoint()
+                        eventPos - self._draftLine.p2().toPoint()
                 ).manhattanLength() <= self.scene().snapDistance:
                     self.setCursor(Qt.SizeHorCursor)
                     scene.stretchNet.emit(self, "p2")
@@ -262,10 +262,10 @@ class schematicNet(QGraphicsItem):
         self._endPointNetDict = dict[int, Set[schematicNet]]()
         for i, endPoint in enumerate(self.sceneEndPoints):
             netSet: Set["schematicNet"] = {
-                item
-                for item in self.scene().items(endPoint)
-                if isinstance(item, schematicNet)
-            } - {self}
+                                              item
+                                              for item in self.scene().items(endPoint)
+                                              if isinstance(item, schematicNet)
+                                          } - {self}
             self._endPointNetDict[i] = netSet
 
     def initializeSnapLines(self):
@@ -303,7 +303,7 @@ class schematicNet(QGraphicsItem):
 
                 # Only update if there's a significant change
                 if newLine.length() > 1 and (
-                    abs(newLine.dx()) > 1 or abs(newLine.dy()) > 1
+                        abs(newLine.dx()) > 1 or abs(newLine.dy()) > 1
                 ):
                     snapLine.setLine(newLine)
                 else:

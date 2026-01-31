@@ -24,52 +24,112 @@
 
 import json
 
-# import numpy as np
-from PySide6.QtCore import (
-    Qt,
-)
-from PySide6.QtGui import (
-    QAction,
-    QIcon,
-    QStandardItem,
-    QStandardItemModel,
-)
-from PySide6.QtWidgets import (
-    QComboBox,
-    QFormLayout,
-    QGroupBox,
-    QMainWindow,
-    QTableView,
-    QVBoxLayout,
-    QWidget,
-)
+from PySide6.QtCore import (Qt, )
+from PySide6.QtGui import (QAction, QIcon, QStandardItem, QStandardItemModel, )
+from PySide6.QtWidgets import (QApplication, QComboBox, QFormLayout, QGroupBox, QMainWindow,
+                               QTableView, QVBoxLayout, QWidget, )
 
-import revedaEditor.resources.resources  # noqa: F401
 import revedaEditor.backend.dataDefinitions as ddef
+import revedaEditor.backend.libBackEnd as libb
+import revedaEditor.backend.libraryMethods as libm
 import revedaEditor.gui.editFunctions as edf
 import revedaEditor.gui.schematicEditor as sced
-import revedaEditor.backend.libBackEnd as libb
-
-# from hashlib import new
+import revedaEditor.resources.resources  # noqa: F401
 
 
-class configViewEdit(QMainWindow):
-    def __init__(self, appMainW: QMainWindow, schViewItem: libb.viewItem, configDict: dict, viewItem: libb.viewItem):
+class configEditor(QMainWindow):
+    def __init__(self, viewItem: libb.viewItem, libraryDict: dict, libraryView):
         super().__init__()
-        self.appMainW = appMainW  # app mainwindow
-        self.schViewItem = schViewItem
-        self.configDict = configDict
         self.viewItem = viewItem
-        self.configFilePathObj = viewItem.data(Qt.UserRole + 2)
+        self.libraryDict = libraryDict
+        self.libraryView = libraryView
+        self.configFilePathObj = viewItem.data(Qt.ItemDataRole.UserRole + 2)
+        self.cellItem: libb.cellItem = self.viewItem.parent()
+        self.libItem: libb.libraryItem = self.cellItem.parent()
+        self.libraryName = self.libItem.libraryName
+        self.cellName = self.cellItem.cellName
+        self.viewName = self.viewItem.viewName
+
+        self._schViewItem = None
+        self._schematicEditor = None
+        self._configDict = {}
+        app = QApplication.instance()
+        if app is not None:
+            self.appMainW = app.mainW
+            print(self.appMainW.openViews)
+        else:
+            raise RuntimeError("No QApplication instance found")
 
         self.setWindowTitle("Edit Config View")
-        self.setMinimumSize(500, 600)
+        self.setMinimumSize(600, 700)
         self._createMenuBar()
         self._createActions()
         self._addActions()
         self._createTriggers()
-        self.centralWidget = configViewEditContainer(self)
-        self.setCentralWidget(self.centralWidget)
+
+        # Create central widget
+        self.centralW = configEditorContainer(self)
+        self.setCentralWidget(self.centralW)
+
+    @property
+    def configDict(self) -> dict:
+        return self._configDict
+
+    @configDict.setter
+    def configDict(self, value):
+        self._configDict = value
+        self._refreshConfigTable()
+
+    @property
+    def schViewItem(self) -> libb.viewItem | None:
+        return self._schViewItem
+
+    @schViewItem.setter
+    def schViewItem(self, value: libb.viewItem):
+        self._schViewItem = value
+
+    def loadConfig(self):
+        """Load config data from file."""
+        try:
+            with open(self.viewItem.viewPath) as configFile:
+                items = json.load(configFile)
+
+            schematicName = items[1]["reference"]
+            self._configDict = items[2]
+
+            self.centralW.libraryNameEdit.setText(self.libraryName)
+            self.centralW.cellNameEdit.setText(self.cellName)
+
+            schViewsList = [self.cellItem.child(row).viewName for row in
+                            range(self.cellItem.rowCount()) if
+                            self.cellItem.child(row).viewType == "schematic"]
+            self.centralW.viewNameCB.addItems(schViewsList)
+            self.centralW.viewNameCB.setCurrentText(schematicName)
+
+            self.centralW.switchViewsEdit.setText(", ".join(self.appMainW.switchViewList))
+            self.centralW.stopViewsEdit.setText(", ".join(self.appMainW.stopViewList))
+            configViewNameTuple = ddef.viewTuple(self.libraryName, self.cellName,
+                                                 self.viewName)
+            if self.appMainW.openViews.get(configViewNameTuple, None):
+                self.appMainW.openViews[configViewNameTuple].raise_()
+            else:
+                self.show()
+            self._schViewItem = libm.getViewItem(self.cellItem, schematicName)
+            schematicViewNameTuple = ddef.viewTuple(self.libraryName, self.cellName,
+                                                    self._schViewItem.viewName)
+            if self.appMainW.openViews.get(schematicViewNameTuple):
+                self.editorWindow = self.appMainW.openViews[schematicViewNameTuple]
+                self.appMainW.openViews[schematicViewNameTuple].raise_()
+            else:
+                self.editorWindow = sced.schematicEditor(self._schViewItem,
+                                                         self.libraryDict, self.libraryView)
+                self.editorWindow.loadSchematic()
+                self.editorWindow.show()
+            self._refreshConfigTable()
+
+        except Exception as e:
+            self.appMainW.logger.error(f'Error loading config: {e}')
+            self._configDict = {}
 
     def _createMenuBar(self):
         self.mainMenu = self.menuBar()
@@ -91,78 +151,119 @@ class configViewEdit(QMainWindow):
 
     def _createTriggers(self):
         self.updateAction.triggered.connect(self.updateClick)
-        self.saveAction.triggered.connect(self.saveClick)
+        self.saveAction.triggered.connect(self.saveCell)
 
     def updateClick(self):
-        newConfigDict = self.updateConfigDict()
-        if self.appMainW.libraryBrowser is None:
-            self.appMainW.createLibraryBrowser()
-        topSchematicWindow = sced.schematicEditor(
-            self.schViewItem,
-            self.appMainW.libraryDict,
-            self.appMainW.libraryBrowser.libBrowserCont.designView,
-        )
+        newConfigDict = dict()
+        if self._schViewItem is not None:
+            topSchematicWindow = sced.schematicEditor(self._schViewItem, self.libraryDict,
+                                                      self.libraryView, )
+        else:
+            self.appMainW.logger.error('No schematic view item available')
+            return
         topSchematicWindow.loadSchematic()
-        topSchematicWindow.createConfigView(
-            self.viewItem,
-            self.configDict,
-            newConfigDict,
-            topSchematicWindow.processedCells,
-        )
-        self.configDict = newConfigDict
+        topSchematicWindow.createConfigView(self.viewItem, newConfigDict, set())
+        self._configDict = newConfigDict
+        self._refreshConfigTable()
 
-        self.centralWidget.confModel = configModel(self.configDict)
-        # self.centralWidget.configDictGroup.setVisible(False)
-        self.centralWidget.configDictLayout.removeWidget(
-            self.centralWidget.configViewTable
-        )
-        self.centralWidget.configViewTable = configTable(self.centralWidget.confModel)
-        self.centralWidget.configDictLayout.addWidget(
-            self.centralWidget.configViewTable
-        )
+    def _refreshConfigTable(self):
+        self.centralW.confModel = configModel(self.configDict)
+        self.centralW.configDictLayout.removeWidget(self.centralW.configViewTable)
+        self.centralW.configViewTable = configTable(self.centralW.confModel)
+        self.centralW.configDictLayout.addWidget(self.centralW.configViewTable)
 
     def updateConfigDict(self):
-        self.centralWidget.configViewTable.updateModel()
-        self.configDict = dict()
-        newConfigDict = dict()
-        model = self.centralWidget.confModel
+        self.centralW.configViewTable.updateModel()
+        self._configDict = dict()
+        model = self.centralW.confModel
         for i in range(model.rowCount()):
-            viewList = [
-                item.strip()
-                for item in model.itemFromIndex(model.index(i, 3)).text().split(",")
-            ]
-            self.configDict[model.item(i, 1).text()] = [
-                model.item(i, 0).text(),
-                model.item(i, 2).text(),
-                viewList,
-            ]
-        return newConfigDict
+            viewList = [item.strip() for item in
+                        model.itemFromIndex(model.index(i, 3)).text().split(",")]
+            self._configDict[model.item(i, 1).text()] = [model.item(i, 0).text(),
+                                                         model.item(i, 2).text(),
+                                                         viewList, ]
 
-    def saveClick(self):
-        # configFilePathObj = self.viewItem.data(Qt.UserRole + 2)
+    def saveCell(self):
+        # configFilePathObj = self.viewItem.data(Qt.ItemDataRole.UserRole + 2)
         self.updateConfigDict()
         items = list()
         items.insert(0, {"viewName": "config"})
-        items.insert(1, {"reference": self.schViewItem.viewName})
-        items.insert(2, self.configDict)
+        if self._schViewItem is not None:
+            items.insert(1, {"reference": self._schViewItem.viewName})
+        else:
+            items.insert(1, {"reference": ""})
+        items.insert(2, self._configDict)
         with self.configFilePathObj.open(mode="w+") as configFile:
             json.dump(items, configFile, indent=4)
 
+    def checkSaveCell(self):
+        self.saveCell()
+
     def closeEvent(self, event):
         try:
-            cellViewTuple = ddef.viewTuple(
-                self.viewItem.parent().parent().libraryName,
-                self.viewItem.parent().cellName,
-                self.viewItem.viewName,
-            )
-            self.appMainW.openViews.pop(cellViewTuple, None)
+            cellViewNameTuple = ddef.viewTuple(self.libraryName, self.cellName,
+                                               self.viewItem.viewName)
+            self.appMainW.openViews.pop(cellViewNameTuple, None)
         except Exception as e:
             self.appMainW.logger.error(f"Unexpected error: {e}")
         finally:
             event.accept()
             super().closeEvent(event)
 
-class configViewEditContainer(QWidget):
+
+def createNewConfigView(cellItem: libb.cellItem, viewItem: libb.viewItem, dlg,
+                        libraryDict: dict, designView, ):
+    """Create a new config view from dialog parameters."""
+    selectedSchName = dlg.viewNameCB.currentText()
+    selectedSchItem = libm.getViewItem(cellItem, selectedSchName)
+
+    schematicWindow = sced.schematicEditor(selectedSchItem, libraryDict, designView, )
+    schematicWindow.loadSchematic()
+    switchViewList = [viewName.strip() for viewName in dlg.switchViews.text().split(",")]
+    stopViewList = [viewName.strip() for viewName in dlg.stopViews.text().split(",")]
+    schematicWindow.switchViewList = switchViewList
+    schematicWindow.stopViewList = stopViewList
+
+    # clear netlisted cells list
+    newConfigDict = dict()  # create an empty newconfig dict
+    schematicWindow.createConfigView(viewItem, newConfigDict, set())
+    configFilePathObj = viewItem.data(Qt.ItemDataRole.UserRole + 2)
+    items = list()
+    items.insert(0, {"cellView": "config"})
+    items.insert(1, {"reference": selectedSchName})
+    items.insert(2, newConfigDict)
+    with configFilePathObj.open(mode="w+") as configFile:
+        json.dump(items, configFile, indent=4)
+    configWindow = configEditor(viewItem, libraryDict, designView)
+    configWindow.loadConfig()
+
+    return configWindow
+
+
+def openConfigEditWindow(schematicItem: libb.viewItem, configItem: libb.viewItem,
+                         libraryDict: dict, designView, appMainW, ) -> configEditor:
+    """Open an existing config view for editing."""
+    schematicName = schematicItem.viewName
+    cellItem = schematicItem.parent()
+    libItem = cellItem.parent()
+
+    configWindow = configEditor(configItem, libraryDict, designView)
+    configWindow.schViewItem = schematicItem
+    configWindow.centralW.libraryNameEdit.setText(libItem.libraryName)
+    configWindow.centralW.cellNameEdit.setText(cellItem.cellName)
+
+    schViewsList = [cellItem.child(row).viewName for row in range(cellItem.rowCount()) if
+                    cellItem.child(row).viewType == "schematic"]
+    configWindow.centralW.viewNameCB.addItems(schViewsList)
+    configWindow.centralW.viewNameCB.setCurrentText(schematicName)
+    configWindow.centralW.switchViewsEdit.setText(", ".join(appMainW.switchViewList))
+    configWindow.centralW.stopViewsEdit.setText(", ".join(appMainW.stopViewList))
+    configWindow.loadConfig()
+
+    return configWindow
+
+
+class configEditorContainer(QWidget):
     def __init__(self, parent):
         super().__init__(parent)
         self.parent = parent
@@ -186,7 +287,7 @@ class configViewEditContainer(QWidget):
         viewGroupLayout.addRow(edf.boldLabel("Stop List:"), self.stopViewsEdit)
         self.mainLayout.addWidget(viewGroup)
         self.configDictGroup = QGroupBox("Cell View Configuration")
-        self.confModel = configModel(self.parent.configDict)
+        self.confModel = configModel(self.parent.configDict or {})
         self.configDictLayout = QVBoxLayout()
         self.configViewTable = configTable(self.confModel)
         self.configDictLayout.addWidget(self.configViewTable)
@@ -201,8 +302,7 @@ class configModel(QStandardItemModel):
         column = 4
         super().__init__(row, column)
         self.setHorizontalHeaderLabels(
-            ["Library", "Cell Name", "View Found", "View To ", "Use"]
-        )
+            ["Library", "Cell Name", "View Found", "View To ", "Use"])
         for i, (k, v) in enumerate(configDict.items()):
             item = QStandardItem(v[0])
             self.setItem(i, 0, item)
@@ -217,27 +317,22 @@ class configModel(QStandardItemModel):
 class configTable(QTableView):
     def __init__(self, model: configModel):
         super().__init__()
-        self.model = model
-        self.setModel(self.model)
-        self.combos = list()
+        self.configModel = model
+        self.setModel(self.configModel)
+        self.combos = []
         self.horizontalHeader().setStretchLastSection(True)
-        self.setSelectionMode(QTableView.SingleSelection)
-        self.setEditTriggers(QTableView.NoEditTriggers)
-        for row in range(self.model.rowCount()):
-            self.combos.append(QComboBox())
-            items = [
-                item.strip()
-                for item in self.model.itemFromIndex(self.model.index(row, 3))
-                .text()
-                .split(",")
-            ]
-            self.combos[-1].addItems(items)
-            self.combos[-1].setCurrentText(
-                self.model.itemFromIndex(self.model.index(row, 2)).text()
-            )
-            self.setIndexWidget(self.model.index(row, 3), self.combos[-1])
+        self.setSelectionMode(QTableView.SelectionMode.SingleSelection)
+        self.setEditTriggers(QTableView.EditTrigger.NoEditTriggers)
+
+        for row in range(self.configModel.rowCount()):
+            combo = QComboBox()
+            items = [item.strip() for item in
+                     self.configModel.item(row, 3).text().split(",")]
+            combo.addItems(items)
+            combo.setCurrentText(self.configModel.item(row, 2).text())
+            self.setIndexWidget(self.configModel.index(row, 3), combo)
+            self.combos.append(combo)
 
     def updateModel(self):
-        for row in range(self.model.rowCount()):
-            item = QStandardItem(self.combos[row].currentText())
-            self.model.setItem(row, 2, item)
+        for row, combo in enumerate(self.combos):
+            self.configModel.setItem(row, 2, QStandardItem(combo.currentText()))

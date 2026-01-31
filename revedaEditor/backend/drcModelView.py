@@ -21,10 +21,12 @@
 #     License: Mozilla Public License 2.0
 #     Licensor: Revolution Semiconductor (Registered in the Netherlands)
 
-from PySide6.QtCore import (QAbstractTableModel, Qt, QModelIndex, QPersistentModelIndex, Signal)
-from PySide6.QtWidgets import (QHeaderView, QTableView)
-from PySide6.QtGui import QFont
 from typing import List, Dict, Any
+
+from PySide6.QtCore import (QAbstractTableModel, Qt, QModelIndex, QPersistentModelIndex,
+                            Signal)
+from PySide6.QtGui import QFont
+from PySide6.QtWidgets import (QHeaderView, QTableView)
 
 
 class DRCTableModel(QAbstractTableModel):
@@ -71,7 +73,7 @@ class DRCTableModel(QAbstractTableModel):
         return None
 
     def headerData(self, section, orientation, role=Qt.DisplayRole):
-        if orientation == Qt.Horizontal:
+        if orientation == Qt.Orientation.Horizontal:
             if role == Qt.DisplayRole:
                 return self._headers[section]
             elif role == Qt.FontRole:
@@ -82,7 +84,7 @@ class DRCTableModel(QAbstractTableModel):
 
     def getPolygons(self, row):
         return self._data[row]['polygons']
-    
+
     def markVisited(self, row):
         if 0 <= row < len(self._data):
             self._data[row]['visited'] = True

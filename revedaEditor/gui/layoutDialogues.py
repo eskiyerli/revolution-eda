@@ -22,24 +22,41 @@
 #    Licensor: Revolution Semiconductor (Registered in the Netherlands)
 #
 
-from typing import Dict
 from pathlib import Path
-from PySide6.QtCore import (Qt, )
-from PySide6.QtGui import (QStandardItem, QFontDatabase, QDoubleValidator)
-from PySide6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QFormLayout,
-                               QHBoxLayout,
-                               QLabel, QLineEdit, QVBoxLayout, QRadioButton,
-                               QButtonGroup,
-                               QGroupBox, QWidget, QCheckBox, QTableWidget,
-                               QTableWidgetItem, )
-# from dotenv import load_dotenv
+from typing import Dict, TYPE_CHECKING
 
+from PySide6.QtCore import (
+    Qt,
+)
+from PySide6.QtGui import QStandardItem, QFontDatabase, QDoubleValidator
+from PySide6.QtWidgets import (
+    QComboBox,
+    QDialog,
+    QDialogButtonBox,
+    QFormLayout,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QVBoxLayout,
+    QRadioButton,
+    QButtonGroup,
+    QGroupBox,
+    QWidget,
+    QCheckBox,
+    QTableWidget,
+    QTableWidgetItem,
+)
+
+import revedaEditor.backend.drcModelView as drcmv
 import revedaEditor.common.layoutShapes as lshp
 import revedaEditor.gui.editFunctions as edf
-import revedaEditor.backend.drcModelView as drcmv
-from revedaEditor.backend.pdkPaths import importPDKModule
+from revedaEditor.backend.pdkLoader import importPDKModule
 
-fabproc = importPDKModule('process')
+# from dotenv import load_dotenv
+
+fabproc = importPDKModule("process")
+if TYPE_CHECKING:
+    pass
 
 
 class layoutInstanceDialogue(QDialog):
@@ -48,7 +65,8 @@ class layoutInstanceDialogue(QDialog):
         self.parent = parent
         self.setWindowTitle("Layout Instance/Pcell Options")
         self.setMinimumWidth(400)
-        QBtn = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+
         self.buttonBox = QDialogButtonBox(QBtn)
         self.buttonBox.accepted.connect(self.accept)
         self.buttonBox.rejected.connect(self.reject)
@@ -98,10 +116,10 @@ class layoutInstancePropertiesDialogue(layoutInstanceDialogue):
 class pcellLinkDialogue(QDialog):
     def __init__(self, parent, viewItem: QStandardItem):
         super().__init__(parent)
-        # self.logger = parent.logger
+        # self.logger = parentW.logger
         self.viewItem = viewItem
         # self.pcells = self.getClasses()
-        self.pcells = list(importPDKModule('pcells').pcells.keys())
+        self.pcells = list(importPDKModule("pcells").pcells.keys())
         self.setWindowTitle("PCell Settings")
         self.setMinimumSize(400, 200)
         self.mainLayout = QVBoxLayout()
@@ -114,7 +132,8 @@ class pcellLinkDialogue(QDialog):
         formLayout.addRow(edf.boldLabel("PCell:"), self.pcellCB)
         groupLayout.addLayout(formLayout)
         self.mainLayout.addWidget(groupBox)
-        QBtn = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+
         self.buttonBox = QDialogButtonBox(QBtn)
         self.buttonBox.accepted.connect(self.accept)
         self.buttonBox.rejected.connect(self.reject)
@@ -169,13 +188,13 @@ class createPathDialogue(QDialog):
         self.pathNameEdit = edf.shortLineEdit()
         self.formLayout.addRow(edf.boldLabel("Path Name:"), self.pathNameEdit)
         self.startExtendEdit = edf.shortLineEdit()
-        self.formLayout.addRow(edf.boldLabel("Start Extend:"),
-                               self.startExtendEdit)
+        self.formLayout.addRow(edf.boldLabel("Start Extend:"), self.startExtendEdit)
         self.endExtendEdit = edf.shortLineEdit()
         self.formLayout.addRow(edf.boldLabel("End Extend:"), self.endExtendEdit)
         mainLayout.addWidget(groupBox)
 
-        QBtn = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+
         self.buttonBox = QDialogButtonBox(QBtn)
         self.buttonBox.accepted.connect(self.accept)
         self.buttonBox.rejected.connect(self.reject)
@@ -206,10 +225,14 @@ class createLayoutPinDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Create Layout Pin")
         self.setMinimumWidth(300)
-        fontFamilies = QFontDatabase.families(QFontDatabase.Latin)
-        fixedFamilies = [family for family in fontFamilies if
-                         QFontDatabase.isFixedPitch(family)]
-        QBtn = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        fontFamilies = QFontDatabase.families(QFontDatabase.WritingSystem.Latin)
+        fixedFamilies = [
+            family for family in fontFamilies if QFontDatabase.isFixedPitch(family)
+        ]
+        QBtn = (
+                QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+
         self.mainLayout = QVBoxLayout()
         self.pinPropGroupBox = QGroupBox("Pin Properties")
         fLayout = QFormLayout()
@@ -249,9 +272,10 @@ class createLayoutPinDialog(QDialog):
         self.fontStyleCB.currentTextChanged.connect(self.styleFontSizes)
         labelPropLayout.addRow(edf.boldLabel("Font Style"), self.fontStyleCB)
         self.labelHeightCB = QComboBox()
-        self.fontSizes = [str(size) for size in
-                          QFontDatabase.pointSizes(fixedFamilies[0],
-                                                   self.fontStyles[0])]
+        self.fontSizes = [
+            str(size)
+            for size in QFontDatabase.pointSizes(fixedFamilies[0], self.fontStyles[0])
+        ]
         self.labelHeightCB.addItems(self.fontSizes)
         labelPropLayout.addRow(edf.boldLabel("Label Height"), self.labelHeightCB)
         self.labelAlignCB = QComboBox()
@@ -277,8 +301,10 @@ class createLayoutPinDialog(QDialog):
         self.labelHeightCB.clear()
         selectedFamily = self.familyCB.currentText()
         selectedStyle = self.fontStyleCB.currentText()
-        self.fontSizes = [str(size) for size in
-                          QFontDatabase.pointSizes(selectedFamily, selectedStyle)]
+        self.fontSizes = [
+            str(size)
+            for size in QFontDatabase.pointSizes(selectedFamily, selectedStyle)
+        ]
         self.labelHeightCB.addItems(self.fontSizes)
 
 
@@ -289,7 +315,10 @@ class layoutPinProperties(QDialog):
         self.setWindowTitle("Layout Pin Properties")
         self.setMinimumWidth(300)
 
-        QBtn = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        QBtn = (
+                QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+
         self.mainLayout = QVBoxLayout()
         pinPropGroupBox = QGroupBox("Pin Properties")
         fLayout = QFormLayout()
@@ -331,10 +360,14 @@ class createLayoutLabelDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Create Layout Label")
         self.setMinimumWidth(300)
-        fontFamilies = QFontDatabase.families(QFontDatabase.Latin)
-        fixedFamilies = [family for family in fontFamilies if
-                         QFontDatabase.isFixedPitch(family)]
-        QBtn = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        fontFamilies = QFontDatabase.families(QFontDatabase.WritingSystem.Latin)
+        fixedFamilies = [
+            family for family in fontFamilies if QFontDatabase.isFixedPitch(family)
+        ]
+        QBtn = (
+                QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+
         self.mainLayout = QVBoxLayout()
         labelPropBox = QGroupBox("Label Properties")
         self.labelPropLayout = QFormLayout()
@@ -344,8 +377,7 @@ class createLayoutLabelDialog(QDialog):
         self.labelName.setToolTip("Enter label name")
         self.labelPropLayout.addRow(edf.boldLabel("Label Name"), self.labelName)
         self.labelLayerCB = QComboBox()
-        self.labelPropLayout.addRow(edf.boldLabel("Label Layer:"),
-                                    self.labelLayerCB)
+        self.labelPropLayout.addRow(edf.boldLabel("Label Layer:"), self.labelLayerCB)
         self.familyCB = QComboBox()
         self.familyCB.addItems(fixedFamilies)
         self.familyCB.currentTextChanged.connect(self.familyFontStyles)
@@ -356,20 +388,20 @@ class createLayoutLabelDialog(QDialog):
         self.fontStyleCB.currentTextChanged.connect(self.styleFontSizes)
         self.labelPropLayout.addRow(edf.boldLabel("Font Style"), self.fontStyleCB)
         self.labelHeightCB = QComboBox()
-        self.fontSizes = [str(size) for size in
-                          QFontDatabase.pointSizes(fixedFamilies[0],
-                                                   self.fontStyles[0])]
+        self.fontSizes = [
+            str(size)
+            for size in QFontDatabase.pointSizes(fixedFamilies[0], self.fontStyles[0])
+        ]
         self.labelHeightCB.addItems(self.fontSizes)
-        self.labelPropLayout.addRow(edf.boldLabel("Label Height"),
-                                    self.labelHeightCB)
+        self.labelPropLayout.addRow(edf.boldLabel("Label Height"), self.labelHeightCB)
         self.labelAlignCB = QComboBox()
         self.labelAlignCB.addItems(lshp.layoutLabel.LABEL_ALIGNMENTS)
-        self.labelPropLayout.addRow(edf.boldLabel("Label Alignment"),
-                                    self.labelAlignCB)
+        self.labelPropLayout.addRow(edf.boldLabel("Label Alignment"), self.labelAlignCB)
         self.labelOrientCB = QComboBox()
         self.labelOrientCB.addItems(lshp.layoutLabel.LABEL_ORIENTS)
-        self.labelPropLayout.addRow(edf.boldLabel("Label Orientation"),
-                                    self.labelOrientCB)
+        self.labelPropLayout.addRow(
+            edf.boldLabel("Label Orientation"), self.labelOrientCB
+        )
         self.mainLayout.addWidget(labelPropBox)
         self.buttonBox = QDialogButtonBox(QBtn)
         self.buttonBox.accepted.connect(self.accept)
@@ -386,8 +418,10 @@ class createLayoutLabelDialog(QDialog):
     def styleFontSizes(self, s):
         selectedFamily = self.familyCB.currentText()
         selectedStyle = self.fontStyleCB.currentText()
-        self.fontSizes = [str(size) for size in
-                          QFontDatabase.pointSizes(selectedFamily, selectedStyle)]
+        self.fontSizes = [
+            str(size)
+            for size in QFontDatabase.pointSizes(selectedFamily, selectedStyle)
+        ]
         self.labelHeightCB.clear()
         self.labelHeightCB.addItems(self.fontSizes)
 
@@ -397,11 +431,13 @@ class layoutLabelProperties(createLayoutLabelDialog):
         super().__init__(parent)
         self.setWindowTitle("Layout Label Properties")
         self.labelTopLeftX = edf.shortLineEdit()
-        self.labelPropLayout.addRow(edf.boldLabel("Label Top Left X:"),
-                                    self.labelTopLeftX)
+        self.labelPropLayout.addRow(
+            edf.boldLabel("Label Top Left X:"), self.labelTopLeftX
+        )
         self.labelTopLeftY = edf.shortLineEdit()
-        self.labelPropLayout.addRow(edf.boldLabel("Label Top Left Y:"),
-                                    self.labelTopLeftY)
+        self.labelPropLayout.addRow(
+            edf.boldLabel("Label Top Left Y:"), self.labelTopLeftY
+        )
 
 
 class createLayoutViaDialog(QDialog):
@@ -427,22 +463,18 @@ class createLayoutViaDialog(QDialog):
         singleViaPropsLayout = QFormLayout()
         self.singleViaPropsGroup.setLayout(singleViaPropsLayout)
         self.singleViaNamesCB = QComboBox()
-        self.singleViaNamesCB.currentTextChanged.connect(
-            self.singleViaNameChanged)
-        singleViaPropsLayout.addRow(edf.boldLabel("Via Name"),
-                                    self.singleViaNamesCB)
+        self.singleViaNamesCB.currentTextChanged.connect(self.singleViaNameChanged)
+        singleViaPropsLayout.addRow(edf.boldLabel("Via Name"), self.singleViaNamesCB)
         self.singleViaWidthEdit = edf.shortLineEdit()
 
-        self.singleViaWidthEdit.editingFinished.connect(
-            self.singleViaWidthChanged)
-        singleViaPropsLayout.addRow(edf.boldLabel("Via Width"),
-                                    self.singleViaWidthEdit)
+        self.singleViaWidthEdit.editingFinished.connect(self.singleViaWidthChanged)
+        singleViaPropsLayout.addRow(edf.boldLabel("Via Width"), self.singleViaWidthEdit)
         self.singleViaHeightEdit = edf.shortLineEdit()
 
-        self.singleViaHeightEdit.editingFinished.connect(
-            self.singleViaHeightChanged)
-        singleViaPropsLayout.addRow(edf.boldLabel("Via Height"),
-                                    self.singleViaHeightEdit)
+        self.singleViaHeightEdit.editingFinished.connect(self.singleViaHeightChanged)
+        singleViaPropsLayout.addRow(
+            edf.boldLabel("Via Height"), self.singleViaHeightEdit
+        )
         mainLayout.addWidget(self.singleViaPropsGroup)
         self.arrayViaPropsGroup = QGroupBox("Single Via Properties")
         arrayViaPropsLayout = QFormLayout()
@@ -450,39 +482,35 @@ class createLayoutViaDialog(QDialog):
         self.arrayViaNamesCB = QComboBox()
 
         self.arrayViaNamesCB.currentTextChanged.connect(self.arrayViaNameChanged)
-        arrayViaPropsLayout.addRow(edf.boldLabel("Via Name"),
-                                   self.arrayViaNamesCB)
+        arrayViaPropsLayout.addRow(edf.boldLabel("Via Name"), self.arrayViaNamesCB)
         self.arrayViaWidthEdit = edf.shortLineEdit()
 
         self.arrayViaWidthEdit.editingFinished.connect(self.arrayViaWidthChanged)
-        arrayViaPropsLayout.addRow(edf.boldLabel("Via Width"),
-                                   self.arrayViaWidthEdit)
+        arrayViaPropsLayout.addRow(edf.boldLabel("Via Width"), self.arrayViaWidthEdit)
         self.arrayViaHeightEdit = edf.shortLineEdit()
 
-        self.singleViaHeightEdit.editingFinished.connect(
-            self.arrayViaHeightChanged)
-        arrayViaPropsLayout.addRow(edf.boldLabel("Via Height"),
-                                   self.arrayViaHeightEdit)
+        self.singleViaHeightEdit.editingFinished.connect(self.arrayViaHeightChanged)
+        arrayViaPropsLayout.addRow(edf.boldLabel("Via Height"), self.arrayViaHeightEdit)
         self.arrayXspacingEdit = edf.shortLineEdit()
-        self.arrayXspacingEdit.editingFinished.connect(lambda:
-                                                       self.arrayViaSpacingChanged(
-                                                           self.arrayXspacingEdit))
-        arrayViaPropsLayout.addRow(edf.boldLabel("Column Spacing"),
-                                   self.arrayXspacingEdit)
+        self.arrayXspacingEdit.editingFinished.connect(
+            lambda: self.arrayViaSpacingChanged(self.arrayXspacingEdit)
+        )
+        arrayViaPropsLayout.addRow(
+            edf.boldLabel("Column Spacing"), self.arrayXspacingEdit
+        )
         self.arrayYspacingEdit = edf.shortLineEdit()
-        self.arrayYspacingEdit.editingFinished.connect(lambda:
-                                                       self.arrayViaSpacingChanged(
-                                                           self.arrayYspacingEdit))
-        arrayViaPropsLayout.addRow(edf.boldLabel("Row Spacing"),
-                                   self.arrayYspacingEdit)
+        self.arrayYspacingEdit.editingFinished.connect(
+            lambda: self.arrayViaSpacingChanged(self.arrayYspacingEdit)
+        )
+        arrayViaPropsLayout.addRow(edf.boldLabel("Row Spacing"), self.arrayYspacingEdit)
         self.arrayXNumEdit = edf.shortLineEdit()
         self.arrayXNumEdit.setText("1")
-        arrayViaPropsLayout.addRow(edf.boldLabel("Number of Columns"),
-                                   self.arrayXNumEdit)
+        arrayViaPropsLayout.addRow(
+            edf.boldLabel("Number of Columns"), self.arrayXNumEdit
+        )
         self.arrayYNumEdit = edf.shortLineEdit()
         self.arrayYNumEdit.setText("1")
-        arrayViaPropsLayout.addRow(edf.boldLabel("Number of Rows:"),
-                                   self.arrayYNumEdit)
+        arrayViaPropsLayout.addRow(edf.boldLabel("Number of Rows:"), self.arrayYNumEdit)
         mainLayout.addWidget(self.arrayViaPropsGroup)
         self.arrayViaPropsGroup.hide()
         self.singleViaPropsGroup.show()
@@ -497,7 +525,10 @@ class createLayoutViaDialog(QDialog):
         mainLayout.addWidget(self.viaLocationGroup)
         self.viaLocationGroup.hide()
 
-        QBtn = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        QBtn = (
+                QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+
         self.buttonBox = QDialogButtonBox(QBtn)
         self.buttonBox.accepted.connect(self.accept)
         self.buttonBox.rejected.connect(self.reject)
@@ -527,41 +558,65 @@ class createLayoutViaDialog(QDialog):
 
     def singleViaWidthChanged(self):
         text = self.singleViaWidthEdit.text()
-        viaDefTuple = [item for item in fabproc.processVias if
-                       item.name == self.singleViaNamesCB.currentText()][0]
-        self.validateValue(text, self.singleViaWidthEdit, viaDefTuple.minWidth,
-                           viaDefTuple.maxWidth)
+        viaDefTuple = [
+            item
+            for item in fabproc.processVias
+            if item.name == self.singleViaNamesCB.currentText()
+        ][0]
+        self.validateValue(
+            text, self.singleViaWidthEdit, viaDefTuple.minWidth, viaDefTuple.maxWidth
+        )
 
     def singleViaHeightChanged(self):
         text = self.singleViaHeightEdit.text()
-        viaDefTuple = [item for item in fabproc.processVias if
-                       item.name == self.singleViaNamesCB.currentText()][0]
-        self.validateValue(text, self.singleViaHeightEdit, viaDefTuple.minHeight,
-                           viaDefTuple.maxHeight)
+        viaDefTuple = [
+            item
+            for item in fabproc.processVias
+            if item.name == self.singleViaNamesCB.currentText()
+        ][0]
+        self.validateValue(
+            text, self.singleViaHeightEdit, viaDefTuple.minHeight, viaDefTuple.maxHeight
+        )
 
     def arrayViaWidthChanged(self):
         text = self.arrayViaWidthEdit.text()
-        viaDefTuple = [item for item in fabproc.processVias if
-                       item.name == self.arrayViaNamesCB.currentText()][0]
-        self.validateValue(text, self.arrayViaWidthEdit, viaDefTuple.minWidth,
-                           viaDefTuple.maxWidth)
+        viaDefTuple = [
+            item
+            for item in fabproc.processVias
+            if item.name == self.arrayViaNamesCB.currentText()
+        ][0]
+        self.validateValue(
+            text, self.arrayViaWidthEdit, viaDefTuple.minWidth, viaDefTuple.maxWidth
+        )
 
     def arrayViaHeightChanged(self):
         text = self.arrayViaHeightEdit.text()
-        viaDefTuple = [item for item in fabproc.processVias if
-                       item.name == self.arrayViaNamesCB.currentText()][0]
-        self.validateValue(text, self.arrayViaHeightEdit, viaDefTuple.minHeight,
-                           viaDefTuple.maxHeight)
+        viaDefTuple = [
+            item
+            for item in fabproc.processVias
+            if item.name == self.arrayViaNamesCB.currentText()
+        ][0]
+        self.validateValue(
+            text, self.arrayViaHeightEdit, viaDefTuple.minHeight, viaDefTuple.maxHeight
+        )
 
     def arrayViaSpacingChanged(self, spaceEditField):
         text = spaceEditField.text()
-        viaDefTuple = [item for item in fabproc.processVias if
-                       item.name == self.arrayViaNamesCB.currentText()][0]
-        self.validateValue(text, spaceEditField, viaDefTuple.minSpacing,
-                           viaDefTuple.maxSpacing, )
+        viaDefTuple = [
+            item
+            for item in fabproc.processVias
+            if item.name == self.arrayViaNamesCB.currentText()
+        ][0]
+        self.validateValue(
+            text,
+            spaceEditField,
+            viaDefTuple.minSpacing,
+            viaDefTuple.maxSpacing,
+        )
 
-    def validateValue(self, text: str, lineEdit: QLineEdit, min_val: float,
-                      max_val: float):
+    def validateValue(
+            self, text: str, lineEdit: QLineEdit, min_val: float, max_val: float
+    ):
         if not text:
             lineEdit.setText(str(min_val))
             return
@@ -569,16 +624,13 @@ class createLayoutViaDialog(QDialog):
         try:
             value = float(text)
             if value < min_val:
-                self._parent.logger.warning(
-                    f"Value too small, set back to {min_val}")
+                self._parent.logger.warning(f"Value too small, set back to {min_val}")
                 lineEdit.setText(str(min_val))
             elif value > max_val:
-                self._parent.logger.warning(
-                    f"Value too large, set back to {max_val}")
+                self._parent.logger.warning(f"Value too large, set back to {max_val}")
                 lineEdit.setText(str(max_val))
         except ValueError:
-            self._parent.logger.warning(
-                f"Invalid number format, set back to {min_val}")
+            self._parent.logger.warning(f"Invalid number format, set back to {min_val}")
             lineEdit.setText(str(min_val))
 
 
@@ -596,7 +648,10 @@ class layoutRectProperties(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Layout Rectangle Properties")
         self.setMinimumWidth(300)
-        QBtn = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        QBtn = (
+                QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+
         self.buttonBox = QDialogButtonBox(QBtn)
         self.buttonBox.accepted.connect(self.accept)
         self.buttonBox.rejected.connect(self.reject)
@@ -605,18 +660,15 @@ class layoutRectProperties(QDialog):
         self.rectGroupLayout = QFormLayout()
         self.rectGroup.setLayout(self.rectGroupLayout)
         self.rectLayerCB = QComboBox()
-        self.rectGroupLayout.addRow(edf.boldLabel("Rectangle Layer:"),
-                                    self.rectLayerCB)
+        self.rectGroupLayout.addRow(edf.boldLabel("Rectangle Layer:"), self.rectLayerCB)
         self.rectWidthEdit = edf.shortLineEdit()
         self.rectGroupLayout.addRow(edf.boldLabel("Width:"), self.rectWidthEdit)
         self.rectHeightEdit = edf.shortLineEdit()
         self.rectGroupLayout.addRow(edf.boldLabel("Height:"), self.rectHeightEdit)
         self.topLeftEditX = edf.shortLineEdit()
-        self.rectGroupLayout.addRow(edf.boldLabel("Top Left X:"),
-                                    self.topLeftEditX)
+        self.rectGroupLayout.addRow(edf.boldLabel("Top Left X:"), self.topLeftEditX)
         self.topLeftEditY = edf.shortLineEdit()
-        self.rectGroupLayout.addRow(edf.boldLabel("Top Left Y:"),
-                                    self.topLeftEditY)
+        self.rectGroupLayout.addRow(edf.boldLabel("Top Left Y:"), self.topLeftEditY)
         mainLayout.addWidget(self.rectGroup)
         mainLayout.addWidget(self.buttonBox)
         self.setLayout(mainLayout)
@@ -627,10 +679,10 @@ class pointsTableWidget(QTableWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setColumnCount(3)
-        self.setHorizontalHeaderLabels(["Del.", 'X', "Y"])
+        self.setHorizontalHeaderLabels(["Del.", "X", "Y"])
         self.setColumnWidth(0, 8)
         self.setShowGrid(True)
-        self.setGridStyle(Qt.SolidLine)
+        self.setGridStyle(Qt.PenStyle.SolidLine)
 
 
 class layoutPolygonProperties(QDialog):
@@ -640,7 +692,10 @@ class layoutPolygonProperties(QDialog):
         self.setWindowTitle("Layout Polygon Properties")
         self.setMinimumWidth(300)
         self.setMinimumHeight(400)
-        QBtn = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        QBtn = (
+                QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+
         self.buttonBox = QDialogButtonBox(QBtn)
         self.buttonBox.accepted.connect(self.accept)
         self.buttonBox.rejected.connect(self.reject)
@@ -649,8 +704,7 @@ class layoutPolygonProperties(QDialog):
         polygonLayerGroup = QGroupBox("Polygon Layer")
         polygonLayerGroupLayout = QFormLayout()
         self.polygonLayerCB = QComboBox()
-        polygonLayerGroupLayout.addRow(edf.boldLabel("Layer:"),
-                                       self.polygonLayerCB)
+        polygonLayerGroupLayout.addRow(edf.boldLabel("Layer:"), self.polygonLayerCB)
         mainLayout.addLayout(polygonLayerGroupLayout)
         self.tableWidget = pointsTableWidget(self)
         mainLayout.addWidget(self.tableWidget)
@@ -678,7 +732,8 @@ class layoutPolygonProperties(QDialog):
         self.tableWidget.setItem(row, 1, QTableWidgetItem(str(item[0])))
         self.tableWidget.setItem(row, 2, QTableWidgetItem(str(item[1])))
         delete_checkbox.stateChanged.connect(
-            lambda state, r=row: self.deleteRow(r, state))
+            lambda state, r=row: self.deleteRow(r, state)
+        )
 
     def addEmptyRow(self, row):
 
@@ -686,17 +741,21 @@ class layoutPolygonProperties(QDialog):
         delete_checkbox = QCheckBox()
         self.tableWidget.setCellWidget(row, 0, delete_checkbox)
         delete_checkbox.stateChanged.connect(
-            lambda state, r=row: self.deleteRow(r, state))
+            lambda state, r=row: self.deleteRow(r, state)
+        )
 
         self.tableWidget.setItem(row, 1, QTableWidgetItem(""))
         self.tableWidget.setItem(row, 2, QTableWidgetItem(""))
 
     def handleCellChange(self, row, column):
         if (
-                row == self.tableWidget.rowCount() - 1):  # Check if last row and tuple text column
-            if self.tableWidget.item(row, 2) is not None:
-                text1 = self.tableWidget.item(row, 1).text()
-                text2 = self.tableWidget.item(row, 2).text()
+                row == self.tableWidget.rowCount() - 1
+        ):  # Check if last row and tuple text column
+            item1 = self.tableWidget.item(row, 1)
+            item2 = self.tableWidget.item(row, 2)
+            if item1 is not None and item2 is not None:
+                text1 = item1.text()
+                text2 = item2.text()
                 if text1 != "" and text2 != "":
                     self.tableWidget.insertRow(row + 1)
                     self.addEmptyRow(row + 1)
@@ -708,10 +767,13 @@ class layoutPolygonProperties(QDialog):
 
 
 class formDictionary:
-    '''
-    This code defines a utility class formDictionary that extracts data 
+    """
+    This code defines a utility class formDictionary that extracts data
     from a Qt form layout and converts it into a Python dictionary.
-    '''
+from PyQt5.QtWidgets import QButtonGroup
+from PyQt5.QtWidgets import QRadioButton
+from PyQt5.QtWidgets import QMessageBox
+    """
 
     def __init__(self, formLayout: QFormLayout):
         self.formLayout = formLayout
@@ -719,16 +781,15 @@ class formDictionary:
     def extractDictFormLayout(self) -> Dict[str, edf.longLineEdit]:
         data = {}
         for row in range(self.formLayout.rowCount()):
-            labelItem = self.formLayout.itemAt(row, QFormLayout.LabelRole)
-            fieldItem = self.formLayout.itemAt(row, QFormLayout.FieldRole)
+            labelItem = self.formLayout.itemAt(row, QFormLayout.ItemRole.LabelRole)
+            fieldItem = self.formLayout.itemAt(row, QFormLayout.ItemRole.FieldRole)
 
             if labelItem and fieldItem:
                 label = labelItem.widget()
                 field = fieldItem.widget()
 
                 if isinstance(label, QLabel) and isinstance(field, QLineEdit):
-                    key = label.text().rstrip(
-                        ':')  # Remove trailing colon if present
+                    key = label.text().rstrip(":")  # Remove trailing colon if present
                     value = field
                     data[key] = value
         return data
@@ -745,13 +806,18 @@ class drcErrorsDialogue(QDialog):
 
         # Add DRC table view
         import revedaEditor.fileio.importlyrdb as imlyrdb
+
         DRCDataObj = imlyrdb.DRCOutput(str(drcDataPathObj))
         DRCDataObj.parseDRCOutput()
-        self.drcTable = drcmv.DRCTableView(DRCDataObj.result['violations'],
-                                           DRCDataObj.result['categories'])
+        self.drcTable = drcmv.DRCTableView(
+            DRCDataObj.result["violations"], DRCDataObj.result["categories"]
+        )
         layout.addWidget(self.drcTable)
 
-        QBtn = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        QBtn = (
+                QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+
         self.buttonBox = QDialogButtonBox(QBtn)
         self.buttonBox.accepted.connect(self.accept)
         self.buttonBox.rejected.connect(self.reject)
@@ -763,6 +829,6 @@ class drcErrorsDialogue(QDialog):
         # self.drcTable.polygonSelected.connect(self.highlightPolygons)
 
     # def highlightPolygons(self, polygons):
-    #     # Emit signal or call parent method to highlight polygons in scene
-    #     if hasattr(self.parent(), 'highlightDRCPolygons'):
-    #         self.parent().highlightDRCPolygons(polygons)
+    #     # Emit signal or call parentW method to highlight polygons in scene
+    #     if hasattr(self.parentW(), 'highlightDRCPolygons'):
+    #         self.parentW().highlightDRCPolygons(polygons)

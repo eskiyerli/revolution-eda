@@ -24,13 +24,13 @@
 
 # properties dialogues for various editor functions
 
-from ast import main
 import pathlib
-from PySide6.QtGui import (
-    QFontDatabase, 
-)
+
 from PySide6.QtCore import (
     Qt,
+)
+from PySide6.QtGui import (
+    QFontDatabase,
 )
 from PySide6.QtWidgets import (
     QWidget,
@@ -53,9 +53,9 @@ from PySide6.QtWidgets import (
     QTableWidgetItem,
 )
 
+import revedaEditor.common.labels as lbl
 import revedaEditor.common.net as net
 import revedaEditor.common.shapes as shp
-import revedaEditor.common.labels as lbl
 import revedaEditor.gui.editFunctions as edf
 
 
@@ -69,7 +69,8 @@ class rectPropertyDialog(QDialog):
         self.parent = parent
         self.setMinimumWidth(300)
         self.setWindowTitle("Rectangle Properties")
-        QBtn = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+
         self.mainLayout = QVBoxLayout()
         self.fLayout = QFormLayout()
         self.fLayout.setContentsMargins(10, 20, 10, 20)
@@ -96,7 +97,8 @@ class circlePropertyDialog(QDialog):
         self.parent = parent
         self.setMinimumWidth(300)
         self.setWindowTitle("Circle Properties")
-        QBtn = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+
         self.mainLayout = QVBoxLayout()
         self.fLayout = QFormLayout()
         self.fLayout.setContentsMargins(10, 10, 10, 10)
@@ -123,7 +125,8 @@ class arcPropertyDialog(QDialog):
         super().__init__(parent)
         self.parent = parent
         self.setWindowTitle("Arc Properties")
-        QBtn = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+
         self.mainLayout = QVBoxLayout()
         self.fLayout = QFormLayout()
         self.fLayout.setContentsMargins(10, 10, 10, 10)
@@ -152,7 +155,8 @@ class linePropertyDialog(QDialog):
         self.parent = parent
 
         self.setWindowTitle("Line Properties")
-        QBtn = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+
         self.mainLayout = QVBoxLayout()
         self.fLayout = QFormLayout()
         self.fLayout.setContentsMargins(10, 10, 10, 10)
@@ -190,7 +194,8 @@ class symbolPolygonProperties(QDialog):
         self.tupleList = tupleList
         self.setWindowTitle("Symbol Polygon Properties")
         self.setMinimumWidth(300)
-        QBtn = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+
         self.buttonBox = QDialogButtonBox(QBtn)
         self.buttonBox.accepted.connect(self.accept)
         self.buttonBox.rejected.connect(self.reject)
@@ -256,7 +261,8 @@ class createPinDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Create Pin")
         self.setMinimumWidth(300)
-        QBtn = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+
         self.mainLayout = QVBoxLayout()
         self.fLayout = QFormLayout()
         self.pinName = edf.shortLineEdit()
@@ -297,7 +303,8 @@ class createSymbolLabelDialog(QDialog):
     def __init__(self, parent) -> None:
         super().__init__(parent)
         self.setWindowTitle("Create Label")
-        QBtn = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+
         self.mainLayout = QVBoxLayout()
         self.fLayout = QFormLayout()
         self.labelDefinition = QLineEdit()
@@ -364,7 +371,8 @@ class symbolLabelsDialogue(QDialog):
         self.items = items
         self.attributes = attributes
         self.setWindowTitle("Symbol Labels")
-        QBtn = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+
         self.buttonBox = QDialogButtonBox(QBtn)
         self.mainLayout = QVBoxLayout()
         self.symbolPropsLayout = QGridLayout()
@@ -484,7 +492,8 @@ class instanceProperties(QDialog):
         self.setWindowTitle("Instance Properties")
         tabWidget = QTabWidget()
         mainLayout = QVBoxLayout()
-        QBtn = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+
         self.buttonBox = QDialogButtonBox(QBtn)
         formLayout = QFormLayout()
         self.libNameEdit = edf.longLineEdit()
@@ -535,12 +544,14 @@ class instanceProperties(QDialog):
         self.buttonBox.accepted.connect(self.accept)
         self.buttonBox.rejected.connect(self.reject)
 
+
 class netNameDialog(QDialog):
     def __init__(self, parent):
         super().__init__(parent)
         self.parent = parent
         self.setWindowTitle("Add Net Name")
-        QBtn = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+
         buttonBox = QDialogButtonBox(QBtn)
         mainLayout = QVBoxLayout()
         formLayout = QFormLayout()
@@ -553,6 +564,7 @@ class netNameDialog(QDialog):
         self.setLayout(mainLayout)
         buttonBox.accepted.connect(self.accept)
         buttonBox.rejected.connect(self.reject)
+
 
 class netProperties(QDialog):
     def __init__(self, parent):
@@ -611,7 +623,6 @@ class netProperties(QDialog):
         self.show()
 
 
-
 class createSchematicPinDialog(createPinDialog):
     def __init__(self, parent):
         super().__init__(parent)
@@ -646,7 +657,8 @@ class symbolNameDialog(QDialog):
     def initUI(self):
         self.setWindowTitle("Create a symbol?")
         self.mainLayout = QVBoxLayout()
-        QBtn = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+
         self.buttonBox = QDialogButtonBox(QBtn)
         formLayout = QFormLayout()
         formLayout.addRow(
@@ -670,7 +682,8 @@ class symbolCreateDialog(QDialog):
         super().__init__(parent)
         self.parent = parent
         self.setWindowTitle("Create Symbol")
-        QBtn = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+
         self.buttonBox = QDialogButtonBox(QBtn)
         self.mainLayout = QVBoxLayout()
 
@@ -717,7 +730,8 @@ class noteTextEdit(QDialog):
         super().__init__(parent)
         self.parent = parent
         self.setWindowTitle("Edit Text")
-        QBtn = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+
         self.buttonBox = QDialogButtonBox(QBtn)
         mainLayout = QVBoxLayout()
         self.plainTextEdit = QTextEdit()
@@ -778,7 +792,8 @@ class displayConfigDialog(QDialog):
     def __init__(self, parent):
         super().__init__(parent)
         self.setWindowTitle("Display Options")
-        QBtn = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+
         self.buttonBox = QDialogButtonBox(QBtn)
         self.buttonBox.accepted.connect(self.accept)
         self.buttonBox.rejected.connect(self.reject)
@@ -816,6 +831,7 @@ class displayConfigDialog(QDialog):
         self.setLayout(self.vLayout)
         self.show()
 
+
 class layoutDisplayConfigDialog(displayConfigDialog):
     def __init__(self, parent):
         super().__init__(parent)
@@ -831,7 +847,8 @@ class selectConfigDialogue(QDialog):
         super().__init__(parent)
         self.parent = parent
         self.setWindowTitle("Selection Options")
-        QBtn = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+
         self.buttonBox = QDialogButtonBox(QBtn)
         self.buttonBox.accepted.connect(self.accept)
         self.buttonBox.rejected.connect(self.reject)
@@ -875,4 +892,3 @@ class moveByDialogue(QDialog):
         self.mainLayout.addWidget(coordsGroup)
         self.mainLayout.addWidget(self.buttonBox)
         self.setLayout(self.mainLayout)
-

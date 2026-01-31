@@ -28,10 +28,11 @@ from typing import List, Dict
 
 from PySide6.QtCore import (QThreadPool, QThread, Slot, Signal, QTimer, QObject, QSize)
 from PySide6.QtGui import (QAction, QIcon, )
-from PySide6.QtWidgets import (QGraphicsScene, QApplication, QDialog, QMainWindow, QMessageBox, QVBoxLayout, QWidget,
+from PySide6.QtWidgets import (QApplication, )
+from PySide6.QtWidgets import (QGraphicsScene, QDialog, QMainWindow,
+                               QMessageBox, QVBoxLayout, QWidget,
                                QFileDialog, )
 from dotenv import load_dotenv
-
 
 import revedaEditor.backend.dataDefinitions as ddef
 import revedaEditor.backend.libraryMethods as libm
@@ -46,8 +47,7 @@ import revedaEditor.gui.libraryBrowser as libw
 import revedaEditor.gui.pythonConsole as pcon
 import revedaEditor.gui.revinit as revinit
 import revedaEditor.gui.stippleEditor as stip
-from revedaEditor.backend.startThread import startThread
-from revedaEditor.backend.pdkPaths import importPDKModule
+from revedaEditor.backend.pdkLoader import importPDKModule
 # from revedaEditor.gui.startThread import startThread
 from revedaEditor.resources import resources  # noqa: F401
 
@@ -79,7 +79,7 @@ class mainwContainer(QWidget):
     def init_UI(self):
         # self.console.setfont(QFont("Fira Mono Regular", 12))
         self.console.writeoutput(f"Welcome to Revolution EDA version {revinit.__version__}")
-        self.console.writeoutput("Revolution Semiconductor (C) 2025.")
+        self.console.writeoutput("Revolution Semiconductor (C) 2026.")
         self.console.writeoutput("Mozilla Public License v2.0 modified with Commons Clause")
         # layout statements, using a grid layout
         gLayout = QVBoxLayout()
@@ -91,9 +91,11 @@ class mainwContainer(QWidget):
 class MainWindow(QMainWindow):
     # Class-level constants
     WINDOW_SIZE = QSize(900, 300)
-    VIEW_TYPES = {'switch': ["schematic", "veriloga", "spice", "symbol"], 'stop': ["symbol"]}
-    PATHS = {'defaultPDK': "defaultPDK", 'testbenches': "testbenches", 'library': "library.json",
-        'config': "reveda.conf"}
+    VIEW_TYPES = {'switch': ["schematic", "veriloga", "spice", "symbol"],
+                  'stop': ["symbol"]}
+    PATHS = {'defaultPDK': "defaultPDK", 'testbenches': "testbenches",
+             'library': "library.json",
+             'config': "reveda.conf"}
     STATUS_READY = "Ready"
 
     # Signal definitions
@@ -160,7 +162,8 @@ class MainWindow(QMainWindow):
             self.libraryPathObj = self.runPath / self.PATHS['library']
             self.confFilePath = self.runPath / self.PATHS['config']
             revedaPluginPathObj = getattr(self._app, "revedaPluginPathObj", None)
-            self.pluginsPath: str = str(revedaPluginPathObj) if revedaPluginPathObj is not None else ""
+            self.pluginsPath: str = str(
+                revedaPluginPathObj) if revedaPluginPathObj is not None else ""
             # self.pluginsPath: str = str(self._app.revedaPluginPathObj) if hasattr(self._app,
             #     "revedaPluginPathObj") else ""
         except Exception as e:
@@ -233,8 +236,10 @@ class MainWindow(QMainWindow):
         importVerilogaIcon = QIcon(":/icons/document-import.png")
         self.importVerilogaAction = QAction(importVerilogaIcon, "Import Verilog-a file...")
         self.importSpiceAction = QAction(importVerilogaIcon, "Import Spice file...", self)
-        self.importLaypFileAction = QAction(importVerilogaIcon, "Import KLayout Layer Prop. " "File...", self)
-        self.importXschSymAction = QAction(importVerilogaIcon, "Import Xschem Symbols...", self)
+        self.importLaypFileAction = QAction(importVerilogaIcon,
+                                            "Import KLayout Layer Prop. " "File...", self)
+        self.importXschSymAction = QAction(importVerilogaIcon, "Import Xschem Symbols...",
+                                           self)
         self.importGDSAction = QAction(importVerilogaIcon, "Import GDS...", self)
         self.importGDSAction.setToolTip("Import GDS to Layout")
         openLibIcon = QIcon(":/icons/database--pencil.png")
@@ -285,37 +290,43 @@ class MainWindow(QMainWindow):
         import os
 
         # Set initial values more efficiently using a dictionary
-        initial_values = {'rootPathEdit': str(self.runPath), 'simInpPathEdit': str(self.pdkPath),
-            'simOutPathEdit': str(self.outputPrefixPath), 'pluginsPathEdit': self.pluginsPath,
-            "vaModulePathEdit": os.getenv("REVEDA_VA_MODULE_PATH", str(self.pdkPath)),
-            'switchViewsEdit': ", ".join(self.switchViewList), 'stopViewsEdit': ", ".join(self.stopViewList),
-            'threadPoolEdit': str(self.threadPool.maxThreadCount())}
+        initial_values = {'rootPathEdit': str(self.runPath),
+                          'simInpPathEdit': str(self.pdkPath),
+                          'simOutPathEdit': str(self.outputPrefixPath),
+                          'pluginsPathEdit': self.pluginsPath,
+                          "vaModulePathEdit": os.getenv("REVEDA_VA_MODULE_PATH",
+                                                        str(self.pdkPath)),
+                          'switchViewsEdit': ", ".join(self.switchViewList),
+                          'stopViewsEdit': ", ".join(self.stopViewList),
+                          'threadPoolEdit': str(self.threadPool.maxThreadCount())}
 
         # Set text values in one loop
         for field, value in initial_values.items():
             getattr(dlg, field).setText(value)
 
-
-        if dlg.exec() == QDialog.Accepted:
+        if dlg.exec() == QDialog.DialogCode.Accepted:
             # Get and process all text values at once
-            text_values = {'rootPathEdit': dlg.rootPathEdit.text(), 'simInpPathEdit': dlg.simInpPathEdit.text(),
-                'simOutPathEdit': dlg.simOutPathEdit.text(), 'pluginsPathEdit': dlg.pluginsPathEdit.text(),
-                'vaModulePathEdit': dlg.vaModulePathEdit.text(),
-                'switchViewsEdit': dlg.switchViewsEdit.text(), 'stopViewsEdit': dlg.stopViewsEdit.text(),
-                'threadPoolEdit': dlg.threadPoolEdit.text()}
+            text_values = {'rootPathEdit': dlg.rootPathEdit.text(),
+                           'simInpPathEdit': dlg.simInpPathEdit.text(),
+                           'simOutPathEdit': dlg.simOutPathEdit.text(),
+                           'pluginsPathEdit': dlg.pluginsPathEdit.text(),
+                           'vaModulePathEdit': dlg.vaModulePathEdit.text(),
+                           'switchViewsEdit': dlg.switchViewsEdit.text(),
+                           'stopViewsEdit': dlg.stopViewsEdit.text(),
+                           'threadPoolEdit': dlg.threadPoolEdit.text()}
 
             # Update paths
             self.runPath = pathlib.Path(text_values['rootPathEdit'])
             self.pdkPath = pathlib.Path(text_values['simInpPathEdit'])
             self.outputPrefixPath = pathlib.Path(text_values['simOutPathEdit'])
-            self.pluginsPath = text_values['pluginsPathEdit']
 
             self.app.updatePDKPath(self.pdkPath)
-            self.app.updatePluginsPath(self.pluginsPath)
+            self.app.updatePluginsPath(text_values['pluginsPathEdit'])
             self.app.updateVaModulesPath(text_values['vaModulePathEdit'])
 
             # Process lists in a more compact way
-            self.switchViewList = [x.strip() for x in text_values['switchViewsEdit'].split(',')]
+            self.switchViewList = [x.strip() for x in
+                                   text_values['switchViewsEdit'].split(',')]
             self.stopViewList = [x.strip() for x in text_values['stopViewsEdit'].split(',')]
 
             # Update thread pool setting
@@ -335,8 +346,6 @@ class MainWindow(QMainWindow):
         """
         impvlga.importVerilogaModule(ddef.viewTuple("", "", ""), "")
 
-
-
     def importSpiceClick(self):
         """
         Import a Spice view and add it to a design library.
@@ -351,23 +360,25 @@ class MainWindow(QMainWindow):
 
     def importLaypClick(self):
         importDlg = fd.klayoutLaypImportDialogue(self)
-        if importDlg.exec() == QDialog.Accepted:
+        if importDlg.exec() == QDialog.DialogCode.Accepted:
             lypFile = importDlg.laypFileEdit.text()
             outputFile = importDlg.outputFileEdit.text()
             imlyp.parseLyp(lypFile, outputFile)
 
     def importXschSymClick(self):
-        importDlg = fd.xschemSymIimportDialogue(self, self.libraryBrowser.designView.libraryModel)
+        importDlg = fd.xschemSymIimportDialogue(self,
+                                                self.libraryBrowser.designView.libraryModel)
 
-        if importDlg.exec() == QDialog.Accepted:
+        if importDlg.exec() == QDialog.DialogCode.Accepted:
             symbolFiles = importDlg.symFileEdit.text().split(",")
             importLibraryName = importDlg.libNamesCB.currentText()
             scaleFactor = float(importDlg.scaleEdit.text().strip())
 
             for symbolFile in symbolFiles:
                 symbolFileObj = pathlib.Path(symbolFile.strip())
-                importObj = impxsym.importXschemSym(self, symbolFileObj, self.libraryBrowser.designView,
-                    importLibraryName, )
+                importObj = impxsym.importXschemSym(self, symbolFileObj,
+                                                    self.libraryBrowser.designView,
+                                                    importLibraryName, )
                 importObj.scaleFactor = scaleFactor
                 importObj.importSymFile()
 
@@ -376,7 +387,7 @@ class MainWindow(QMainWindow):
         dlg.unitEdit.setText(str(fabproc.gdsUnit))
         dlg.precisionEdit.setText(str(fabproc.gdsPrecision))
         dlg.libNameEdit.setText("importLib")
-        if dlg.exec() == QDialog.Accepted:
+        if dlg.exec() == QDialog.DialogCode.Accepted:
             gdsImportLibName = dlg.libNameEdit.text().strip()
             gdsImportFileObj = pathlib.Path(dlg.inputFileEdit.text().strip())
             gdsImportLibDirObj = self.libraryDict.get(gdsImportLibName)
@@ -384,14 +395,18 @@ class MainWindow(QMainWindow):
                 if gdsImportLibDirObj.exists():
                     shutil.rmtree(gdsImportLibDirObj, ignore_errors=True)
 
-                libItem = libm.getLibItem(self.libraryBrowser.designView.libraryModel, gdsImportLibName)
+                libItem = libm.getLibItem(self.libraryBrowser.designView.libraryModel,
+                                          gdsImportLibName)
                 if libItem:
-                    self.libraryBrowser.designView.libraryModel.removeLibraryFromModel(libItem)
-                gdsImportLibItem = self.libraryBrowser.designView.libraryModel.addLibraryToModel(gdsImportLibDirObj)
+                    self.libraryBrowser.designView.libraryModel.removeLibraryFromModel(
+                        libItem)
+                gdsImportLibItem = self.libraryBrowser.designView.libraryModel.addLibraryToModel(
+                    gdsImportLibDirObj)
                 gdsImportLibDirObj.mkdir(parents=True, exist_ok=True)
                 gdsImportLibDirObj.joinpath("reveda.lib").touch(exist_ok=True)
             else:
-                gdsImportLibDirObj, gdsImportLibItem = self.createNewLibrary(gdsImportLibName)
+                gdsImportLibDirObj, gdsImportLibItem = self.createNewLibrary(
+                    gdsImportLibName)
             try:
                 gdsImportObj = igds.gdsImporter(self, gdsImportFileObj, gdsImportLibItem)
                 if gdsImportObj:
@@ -406,7 +421,7 @@ class MainWindow(QMainWindow):
         warning.setWindowTitle("Warning")
         warning.setText("The library does not exist.")
         warning.setInformativeText(f"Do you want to create a new library: {libraryName}?\n"
-                                   "Select the parent directory of the library.")
+                                   "Select the parentW directory of the library.")
         warning.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
         warning.setDefaultButton(QMessageBox.Yes)
         ret = warning.exec()
@@ -414,13 +429,14 @@ class MainWindow(QMainWindow):
 
             libDialog = QFileDialog(self, "Select Parent Directory", str(self.runPath))
             libDialog.setFileMode(QFileDialog.Directory)
-            if libDialog.exec() == QDialog.Accepted:
+            if libDialog.exec() == QDialog.DialogCode.Accepted:
                 selectedDir = libDialog.selectedFiles()[0]
                 libraryPath = pathlib.Path(selectedDir).joinpath(libraryName)
                 libraryPath.mkdir(parents=True, exist_ok=True)
                 libraryPath.joinpath("reveda.lib").touch(exist_ok=True)
                 self.libraryDict[libraryName] = libraryPath
-                libraryItem = self.libraryBrowser.designView.libraryModel.addLibraryToModel(libraryPath)
+                libraryItem = self.libraryBrowser.designView.libraryModel.addLibraryToModel(
+                    libraryPath)
                 return libraryPath, libraryItem
         else:
             return None, None
@@ -451,8 +467,10 @@ class MainWindow(QMainWindow):
                 return
 
             # Define default values and paths in a dictionary
-            path_settings = {'runPath': ('runPath', self.runPath), 'pdkPath': ('pdkPath', self.pdkPath),
-                'outputPrefixPath': ('outputPrefixPath', self.outputPrefixPath)}
+            path_settings = {'runPath': ('runPath', self.runPath),
+                             'pdkPath': ('pdkPath', self.pdkPath),
+                             'outputPrefixPath': ('outputPrefixPath',
+                                                  self.outputPrefixPath)}
 
             # Update paths
             for attr, (key, default) in path_settings.items():
@@ -479,15 +497,17 @@ class MainWindow(QMainWindow):
 
     def saveState(self):
         items = {"runPath": str(self.runPath), "pdkPath": str(self.pdkPath),
-            "outputPrefixPath": str(self.outputPrefixPath), "switchViewList": self.switchViewList,
-            "stopViewList": self.stopViewList, "windowGeometry": [self.x(), self.y(), self.width(), self.height()],
-            "threadPoolMaxCount": self.threadPool.maxThreadCount(), }
+                 "outputPrefixPath": str(self.outputPrefixPath),
+                 "switchViewList": self.switchViewList,
+                 "stopViewList": self.stopViewList,
+                 "windowGeometry": [self.x(), self.y(), self.width(), self.height()],
+                 "threadPoolMaxCount": self.threadPool.maxThreadCount(), }
         with self.confFilePath.open(mode="w", encoding="utf") as f:
             json.dump(items, f, indent=4)
 
     def closeEvent(self, event):
         reply = QMessageBox.question(self, "Confirm Exit", "Are you sure you want to exit?",
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.No, )
+                                     QMessageBox.Yes | QMessageBox.No, QMessageBox.No, )
         if reply == QMessageBox.Yes:
             if not self.threadPool.waitForDone(5000):
                 self.threadPool.clear()
