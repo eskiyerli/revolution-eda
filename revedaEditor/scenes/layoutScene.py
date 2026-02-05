@@ -239,8 +239,12 @@ class layoutScene(editorScene):
         point *= fabproc.dbu
         return point.toPoint() if isinstance(point, QPointF) else point
 
-    # def mousePressEvent(self, event: QGraphicsSceneMouseEvent) -> None:
-    #     super().mousePressEvent(event)
+    def mousePressEvent(self, event: QGraphicsSceneMouseEvent) -> None:
+                        
+        self.mousePressLoc = event.scenePos().toPoint()
+        if self.editModes.cutShape:
+            self.startCutLine()
+        super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         """
@@ -331,7 +335,6 @@ class layoutScene(editorScene):
                 self.drawLayoutRuler()
             elif self.editModes.cutShape:
                 self.finishCutLine()
-                self.startCutLine()
             elif self.editModes.addVia:
                 self.addLayoutViaArray()
             elif self.editModes.changeOrigin:
@@ -384,16 +387,16 @@ class layoutScene(editorScene):
         if self._newCutLine.draftLine.isNull():
             self.undoStack.removeLastCommand()
         else:
-            if self.selectedItemList:
-                item = self.selectedItemList[0]
+            if self.selectedItemsSet:
                 line = QLineF(*self._newCutLine.sceneEndPoints)
-                if isinstance(item, lshp.layoutRect):
-                    self._splitRect(item, line)
-                elif isinstance(item, lshp.layoutPath):
-                    self._splitPath(item, line)
-                elif isinstance(item, lshp.layoutPolygon):
-                    self._splitPolygon(item, line)
-        self.removeItem(self._newCutLine)
+                for item in self.selectedItemsSet:
+                    if isinstance(item, lshp.layoutRect):
+                        self._splitRect(item, line)
+                    elif isinstance(item, lshp.layoutPath):
+                        self._splitPath(item, line)
+                    elif isinstance(item, lshp.layoutPolygon):
+                        self._splitPolygon(item, line)
+                self.removeItem(self._newCutLine)
         self._newCutLine = None
 
     def _splitRect(self, item, line: QLineF):
@@ -515,14 +518,13 @@ class layoutScene(editorScene):
             self.undoStack.endMacro()
 
     def startCutLine(self):
-        if self.selectedItemList:
-            self.selectedItemList[0].setSelected(True)
+        if self.selectedItemsSet:
             self._newCutLine = lshp.layoutLine(
-                QLineF(self.mouseReleaseLoc, self.mouseReleaseLoc), self.snapGrid, 1
+                QLineF(self.mousePressLoc, self.mousePressLoc), self.snapGrid, 1
             )
             self.addUndoStack(self._newCutLine)
         else:
-            self.editorWindow.messageLine.setText("No item selected")
+            self.editorWindow.messageLine.setText("No selected items")
 
     def _handleAlignItemLine(self, eventLoc: QPoint) -> None:
         if self.newAlignLine is None:

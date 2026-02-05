@@ -21,6 +21,7 @@
 #    License: Mozilla Public License 2.0
 #    Licensor: Revolution Semiconductor (Registered in the Netherlands)
 #
+from lxml.html.builder import Q
 from collections import Counter
 
 from PySide6.QtCore import (
@@ -37,7 +38,7 @@ from PySide6.QtGui import (
     QWheelEvent,
 )
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
-from PySide6.QtWidgets import (
+from PySide6.QtWidgets import (QGraphicsItem,
     QGraphicsView,
 )
 
@@ -303,21 +304,9 @@ class editorView(QGraphicsView):
         modifiers = event.modifiers()
         if self.viewScene.itemCycler:
             item = next(self.viewScene.itemCycler)
-            if modifiers == Qt.KeyboardModifier.ShiftModifier:
-                self.viewScene.selectedItemsSet.add(item)
-                item.setSelected(True)
-            elif modifiers == Qt.KeyboardModifier.ControlModifier:
-                try:
-                    item.setSelected(False)
-                    self.viewScene.selectedItemsSet.remove(item)
-                except KeyError:
-                    pass
-            elif not event.modifiers():
-                if self.viewScene.selectedItemsSet:
-                    [setItem.setSelected(False) for setItem in
-                     self.viewScene.selectedItemsSet]
-                item.setSelected(True)
-                self.viewScene.selectedItemsSet = {item}
+            self.viewScene.deselectAll()
+            item.setSelected(True)
+            self.viewScene.selectedItemsSet = {item}
 
 
 class symbolView(editorView):

@@ -39,6 +39,7 @@ from PySide6.QtWidgets import (
     QRadioButton,
     QVBoxLayout,
 )
+from quantiphy.quantiphy import Quantity
 
 import revedaEditor.gui.editFunctions as edf
 from revedaEditor.backend.pdkLoader import importPDKModule
@@ -316,9 +317,10 @@ def handleAlignAction(dlg: alignItemsDialogue, closeDialog: bool):
     selectedItems = dlg.scene.selectedItems()
     spacingText = dlg.alignSpacingTextEdit.text().strip()
     if dlg.editor.__class__.__name__ in ("schematicEditor", "symbolEditor"):
-        spacing = int(float(dlg.alignSpacingTextEdit.text()))
+        spacing = int(Quantity(dlg.alignSpacingTextEdit.text()).real)
     elif dlg.editor.__class__.__name__ in ("layoutEditor"):
-        spacing = (int(float(spacingText) * process.dbu) if spacingText != "" else "")
+        spacing = (int(Quantity(spacingText).real * process.dbu) if spacingText != ""
+                   else "")
 
     if dlg.alignEdgesButton.isChecked():
         if len(selectedItems) < 2:

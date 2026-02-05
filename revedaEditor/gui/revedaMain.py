@@ -216,6 +216,7 @@ class MainWindow(QMainWindow):
         self.importTools = self.menuTools.addMenu("&Import")
         self.menuOptions = self.mainW_menubar.addMenu("&Options")
         self.menuHelp = self.mainW_menubar.addMenu("&Help")
+        self.pluginsMenu = self.menuTools.addMenu("&Plugins")   
         self.menuFile.addAction(self.exitAction)
         self.menuTools.addAction(self.libraryBrowserAction)
         self.menuTools.addAction(self.createStippleAction)
@@ -224,6 +225,7 @@ class MainWindow(QMainWindow):
         self.importTools.addAction(self.importLaypFileAction)
         self.importTools.addAction((self.importXschSymAction))
         self.importTools.addAction(self.importGDSAction)
+        self.pluginsMenu.addAction(self.setupPluginsAction)
         self.menuOptions.addAction(self.optionsAction)
         self.menuHelp.addAction(self.helpAction)
         self.menuHelp.addAction(self.aboutAction)
@@ -247,6 +249,7 @@ class MainWindow(QMainWindow):
         optionsIcon = QIcon(":/icons/resource-monitor.png")
         self.optionsAction = QAction(optionsIcon, "Options...", self)
         self.createStippleAction = QAction("Create Stipple...", self)
+        self.setupPluginsAction = QAction("Setup Plugins...", self)
         helpIcon = QIcon(":/icons/document-arrow.png")
         self.helpAction = QAction(helpIcon, "Help...", self)
         self.aboutIcon = QIcon(":/icons/information.png")
@@ -262,6 +265,7 @@ class MainWindow(QMainWindow):
         self.optionsAction.triggered.connect(self.optionsClick)
         self.importGDSAction.triggered.connect(self.importGDSClick)
         self.createStippleAction.triggered.connect(self.createStippleClick)
+        self.setupPluginsAction.triggered.connect(self.setupPluginsClick)
         self.helpAction.triggered.connect(self.helpClick)
         self.aboutAction.triggered.connect(self.aboutClick)
 
@@ -444,6 +448,12 @@ class MainWindow(QMainWindow):
     def createStippleClick(self):
         stippleWindow = stip.stippleEditor(self)
         stippleWindow.show()
+    
+    def setupPluginsClick(self):
+        from revedaEditor.gui.pluginsRegistry import PluginRegistryWindow
+        pluginRegistry = PluginRegistryWindow(self)
+        pluginRegistry.show()
+
 
     def helpClick(self):
         helpBrowser = hlp.helpBrowser(self)
