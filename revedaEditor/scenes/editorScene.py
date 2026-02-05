@@ -85,6 +85,7 @@ class editorScene(QGraphicsScene):
         self.zoomRectItem: Union[QGraphicsRectItem, None] = None
         self.selectedItemsSet: set[QGraphicsItem] = set()
         self.selectedItemGroup = None
+        self.itemCycler = None
         self._groupItems = []
         self.itemsAtPressSet = set()
         self._draftPen = QPen(QColor(0, 150, 0, 128), int(self.snapGrid / 2), Qt.DashLine)
@@ -120,10 +121,6 @@ class editorScene(QGraphicsScene):
 
     def contextMenuEvent(self, event):
         if self.itemAt(event.scenePos(), QTransform()) is None:
-            # self.clearSelection()
-            # self.selectedItemList = []
-            # self.selectedItemGroup = None
-            # self._groupItems = []
             self.messageLine.setText("No item selected")
         super().contextMenuEvent(event)
 
@@ -160,6 +157,7 @@ class editorScene(QGraphicsScene):
                             self.clearSelection()
                             self.selectedItemsSet = {item}
                             item.setSelected(True)
+        
 
             if self.editModes.moveItem:
                 self.selectedItemGroup = self.createItemGroup(self.selectedItems())
@@ -242,6 +240,8 @@ class editorScene(QGraphicsScene):
                 self.removeItem(self.selectionRectItem)
                 self.selectionRectItem = None
             elif not self.itemsAtPressSet:
+                self.itemCycler = None
+                self.selectedItemsSet = set()
                 self.deselectAll()
                 self.clearSelection()
         elif self.editModes.zoomView and self.zoomRectItem:
