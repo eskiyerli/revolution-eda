@@ -1,0 +1,32 @@
+{
+  "plugins": [
+    {
+      "name": "aiTerminal",
+      "version": "0.1.0",
+      "license": "Mozilla Public License 2.0",
+      "type": "source",
+      "description": "AI Terminal plugin for Revolution EDA. Integrates AI agents (Claude, Gemini) for design assistance and automation.",
+      "url": "https://raw.githubusercontent.com/eskiyerli/revolutionEDA_plugins/main/aiTerminal/aiTerminal.zip"
+    },
+    {
+      "name": "revedasim",
+      "version": "0.8.7",
+      "license": "Proprietary",
+      "type": "binary",
+      "description":"Simulation plugin for Revolution EDA using Xyce simulator. Provides netlisting and simulation capabilities for schematic designs.",
+      "binary_urls": {
+        "linux-x86_64-py313": "https://raw.githubusercontent.com/eskiyerli/revolutionEDA_plugins/main/revedasim/linux-x86_64-py313.zip"
+      }
+    },
+        {
+      "name": "revedaPlot",
+      "version": "0.8.7",
+      "license": "Proprietary",
+      "type": "binary",
+      "description":"Plotting plugin for Revolution EDA. Enables visualization of simulation results using PyQtGraph.",
+      "binary_urls": {
+        "linux-x86_64-py313": "https://raw.githubusercontent.com/eskiyerli/revolutionEDA_plugins/main/revedaPlot/linux-x86_64-py313.zip"
+      }
+    }
+  ]
+}
