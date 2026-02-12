@@ -183,7 +183,7 @@ class textEditor(QMainWindow):
         self.filePathObj = filePathObj if filePathObj.exists() else pathlib.Path.cwd()
         self.textEdit = QTextEdit()
         self.setCentralWidget(self.textEdit)
-        self.appMainW = QApplication.instance().mainW
+        self.appMainW = QApplication.instance().appMainW
 
         self.createActions()
         self.createMenus()

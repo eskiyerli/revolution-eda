@@ -1,0 +1,25 @@
+{
+  "plugin_name": "aiTerminal",
+  "plugin_version": "0.1.0",
+  "description": "Revolution EDA aiTerminal plugin allows interaction with AI agents (Claude, Gemini) for design assistance and automation.",
+  "license": "Mozilla Public License 2.0",
+  "author": "Revolution Semiconductor",
+  "copyright": "Revolution Semiconductor",
+  "menu_items": [
+    {
+      "location": "menuBar",
+      "menu": "Tools",
+      "action": "AI Terminal",
+      "text": "AI Terminal",
+      "module": "aiTerminal",
+      "callback": "toggleAITerminal",
+      "shortcut": "Ctrl+T",
+      "checked": 0,
+      "apply": [
+        "schematicEditor",
+        "symbolEditor",
+        "layoutEditor"
+      ]
+    }
+  ]
+}

@@ -50,7 +50,7 @@
 # nuitka-project-if: {OS} == "Linux":
 #    nuitka-project: --output-dir=/home/eskiyerli/dist
 # nuitka-project: --product-name="Revolution EDA"
-# nuitka-project: --product-version="0.8.7"
+# nuitka-project: --product-version="0.8.8"
 # nuitka-project: --company-name="Revolution EDA"
 # nuitka-project: --file-description="Electronic Design Automation Software for Professional Custom IC Design Engineers"
 # nuitka-project: --copyright="Revolution Semiconductor (C) 2025"
@@ -79,7 +79,6 @@ class revedaApp(QApplication):
         self.basePath = Path(__file__).resolve().parent
         load_dotenv()
         self._setupLogger()
-        # self.appMainW = rvm.MainWindow()
 
         self._setupPaths()
         self.appMainW = rvm.MainWindow()
@@ -182,14 +181,14 @@ class revedaApp(QApplication):
                 lines = f.readlines()
 
         # Update or add the key-value pair
-        key_found = False
+        keyFound = False
         for i, line in enumerate(lines):
             if line.strip().startswith(f"{key}="):
                 lines[i] = f"{key}={value}\n"
-                key_found = True
+                keyFound = True
                 break
 
-        if not key_found:
+        if not keyFound:
             lines.append(f"{key}={value}\n")
 
         # Write back to .env file
@@ -204,13 +203,10 @@ def main():
     if style:
         app.setStyle(style)
         print(f"Applied {style} style")
-    mainW = app.appMainW
-    mainW.setWindowTitle("Revolution EDA")
-    app.mainW = mainW
-    console = mainW.centralW.console
-    redirect = pcon.Redirect(console.errorwrite)
-    with redirect_stdout(console), redirect_stderr(redirect):
-        mainW.show()
+    app.appMainW.setWindowTitle("Revolution EDA")
+    console = app.appMainW.centralW.console
+    with redirect_stdout(console), redirect_stderr(pcon.Redirect(console.errorwrite)):
+        app.appMainW.show()
         return app.exec()
 
 

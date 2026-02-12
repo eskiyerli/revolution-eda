@@ -46,7 +46,7 @@ def importSpiceSubckt(viewT: ddef.viewTuple, filePath: str):
         filePath: Path to the SPICE file to import
     """
     # Get the library model
-    mainWindow = QApplication.instance().mainW
+    mainWindow = QApplication.instance().appMainW
     libraryModel = mainWindow.libraryBrowser.designView.libraryModel
     # Open the import dialog
     importDlg = fd.importSpiceCellDialogue(libraryModel, mainWindow)

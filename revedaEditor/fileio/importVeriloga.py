@@ -12,7 +12,7 @@ from revedaEditor.fileio.createSymbols import createVaSymbol
 
 
 def importVerilogaModule(viewT: ddef.viewTuple, filePath: str):
-    appMainW = QApplication.instance().mainW
+    appMainW = QApplication.instance().appMainW
     library_model = appMainW.libraryBrowser.designView.libraryModel
     # Open the import dialog
     importDlg = fd.importVerilogaCellDialogue(library_model, appMainW.libraryBrowser)

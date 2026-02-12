@@ -55,7 +55,7 @@ class configEditor(QMainWindow):
         self._configDict = {}
         app = QApplication.instance()
         if app is not None:
-            self.appMainW = app.mainW
+            self.appMainW = app.appMainW
             print(self.appMainW.openViews)
         else:
             raise RuntimeError("No QApplication instance found")

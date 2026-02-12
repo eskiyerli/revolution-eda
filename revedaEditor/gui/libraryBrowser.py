@@ -416,7 +416,7 @@ class libraryBrowserContainer(QWidget):
 class libraryListView(QDialog):
     def __init__(self, parent, libraryModel: lmview.designLibrariesModel):
         super().__init__(parent)
-        self.appMainW = QApplication.instance().mainW
+        self.appMainW = QApplication.instance().appMainW
         self.model = libraryModel
         self.setWindowTitle("Library List View")
         self.setGeometry(100, 100, 300, 400)
