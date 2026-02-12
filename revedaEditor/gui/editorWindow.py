@@ -79,7 +79,7 @@ class editorWindow(QMainWindow):
         self.parentEditor: Optional[editorWindow] = None
         self.parentObj = None  # type symbol or layoutInstance
         self._app = QApplication.instance()  # main application pointer
-        self.appMainW = self._app.mainW
+        self.appMainW = self._app.appMainW  # main window pointer
         self.logger = getLogger(self.MAIN_LOGGER)
         self.switchViewList = self.appMainW.switchViewList
         self.stopViewList = self.appMainW.stopViewList
@@ -625,6 +625,7 @@ class editorWindow(QMainWindow):
                        QImage.Format_ARGB32_Premultiplied)
         self.centralW.view.printView(image)
         fdlg = QFileDialog(self, caption="Select or create an image file")
+        fdlg.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
         fdlg.setDefaultSuffix("png")
         fdlg.setFileMode(QFileDialog.FileMode.AnyFile)
         fdlg.setViewMode(QFileDialog.ViewMode.Detail)

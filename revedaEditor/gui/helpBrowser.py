@@ -356,8 +356,8 @@ class aboutDialog(QDialog):
         # Add information about your application using rich text
         aboutLabel = QLabel(
             "<h2>Revolution EDA</h2>"
-            "<p><strong>Version:</strong> 0.8.1</p>"
-            "<p><strong>Copyright: Revolution Semiconductor</strong> © 2025</p>"
+            "<p><strong>Version:</strong> 0.8.8</p>"
+            "<p><strong>Copyright: Revolution Semiconductor</strong> © 2026</p>"
             "<p><strong>License:</strong> Mozilla Public License 2.0 amended with Commons Clause</p>"
             "<p><strong> Website:</strong> <a href='https://reveda.eu'>Revolution EDA</a></p>"
             "<p><strong> GitHub:</strong> "

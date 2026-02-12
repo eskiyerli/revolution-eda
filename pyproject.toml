@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "revolution-eda"
-version = "0.8.7"
+version = "0.8.8"
 description = "Custom IC Design Environment for Professionals"
 authors = ["Revolution Semiconductor <48187772+eskiyerli@users.noreply.github.com>"]
 license = "Mozilla Public License v2 modified by Commons Clause"
@@ -52,7 +52,7 @@ cryptography = "^46.0.3"
 [tool.poetry.group.dev.dependencies]
 pytest = "~8.4.1"
 black = "~25.9.0"
-nuitka = "==2.8.2"
+nuitka = "^4.0"
 pyqtgraph = { git = "https://github.com/pyqtgraph/pyqtgraph.git", branch = "master" }
 
 [tool.poetry.scripts]

@@ -287,17 +287,17 @@ class editorView(QGraphicsView):
         self.gridbackg = False
         self.linebackg = False
         self._transparent = True
-        painter = QPainter()
-        painter.begin(printer)
+        painter = QPainter(printer)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
-        self.render(painter)
+        targetRect = painter.viewport()
+        sourceRect = self.sceneRect()
+        self.scene().render(painter, targetRect, sourceRect)
         # Restore original states
         self.gridbackg = originalGridbackg
         self.linebackg = originalLinebackg
         self._transparent = False
-        # End painting
         painter.end()
 
     def cycleSelection(self, event):
