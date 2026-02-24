@@ -24,9 +24,13 @@
 from typing import List, Dict, Any
 
 from PySide6.QtCore import (QAbstractTableModel, Qt, QModelIndex, QPersistentModelIndex,
-                            Signal)
+                            Signal, QPoint, QRect)
 from PySide6.QtGui import QFont
-from PySide6.QtWidgets import (QHeaderView, QTableView)
+from PySide6.QtWidgets import (QHeaderView, QTableView, QMenu)
+from revedaEditor.backend.pdkLoader import importPDKModule
+
+process = importPDKModule("process")
+
 
 
 class DRCTableModel(QAbstractTableModel):
@@ -84,6 +88,7 @@ class DRCTableModel(QAbstractTableModel):
 
     def getPolygons(self, row):
         return self._data[row]['polygons']
+    
 
     def markVisited(self, row):
         if 0 <= row < len(self._data):
@@ -94,22 +99,46 @@ class DRCTableModel(QAbstractTableModel):
 
 class DRCTableView(QTableView):
     polygonSelected = Signal(list)  # Signal to emit selected polygons
-
+    zoomToRect = Signal(QRect) # Signal to emit polygon to be zoomed.
     def __init__(self, data, categories):
         super().__init__()
-        self.model = DRCTableModel(data, categories)
-        self.setModel(self.model)
+        self.drcOutputsModel = DRCTableModel(data, categories)
+        self.setModel(self.drcOutputsModel)
         self.selectionModel().currentRowChanged.connect(self.onRowChanged)
         self.header = self.horizontalHeader()
         self.header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        self.header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        self.header.setSectionResizeMode(1, QHeaderView.Stretch)
         self.header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
         self.header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
-        self.header.setStretchLastSection(True)
+        self.header.setSectionResizeMode(4, QHeaderView.ResizeToContents)
+        self.header.setMaximumSectionSize(200)
+        self.header.setStretchLastSection(False)
+        self.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.customContextMenuRequested.connect(self._onContextMenuRequested)
 
     def onRowChanged(self, current, previous):
         if current.isValid():
             row = current.row()
-            self.model.markVisited(row)
-            polygons = self.model.getPolygons(row)
+            self.drcOutputsModel.markVisited(row)
+            polygons = self.drcOutputsModel.getPolygons(row)
             self.polygonSelected.emit(polygons)
+
+    def _onContextMenuRequested(self, pos: QPoint):
+        index = self.indexAt(pos)
+        if not index.isValid():
+            return
+        row = index.row()
+        menu = QMenu(self)
+        # Example actions (customize as needed)
+        copy_points = menu.addAction("Zoom To Error")
+        copy_points.triggered.connect(lambda: self._zoomToError(row))
+        # menu.addAction("Other action...")
+        menu.exec(self.viewport().mapToGlobal(pos))
+
+    def _zoomToError(self, row: int):
+        polygonItems = self.drcOutputsModel.getPolygons(row)
+        if polygonItems:
+            polygonItem = self.drcOutputsModel.getPolygons(row)[0]
+            padding = int(getattr(process, 'dbu', 1000)/2)
+            self.zoomToRect.emit(polygonItem.polygon().toPolygon().boundingRect().adjusted(-padding, -padding, padding, padding))
+            # self.zoomToPolygon.emit(self.drcOutputsModel.getPoints(row))
