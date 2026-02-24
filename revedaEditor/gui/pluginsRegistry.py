@@ -16,23 +16,41 @@ import zipfile
 from pathlib import Path
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (QHBoxLayout, QLabel, QTableWidget, QTableWidgetItem,
-                               QMainWindow, QMessageBox, QPushButton, QProgressBar,
-                               QTextEdit, QVBoxLayout, QWidget, QHeaderView)
+from PySide6.QtWidgets import (
+    QHBoxLayout,
+    QLabel,
+    QTableWidget,
+    QTableWidgetItem,
+    QMainWindow,
+    QMessageBox,
+    QPushButton,
+    QProgressBar,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+    QHeaderView,
+)
 
 
 class PluginRegistryWindow(QMainWindow):
     DEFAULT_REGISTRY = "https://raw.githubusercontent.com/eskiyerli/revolutionEDA_plugins/main/plugins.json"
 
-    def __init__(self, parent=None, registry_url: str | None = None,
-                 plugins_dir: Path | None = None):
+    def __init__(
+        self,
+        parent=None,
+        registry_url: str | None = None,
+        plugins_dir: Path | None = None,
+    ):
         super().__init__(parent)
         self.setWindowTitle("Revolution EDA Plugin Registry")
         self.resize(800, 400)
 
         self.registry_url = registry_url or self.DEFAULT_REGISTRY
-        self.pluginsDir = (Path(os.environ.get("REVEDA_PLUGIN_PATH")) if os.environ.get(
-            "REVEDA_PLUGIN_PATH") else (plugins_dir or Path.cwd() / "plugins"))
+        self.pluginsDir = (
+            Path(os.environ.get("REVEDA_PLUGIN_PATH"))
+            if os.environ.get("REVEDA_PLUGIN_PATH")
+            else (plugins_dir or Path.cwd() / "plugins")
+        )
         self.pluginsDir = self.pluginsDir.resolve()
 
         self._initUI()
@@ -50,9 +68,11 @@ class PluginRegistryWindow(QMainWindow):
         self.tableWidget = QTableWidget()
         self.tableWidget.setColumnCount(5)
         self.tableWidget.setHorizontalHeaderLabels(
-            ["Installed", "Plugin", "Type", "Version", "License"])
+            ["Installed", "Plugin", "Type", "Version", "License"]
+        )
         self.tableWidget.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.Stretch)
+            QHeaderView.ResizeMode.Stretch
+        )
         self.tableWidget.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.tableWidget.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
         left_l.addWidget(QLabel("Available plugins:"))
@@ -95,7 +115,9 @@ class PluginRegistryWindow(QMainWindow):
                     index = index["plugins"]
                 self._registry = index if isinstance(index, list) else []
         except Exception as exc:
-            QMessageBox.warning(self, "Registry Error", f"Failed to fetch registry:\n{exc}")
+            QMessageBox.warning(
+                self, "Registry Error", f"Failed to fetch registry:\n{exc}"
+            )
             self._registry = []
 
         self.tableWidget.setRowCount(len(self._registry))
@@ -106,17 +128,23 @@ class PluginRegistryWindow(QMainWindow):
             checkbox_item = QTableWidgetItem()
             checkbox_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
             checkbox_item.setCheckState(
-                Qt.CheckState.Checked if plugin_dir.exists() else Qt.CheckState.Unchecked)
+                Qt.CheckState.Checked
+                if plugin_dir.exists()
+                else Qt.CheckState.Unchecked
+            )
             checkbox_item.setData(Qt.ItemDataRole.UserRole, entry)
             self.tableWidget.setItem(row, 0, checkbox_item)
 
             self.tableWidget.setItem(row, 1, QTableWidgetItem(name))
-            self.tableWidget.setItem(row, 2,
-                                     QTableWidgetItem(entry.get("type", "source").title()))
-            self.tableWidget.setItem(row, 3,
-                                     QTableWidgetItem(entry.get("version", "0.0.0")))
-            self.tableWidget.setItem(row, 4,
-                                     QTableWidgetItem(entry.get("license", "Unknown")))
+            self.tableWidget.setItem(
+                row, 2, QTableWidgetItem(entry.get("type", "source").title())
+            )
+            self.tableWidget.setItem(
+                row, 3, QTableWidgetItem(entry.get("version", "0.0.0"))
+            )
+            self.tableWidget.setItem(
+                row, 4, QTableWidgetItem(entry.get("license", "Unknown"))
+            )
 
     def _onSelect(self):
         self.desc.clear()
@@ -127,35 +155,53 @@ class PluginRegistryWindow(QMainWindow):
         if not item:
             return
         entry = item.data(Qt.ItemDataRole.UserRole) or {}
-        text = f"{entry.get('description', '')}\\n\\nType: {entry.get('type', 'source').title()}\\nVersion: {entry.get('version', 'N/A')}\\nLicense: {entry.get('license', 'Unknown')}\\nURL: {entry.get('url', '')}"
+        url_text = ""
+        if entry.get('type') == 'binary':
+            url_text = f"Binary URLs: {entry.get('binary_urls', {})}"
+        else:
+            url_text = f"URL: {entry.get('url', '')}"
+        text = f"{entry.get('description', '')}\n\nType: {entry.get('type', 'source').title()}\nVersion: {entry.get('version', 'N/A')}\nLicense: {entry.get('license', 'Unknown')}\n{url_text}"
         self.desc.setPlainText(text)
 
     def _on_item_activated(self, item: QTableWidgetItem):
         entry = item.data(Qt.ItemDataRole.UserRole) or {}
         name = entry.get("name", "plugin")
-        ret = QMessageBox.question(self, "Install Plugin", f"Install plugin '{name}'?",
-                                   QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        ret = QMessageBox.question(
+            self,
+            "Install Plugin",
+            f"Install plugin '{name}'?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
         if ret == QMessageBox.StandardButton.Yes:
             self._install_entry(entry)
 
     def _on_download(self):
         current_row = self.tableWidget.currentRow()
         if current_row < 0:
-            QMessageBox.information(self, "No selection", "Please select a plugin first.")
+            QMessageBox.information(
+                self, "No selection", "Please select a plugin first."
+            )
             return
         item = self.tableWidget.item(current_row, 0)
         if item:
             entry = item.data(Qt.ItemDataRole.UserRole) or {}
             name = entry.get("name", "plugin")
-            ret = QMessageBox.question(self, "Install Plugin", f"Install '{name}'?",
-                                       QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            ret = QMessageBox.question(
+                self,
+                "Install Plugin",
+                f"Install '{name}'?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
             if ret == QMessageBox.StandardButton.Yes:
                 self._install_entry(entry)
 
     def _install_entry(self, entry: dict):
         name = re.sub(r"[^A-Za-z0-9_.-]", "_", entry.get("name", "plugin"))
-        url = self._get_binary_url(entry) if entry.get("type") == "binary" else entry.get(
-            "url")
+        url = (
+            self._get_binary_url(entry)
+            if entry.get("type") == "binary"
+            else entry.get("url")
+        )
 
         if not url:
             QMessageBox.warning(self, "Error", "No URL for your platform.")
@@ -163,8 +209,12 @@ class PluginRegistryWindow(QMainWindow):
 
         target_subdir = self.pluginsDir / name
         if target_subdir.exists():
-            ok = QMessageBox.question(self, "Overwrite", f"{name} exists. Overwrite?",
-                                      QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            ok = QMessageBox.question(
+                self,
+                "Overwrite",
+                f"{name} exists. Overwrite?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
             if ok != QMessageBox.StandardButton.Yes:
                 return
             shutil.rmtree(target_subdir, ignore_errors=True)
@@ -182,7 +232,9 @@ class PluginRegistryWindow(QMainWindow):
                     zf.extractall(path=self.pluginsDir)
             else:
                 target_subdir.mkdir(parents=True, exist_ok=True)
-                (target_subdir / Path(url).name).write_bytes(Path(tmp_path).read_bytes())
+                (target_subdir / Path(url).name).write_bytes(
+                    Path(tmp_path).read_bytes()
+                )
 
             os.remove(tmp_path)
             self.fetch_registry()
@@ -208,7 +260,9 @@ class PluginRegistryWindow(QMainWindow):
     def _on_uninstall(self):
         current_row = self.tableWidget.currentRow()
         if current_row < 0:
-            QMessageBox.information(self, "No selection", "Please select a plugin first.")
+            QMessageBox.information(
+                self, "No selection", "Please select a plugin first."
+            )
             return
         item = self.tableWidget.item(current_row, 0)
         if not item:
@@ -218,11 +272,17 @@ class PluginRegistryWindow(QMainWindow):
         plugin_dir = self.pluginsDir / re.sub(r"[^A-Za-z0-9_.-]", "_", name)
 
         if not plugin_dir.exists():
-            QMessageBox.information(self, "Not Installed", f"'{name}' is not installed.")
+            QMessageBox.information(
+                self, "Not Installed", f"'{name}' is not installed."
+            )
             return
 
-        ret = QMessageBox.question(self, "Uninstall", f"Uninstall '{name}'?",
-                                   QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        ret = QMessageBox.question(
+            self,
+            "Uninstall",
+            f"Uninstall '{name}'?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
         if ret == QMessageBox.StandardButton.Yes:
             try:
                 shutil.rmtree(plugin_dir)

@@ -27,7 +27,7 @@ from contextlib import contextmanager
 from itertools import cycle
 from typing import TYPE_CHECKING, List, Union
 
-from PySide6.QtCore import (QEvent, QPoint, QRectF, QSizeF, Qt, )
+from PySide6.QtCore import (QEvent, QPoint, QRectF, QSizeF, Qt, QRect)
 from PySide6.QtGui import QColor, QGuiApplication, QPainterPath, QPen, QTransform
 from PySide6.QtWidgets import (QApplication, QCompleter, QDialog, QGraphicsItem,
                                QGraphicsRectItem, QGraphicsScene, QMenu, )
@@ -166,8 +166,10 @@ class editorScene(QGraphicsScene):
                                                True)
                 self._initialGroupPos = QPoint(int(self.selectedItemGroup.pos().x()),
                                                int(self.selectedItemGroup.pos().y()), )
-                self._initialGroupPosList = [item.pos().toPoint() for item in
-                                             self.selectedItemGroup.childItems()]
+                self._initialGroupPosList = []
+                for item in self.selectedItemGroup.childItems():
+                    item_pos = item.pos() if callable(item.pos) else item.pos
+                    self._initialGroupPosList.append(QPoint(int(item_pos.x()), int(item_pos.y())))
             elif self.editModes.panView:
                 self.centerViewOnPoint(self.mousePressLoc)
             elif self.editModes.zoomView:
@@ -446,15 +448,11 @@ class editorScene(QGraphicsScene):
         view.fitInView(newSceneRect, Qt.AspectRatioMode.KeepAspectRatio)
         view.viewport().update()
 
-    # def zoomOutBy2(self):
-    #     sceneRect = self.sceneRect()
-    #     # Adjust the scene rectangle to zoom in by reducing its size by 25% on all sides
-    #     sceneRect.adjust(-0.25 * sceneRect.width(), -0.25 * sceneRect.height(),
-    #                      0.25 * sceneRect.width(), 0.25 * sceneRect.height())
-    #     self.setSceneRect(sceneRect)
-    #     view = self.views()[0]
-    #     view.fitInView(sceneRect, Qt.AspectRatioMode.KeepAspectRatio)
-    #     view.viewport().update()
+    def zoomToRect(self, newSceneRect:QRect):
+        self.setSceneRect(newSceneRect)
+        view = self.views()[0]
+        view.fitInView(newSceneRect, Qt.AspectRatioMode.KeepAspectRatio)
+        view.viewport().update()    
 
     def moveSceneLeft(self) -> None:
         currentSceneRect = self.sceneRect()

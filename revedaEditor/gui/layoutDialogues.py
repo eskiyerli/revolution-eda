@@ -28,7 +28,8 @@ from typing import Dict, TYPE_CHECKING
 from PySide6.QtCore import (
     Qt,
 )
-from PySide6.QtGui import QStandardItem, QFontDatabase, QDoubleValidator
+
+from PySide6.QtGui import (QWindow, QStandardItem, QFontDatabase, QDoubleValidator)
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -54,7 +55,7 @@ from revedaEditor.backend.pdkLoader import importPDKModule
 
 # from dotenv import load_dotenv
 
-fabproc = importPDKModule("process")
+process = importPDKModule("process")
 if TYPE_CHECKING:
     pass
 
@@ -547,12 +548,12 @@ class createLayoutViaDialog(QDialog):
         self.adjustSize()
 
     def singleViaNameChanged(self, text: str):
-        via = [item for item in fabproc.processVias if item.name == text][0]
+        via = [item for item in process.processVias if item.name == text][0]
         self.singleViaWidthEdit.setText(str(via.minWidth))
         self.singleViaHeightEdit.setText(str(via.minHeight))
 
     def arrayViaNameChanged(self, text: str):
-        via = [item for item in fabproc.processVias if item.name == text][0]
+        via = [item for item in process.processVias if item.name == text][0]
         self.arrayViaWidthEdit.setText(str(via.minWidth))
         self.arrayViaHeightEdit.setText(str(via.minWidth))
 
@@ -560,7 +561,7 @@ class createLayoutViaDialog(QDialog):
         text = self.singleViaWidthEdit.text()
         viaDefTuple = [
             item
-            for item in fabproc.processVias
+            for item in process.processVias
             if item.name == self.singleViaNamesCB.currentText()
         ][0]
         self.validateValue(
@@ -571,7 +572,7 @@ class createLayoutViaDialog(QDialog):
         text = self.singleViaHeightEdit.text()
         viaDefTuple = [
             item
-            for item in fabproc.processVias
+            for item in process.processVias
             if item.name == self.singleViaNamesCB.currentText()
         ][0]
         self.validateValue(
@@ -582,7 +583,7 @@ class createLayoutViaDialog(QDialog):
         text = self.arrayViaWidthEdit.text()
         viaDefTuple = [
             item
-            for item in fabproc.processVias
+            for item in process.processVias
             if item.name == self.arrayViaNamesCB.currentText()
         ][0]
         self.validateValue(
@@ -593,7 +594,7 @@ class createLayoutViaDialog(QDialog):
         text = self.arrayViaHeightEdit.text()
         viaDefTuple = [
             item
-            for item in fabproc.processVias
+            for item in process.processVias
             if item.name == self.arrayViaNamesCB.currentText()
         ][0]
         self.validateValue(
@@ -604,7 +605,7 @@ class createLayoutViaDialog(QDialog):
         text = spaceEditField.text()
         viaDefTuple = [
             item
-            for item in fabproc.processVias
+            for item in process.processVias
             if item.name == self.arrayViaNamesCB.currentText()
         ][0]
         self.validateValue(
@@ -770,9 +771,6 @@ class formDictionary:
     """
     This code defines a utility class formDictionary that extracts data
     from a Qt form layout and converts it into a Python dictionary.
-from PyQt5.QtWidgets import QButtonGroup
-from PyQt5.QtWidgets import QRadioButton
-from PyQt5.QtWidgets import QMessageBox
     """
 
     def __init__(self, formLayout: QFormLayout):
@@ -800,7 +798,8 @@ class drcErrorsDialogue(QDialog):
     def __init__(self, parent, drcDataPathObj: Path):
         super().__init__(parent)
         self.setWindowTitle("DRC Errors Table")
-        self.setMinimumSize(800, 600)
+        self.setMinimumSize(1200, 600)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.Window)
 
         layout = QVBoxLayout()
 
