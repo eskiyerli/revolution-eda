@@ -164,12 +164,11 @@ class editorScene(QGraphicsScene):
 
                 self.selectedItemGroup.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable,
                                                True)
-                self._initialGroupPos = QPoint(int(self.selectedItemGroup.pos().x()),
-                                               int(self.selectedItemGroup.pos().y()), )
+                self._initialGroupPos = self.selectedItemGroup.pos().toPoint()
                 self._initialGroupPosList = []
                 for item in self.selectedItemGroup.childItems():
-                    item_pos = item.pos() if callable(item.pos) else item.pos
-                    self._initialGroupPosList.append(QPoint(int(item_pos.x()), int(item_pos.y())))
+                    # Store scene positions before move
+                    self._initialGroupPosList.append(item.scenePos().toPoint())
             elif self.editModes.panView:
                 self.centerViewOnPoint(self.mousePressLoc)
             elif self.editModes.zoomView:
@@ -207,19 +206,24 @@ class editorScene(QGraphicsScene):
 
         if self.editModes.moveItem and self.selectedItemGroup:
             _groupItems = self.selectedItemGroup.childItems()
-            self._finalGroupPosDiff = (
-                    self.selectedItemGroup.pos().toPoint() - self._initialGroupPos)
+            # Calculate final scene positions before destroying group
+            _finalGroupPosList = [item.scenePos().toPoint() for item in _groupItems]
+            _posDiff = [finalPos - initPos for finalPos, initPos in zip(_finalGroupPosList, self._initialGroupPosList)]
+            
             self.destroyItemGroup(self.selectedItemGroup)
             self.selectedItemGroup = None
-            self.undoGroupMoveStack(_groupItems, self._initialGroupPosList,
-                                    self._finalGroupPosDiff)
+            
+            # Use the actual position difference for each item
+            if _posDiff and _posDiff[0] != QPoint(0, 0):
+                self.undoGroupMoveStack(_groupItems, self._initialGroupPosList, _posDiff[0])
+            
             [item.setSelected(False) for item in _groupItems]
             self.editModes.setMode("selectItem")
         elif self.editModes.copyItem and self.selectedItemGroup:
             self.destroyItemGroup(self.selectedItemGroup)
             self.selectedItemGroup = None
             self.editModes.setMode(
-                "selectItem")  # self.deselectAll()  # self.clearSelection()
+                "selectItem")  
         elif self.editModes.selectItem:
             if self.selectionRectItem:
                 selectionPath = QPainterPath()
@@ -339,8 +343,23 @@ class editorScene(QGraphicsScene):
         """
         Deselect all items in the scene.
         """
-        [item.setSelected(False) for item in self.selectedItemsSet]
-        self.selectedItemsSet = set()
+        for item in self.selectedItems():
+            item.setSelected(False)
+        self.clearSelection()
+        self.selectedItemsSet.clear()
+        self.itemsAtPressSet.clear()
+        self.selectionRectItem = None
+        self.zoomRectItem = None
+        self.selectedItemGroup = None
+        self.itemCycler = None
+        self.newAlignLine = None
+        self.newNet = None
+        self.stretchNet = None
+        self.newInstance = None
+        self.newPin = None
+        self.newText = None
+        self.editModes.setMode("selectItem")
+        self.messageLine.setText("All items deselected")
 
     def deleteSelectedItems(self):
         if self.selectedItems() is not None:

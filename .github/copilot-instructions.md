@@ -58,7 +58,7 @@ project root (initialized via `revedaApp._setup_logger()`).
 header (lines 24-57); output goes to `--output-dir` (Linux: `/home/eskiyerli/dist`, Darwin:
 app bundle).
 
-**Version**: 0.8.7 (in `pyproject.toml`)
+**Version**: 0.8.8 (in `pyproject.toml`)
 
 ## Critical Architectural Patterns
 

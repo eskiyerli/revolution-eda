@@ -37,10 +37,7 @@ boundaries.
 > setkey
 [Enter your Claude API key in the dialog]
 
-> read
-[View current design JSON]
-
-> ai:Add a 100fF capacitor named C1 between nodes VDD and GND
+> ai:Analyze design and explain its problems.
 
 > undo
 [If you want to revert the changes]
@@ -80,7 +77,6 @@ The AI agent is automatically configured with:
 - **Path Validation**: AI cannot access files outside design libraries
 - **JSON Validation**: All modifications are validated before saving
 - **Undo Support**: Easy rollback to previous version
-- **API Key Security**: Keys are stored in memory only (not persisted)
 
 ## Limitations
 

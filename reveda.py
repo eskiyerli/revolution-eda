@@ -53,7 +53,8 @@
 # nuitka-project: --product-version="0.8.8"
 # nuitka-project: --company-name="Revolution EDA"
 # nuitka-project: --file-description="Electronic Design Automation Software for Professional Custom IC Design Engineers"
-# nuitka-project: --copyright="Revolution Semiconductor (C) 2025"
+# nuitka-project: --windows-icon-from-ico=revedaCoreLogo.ico
+# nuitka-project: --copyright="Revolution Semiconductor (C) 2026"
 
 import logging
 import os
@@ -62,8 +63,8 @@ import sys
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
-from PySide6.QtWidgets import QApplication
 from dotenv import load_dotenv
+from PySide6.QtWidgets import QApplication
 
 import revedaEditor.gui.pythonConsole as pcon
 import revedaEditor.gui.revedaMain as rvm
@@ -89,8 +90,9 @@ class revedaApp(QApplication):
         logFilePath = self.basePath / "reveda.log"
         handler = logging.FileHandler(logFilePath)
         handler.setLevel(logging.INFO)
-        handler.setFormatter(logging.Formatter(
-            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
+        handler.setFormatter(
+            logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+        )
         self.logger.addHandler(handler)
 
     def _setupPaths(self):
@@ -98,7 +100,8 @@ class revedaApp(QApplication):
         if pdkPath:
             path_obj = Path(pdkPath)
             self.revedaPdkPathObj = (
-                path_obj if path_obj.is_absolute() else self.basePath / pdkPath).resolve()
+                path_obj if path_obj.is_absolute() else self.basePath / pdkPath
+            ).resolve()
             if self.revedaPdkPathObj.exists():
                 sys.path.append(str(self.revedaPdkPathObj))
             else:
@@ -106,7 +109,7 @@ class revedaApp(QApplication):
                 if self.revedaPdkPathObj.exists():
                     sys.path.append(str(self.revedaPdkPathObj))
                 else:
-                    self.logger.error('Default PDK path cannot be found.')
+                    self.logger.error("Default PDK path cannot be found.")
         else:
             self.revedaPdkPathObj = self.basePath / "defaultPDK"
             if self.revedaPdkPathObj.exists():
@@ -120,7 +123,8 @@ class revedaApp(QApplication):
         if pluginPath:
             path_obj = Path(pluginPath)
             self.revedaPluginPathObj = (
-                path_obj if path_obj.is_absolute() else self.basePath / pluginPath).resolve()
+                path_obj if path_obj.is_absolute() else self.basePath / pluginPath
+            ).resolve()
             if self.revedaPluginPathObj.exists():
                 sys.path.append(str(self.revedaPluginPathObj))
                 self.pluginsObj = pluginsLoader(self.revedaPluginPathObj)
@@ -165,10 +169,12 @@ class revedaApp(QApplication):
             os.environ["REVEDA_VA_MODULE_PATH"] = str(Path(newPath).resolve())
 
             # Persist to .env file
-            self.update_env_file("REVEDA_VA_MODULE_PATH",
-                                 os.environ["REVEDA_VA_MODULE_PATH"])
+            self.update_env_file(
+                "REVEDA_VA_MODULE_PATH", os.environ["REVEDA_VA_MODULE_PATH"]
+            )
             self.logger.info(
-                f"Central Verilog-A module repository path: {os.environ["REVEDA_VA_MODULE_PATH"]}")
+                f"Central Verilog-A module repository path: {os.environ['REVEDA_VA_MODULE_PATH']}"
+            )
 
     def update_env_file(self, key, value):
         """Update or add environment variable in .env file"""
@@ -177,7 +183,7 @@ class revedaApp(QApplication):
 
         # Read existing .env file if it exists
         if env_file.exists():
-            with env_file.open('r') as f:
+            with env_file.open("r") as f:
                 lines = f.readlines()
 
         # Update or add the key-value pair
@@ -192,7 +198,7 @@ class revedaApp(QApplication):
             lines.append(f"{key}={value}\n")
 
         # Write back to .env file
-        with env_file.open('w') as f:
+        with env_file.open("w") as f:
             f.writelines(lines)
 
 

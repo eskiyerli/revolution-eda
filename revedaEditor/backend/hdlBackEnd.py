@@ -40,7 +40,7 @@ class verilogaC:
         self._vaModule = ""
         self.instanceParams = dict()
         self.modelParams = dict()
-        self.pins = list()
+        self._pins = list()
         self.inPins = list()
         self.inoutPins = list()
         self.outPins = list()
@@ -110,9 +110,9 @@ class verilogaC:
                         self._vaModule = splitLine[1].replace(";", "").strip()
                     if "(" in splitLine[1] and ")" in splitLine[1]:
                         pinList = line.split("(")[1].split(")")[0].split(",")
-                        self.pins = [pin.strip() for pin in pinList]
+                        self._pins = [pin.strip() for pin in pinList]
                     else:
-                        self.pins = []
+                        self._pins = []
                 case "in":
                     rawPins = line.replace("in ", "").replace(";", "").split(",")
                     self.inPins.extend([pin.strip() for pin in rawPins])
@@ -157,6 +157,8 @@ class verilogaC:
 
     @property
     def pinOrder(self):
+        # Join the pins with commas
+        self._pinOrder = ", ".join(self._pins)
         return self._pinOrder
 
     @pinOrder.setter
@@ -166,8 +168,6 @@ class verilogaC:
 
     @property
     def netlistLine(self):
-        # Join the pins with commas
-        self._pinOrder = ",".join(self.pins)
 
         # Create a string of instance parameters in the format [@key:key=%:key=item]
         instParamString = " ".join(
@@ -178,7 +178,7 @@ class verilogaC:
         )
 
         # Create the netlist line string with the formatted values
-        self._netlistLine = f"Y{self._vaModule} @instName @pinList  {self._vaModule}Model {instParamString}"
+        self._netlistLine = f"Y{self._vaModule} @instName %pinOrder  {self._vaModule}Model {instParamString}"
 
         # Return the netlist line
         return self._netlistLine
@@ -187,93 +187,77 @@ class verilogaC:
     def vaModule(self):
         return self._vaModule
 
-
 class spiceC:
     def __init__(self, pathObj: pathlib.Path):
         self._pathObj = pathObj
-        self._statementLines = list()
+        self._pins = []
         self._pinOrder = ""
-        with self._pathObj.open("r") as f:
+        with self._pathObj.open("r", encoding="utf-8") as f:
             self._fileLines = f.readlines()
         self.subcktParams = self.extractSubcktParams()
-        self._netlistLine: str = ""
+        self._netlistLine = ""
+
+    @property
+    def pinOrder(self):
+        self._pinOrder = ", ".join(self._pins)
+        return self._pinOrder
+
+    @property
+    def netlistLine(self):
+        instParamString = " ".join(
+            [f"[@{k}:{k}=%:{k}={v}]" for k, v in self.subcktParams.get("params", {}).items()]
+        )
+        name = self.subcktParams.get("name", "")
+        if instParamString.strip():
+            self._netlistLine = f'X@instName %pinOrder {name} PARAM: {instParamString}'
+        else:
+            self._netlistLine = f'X@instName %pinOrder {name}'
+        return self._netlistLine
+
+    def subcktLineExtract(self):
+        subcktLines = ""
+        for lineno, line in enumerate(self._fileLines):
+            if line.lstrip().upper().startswith('.SUBCKT'):
+                subcktLines = line.strip()
+                for cont in self._fileLines[lineno+1:]:
+                    if cont.lstrip().startswith('+'):
+                        subcktLines = f"{subcktLines} {cont.lstrip()[1:].strip()}"
+                        continue
+                    break
+                break
+        return subcktLines
+
+    def extractSubcktParams(self):
+        subcktDict = {"params": {}}
+        subcktLine = self.subcktLineExtract()
+        if not subcktLine:
+            subcktDict["name"] = ""
+            subcktDict["pins"] = []
+            self._pins = []
+            self._pinOrder = ""
+            return subcktDict
+        tokens = subcktLine.split()
+        if len(tokens) < 2:
+            subcktDict["name"] = ""
+            subcktDict["pins"] = []
+            self._pins = []
+            self._pinOrder = ""
+            return subcktDict
+        subcktDict["name"] = tokens[1]
+        cap = subcktLine.upper()
+        if 'PARAM:' in cap:
+            param_index = cap.split().index('PARAM:')
+            subcktDict['pins'] = tokens[2:param_index]
+            params_tokens = tokens[param_index+1:]
+            params_string = ' '.join(params_tokens)
+            for m in re.finditer(r'([A-Za-z_][\w]*)\s*=\s*([^\s]+)', params_string):
+                subcktDict['params'][m.group(1)] = m.group(2)
+        else:
+            subcktDict['pins'] = tokens[2:]
+        self._pins = [p.strip() for p in subcktDict['pins'] if p.strip()]
+        self._pinOrder = ','.join(self._pins)
+        return subcktDict
 
     @property
     def pathObj(self):
         return self._pathObj
-
-    @pathObj.setter
-    def pathObj(self, value: pathlib.Path):
-        assert isinstance(value, pathlib.Path)
-        self._pathObj = value
-
-    @property
-    def pinOrder(self):
-        return self._pinOrder
-
-    @pinOrder.setter
-    def pinOrder(self, value: str):
-        assert isinstance(value, str)
-        self._pinOrder = value
-
-    @property
-    def netlistLine(self):
-        # Create a string of instance parameters in the format [@key:key=%:key=item]
-        instParamString = " ".join(
-            [
-                f"[@{key}:{key}=%:{key}={item}]"
-                for key, item in self.subcktParams["params"].items()
-            ]
-        )
-        if instParamString.strip():
-            # Create the netlist line string with the formatted values
-            self._netlistLine = f'X@instName %pinOrder {self.subcktParams["name"]} PARAM: {instParamString}'
-        else:
-            self._netlistLine = f'X@instName %pinOrder {self.subcktParams["name"]}'
-
-        # Return the netlist line
-        return self._netlistLine
-
-    def subcktLineExtract(self):
-        """ """
-        subcktLines = ""
-        subcktStart = None
-        increment = 1
-
-        # Iterate over each line in the file
-        for linenumber, line in enumerate(self._fileLines):
-            # Check if the line starts with '.SUBCKT'
-            if line.upper().startswith(".SUBCKT"):
-                subcktStart = linenumber
-                subcktLines = f"{line.strip()}"
-
-            # Check if the line starts with '+' and is the next line after the subcircuit start line
-            if (
-                    subcktLines
-                    and linenumber == subcktStart + increment
-                    and line.startswith("+")
-            ):
-                subcktLines = f"{subcktLines} {line[1:].strip()}"
-                increment += 1
-        return subcktLines
-
-    def extractSubcktParams(self):
-        """ """
-        subcktDict = dict()
-        subcktDict.setdefault("params", dict())
-        subcktLine = self.subcktLineExtract()
-        tokens = subcktLine.split()
-        subcktDict["name"] = tokens[1]
-        capSubcktLine = subcktLine.upper()
-        if "PARAM:" in capSubcktLine:
-            subcktDict["pins"] = tokens[2: capSubcktLine.split().index("PARAM:")]
-            paramsStringList = tokens[capSubcktLine.split().index("PARAM:") + 1:]
-            for index, paramString in enumerate(paramsStringList):
-                if paramString.strip() == "=":
-                    subcktDict["params"][
-                        paramsStringList[index - 1].strip()
-                    ] = paramsStringList[index + 1].strip()
-        else:
-            subcktDict["pins"] = tokens[2:]
-        self._pinOrder = ",".join(subcktDict["pins"])
-        return subcktDict

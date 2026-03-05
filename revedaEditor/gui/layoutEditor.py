@@ -415,8 +415,8 @@ class layoutEditor(edw.editorWindow):
         QApplication.processEvents()
         try:
             self.centralW.scene.loadDesign(self.file)
-            viewNameTuple = ddef.viewTuple(self.libItem.libraryName, self.cellItem.cellName,
-                                           self.viewName)
+            viewNameTuple = ddef.viewNameTuple(self.libItem.libraryName, self.cellItem.cellName,
+                                               self.viewName)
             self.appMainW.openViews[viewNameTuple] = self
         except Exception as e:
             self.logger.error(f"Error during loading layout for {self.cellName}: {e}")
@@ -495,8 +495,8 @@ class layoutEditor(edw.editorWindow):
     def closeEvent(self, event):
         try:
             self.centralW.scene.saveLayoutCell(self.file)
-            cellViewNameTuple = ddef.viewTuple(self.libName, self.cellName,
-                                               self.viewName)
+            cellViewNameTuple = ddef.viewNameTuple(self.libName, self.cellName,
+                                                   self.viewName)
             self.appMainW.openViews.pop(cellViewNameTuple, None)
         except Exception as e:
             self.appMainW.logger.error(f"Error in closing layout editor window"

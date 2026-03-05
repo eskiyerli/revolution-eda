@@ -176,7 +176,6 @@ class schematicScene(editorScene):
         super().mousePressEvent(event)
         if self.selectedItemGroup and self.editModes.moveItem:
             for item in self.selectedItemGroup.childItems():
-
                 if isinstance(item, shp.schematicSymbol) or isinstance(item,
                                                                        shp.schematicPin):
                     item.generatePinNetDict()
@@ -304,7 +303,7 @@ class schematicScene(editorScene):
         if self.newAlignLine is None:
             from PySide6.QtWidgets import (QApplication, )
             alignDlg = [w for w in QApplication.topLevelWidgets() if isinstance(w,
-                                                                                alg.alignItemsDialogue) and w.isVisible() and w.scene == self][
+                alg.alignItemsDialogue) and w.isVisible() and w.scene == self][
                 0]
             if alignDlg.horizontalAlignButton.isChecked():
                 self.newAlignLine = shp.alignLine(QLineF(eventLoc, eventLoc), 1,
@@ -698,7 +697,7 @@ class schematicScene(editorScene):
         self.addUndoStack(text)
         return text
 
-    def drawInstance(self, instanceTuple: ddef.viewTuple, pos: QPoint):
+    def drawInstance(self, instanceTuple: ddef.viewNameTuple, pos: QPoint):
         """
         Add an instance of a symbol to the scene.
         """
@@ -710,7 +709,7 @@ class schematicScene(editorScene):
         else:
             return None
 
-    def instSymbol(self, instanceTuple: ddef.viewTuple, pos: QPoint):
+    def instSymbol(self, instanceTuple: ddef.viewNameTuple, pos: QPoint):
         viewItem = libm.findViewItem(self.editorWindow.libraryView.libraryModel,
                                      instanceTuple.libraryName,
                                      instanceTuple.cellName,
@@ -723,10 +722,6 @@ class schematicScene(editorScene):
                 with open(viewPath, "r") as temp:
                     items = json.load(temp)
                     self._symbolCache[viewPath] = items
-
-            # if (items[0].get("viewType", "") != "symbol" or items[0].get("cellView", "") != "symbol"):
-            #     self.logger.error("Not a symbol!")
-            #     return None
 
             # Use comprehensions for better performance
             itemAttributes = {item["nam"]: item["def"] for item in items[2:] if
@@ -996,7 +991,7 @@ class schematicScene(editorScene):
             libraryName = dlg.libNameEdit.text().strip()
             cellName = dlg.cellNameEdit.text().strip()
             viewName = dlg.viewNameEdit.text().strip()
-            instanceTuple = ddef.viewTuple(libraryName, cellName, viewName)
+            instanceTuple = ddef.viewNameTuple(libraryName, cellName, viewName)
             location = QPoint(int(float(dlg.xLocationEdit.text().strip())),
                               int(float(dlg.yLocationEdit.text().strip())), )
             newInstance = self.instSymbol(instanceTuple, location)
@@ -1132,32 +1127,31 @@ class schematicScene(editorScene):
                              range(cellItem.rowCount()) if
                              "schematic" in cellItem.child(
                                  i).text() or "symbol" in cellItem.child(
-                                 i).text()]
+                                 i).text() or "veriloga" in cellItem.child(
+                                 i).text() or "spice" in cellItem.child(
+                                 i).text() ]
                 dlg.viewListCB.addItems(viewNames)
                 if dlg.exec() == QDialog.DialogCode.Accepted:
                     selectedSymbol.setSelected(False)
                     self.saveSchematic(self.editorWindow.file)
-                    libItem = libm.getLibItem(
-                        self.editorWindow.libraryView.libraryModel,
-                        selectedSymbol.libraryName, )
-                    cellItem = libm.getCellItem(libItem, selectedSymbol.cellName)
-                    viewItem = libm.getViewItem(cellItem,
-                                                dlg.viewListCB.currentText())
+                    viewItem = libm.getViewItem(
+                        cellItem, dlg.viewListCB.currentText()
+                    )
+                    viewItemT = ddef.viewItemTuple(libItem, cellItem, viewItem)
+                    openViewNameT = self.editorWindow.libraryView.openCellView(
+                            viewItemT)
 
-                    openViewTuple = self.editorWindow.libraryView.libBrowsW.openCellView(
-                        viewItem)
                     if viewItem.viewType == "schematic":
-                        parentInstanceName = \
-                            [labelItem.labelValue for labelItem in
+                        parentInstanceName = [labelItem.labelValue for labelItem in
                              selectedSymbol.labels.values() if
-                             labelItem.labelType == "NLPLabel" and labelItem.labelDefinition == "[@instName]"][
-                                0]
+                             labelItem.labelType == "NLPLabel" and
+                            labelItem.labelDefinition == "[@instName]"][0]
                         self.editorWindow.appMainW.openViews[
-                            openViewTuple].centralW.scene.hierarchyTrail = (
+                            openViewNameT].centralW.scene.hierarchyTrail = (
                             f"{self.hierarchyTrail}{parentInstanceName}.")
-                    if self.editorWindow.appMainW.openViews[openViewTuple]:
+                    if self.editorWindow.appMainW.openViews[openViewNameT]:
                         childWindow = self.editorWindow.appMainW.openViews[
-                            openViewTuple]
+                            openViewNameT]
                         childWindow.parentEditor = self.editorWindow
                         childWindow.parentObj = selectedSymbol
                         childWindowType = self.findEditorTypeString(childWindow)
@@ -1165,11 +1159,15 @@ class schematicScene(editorScene):
                         if childWindowType == "symbolEditor":
                             childWindow.symbolToolbar.addAction(
                                 childWindow.goUpAction)
+                            if dlg.buttonId == 2:
+                                childWindow.centralW.scene.readOnly = True
                         elif childWindowType == "schematicEditor":
                             childWindow.schematicToolbar.addAction(
                                 childWindow.goUpAction)
-                        if dlg.buttonId == 2:
-                            childWindow.centralW.scene.readOnly = True
+                            if dlg.buttonId == 2:
+                                childWindow.centralW.scene.readOnly = True
+
+
         except IndexError:
             pass
 
@@ -1209,10 +1207,10 @@ class schematicScene(editorScene):
             netsConnectedToPin = [netItem for netItem in pinItem.collidingItems(
                 Qt.IntersectsItemBoundingRect) if
                                   isinstance(netItem, snet.schematicNet)]
+
             if netsConnectedToPin:
                 # all the nets connected to this pin should have the same name
                 netName = netsConnectedToPin[0].name
-
                 symbolItem.pinNetMap[pinName] = netName
                 pinItem.connected = True
             else:
@@ -1223,7 +1221,7 @@ class schematicScene(editorScene):
         for pin in unconnectedPins:
             symbolItem.pinNetMap[pin] = f"dnet{self.netCounter}"
             self.netCounter += 1
-
+        
         # Handle pin ordering
         pinOrder = symbolItem.symattrs.get("pinOrder")
         if pinOrder:

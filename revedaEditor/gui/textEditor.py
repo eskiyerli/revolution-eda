@@ -193,7 +193,7 @@ class textEditor(QMainWindow):
         self.statusLabel = QLabel()
         self.statusLine.addPermanentWidget(self.statusLabel)
         self.textEdit.cursorPositionChanged.connect(self.updateStatus)
-        self.cellViewTuple = ddef.viewTuple("", "", "")
+        self.cellViewTuple = ddef.viewNameTuple("", "", "")
         self.resize(600, 800)
         self.initEditor()
 

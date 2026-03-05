@@ -28,7 +28,8 @@ from pathlib import Path
 
 from PySide6.QtGui import (QAction, QIcon)
 from PySide6.QtWidgets import (QApplication, )
-
+from revedaEditor.backend.dataDefinitions import viewItemTuple
+from revedaEditor.backend.libBackEnd import viewItem
 
 class pluginsLoader:
     def __init__(self, pluginsPath: Path):
@@ -113,15 +114,28 @@ class pluginsLoader:
                             action.menu().addAction(new_action)
                             break
 
-    def createCellView(self, viewItem):
+    def createCellView(self, viewItemT: viewItemTuple):
 
         for pluginName, pluginModule in self.plugins.items():
             if (hasattr(pluginModule, 'viewTypes') and
-                    viewItem.viewType in getattr(pluginModule, 'viewTypes')):
-                pluginModule.createCellView(viewItem)
+                    viewItemT.viewItem.viewType in getattr(pluginModule, 'viewTypes')):
+                pluginModule.createCellView(viewItemT)
+                return True
+        else:
+            self._app.logger.warning(
+                f"No plugin found to open view type: "
+                f"{viewItemT.viewItem.viewType}")
+            return False
 
-    def openCellView(self, viewItem):
+    def openCellView(self, viewItemT:viewItemTuple):
         for pluginName, pluginModule in self.plugins.items():
             if (hasattr(pluginModule, 'viewTypes') and
-                    viewItem.viewType in getattr(pluginModule, 'viewTypes')):
-                pluginModule.openCellView(viewItem)
+                    viewItemT.viewItem.viewType in getattr(pluginModule,
+                                                       'viewTypes')):
+                pluginModule.openCellView(viewItemT)
+                return True
+        else:
+            self._app.logger.warning(
+                f"No plugin found to open view type: "
+                f"{viewItemT.viewItem.viewType}")
+            return False

@@ -108,15 +108,15 @@ class configEditor(QMainWindow):
 
             self.centralW.switchViewsEdit.setText(", ".join(self.appMainW.switchViewList))
             self.centralW.stopViewsEdit.setText(", ".join(self.appMainW.stopViewList))
-            configViewNameTuple = ddef.viewTuple(self.libraryName, self.cellName,
-                                                 self.viewName)
+            configViewNameTuple = ddef.viewNameTuple(self.libraryName, self.cellName,
+                                                     self.viewName)
             if self.appMainW.openViews.get(configViewNameTuple, None):
                 self.appMainW.openViews[configViewNameTuple].raise_()
             else:
                 self.show()
             self._schViewItem = libm.getViewItem(self.cellItem, schematicName)
-            schematicViewNameTuple = ddef.viewTuple(self.libraryName, self.cellName,
-                                                    self._schViewItem.viewName)
+            schematicViewNameTuple = ddef.viewNameTuple(self.libraryName, self.cellName,
+                                                        self._schViewItem.viewName)
             if self.appMainW.openViews.get(schematicViewNameTuple):
                 self.editorWindow = self.appMainW.openViews[schematicViewNameTuple]
                 self.appMainW.openViews[schematicViewNameTuple].raise_()
@@ -201,8 +201,8 @@ class configEditor(QMainWindow):
 
     def closeEvent(self, event):
         try:
-            cellViewNameTuple = ddef.viewTuple(self.libraryName, self.cellName,
-                                               self.viewItem.viewName)
+            cellViewNameTuple = ddef.viewNameTuple(self.libraryName, self.cellName,
+                                                   self.viewItem.viewName)
             self.appMainW.openViews.pop(cellViewNameTuple, None)
         except Exception as e:
             self.appMainW.logger.error(f"Unexpected error: {e}")

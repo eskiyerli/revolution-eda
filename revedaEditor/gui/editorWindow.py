@@ -728,7 +728,7 @@ class editorWindow(QMainWindow):
         self.close()
 
     def closeEvent(self, event):
-        cellViewTuple = ddef.viewTuple(self.libName, self.cellName, self.viewName)
+        cellViewTuple = ddef.viewNameTuple(self.libName, self.cellName, self.viewName)
         self.appMainW.openViews.pop(cellViewTuple, None)
         event.accept()
         super().closeEvent(event)

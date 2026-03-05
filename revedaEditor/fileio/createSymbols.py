@@ -22,11 +22,6 @@
 #    Licensor: Revolution Semiconductor (Registered in the Netherlands)
 #
 
-# import revedaEditor.fileio.symbolEncoder as se
-# import revedaEditor.gui.propertyDialogues as pdlg
-# import revedaEditor.gui.fileDialogues as fd
-# import revedaEditor.gui.libraryBrowser as libw
-# import revedaEditor.gui.symbolEditor as syed
 from PySide6.QtCore import Qt, QPoint
 from PySide6.QtWidgets import QMainWindow, QDialog
 
@@ -196,17 +191,25 @@ def createVaSymbol(
     Raises:
         None
     """
-    symbolNameDlg = fd.createCellViewDialog(
-        parent, libraryBrowser.libraryModel, vaItemTuple.cellItem
+    # symbolNameDlg = fd.createCellViewDialog(
+    #     parent, libraryBrowser.libraryModel, vaItemTuple.cellItem
+    # )
+    # symbolNameDlg.viewComboBox.setCurrentText("symbol")
+    # symbolNameDlg.nameEdit.setText("symbol")
+    symbolNameDlg = fd.newCellViewDialog(
+        parent, libraryBrowser.designView.libraryModel
     )
-    symbolNameDlg.viewComboBox.setCurrentText("symbol")
-    symbolNameDlg.nameEdit.setText("symbol")
+    symbolNameDlg.libNamesCB.setCurrentText(vaItemTuple.libraryItem.libraryName)
+    symbolNameDlg.cellCB.setCurrentText(vaItemTuple.cellItem.cellName)
+    symbolNameDlg.viewType.addItems(["symbol"])
+    symbolNameDlg.viewName.setText("symbol")
     if symbolNameDlg.exec() == QDialog.DialogCode.Accepted:
-        symbolViewName = symbolNameDlg.nameEdit.text().strip()
+        symbolViewName = symbolNameDlg.viewName.text().strip()
         symbolViewItem = scb.createCellView(
             parent, symbolViewName, vaItemTuple.cellItem
         )
-        newVaFilePathObj = vaItemTuple.cellItem.data(Qt.ItemDataRole.UserRole + 2).joinpath(
+        importedVaObjPath = vaItemTuple.cellItem.data(
+            Qt.ItemDataRole.UserRole + 2).joinpath(
             importedVaObj.pathObj.name
         )
         symbolWindow = syed.symbolEditor(
@@ -223,16 +226,6 @@ def createVaSymbol(
 
         if dlg.exec() == QDialog.DialogCode.Accepted:
             rectXDim, rectYDim = drawBaseSymbol(symbolScene, dlg)
-            # vaFileLabel = symbolScene.labelDraw(
-            #     QPoint(int(0.25 * rectXDim), int(0.6 * rectYDim)),
-            #     f"[@vaFile:vaFile=%:vaFile={str(newVaFilePathObj)}]",
-            #     "NLPLabel",
-            #     "12",
-            #     "Center",
-            #     "R0",
-            #     "Instance",
-            # )
-            # vaFileLabel.labelVisible = False
             vaModuleLabel = symbolScene.labelDraw(
                 QPoint(int(0.25 * rectXDim), int(0.8 * rectYDim)),
                 f"[@vaModule:vaModule=%:vaModule={importedVaObj.vaModule}]",
@@ -243,16 +236,6 @@ def createVaSymbol(
                 "Instance",
             )
             vaModuleLabel.labelVisible = True
-            # vaModelLabel = symbolScene.labelDraw(
-            #     QPoint(int(0.25 * rectXDim), int(1 * rectYDim)),
-            #     f"[@vaModel:vaModel=%:vaModel={importedVaObj.vaModule}Model]",
-            #     "NLPLabel",
-            #     "12",
-            #     "Center",
-            #     "R0",
-            #     "Instance",
-            # )
-            # vaModelLabel.labelVisible = False
 
             instParamNum = len(importedVaObj.instanceParams)
             if instParamNum > 0:
@@ -278,7 +261,7 @@ def createVaSymbol(
                     symbolScene.attributeList.append(se.symbolAttribute(key, value))
                 symbolScene.attributeList.append(
                     se.symbolAttribute(
-                        "XyceVerilogaNetlistLine", importedVaObj.netlistLine
+                        "SpiceNetlistLine", importedVaObj.netlistLine
                     )
                 )
 
@@ -292,13 +275,13 @@ def createVaSymbol(
                 )
             )
             symbolScene.attributeList.append(
-                se.symbolAttribute("vaHDLLine", f"*.HDL {str(importedVaObj.pathObj)}")
+                se.symbolAttribute("vaHDLLine", f"*.HDL {str(importedVaObjPath)}")
             )
             symbolScene.attributeList.append(
                 se.symbolAttribute("pinOrder", importedVaObj.pinOrder)
             )
             symbolWindow.show()
-            symbolViewTuple = ddef.viewTuple(
+            symbolViewTuple = ddef.viewNameTuple(
                 vaItemTuple.libraryItem.libraryName,
                 vaItemTuple.cellItem.cellName,
                 "symbol",
@@ -371,7 +354,8 @@ def createSpiceSymbol(
                 se.symbolAttribute("pinOrder", importedSpiceObj.pinOrder)
             )
             symbolScene.attributeList.append(
-                se.symbolAttribute("incLine", f".INC {str(newSpiceFilePathObj)}\n")
+                se.symbolAttribute("incLine",
+                                   f'.INC "{str(newSpiceFilePathObj)}"\n')
             )
 
             symbolScene.attributeList.append(
@@ -380,7 +364,7 @@ def createSpiceSymbol(
             )
 
             symbolWindow.show()
-            symbolViewTuple = ddef.viewTuple(
+            symbolViewTuple = ddef.viewNameTuple(
                 spiceItemTuple.libraryItem.libraryName,
                 spiceItemTuple.cellItem.cellName,
                 symbolViewItem.viewName,

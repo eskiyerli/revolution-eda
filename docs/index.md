@@ -86,3 +86,5 @@ schematic, veriloga, spice, or symbol) should be used for each cell in the desig
 This is essential for large hierarchical designs where different abstraction levels are
 needed for different blocks. The config editor displays all cells in the hierarchy and
 allows per-cell view selection with customizable switch and stop view lists.
+
+### [Plugins](./plugins.md)

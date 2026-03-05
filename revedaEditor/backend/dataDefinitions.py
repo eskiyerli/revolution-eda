@@ -157,7 +157,7 @@ class layoutSelectModes(selectModes):
 
 
 # library editor related named tuples
-class viewTuple(NamedTuple):
+class viewNameTuple(NamedTuple):
     libraryName: str
     cellName: str
     viewName: str
@@ -172,6 +172,13 @@ class viewItemTuple(NamedTuple):
     libraryItem: libb.libraryItem
     cellItem: libb.cellItem
     viewItem: libb.viewItem
+
+    def convertToViewNameTuple(self) -> viewNameTuple:
+        return viewNameTuple(
+            libraryName=self.libraryItem.libraryName,
+            cellName=self.cellItem.cellName,
+            viewName=self.viewItem.viewName
+        )
 
 
 class layoutPinTuple(NamedTuple):

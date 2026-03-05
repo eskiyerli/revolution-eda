@@ -97,21 +97,23 @@ class BaseDesignLibrariesView(QWidget):
     def openView(self, selectedViewItem: libb.viewItem):
         try:
             cellItem = selectedViewItem.parent()
-            self.openCellView(selectedViewItem)
+            libItem = cellItem.parent()
+            viewItemT = ddef.viewItemTuple(libItem, cellItem, selectedViewItem)
+            self.openCellView(viewItemT)
         except Exception as e:
             self.logger.error(f"Error opening view: {e}")
 
-    def createNewCellView(self, libItem, cellItem, viewItem):
-        from revedaEditor.gui.editorFactory import EditorFactory
-
-        viewTuple = ddef.viewTuple(libItem.libraryName, cellItem.cellName,
-                                   viewItem.viewName)
-
-        if viewItem.viewType in ["schematic", "symbol", "layout"]:
-            editor = EditorFactory.createEditor(viewItem.viewType, viewItem,
+    def createNewCellView(self, itemTuple: ddef.viewItemTuple):
+        """
+            this method is used to open the editor after a viewitem is created.
+        """
+        viewNameT = itemTuple.convertToViewNameTuple()
+        if itemTuple.viewItem.viewType in ["schematic", "symbol", "layout"]:
+            from revedaEditor.gui.editorFactory import EditorFactory
+            editor = EditorFactory.createEditor(itemTuple.viewItem.viewType, itemTuple.viewItem,
                                                 self.libraryDict,
                                                 self)
-            self.appMainW.openViews[viewTuple] = editor
+            self.appMainW.openViews[viewNameT] = editor
             if hasattr(editor, "loadSchematic"):
                 editor.loadSchematic()
             elif hasattr(editor, "loadSymbol"):
@@ -119,53 +121,43 @@ class BaseDesignLibrariesView(QWidget):
             elif hasattr(editor, "loadLayout"):
                 editor.loadLayout()
             editor.show()
-        elif viewItem.viewType == "veriloga":
-            editor = ted.verilogaEditor(
-                viewItem.viewPath.parent / f"{cellItem.cellName}.va")
-            editor.cellViewTuple = viewTuple
-            editor.closedSignal.connect(self.verilogaEditFinished)
-            self.appMainW.openViews[viewTuple] = editor
-            editor.show()
-        elif viewItem.viewType == "spice":
-            editor = ted.spiceEditor(viewItem.viewPath)
-            editor.cellViewTuple = viewTuple
-            editor.closedSignal.connect(self.spiceEditFinished)
-            self.appMainW.openViews[viewTuple] = editor
-            editor.show()
-        # elif viewItem.viewType == "revbench":
-        #     self.openRevbenchWindow(libItem, cellItem, viewItem)
-        elif viewItem.viewType == "config":
-            schViewsList = [cellItem.child(row).viewName for row in
-                            range(cellItem.rowCount()) if
-                            cellItem.child(row).viewType == "schematic"]
+        elif itemTuple.viewItem.viewType == "veriloga":
+            self._handle_veriloga_view(itemTuple)
+        elif itemTuple.viewItem.viewType == "spice":
+            self._handle_spice_view(itemTuple)
+        elif itemTuple.viewItem.viewType == "config":
+            schViewsList = [itemTuple.cellItem.child(row).viewName for row in
+                            range(itemTuple.cellItem.rowCount()) if
+                            itemTuple.cellItem.child(row).viewType == "schematic"]
             dlg = fd.createConfigViewDialogue(self.appMainW)
-            dlg.libraryNameEdit.setText(libItem.libraryName)
-            dlg.cellNameEdit.setText(cellItem.cellName)
+            dlg.libraryNameEdit.setText(itemTuple.libItem.libraryName)
+            dlg.cellNameEdit.setText(itemTuple.cellItem.cellName)
             dlg.viewNameCB.addItems(schViewsList)
             dlg.switchViews.setText(", ".join(self.appMainW.switchViewList))
             dlg.stopViews.setText(", ".join(self.appMainW.stopViewList))
             if dlg.exec() == QDialog.DialogCode.Accepted:
                 from revedaEditor.gui.configEditor import createNewConfigView
-                configWindow = createNewConfigView(cellItem, viewItem, dlg,
+                configWindow = createNewConfigView(itemTuple.cellItem, itemTuple.viewItem, dlg,
                                                    self.libraryDict,
                                                    self)
-                self.appMainW.openViews[viewTuple] = configWindow
+                self.appMainW.openViews[viewNameT] = configWindow
                 configWindow.show()
-        elif viewItem.viewType == "pcell":
-            dlg = ldlg.pcellLinkDialogue(self.appMainW, viewItem)
+        elif itemTuple.viewItem.viewType == "pcell":
+            dlg = ldlg.pcellLinkDialogue(self.appMainW, itemTuple.viewItem)
             if dlg.exec() == QDialog.DialogCode.Accepted:
                 items = [{"cellView": "pcell"}, {"reference": dlg.pcellCB.currentText()}]
-                with viewItem.data(Qt.ItemDataRole.UserRole + 2).open(
+                with itemTuple.viewItem.data(Qt.ItemDataRole.UserRole + 2).open(
                         mode="w+") as pcellFile:
                     json.dump(items, pcellFile, indent=4)
             else:
                 try:
-                    viewItem.data(Qt.ItemDataRole.UserRole + 2).unlink()
-                    viewItem.parent().removeRow(viewItem.row())
+                    itemTuple.viewItem.data(Qt.ItemDataRole.UserRole + 2).unlink()
+                    itemTuple.viewItem.parent().removeRow(itemTuple.viewItem.row())
                 except OSError as e:
                     self.logger.warning(f"Error:{e.strerror}")
         else:
-            self._app.pluginsObj.openCellView(viewItem)
+            if hasattr(self._app, 'pluginsObj'):
+                self._app.pluginsObj.createCellView(itemTuple)
 
     def reworkDesignLibrariesView(self, libraryDict: dict):
         """
@@ -173,63 +165,56 @@ class BaseDesignLibrariesView(QWidget):
         """
         pass
 
-    def _handle_spice_view(self, viewItem, openCellViewTuple):
+    def _handle_text_view(self, viewItemT: ddef.viewItemTuple, editor_class, finished_callback):
+        """Handle text-based view opening (spice/veriloga)."""
+        viewNameT = viewItemT.convertToViewNameTuple()
+        filePath = None
+        with open(viewItemT.viewItem.viewPath) as f:
+            try:
+                filePath = pathlib.Path(viewItemT.cellItem.cellPath.joinpath(json.load(f)[1].get("filePath")))
+            except IndexError:
+                if viewItemT.viewItem.viewType == 'spice':
+                    filePath = pathlib.Path(viewItemT.cellItem.cellPath.joinpath(
+                        viewNameT.cellName).with_suffix(".sp"))
+                    filePath.touch(exist_ok=True)
+                elif viewItemT.viewItem.viewType == 'veriloga':
+                    filePath = pathlib.Path(viewItemT.cellItem.cellPath.joinpath(
+                        viewNameT.cellName).with_suffix(".va"))
+                    filePath.touch(exist_ok=True)
+        
+        if filePath:
+            filePath = filePath.resolve()
+            editor = editor_class(filePath)
+            editor.cellViewTuple = viewNameT
+            editor.closedSignal.connect(finished_callback)
+            self.appMainW.openViews[viewNameT] = editor
+            editor.show()
+        else:
+            self.logger.warning(f"File {filePath} does not exist")
+
+
+    def _handle_spice_view(self, viewItemT: ddef.viewItemTuple):
         """Handle spice view opening."""
-        with open(viewItem.viewPath) as tempFile:
-            items = json.load(tempFile)
-        if items[1]["filePath"]:
-            spiceFilePathObj = (
-                viewItem.parent().data(Qt.ItemDataRole.UserRole + 2).joinpath(
-                    items[1]["filePath"]))
-            spiceEditor = ted.spiceEditor(spiceFilePathObj)
-            self.appMainW.openViews[openCellViewTuple] = spiceEditor
-            spiceEditor.cellViewTuple = openCellViewTuple
-            spiceEditor.closedSignal.connect(self.spiceEditFinished)
-            spiceEditor.show()
-        else:
-            self.logger.warning("File path not defined.")
+        self._handle_text_view(viewItemT, ted.spiceEditor, self.spiceEditFinished)
 
-    def _handle_veriloga_view(self, viewItem, openCellViewTuple):
+    def _handle_veriloga_view(self, viewItemT: ddef.viewItemTuple):
         """Handle veriloga view opening."""
-        with open(viewItem.viewPath) as tempFile:
-            items = json.load(tempFile)
-        if items[1]["filePath"]:
-            VerilogafilePathObj = (
-                viewItem.parent().data(Qt.ItemDataRole.UserRole + 2).joinpath(
-                    items[1]["filePath"]))
-            verilogaEditor = ted.verilogaEditor(VerilogafilePathObj)
-            self.appMainW.openViews[openCellViewTuple] = verilogaEditor
-            verilogaEditor.cellViewTuple = openCellViewTuple
-            verilogaEditor.closedSignal.connect(self.verilogaEditFinished)
-            verilogaEditor.show()
-        else:
-            self.logger.warning("File path not defined.")
+        self._handle_text_view(viewItemT, ted.verilogaEditor, self.verilogaEditFinished)
 
-    def openCellView(self, viewItem: libb.viewItem):
+    def openCellView(self, viewItemT: ddef.viewItemTuple):
         from revedaEditor.gui.editorFactory import EditorFactory
-        if not viewItem:
-            return
-        cellItem = viewItem.parent()
-        if not cellItem:
-            return
-        libItem = cellItem.parent()
-        if not libItem:
-            return
+        viewNameT = viewItemT.convertToViewNameTuple()
 
-        viewName = viewItem.viewName
-        cellName = cellItem.cellName
-        libName = libItem.libraryName
-        openCellViewTuple = ddef.viewTuple(libName, cellName, viewName)
+        if viewNameT in self.appMainW.openViews.keys():
+            self.appMainW.openViews[viewNameT].show()
+            return viewNameT
 
-        if openCellViewTuple in self.appMainW.openViews.keys():
-            self.appMainW.openViews[openCellViewTuple].show()
-            return openCellViewTuple
-
-        view_type = viewItem.viewType
+        view_type = viewItemT.viewItem.viewType
 
         # Handle standard editor types using factory
         if view_type in EditorFactory.getSupportedViewTypes():
-            editor = EditorFactory.createEditor(view_type, viewItem, self.libraryDict,
+            editor = EditorFactory.createEditor(view_type, viewItemT.viewItem,
+                                                self.libraryDict,
                                                 self)
 
             # Load content based on editor type - use view_type instead of hasattr
@@ -245,27 +230,24 @@ class BaseDesignLibrariesView(QWidget):
             # Fit items in view if available
             if hasattr(editor, 'centralW') and hasattr(editor.centralW, 'scene'):
                 editor.centralW.scene.fitItemsInView()
-            self.appMainW.openViews[openCellViewTuple] = editor
+            self.appMainW.openViews[viewNameT] = editor
 
         # Handle special cases that require custom logic
         elif view_type == "config":
-            editor = configEditor(viewItem, self.libraryDict,
+            editor = configEditor(viewItemT.viewItem, self.libraryDict,
                                   self)
             editor.loadConfig()
         elif view_type == "spice":
-            editor = ted.spiceEditor(viewItem.viewPath)
-            editor.cellViewTuple = openCellViewTuple
-            editor.closedSignal.connect(self.spiceEditFinished)
-            self.appMainW.openViews[openCellViewTuple] = editor
-            editor.show()
+            self._handle_spice_view(viewItemT)
         elif view_type == "veriloga":
-            self._handle_veriloga_view(viewItem, openCellViewTuple)
-        # elif view_type == "revbench":
-        #     self._handle_revbench_view(viewItem, openCellViewTuple)
+            self._handle_veriloga_view(viewItemT)
         else:
-            self._app.pluginsObj.openCellView(viewItem)
+            if hasattr(self._app, 'pluginsObj'):
+                result = self._app.pluginsObj.openCellView(viewItemT)
+                if not result:
+                    self.logger.warning(f"No handler for view type: {view_type}")
 
-        return openCellViewTuple
+        return viewNameT
 
     def verilogaEditFinished(self, editor: ted.verilogaEditor):
         import revedaEditor.fileio.importVeriloga as imva
@@ -433,7 +415,7 @@ class designLibrariesColumnView(BaseDesignLibrariesView):
         self.cellsListView.setModel(None)
         self.viewsListView.setModel(None)
 
-        # Update library model reference in parentW
+        # Update library model reference in parent
         self.libBrowsW.libraryModel = self.libraryModel
 
     def libsListContextMenuEvent(self, pos: QPoint):
@@ -634,7 +616,9 @@ class designLibrariesColumnView(BaseDesignLibrariesView):
         libItem = libm.getLibItem(self.libraryModel, dlg.libNamesCB.currentText())
         viewItem = libm.findViewItem(self.libraryModel, libItem.libraryName,
                                      cellItem.cellName, viewName)
+
         if viewItem:
+            itemTuple = ddef.viewItemTuple(libItem, cellItem, viewItem)
             messagebox = QMessageBox(self)
             messagebox.setText("Cell view already exists.")
             messagebox.setIcon(QMessageBox.Warning)
@@ -645,14 +629,15 @@ class designLibrariesColumnView(BaseDesignLibrariesView):
             if result == QMessageBox.Save:
                 self.viewsListView.model().removeRow(viewItem.row())
                 viewItem = libb.createCellView(self.appMainW, viewName, cellItem)
-                self.createNewCellView(libItem, cellItem, viewItem)
+                self.createNewCellView(itemTuple)
                 # Add the new view item to the views list
                 cloneViewItem = viewItem.clone()
                 self.viewsListView.model().appendRow(cloneViewItem)
         else:
             viewItem = libb.createCellView(self.appMainW, viewName, cellItem)
+            itemTuple = ddef.viewItemTuple(libItem, cellItem, viewItem)
             # cellItem.appendRow(viewItem)
-            self.createNewCellView(libItem, cellItem, viewItem)
+            self.createNewCellView(itemTuple)
             # Add the new view item to the views list
             cloneViewItem = viewItem.clone()
             self.viewsListView.model().appendRow(cloneViewItem)
@@ -693,7 +678,7 @@ class designLibrariesColumnView(BaseDesignLibrariesView):
             viewsModel = self.createViewsListModel(cellItem)
             self.viewsListView.setModel(viewsModel)
             self.logger.info(f"View {selectedViewItem.viewName} deleted.")
-            self.reworkDesignLibrariesView(self.libraryModel.libraryDict)
+            # self.reworkDesignLibrariesView(self.libraryModel.libraryDict)
         except FileNotFoundError:
             self.logger.warning("View file not found.")
         except PermissionError:
@@ -717,6 +702,9 @@ class designLibrariesColumnView(BaseDesignLibrariesView):
 
 
 class designLibrariesTreeView(BaseDesignLibrariesView):
+    """
+    Deprecated for the moment. 4/3/2026.
+    """
     def __init__(self, parent):
         super().__init__(parent=parent)
         self.libraryModel.setSortRole(Qt.ItemDataRole.UserRole + 3)
@@ -791,12 +779,12 @@ class designLibrariesTreeView(BaseDesignLibrariesView):
         except OSError as e:
             self.logger.warning(f"Error in creating cell view:{e}")
 
-    def handleNewCellView(self, selectedCell, dlg):
-        libItem = selectedCell.parent()
-        cellItem = selectedCell
+    def handleNewCellView(self, cellItem:libb.cellItem, dlg):
+        libItem:libb.libraryItem = cellItem.parent()
         viewName = dlg.viewName.text().strip()
         viewItem = libm.findViewItem(self.libraryModel, libItem.libraryName,
                                      cellItem.cellName, viewName)
+        itemTuple = ddef.viewItemTuple(libItem, cellItem, viewItem)
         if viewItem:
             messagebox = QMessageBox(self)
             messagebox.setText("Cell view already exists.")
@@ -809,12 +797,12 @@ class designLibrariesTreeView(BaseDesignLibrariesView):
                 cellItem.removeRow(viewItem.row())
                 viewItem = libb.createCellView(self.libBrowsW, viewName, cellItem)
                 cellItem.appendRow(viewItem)
-                self.libBrowsW.createNewCellView(libItem, cellItem, viewItem)
+                self.createNewCellView(itemTuple)
 
         else:
             viewItem = libb.createCellView(self.appMainW, viewName.strip(), cellItem)
             cellItem.appendRow(viewItem)
-            self.libBrowsW.createNewCellView(libItem, cellItem, viewItem)
+            self.createNewCellView(itemTuple)
 
     def copyView(self, selectedView: libb.viewItem):
         try:

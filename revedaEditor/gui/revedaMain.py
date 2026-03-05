@@ -382,7 +382,7 @@ class MainWindow(QMainWindow):
         """
         Import a Verilog-A view and add it to a design library.
         """
-        impvlga.importVerilogaModule(ddef.viewTuple("", "", ""), "")
+        impvlga.importVerilogaModule(ddef.viewNameTuple("", "", ""), "")
 
     def importSpiceClick(self):
         """
@@ -394,7 +394,7 @@ class MainWindow(QMainWindow):
         Returns:
             None
         """
-        impspice.importSpiceSubckt(ddef.viewTuple("", "", ""), "")
+        impspice.importSpiceSubckt(ddef.viewNameTuple("", "", ""), "")
 
     def importLaypClick(self):
         importDlg = fd.klayoutLaypImportDialogue(self)

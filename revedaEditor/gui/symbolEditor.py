@@ -180,8 +180,8 @@ class symbolEditor(edw.editorWindow):
         try:
             self.logger.info(f'Loading symbol from {self.cellName} - {self.viewName}')
             self.centralW.scene.loadDesign(self.file)
-            viewNameTuple = ddef.viewTuple(self.libItem.libraryName, self.cellItem.cellName,
-                                           self.viewName)
+            viewNameTuple = ddef.viewNameTuple(self.libItem.libraryName, self.cellItem.cellName,
+                                               self.viewName)
             self.appMainW.openViews[viewNameTuple] = self
         except Exception as e:
             self.logger.error(f"Error during loading symbol for {self.cellName}: {e}")
@@ -221,8 +221,8 @@ class symbolEditor(edw.editorWindow):
         """
         try:
             self.centralW.scene.saveSymbolCell(self.file)
-            cellViewNameTuple = ddef.viewTuple(self.libName, self.cellName,
-                                               self.viewName)
+            cellViewNameTuple = ddef.viewNameTuple(self.libName, self.cellName,
+                                                   self.viewName)
             self.appMainW.openViews.pop(cellViewNameTuple, None)
         except Exception as e:
             self.appMainW.logger.error(
