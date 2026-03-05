@@ -11,11 +11,12 @@ from revedaEditor.backend import libraryModelView as lmview, hdlBackEnd as hdl, 
 from revedaEditor.fileio.createSymbols import createVaSymbol
 
 
-def importVerilogaModule(viewT: ddef.viewTuple, filePath: str):
+def importVerilogaModule(viewT: ddef.viewNameTuple, filePath: str):
     appMainW = QApplication.instance().appMainW
-    library_model = appMainW.libraryBrowser.designView.libraryModel
+    libraryView = appMainW.libraryBrowser.designView
+    libraryModel = libraryView.libraryModel
     # Open the import dialog
-    importDlg = fd.importVerilogaCellDialogue(library_model, appMainW.libraryBrowser)
+    importDlg = fd.importVerilogaCellDialogue(libraryModel, appMainW.libraryBrowser)
     importDlg.vaFileEdit.setText(filePath)
     if viewT.libraryName:
         importDlg.libNamesCB.setCurrentText(viewT.libraryName)
@@ -29,18 +30,19 @@ def importVerilogaModule(viewT: ddef.viewTuple, filePath: str):
     # Execute the import dialog and check if it was accepted
     if importDlg.exec() == QDialog.DialogCode.Accepted:
         # Create the Verilog-A object from the file path
-        imported_va_obj = hdl.verilogaC(pathlib.Path(importDlg.vaFileEdit.text()))
+        importedVAObj = hdl.verilogaC(pathlib.Path(importDlg.vaFileEdit.text()))
 
         # Create the Verilog-A view item tuple
-        vaViewItemTuple = createVaView(appMainW.libraryBrowser, importDlg, library_model,
-                                       imported_va_obj)
-
+        vaViewItemTuple = createVaView(appMainW.libraryBrowser, importDlg, libraryModel,
+                                       importedVAObj)
+        viewsModel = libraryView.createViewsListModel(vaViewItemTuple.cellItem)
+        libraryView.viewsListView.setModel(viewsModel)
         # Check if the symbol checkbox is checked
         if importDlg.symbolCheckBox.isChecked():
             # Create the Verilog-A symbol
             createVaSymbol(appMainW.libraryBrowser, vaViewItemTuple, appMainW.libraryDict,
                            appMainW.libraryBrowser,
-                           imported_va_obj, )
+                           importedVAObj, )
 
 
 def createVaView(parent: QMainWindow, importDlg: QDialog,
@@ -74,13 +76,13 @@ def createVaView(parent: QMainWindow, importDlg: QDialog,
 
     # If the cell name is not in the library and is not empty, create a new cell
     if cellName not in libCellNames and cellName != "":
-        scb.createCell(parent, libraryModel, libItem, cellName)
+        scb.createCell(parent, libItem, cellName)
 
     # Get the cell item
     cellItem = libm.getCellItem(libItem, cellName)
 
     # Generate the new file path for the Verilog-A file
-    newVaFilePathObj = cellItem.data(Qt.ItemDataRole.UserRole + 2).joinpath(
+    newVaFilePathObj = cellItem.cellPath.joinpath(
         importedVaFilePathObj.name)
 
     # Create the Verilog-A item view
@@ -103,7 +105,7 @@ def createVaView(parent: QMainWindow, importDlg: QDialog,
     items.insert(2, {"vaModule": importedVaObj.vaModule})
 
     # Write the items to the Verilog-A item data file
-    with vaItem.data(Qt.ItemDataRole.UserRole + 2).open(mode="w") as f:
+    with vaItem.viewPath.open(mode="w") as f:
         json.dump(items, f, indent=4)
 
     # Return the tuple of library item, cell item, and Verilog-A item

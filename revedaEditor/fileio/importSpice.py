@@ -36,7 +36,7 @@ from revedaEditor.gui import fileDialogues as fd
 #
 
 
-def importSpiceSubckt(viewT: ddef.viewTuple, filePath: str):
+def importSpiceSubckt(viewT: ddef.viewNameTuple, filePath: str):
     """
     Import a SPICE subcircuit and add it to a design library.
     
@@ -46,10 +46,11 @@ def importSpiceSubckt(viewT: ddef.viewTuple, filePath: str):
         filePath: Path to the SPICE file to import
     """
     # Get the library model
-    mainWindow = QApplication.instance().appMainW
-    libraryModel = mainWindow.libraryBrowser.designView.libraryModel
+    appMainW = QApplication.instance().appMainW
+    libraryView = appMainW.libraryBrowser.designView
+    libraryModel = libraryView.libraryModel
     # Open the import dialog
-    importDlg = fd.importSpiceCellDialogue(libraryModel, mainWindow)
+    importDlg = fd.importSpiceCellDialogue(libraryModel, appMainW)
     importDlg.spiceFileEdit.setText(filePath)
     # Set the default view name in the dialog
     if viewT.libraryName:
@@ -66,14 +67,16 @@ def importSpiceSubckt(viewT: ddef.viewTuple, filePath: str):
         importedSpiceObj = hdl.spiceC(pathlib.Path(importDlg.spiceFileEdit.text()))
 
         # Create the SPICE view item tuple
-        spiceViewItemTuple = createSpiceView(mainWindow, importDlg, libraryModel,
+        spiceViewItemTuple = createSpiceView(appMainW, importDlg, libraryModel,
                                              importedSpiceObj)
-
+        viewsModel = libraryView.createViewsListModel(spiceViewItemTuple.cellItem)
+        libraryView.viewsListView.setModel(viewsModel)
         # Check if the symbol checkbox is checked
         if importDlg.symbolCheckBox.isChecked():
             # Create the spice symbol
-            createSpiceSymbol(mainWindow, spiceViewItemTuple, mainWindow.libraryDict,
-                              mainWindow.libraryBrowser, importedSpiceObj)
+            createSpiceSymbol(appMainW, spiceViewItemTuple,
+                              appMainW.libraryDict,
+                              appMainW.libraryBrowser, importedSpiceObj)
 
 
 def createSpiceView(

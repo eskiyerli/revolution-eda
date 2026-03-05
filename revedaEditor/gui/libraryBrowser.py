@@ -56,9 +56,14 @@ class libraryBrowser(QMainWindow):
         self.setWindowIcon(QIcon(":logo-color.png"))
         self.setWindowTitle("Library Browser")
 
+        # Ensure attribute exists early so plugins or other code won't raise
+        # AttributeError if they check for or reference it before menu creation.
+        self.viewMenu = None
+
         # Setup UI components
-        self._createMenuBar()
+        # Ensure actions are created before the menu bar that references them
         self._createActions()
+        self._createMenuBar()
         self._createToolBars()
         self._createTriggers()
 
@@ -74,63 +79,76 @@ class libraryBrowser(QMainWindow):
         self.browserMenubar = self.menuBar()
         self.browserMenubar.setNativeMenuBar(False)
         self.libraryMenu = self.browserMenubar.addMenu("&Library")
+        self.libraryMenu.addAction(self.libraryEditorAction)
+        self.libraryMenu.addAction(self.openLibAction)
+        self.libraryMenu.addAction(self.closeLibAction)
+        self.libraryMenu.addSeparator()
+        self.libraryMenu.addAction(self.updateLibraryAction)
+        self.libraryMenu.addAction(self.updateLibRefAction)
         self.cellMenu = self.browserMenubar.addMenu("&Cell")
+        self.cellMenu.addAction(self.newCellAction)
+        self.cellMenu.addAction(self.deleteCellAction)
         self.cellViewMenu = self.browserMenubar.addMenu("Cell &View")
-        self.viewMenu: QMenu = self.browserMenubar.addMenu("&View")
+        self.cellViewMenu.addAction(self.openCellViewAction)
+        self.cellViewMenu.addAction(self.newCellViewAction)
+        self.cellViewMenu.addAction(self.deleteCellViewAction)
+        # self.viewMenu: QMenu = self.browserMenubar.addMenu("&View")
+        # # If viewSelectGroup was prepared in _createActions, attach its actions now.
+        # try:
+        #     if hasattr(self, 'viewSelectGroup'):
+        #         self.viewMenu.addActions(self.viewSelectGroup.actions())
+        # except Exception:
+        #     pass
         self.helpMenu = self.browserMenubar.addMenu("&Help")
+        # Call plugin hook after menus exist so plugins can augment menus
+        if hasattr(self._app, 'applyPluginMenus'):
+            try:
+                self._app.applyPluginMenus(self)
+            except Exception:
+                self.logger.exception('applyPluginMenus failed')
 
     def _createActions(self):
         openLibIcon = QIcon(":/icons/database--plus.png")
         self.openLibAction = QAction(openLibIcon, "Create/Open Lib...", self)
         self.openLibAction.setToolTip("Create/Open Lib...")
-        self.libraryMenu.addAction(self.openLibAction)
 
         libraryEditIcon = QIcon(":/icons/application-dialog.png")
         self.libraryEditorAction = QAction(libraryEditIcon, "Library Editor", self)
-        self.libraryMenu.addAction(self.libraryEditorAction)
         self.libraryEditorAction.setToolTip("Open Library Editor...")
 
         closeLibIcon = QIcon(":/icons/database-delete.png")
         self.closeLibAction = QAction(closeLibIcon, "Close Lib...", self)
         self.closeLibAction.setToolTip("Close Lib")
-        self.libraryMenu.addAction(self.closeLibAction)
 
-        self.libraryMenu.addSeparator()
         updateLibraryIcon = QIcon(":/icons/arrow-circle.png")
         self.updateLibraryAction = QAction(updateLibraryIcon, "Update Library...", self)
         self.updateLibraryAction.setToolTip("Update Library")
-        self.libraryMenu.addAction(self.updateLibraryAction)
 
         updateLibRefIcon = QIcon(":/icons/arrow-continue.png")
         self.updateLibRefAction = QAction(updateLibRefIcon, "Update Library Refs...", self)
         self.updateLibRefAction.setToolTip("Update Library References")
-        self.libraryMenu.addAction(self.updateLibRefAction)
 
         newCellIcon = QIcon(":/icons/document--plus.png")
         self.newCellAction = QAction(newCellIcon, "New Cell...", self)
         self.newCellAction.setToolTip("Create New Cell")
-        self.cellMenu.addAction(self.newCellAction)
 
         deleteCellIcon = QIcon(":/icons/node-delete.png")
         self.deleteCellAction = QAction(deleteCellIcon, "Delete Cell...", self)
         self.deleteCellAction.setToolTip("Delete Cell")
-        self.cellMenu.addAction(self.deleteCellAction)
 
         newCellViewIcon = QIcon(":/icons/document--pencil.png")
         self.newCellViewAction = QAction(newCellViewIcon, "Create New CellView...", self)
         self.newCellViewAction.setToolTip("Create New Cellview")
-        self.cellViewMenu.addAction(self.newCellViewAction)
 
         openCellViewIcon = QIcon(":/icons/document--pencil.png")
         self.openCellViewAction = QAction(openCellViewIcon, "Open CellView...", self)
         self.openCellViewAction.setToolTip("Open CellView")
-        self.cellViewMenu.addAction(self.openCellViewAction)
 
         deleteCellViewIcon = QIcon(":/icons/node-delete.png")
         self.deleteCellViewAction = QAction(deleteCellViewIcon, "Delete CellView...", self)
         self.deleteCellViewAction.setToolTip("Delete Cellview")
-        self.cellViewMenu.addAction(self.deleteCellViewAction)
 
+        # Prepare the view selection QActionGroup but don't attach to the menu yet
         viewSelectGroup = QActionGroup(self)
         viewSelectGroup.setExclusive(True)
 
@@ -141,9 +159,9 @@ class libraryBrowser(QMainWindow):
         self.selectTreeViewAction = QAction("Tree View", self)
         self.selectTreeViewAction.setCheckable(True)
         viewSelectGroup.addAction(self.selectTreeViewAction)
-        self.viewMenu.addActions(viewSelectGroup.actions())
-        if hasattr(self._app, 'applyPluginMenus'):
-            self._app.applyPluginMenus(self)
+        # store group for menu attachment during menu creation
+        self.viewSelectGroup = viewSelectGroup
+        # plugin menus will be applied after menus are built
 
     def _createTriggers(self):
         self.openLibAction.triggered.connect(self.openLibClick)

@@ -1354,16 +1354,6 @@ class schematicSymbol(symbolShape):
             elif isinstance(item, symbolLabel):
                 self._labels[item.labelName] = item
 
-    # def addShapes(self):
-    #     for item in self._shapes:
-    #         item.setFlag(QGraphicsItem.ItemIsSelectable, False)
-    #         item.setFlag(QGraphicsItem.ItemStacksBehindParent, True)
-    #         item.setParentItem(self)
-    #         if type(item) is symbolPin:
-    #             self._pins[item.pinName] = item
-    #         elif type(item) is symbolLabel:
-    #             self._labels[item.labelName] = item
-
     def __repr__(self):
         return f"schematicSymbol({self._instanceName})"
 
@@ -1558,7 +1548,7 @@ class schematicSymbol(symbolShape):
     @angle.setter
     def angle(self, value: float):
         self.setRotation(value)
-        self._angle = (value)
+        self._angle = value
         # for label in self.labels.values():
         #     label.angle = -value
 

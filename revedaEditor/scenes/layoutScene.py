@@ -1411,14 +1411,15 @@ class layoutScene(editorScene):
                         viewItem = libm.getViewItem(
                             cellItem, dlg.viewListCB.currentText()
                         )
-                        openViewT = (
-                            self.editorWindow.libraryView.libBrowsW.openCellView(
-                                viewItem
+                        viewItemT = ddef.viewItemTuple(libItem, cellItem, viewItem)
+                        openViewNameT = (
+                            self.editorWindow.libraryView.openCellView(
+                                viewItemT
                             )
                         )
-                        if self.editorWindow.appMainW.openViews[openViewT]:
+                        if self.editorWindow.appMainW.openViews[openViewNameT]:
                             childWindow = self.editorWindow.appMainW.openViews[
-                                openViewT
+                                openViewNameT
                             ]
                             childWindow.parentEditor = self.editorWindow
                             childWindow.parentObj = item
