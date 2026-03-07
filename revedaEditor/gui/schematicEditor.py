@@ -806,7 +806,7 @@ class xyceNetlist:
                     self.netlistedViewsSet.add(viewTuple)
                     expandedPinsString = self.expandPinNames(
                         list(elementSymbol.pinNetMap.keys()))
-
+                
                     subcktContent = []
                     self.collectSubcircuitContent(schematicObj, subcktContent)
 
@@ -831,6 +831,7 @@ class xyceNetlist:
         """Shared netlist line creation logic."""
         try:
             instNameLabel = elementSymbol.labels.get('@instName')
+            # print(f"Creating netlist line for instance: {instNameLabel.labelValue if instNameLabel else 'N/A'}")
             if not instNameLabel:
                 return []
 
