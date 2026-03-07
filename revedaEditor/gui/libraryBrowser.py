@@ -229,7 +229,6 @@ class libraryBrowser(QMainWindow):
         """
         tempDict = deepcopy(self.libraryDict)
         pathEditDlg = fd.libraryPathEditorDialog(self, tempDict)
-        libDefFilePathObj = pathlib.Path.cwd().joinpath("library.json")
         if pathEditDlg.exec() == QDialog.DialogCode.Accepted:
             self.libraryDict.clear()
             model = pathEditDlg.pathsModel
@@ -239,7 +238,7 @@ class libraryBrowser(QMainWindow):
                         model.index(row, 0)).text().strip()] = pathlib.Path(
                         model.itemFromIndex(model.index(row, 1)).text().strip())
 
-        self.writeLibDefFile(self.libraryDict, libDefFilePathObj)
+        self.writeLibDefFile(self.libraryDict, self.libFilePath)
         self.appMainW.libraryDict = self.libraryDict
         self.designView.reworkDesignLibrariesView(self.designView.libraryModel.libraryDict)
 
