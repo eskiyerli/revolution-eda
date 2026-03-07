@@ -125,6 +125,7 @@ selectedTextPen = QPen(
     selectedTextLayer.pcolor, selectedTextLayer.pwidth, selectedTextLayer.pstyle
 )
 guideLinePen = QPen(guideLineLayer.pcolor, guideLineLayer.pwidth, guideLineLayer.pstyle)
+guideLinePen.setCosmetic(True)
 wirePen = QPen(wireLayer.pcolor, wireLayer.pwidth, wireLayer.pstyle)
 
 selectedWirePen = QPen(
