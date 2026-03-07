@@ -236,6 +236,7 @@ class MainWindow(QMainWindow):
         self.menuTools.addAction(self.libraryBrowserAction)
         self.importTools = self.menuTools.addMenu("&Import")
         self.pluginsMenu = self.menuTools.addMenu("Plugins")
+        self.librariesMenu = self.menuTools.addMenu("Libraries")
         self.pdksMenu = self.menuTools.addMenu("PDKs")
         self.menuTools.addAction(self.createStippleAction)
         self.importTools.addAction(self.importVerilogaAction)
@@ -245,6 +246,7 @@ class MainWindow(QMainWindow):
         self.importTools.addAction(self.importGDSAction)
         self.pluginsMenu.addAction(self.setupPluginsAction)
         self.pdksMenu.addAction(self.setupPDKsAction)
+        self.librariesMenu.addAction(self.setupLibrariesAction)
         self.menuOptions.addAction(self.optionsAction)
         self.menuHelp.addAction(self.helpAction)
         self.menuHelp.addAction(self.aboutAction)
@@ -276,6 +278,7 @@ class MainWindow(QMainWindow):
         self.createStippleAction = QAction("Create Stipple...", self)
         self.setupPluginsAction = QAction("Setup Plugins...", self)
         self.setupPDKsAction = QAction("Setup PDK...", self)
+        self.setupLibrariesAction = QAction("Setup Libraries", self)
         helpIcon = QIcon(":/icons/document-arrow.png")
         self.helpAction = QAction(helpIcon, "Help...", self)
         self.aboutIcon = QIcon(":/icons/information.png")
@@ -293,6 +296,7 @@ class MainWindow(QMainWindow):
         self.createStippleAction.triggered.connect(self.createStippleClick)
         self.setupPluginsAction.triggered.connect(self.setupPluginsClick)
         self.setupPDKsAction.triggered.connect(self.setupPDKsClick)
+        self.setupLibrariesAction.triggered.connect(self.setupLibrariesClick)
         self.helpAction.triggered.connect(self.helpClick)
         self.aboutAction.triggered.connect(self.aboutClick)
 
@@ -510,7 +514,17 @@ class MainWindow(QMainWindow):
         from revedaEditor.gui.pdkRegistry import PDKRegistryWindow
         pdkRegistry = PDKRegistryWindow(self)
         pdkRegistry.show()
-    
+
+    def setupLibrariesClick(self):
+        from revedaEditor.gui.libraryRegistry import LibraryRegistryWindow
+
+        # Open the library registry window
+        libRegistry = LibraryRegistryWindow(
+            parent=self,
+            libraries_dir=Path.cwd().parent  # or any default path
+        )
+        libRegistry.show()
+
     def helpClick(self):
         helpBrowser = hlp.helpBrowser(self)
         helpBrowser.show()
