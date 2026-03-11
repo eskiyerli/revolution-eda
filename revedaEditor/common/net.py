@@ -89,7 +89,7 @@ class schematicNet(QGraphicsItem):
         self._offset = QPoint(0, 0)
 
         # State flags
-        self._stretch: bool = False
+        # self._stretch: bool = False
         self._nameConflict: bool = False
         self._highlighted: bool = False
         self._nameStrength: int = netNameStrengthEnum.NONAME
@@ -119,14 +119,9 @@ class schematicNet(QGraphicsItem):
     def draftLine(self, line: QLineF):
         # Snap endpoints to grid if scene is available
         scene = self.scene()
-        if scene and hasattr(scene, 'snapToGrid'):
+        if scene:
             p1 = scene.snapToGrid(line.p1().toPoint())
             p2 = scene.snapToGrid(line.p2().toPoint())
-            line = QLineF(p1, p2)
-        else:
-            # Ensure points are integers even without scene
-            p1 = line.p1().toPoint()
-            p2 = line.p2().toPoint()
             line = QLineF(p1, p2)
 
         # Early exit if the line hasn't changed
@@ -207,7 +202,7 @@ class schematicNet(QGraphicsItem):
     def _getPen(self) -> QPen:
         pen_mapping = {
             self.isSelected(): schlyr.selectedWirePen,
-            self._stretch: schlyr.stretchWirePen,
+            # self._stretch: schlyr.stretchWirePen,
             self._highlighted: schlyr.hilightPen,
             self._nameConflict: schlyr.errorWirePen,
         }
@@ -231,6 +226,9 @@ class schematicNet(QGraphicsItem):
                     else:
                         self.setZValue(self.zValue() - 10)
                         self.scene().selectedNet = None
+                case QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
+                    self._finishSnapLines()
+                    self._snapLines = dict()
 
         return super().itemChange(change, value)
 
@@ -239,36 +237,33 @@ class schematicNet(QGraphicsItem):
         if scene:
             if scene.editModes.moveItem:
                 self.setFlag(QGraphicsItem.ItemIsMovable, True)
-            elif self._stretch:
-                eventPos = event.pos().toPoint()
-                if (
-                        eventPos - self._draftLine.p1().toPoint()
-                ).manhattanLength() <= scene.snapDistance:
-                    self.setCursor(Qt.SizeHorCursor)
-                    scene.stretchNet.emit(self, "p1")
-                elif (
-                        eventPos - self._draftLine.p2().toPoint()
-                ).manhattanLength() <= self.scene().snapDistance:
-                    self.setCursor(Qt.SizeHorCursor)
-                    scene.stretchNet.emit(self, "p2")
+            # elif self._stretch:
+            #     eventPos = event.pos().toPoint()
+            #     if (
+            #             eventPos - self._draftLine.p1().toPoint()
+            #     ).manhattanLength() <= scene.snapDistance:
+            #         self.setCursor(Qt.SizeHorCursor)
+            #         scene.stretchNet.emit(self, "p1")
+            #     elif (
+            #             eventPos - self._draftLine.p2().toPoint()
+            #     ).manhattanLength() <= self.scene().snapDistance:
+            #         self.setCursor(Qt.SizeHorCursor)
+            #         scene.stretchNet.emit(self, "p2")
         super().mousePressEvent(event)
 
     def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent) -> None:
-        if self.scene() and self.scene().editModes.moveItem:
+        self.setSelected(False)
+        if self.scene().editModes.moveItem:
             self.setFlag(QGraphicsItem.ItemIsMovable, False)
             self.scene().wireEditFinished.emit(self)
-        self.setSelected(False)
         super().mouseReleaseEvent(event)
 
     def generateEndPointNetDict(self):
-        scene = self.scene()
-        if not scene:
-            return
         self._endPointNetDict = dict[int, Set[schematicNet]]()
         for i, endPoint in enumerate(self.sceneEndPoints):
             netSet: Set["schematicNet"] = {
                                               item
-                                              for item in scene.items(endPoint)
+                                              for item in self.scene().items(endPoint)
                                               if isinstance(item, schematicNet)
                                           } - {self}
             self._endPointNetDict[i] = netSet
@@ -276,13 +271,9 @@ class schematicNet(QGraphicsItem):
     def initializeSnapLines(self):
         """Initialize snap lines for the net."""
         scene = self.scene()
-        if not scene or not hasattr(scene, 'snapTuple'):
-            return
         sceneGrid = scene.snapTuple[0]
-        if not hasattr(self, '_endPointNetDict') or not self._endPointNetDict:
-            self.generateEndPointNetDict()
         if not self._endPointNetDict:
-            return
+            self.generateEndPointNetDict()
         for i, nets in self._endPointNetDict.items():
             point = self.sceneEndPoints[i]
             snapLinesSet: set["guideLine"] = set()
@@ -295,51 +286,57 @@ class schematicNet(QGraphicsItem):
                         snapLinesSet.add(snapLine)
                         scene.deleteUndoStack(net)
                         scene.addItem(snapLine)
-                        break
+                        continue
             self._netSnapLines[i] = snapLinesSet
 
     def updateSnapLines(self):
-        if not hasattr(self, '_netSnapLines'):
-            return
+        # Create a list to store lines for removal to avoid modifying the set during iteration
+        lines_to_remove = []
+        # shape is not connected to any nets
         for i, snapLinesSet in self._netSnapLines.items():
             point = self.sceneEndPoints[i]
             if not snapLinesSet:
                 continue
-            for snapLine in list(snapLinesSet):
+            for snapLine in list(snapLinesSet):  # Iterate over a copy of the set
                 current_end = snapLine.line().p2()
                 newLine = QLineF(point, current_end)
 
+                # Only update if there's a significant change
                 if newLine.length() > 1 and (
                         abs(newLine.dx()) > 1 or abs(newLine.dy()) > 1
                 ):
                     snapLine.setLine(newLine)
                 else:
-                    if snapLine.scene():
-                        snapLine.scene().removeItem(snapLine)
-                    snapLinesSet.discard(snapLine)
+                    # Remove unnecessary lines
+                    self.scene().removeItem(snapLine)
+                    snapLinesSet.remove(snapLine)
+                    lines_to_remove.append(snapLine)
+
+        # Now, safely remove the collected items
+        for snapLine in lines_to_remove:
+            for snapLinesSet in self._netSnapLines.values():
+                if snapLine in snapLinesSet:
+                    snapLinesSet.remove(snapLine)
 
     def _finishSnapLines(self):
-        if not hasattr(self, '_netSnapLines') or not self._netSnapLines:
-            return
-        scene = self.scene()
-        if not scene:
-            return
-        try:
-            for snapLinesSet in self._netSnapLines.values():
-                for snapLine in list(snapLinesSet):
-                    newNets = scene.addStretchWires(
-                        snapLine.line().p1().toPoint(),
-                        snapLine.line().p2().toPoint(),
-                    )
-                    if newNets:
-                        for netItem in newNets:
-                            netItem.inherit(snapLine)
-                        scene.addListUndoStack(newNets)
-                    if snapLine.scene():
+        if self._netSnapLines:
+            try:
+                scene = self.scene()
+                for snapLinesSet in self._netSnapLines.values():
+                    for snapLine in snapLinesSet:
+                        newNets = scene.addStretchWires(
+                            snapLine.line().p1().toPoint(),
+                            snapLine.line().p2().toPoint(),
+                        )
+                        if newNets:
+                            for netItem in newNets:
+                                netItem.inherit(snapLine)
+                            scene.addListUndoStack(newNets)
                         scene.removeItem(snapLine)
-            self._netSnapLines = dict()
-        except Exception as e:
-            scene.logger.error(f"Error processing snap lines: {e}")
+                self._snapLines = dict()
+            except Exception as e:
+                # Log error but continue processing other guidelines
+                scene.logger.error(f"Error processing snap lines: {e}")
 
     @staticmethod
     def parseArrayNotation(name: str) -> tuple[str, tuple[int, int]]:
@@ -657,17 +654,17 @@ class schematicNet(QGraphicsItem):
     def sceneShapeRect(self) -> QRectF:
         return self.mapRectToScene(self._shapeRect).normalized().toRect()
 
-    @property
-    def stretchSide(self) -> int:
-        """
-        The end where the net is stretched.
-        """
-        return self._stretchSide
-
-    @stretchSide.setter
-    def stretchSide(self, value: str):
-        self.prepareGeometryChange()
-        self._stretchSide = value
+    # @property
+    # def stretchSide(self) -> int:
+    #     """
+    #     The end where the net is stretched.
+    #     """
+    #     return self._stretchSide
+    #
+    # @stretchSide.setter
+    # def stretchSide(self, value: str):
+    #     self.prepareGeometryChange()
+    #     self._stretchSide = value
 
     @property
     def angle(self) -> float:
@@ -677,13 +674,13 @@ class schematicNet(QGraphicsItem):
     def angle(self, value: float):
         self._angle = value
 
-    @property
-    def stretch(self) -> bool:
-        return self._stretch
-
-    @stretch.setter
-    def stretch(self, value: bool):
-        self._stretch = value
+    # @property
+    # def stretch(self) -> bool:
+    #     return self._stretch
+    #
+    # @stretch.setter
+    # def stretch(self, value: bool):
+    #     self._stretch = value
 
     @property
     def mode(self) -> int:

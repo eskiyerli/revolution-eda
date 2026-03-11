@@ -36,16 +36,6 @@ and runs on Windows, macOS, and Linux.
 
 ------
 
-### [Layout Editor](./layoutTutorial.md)
-
-The layout editor is a full-featured tool for physical layout design of custom integrated
-circuits. It supports hierarchical layout design with rectangles, paths, polygons, pins,
-labels, vias, and Python-based parametric cells (pcells). The editor includes a Layer
-Selection Window (LSW) for layer visibility and selectability management, rulers for
-measurement, and GDS import/export capabilities.
-
-------
-
 ### [Main Window](./revedaMainWindow.md)
 
 The Revolution EDA main window is the starting point for all design activities. It provides
@@ -78,6 +68,16 @@ and Python labels (dynamic calculation based on other parameters).
 
 ------
 
+### [Layout Editor](./layoutTutorial.md)
+
+The layout editor is a full-featured tool for physical layout design of custom integrated
+circuits. It supports hierarchical layout design with rectangles, paths, polygons, pins,
+labels, vias, and Python-based parametric cells (pcells). The editor includes a Layer
+Selection Window (LSW) for layer visibility and selectability management, rulers for
+measurement, and GDS import/export capabilities.
+
+------
+
 ### [Config Editor](./configEditor.md)
 
 The config view editor provides advanced control over the netlisting process, similar to
@@ -86,5 +86,10 @@ schematic, veriloga, spice, or symbol) should be used for each cell in the desig
 This is essential for large hierarchical designs where different abstraction levels are
 needed for different blocks. The config editor displays all cells in the hierarchy and
 allows per-cell view selection with customizable switch and stop view lists.
+
+------
+### [AI Terminal](AI_TERMINAL.md)
+
+------
 
 ### [Plugins](./plugins.md)

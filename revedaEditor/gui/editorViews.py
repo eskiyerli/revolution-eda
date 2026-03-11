@@ -21,7 +21,6 @@
 #    License: Mozilla Public License 2.0
 #    Licensor: Revolution Semiconductor (Registered in the Netherlands)
 #
-from lxml.html.builder import Q
 from collections import Counter
 
 from PySide6.QtCore import (
@@ -38,9 +37,7 @@ from PySide6.QtGui import (
     QWheelEvent,
 )
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
-from PySide6.QtWidgets import (QGraphicsItem,
-    QGraphicsView,
-)
+from PySide6.QtWidgets import (QGraphicsView,)
 
 import revedaEditor.common.net as net
 from revedaEditor.backend.pdkLoader import importPDKModule

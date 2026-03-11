@@ -100,6 +100,7 @@ class schematicEditor(edw.editorWindow):
         super()._addActions()
         # edit menu
         self.menuEdit.addAction(self.netNameAction)
+        self.menuEdit.removeAction(self.stretchAction)
 
         self.propertyMenu = self.menuEdit.addMenu("Properties")
         self.propertyMenu.addAction(self.objPropAction)
@@ -200,6 +201,8 @@ class schematicEditor(edw.editorWindow):
         self.createNetAction.setShortcut(Qt.Key.Key_W)
         self.createPinAction.setShortcut(Qt.Key.Key_P)
         self.goDownAction.setShortcut("Shift+E")
+        # unset stretch shortcut for schematic editor
+        self.stretchAction.setShortcut("")
 
     def createNetClick(self, s):
         self.centralW.scene.editModes.setMode("drawWire")
