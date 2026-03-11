@@ -37,6 +37,7 @@ from PySide6.QtWidgets import (QApplication, QDialogButtonBox, QDialog, QFileDia
 import revedaEditor.backend.libBackEnd as libb
 import revedaEditor.backend.libraryMethods as libm
 import revedaEditor.backend.libraryModelView as lmview
+from revedaEditor.backend.dataDefinitions import viewItemTuple
 import revedaEditor.gui.editFunctions as edf
 import revedaEditor.gui.fileDialogues as fd
 from revedaEditor.backend.startThread import startThread
@@ -313,8 +314,9 @@ class libraryBrowser(QMainWindow):
 
     def openCellViewClick(self):
         viewItem = self.selectCellView(self.designView.libraryModel)
-
-        self.designView.openCellView(viewItem)
+        cellItem = viewItem.parent()
+        libItem = cellItem.parent()
+        self.designView.openCellView(viewItemTuple(libItem, cellItem, viewItem))
 
     def deleteCellViewClick(self, s):
         viewItem = self.selectCellView(self.designView.libraryModel)

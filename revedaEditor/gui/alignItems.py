@@ -58,9 +58,18 @@ class alignItemsDialogue(QDialog):
         super().__init__(parentW)
         self.editor = parentW
         self.scene = parentW.centralW.scene
+        sceneName = ''
+        sceneType = self.scene.__class__.__name__
+        match sceneType:
+            case "schematicScene":
+                sceneName = "Schematic"
+            case "symbolScene":
+                sceneName = "Symbol"
+            case "layoutScene":
+                sceneName = "Layout"
         self.alignLine = QLineF()
-        self.setWindowTitle("Align Layout items")
-        self.setMinimumWidth(300)
+        self.setWindowTitle(f"Align {sceneName} items")
+        self.setMinimumWidth(340)
         self.setMinimumHeight(400)
         mainLayout = QVBoxLayout()
         alignMethodGroup = QGroupBox("Align Method")

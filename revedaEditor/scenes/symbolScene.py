@@ -205,9 +205,9 @@ class symbolScene(editorScene):
     def _handleMouseRelease(self, mousePos: QPoint, button: Qt.MouseButton) -> None:
         modifiers = QGuiApplication.keyboardModifiers()
         try:
-            if self.editModes.changeOrigin:
-                self.origin = mousePos
-            elif self.editModes.drawLine:
+        #    if self.editModes.changeOrigin:
+        #         self.origin = mousePos
+            if self.editModes.drawLine:
                 if self.newLine:
                     if self.newLine.length <= 1:
                         self.undoStack.removeLastCommand()
@@ -225,7 +225,6 @@ class symbolScene(editorScene):
             elif self.editModes.drawPin:
                 if self.newPin:
                     self.newPin = None
-
                 self.newPin = self.pinDraw(mousePos)
                 self.newPin.setSelected(True)
             elif self.editModes.drawRect:
