@@ -251,10 +251,13 @@ class editorScene(QGraphicsScene):
                 self.deselectAll()
                 self.clearSelection()
         elif self.editModes.zoomView and self.zoomRectItem:
-            self.zoomToRect()
+            self.zoomToRect(self.zoomRectItem.rect().toRect())
             self.editModes.setMode('selectItem')
             self.removeItem(self.zoomRectItem)
             self.zoomRectItem = None
+        elif self.editModes.changeOrigin:
+            self.origin = self.mouseReleaseLoc
+            self.editModes.setMode('selectItem')
         else:
             self._handleMouseRelease(self.mouseReleaseLoc, event.button())
         self.messageLine.setText(self.messages.get(self.editModes.mode(), ""))

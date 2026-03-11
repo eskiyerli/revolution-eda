@@ -1,382 +1,341 @@
 # Revolution EDA Schematic Editor
 
-The schematic editor is used to instantiate symbols and define the nets that connect them.
-It serves as the primary entry point for circuit design and integrates seamlessly with the
-simulation environment. The schematic editor provides advanced features for hierarchical
-design, netlisting, and simulation setup.
+This guide targets designers already familiar with legacy circuit schematic capture tools (for example Cadence Virtuoso).
+Revolution EDA follows the same core workflow: place instances, wire, annotate, define pins, generate symbols, and netlist/simulate at **zero cost** and **full access to source code** without having to worry about software licence fees.
 
-<img src="assets/schematicEditing.png" class="image fit" />
+<img src="assets/schematicEditor.png"  class="image fit" />
 
-Main functions of the schematic editor are:
+## Quick Orientation (for Virtuoso Users)
 
-1. **Symbol Instantiation**: Place and configure circuit symbols with dynamic parameter
-   support
-2. **Instance Properties**: Define instance parameters with Python-based calculations
-3. **Net Creation**: Draw wires and define connections with intelligent routing
-4. **Pin Definition**: Create hierarchical connection points with direction and type
-   specification
-5. **Symbol Generation**: Automatically create symbols from schematic pin definitions
-6. **Advanced Netlisting**: Generate netlists with configurable view hierarchies and
-   simulation integration
-7. **Simulation Integration**: Direct connection to simulation environment for analysis
-   setup
-8. **Configuration Management**: Support for config views and switch/stop view lists
+- **Library Browser**: similar to a library manager; open schematic cellviews from the library browser.
+- **Instance Placement**: press `i` to place symbols; `q` opens the instance properties.
+- **Wiring**: press `w` to draw orthogonal wires. Wires snap to pins, auto-merge with other overlapping nets, and form junction dots when two nets are orthogonal and one ends on the other. When a junction dot is created, one of the nets might be split at that point.
+- **Pins**: press `p` to create schematic pins (for hierarchy and symbol generation).
+- **Hierarchy**: `Go Down` and `Go Up` behave like standard hierarchical editing.
+- **Netlisting/Simulation**: accessible from `Simulation` menu; supports switch/stop lists and config views.
+
+
+## Virtuoso to Revolution EDA Mapping
+
+The table below maps common Virtuoso schematic actions to Revolution EDA equivalents.
+
+| Virtuoso Action | Revolution EDA Equivalent | Notes |
+| --- | --- | --- |
+| Add instance | `Create -> Instance...` or press `i` | Select symbol view, then click to place |
+| Edit properties | Select item and press `q` | Instance, pin, wire, or text |
+| Wire | `Create -> Wire` or press `w` | Orthogonal wiring, auto-junctions |
+| Place pin | `Create -> Pin` or press `p` | Direction: Input/Output/InOut |
+| Net label | `Net Properties` on selected wire or press 'l' | Names propagate along connected net |
+| Highlight net | `Tools -> Highlight Net` | Hover to highlight connected net |
+| Go down hierarchy | `Edit -> Hierarchy -> Go Down` or `Shift+E` | Choose schematic or symbol |
+| Go up hierarchy | `Edit -> Hierarchy -> Go Up` | Returns to parent view |
+| Generate symbol | `Create -> Create Symbol...` | Uses schematic pins |
+| Create netlist | `Simulation -> Create Netlist...` | Switch/stop lists supported |
+| Run simulation | `Simulation -> Simulation Environment...` | Requires `revedasim` plugin |
 
-## Symbol Instantiation
+## Typical Design Flow
+
+1. Create or open a schematic view from the Library Browser.
+2. Place instances with `Create -> Instance...`.
+3. Wire the circuit with `Create -> Wire`.
+4. Add pins for hierarchy and symbol generation with `Create -> Pin`.
+5. Annotate with text labels as needed.
+6. Generate a symbol using `Create -> Create Symbol...`.
+7. Netlist or run simulation via `Simulation` menu.
+
+<!-- Screenshot: Typical design flow overview -->
+
+## Menu Actions You Will Use Most
+
+This section summarizes the most common schematic editor actions by menu.
 
-A symbol to be placed on the schematic editor is selected by first pressing `i` key or
-selecting
-relevant menu item or toolbar button. A symbol selection dialogue is displayed.
 
-<img src="assets/instanceDialogue.png" class="small-image" />
+### File Menu
 
-Symbol selection dialogue only displays the symbol views. Choose the desired symbol and
-click `OK` button and click anywhere on the symbol editor window. The symbol will placed at
-that
-point. Note that `[@instName]` label will be converted to an instance name that starts
-with **I
+The File menu handles saving, printing, and exporting your schematic designs.
 
-** and ends with a unique number. If any of other *NLPLabel*s have a default definition,
-they
-will be used. For NLPLabels without a default definition and *PyLabel*s only the definition
-of
-the label will be shown.
+- `File -> Check-Save`: validates the schematic and saves it to disk.
+- `File -> Save`: saves the current schematic without validation.
+- `File -> Update Design`: reloads all referenced cells from disk, useful after external changes.
+- `File -> Print...`: opens a print dialog to send the schematic to a printer.
+- `File -> Print Preview...`: shows a preview of how the schematic will appear when printed.
+- `File -> Export...`: exports the schematic as an image file (PNG, JPEG, etc.).
+- `File -> Close Window`: closes the current editor window.
+
+File menu actions and shortcuts:
+
+| Action | Shortcut | Notes |
+| --- | --- | --- |
+| `File -> Check-Save` | None | Validates design rules before saving. |
+| `File -> Save` | None | Quick save without validation. |
+| `File -> Update Design` | None | Refreshes all cell references from disk. |
+| `File -> Print...` | None | Standard print dialog with page setup. |
+| `File -> Print Preview...` | None | Preview print output before printing. |
+| `File -> Export...` | None | Export as image for documentation. |
+| `File -> Close Window` | `Ctrl+Q` | Closes the editor; prompts to save if unsaved changes. |
+
+### View Menu
+
+The View menu controls how you see and navigate your schematic.
+
+- `View -> Fit to Window`: zooms and pans to show the entire schematic.
+- `View -> Zoom In`: increases magnification for detailed work.
+- `View -> Zoom Out`: decreases magnification to see more of the design.
+- `View -> Pan View`: enables mouse-based panning of the view.
+- `View -> Redraw`: refreshes the display, useful if rendering issues occur.
+
+View menu actions and shortcuts:
+
+| Action | Shortcut | Notes |
+| --- | --- | --- |
+| `View -> Fit to Window` | `F` | Fits entire design in view. |
+| `View -> Zoom In` | None | Step zoom in; use mouse wheel for continuous zoom. |
+| `View -> Zoom Out` | None | Step zoom out; use mouse wheel for continuous zoom. |
+| `View -> Pan View` | None | Click and drag to pan; middle mouse button also pans. |
+| `View -> Redraw` | None | Forces screen refresh. |
+
+### Edit Menu
+
+<img src="assets/schematicEditMenu.png"  class="small-image" />
+
 
-<img src="assets/symbolInstating.png" class="image fit" />
+- `Edit -> Net Name`: Enter the net name string in the dialogue and then select a net to set its name.
+- `Edit -> Properties -> Object Properties`: inspect or edit properties for the selection. Depending on the instance, the use also can inspect the instance attributes for the instance, but not edit them.
+	<table>
+		<tr>
+			<td><img src="assets/schematicInstancePropertiesDialogue.png"  class="small-image" /></td>
+			<td><img src="assets/schematicInstanceAttributesDialogue.png"  class="small-image" /></td>
+		</tr>
+	</table>
+- `Edit -> Move`: move selected items interactively in the canvas.
+Press on an item or select multiple items by drawing a selection rectangle by pressing shift+left mouse button. Then press `m` key to move the item(s), press the left mouse button and carry the item(s) to their new location and release the left mouse button.
+- `Edit -> Move By`: apply a precise X/Y offset to the selection. Select an item on the schematic, select `Move By` menu and enter the displacement in x and y dimensions. As the displacement values are snapped to the schematic grid, the actual displacement might be different from the intendend values.
+ 
+	<img src="assets/schematicMoveBy.png"  class="small-image" />
 
-Now the select the instance and press `q` button to display ==instance properties==
-dialogue.
-Note that `as` parameter has `asparm()` shown as its value. Because it is defined as PyLabel
-in the
-symbol, once the values for other labels, e.g. *w*, *l*, *nf* and *m* are defined, its value
-will be calculated according to the formula defined in `callbacks.py` file.
+- `Edit -> Move Origin`: reposition the view origin for coordinates. After selecting the menu item, click and release the left-mouse button at the point that will be the new origin of the schematic. Note that it will be snapped to the nearest grid point and thus might differ from the left mouse button release point.
+- `Edit -> Rotate`: rotate the selected items around the pivot point. Select an item on the 
+  schematic, click `Rotate` menu item and click once again on the item to select the origin 
+  of rotation.
+- `Edit -> Align Items`: align edges or centers using the align dialog.
 
-Note that symbol attributes are also shown under *Instance Attributes* heading. However, the
-user cannot edit them using this dialogue, it is just there to inform the designer.
+<img src="assets/alignSchematicItemsDialogue.png"  class="small-image" />
 
-<img src="assets/instancePropertiesDialogue.png" class="image fit" />
+There are two methods of alignment:
+ 1. Align Edges: Select more than one item and then decide alignment direction (horizontal or vertical) and optional spacing between items. You also need to select how the items should be aligned: top, centre or bottom. Then press `OK` to align the items. If the alignment is wrong, you could undo it by pressing `u` key.
+ 2. Align To Line: Again select more than one item.  If a horizontal alignment is required draw a horizontal line or draw a vertical line if a vertical alignment is desired. Click left mouse button at the start of the alignment line and pull the mouse cursor to the desired end point and release the left mouse button. A thin red line should be drawn. The length of the alignment guide line is not important.
 
-At the moment, only instance name, location and angle can be changed as well as instance
-label
-values.
+Similarly to `Align Edges` option, the user can select alignment direction (horizontal or vertical), spacing between the items, and alignment edge (top, centre, bottom for horizontal alignment and left, centre, right for vertical alignment).
 
-If a schematic is opened but one or more instances cannot be found among the design
-libraries, a grey box with the missing instance path including library name, cell name and
-cellview name will be shown.
+<img src="assets/schematicHorizontalAlignment.png"  class="small-image" />
 
-<img src="assets/missingInstance.png" sclass="image fit" />
+- `Edit -> Horizontal Flip`: Flip selected items horizontally.
+- `Edit -> Vertical Flip`: Flip selected items vertically.
+- `Edit -> Selection`: This menu has two submenus:
+  - `Select All`: Select everything on the schematic.
+  - `Unselect All`: Unselect everything on the schematic.
+- `Edit -> Net Name`: This menu item opens a small dialogue so that the user can enter the net name. Once the dialogue is closed by pressing `OK` button, a net can be chosen to assign name to. Note that nets can also be named using the properties dialogue.
 
-## Creating Wires
+#### Edit Menu (Hierarchy)
 
-Wires are used to make connections between instances at pins. The wire creation system
-includes intelligent routing and connection management.
+- `Edit -> Hierarchy -> Go Down`: open selected instance in a child view. A dialogue window opens allowing the user to choose one of the available views to descend to. 
+  The view types that can be descended into are:
+  - Schematic: Opens the schematic editor for the instance.
+  - Symbol: Opens the symbol editor for the instance.
+  - Verilog-a: Opens the Verilog-a editor for the instance.
+  - Spice: Opens the spice editor for the instance.
+  Schematic and Symbol editors have additional buttons on their toolbars for moving back up to hierarchy when they are started with hierarchy operation. Verilog-a and Spice editors also offer the import dialogue when the editing is finished and the window is closed.  
+- `Edit -> Hierarchy -> Go Up`: return to the parent schematic. 
 
-### Wire Creation Methods
 
-- Press `w` key for wire mode
-- Select `Create Wire` from the `Create` menu
-- Click the wire toolbar button
-- Right-click context menu for quick access
 
-### Wire Behavior
+### Edit menu actions and shortcuts:
 
-- **Smart Routing**: Automatic orthogonal routing with minimal bends
-- **Connection Snapping**: Automatic snapping to pins and existing nets
-- **Wire Merging**: Collinear wires automatically merge into single segments
-- **Junction Creation**: Automatic solder dot placement at T-junctions
+| Action | Shortcut | Notes |
+| --- | --- | --- |
+| `Edit -> Undo` | `U` | Reverts the most recent schematic edit in the undo stack. |
+| `Edit -> Redo` | `Shift+U` | Reapplies the last undone operation. |
+| `Edit -> Paste` | None | Inserts the last copied selection at the cursor location. |
+| `Edit -> Copy` | `C` | Copies the current selection for pasting. |
+| `Edit -> Delete` | `Delete` | Removes selected items from the schematic. |
+| `Edit -> Move` | None | Starts interactive move mode for the selected items. |
+| `Edit -> Move By` | None | Moves the selection by a precise X/Y offset. |
+| `Edit -> Move Origin` | None | Repositions the view origin used for coordinates. |
+| `Edit -> Rotate` | `Ctrl+R` | Rotates the selected items around the current pivot. |
+| `Edit -> Stretch` | `S` | Stretches wires or shapes by dragging a segment. |
+| `Edit -> Flip Horizontal` | None | Mirrors the selection across a vertical axis. |
+| `Edit -> Flip Vertical` | None | Mirrors the selection across a horizontal axis. |
+| `Edit -> Align Items` | `Shift+A` | Aligns selection edges or centers using the align dialog. |
+| `Edit -> Selection -> Select All` | `Ctrl+A` | Selects every item in the active schematic view. |
+| `Edit -> Selection -> Deselect All` | None | Clears the selection without changing geometry. |
+| `Edit -> Properties -> Object Properties` | `Q` | Opens the property dialog for the selected item(s). |
+| `Edit -> Net Name` | `L` | Assigns or edits the name of the selected net. |
 
-For each net, a net name can be defined using `Net Properties` dialogue. This name will also
-propagate all other wires that wire touches.
 
-<img src="assets/netNaming.png" class="image fit" />
 
-If a wire is extended by drawing another wire along its direction, i.e. horizontal or
-vertical,
-those wires will be merged and will become a single wire. If two wires are connected such
-that
-one wire is orthogonal to the other and connects at a mid-point, a solder-dot will be placed
-and the wire will be split at the solder dot location.
+### Create Menu
 
-### Net Highlighting
+- `Create -> Instance...`: open the symbol selector and place an instance on the schematic. The instance is normally a symbol. Using `Select CellView` dialogue, the user can choose the design library, cell and cellview to instantiate the desired symbol. Instance will follow the mouse cursor and will be placed at where left-mouse button is released and immediately another instance of the same symbol will follow the mouse cursor. If the user wants to stop the instantiation process at that time, `esc` key will return to the selection mode.
+- 
+  <img src="assets/schematicSelectCellView.png"  class="small-image" />
 
-The circuit designers occasionally needs to see which net is connected to other nets as the
-nets might be connected by name which is not immediately obvious on the schematic. In that
-case, the user can select `Tools->Highlight Net` menu item. It is a checkable menu item, and
-as long as it is checked, net highlighting mode will be effective.
+- `Create -> Net`: enter wire mode and draw orthogonal connections normally between instance 
+  pins. You can name the nets using `Edit-> Net Name` menu item, pressing `l` key or using 
+  net properties dialogue by selecting the net and pressing `q` key.
+- `Create -> Bus`: enter a bus, i.e. an ordered bundle of wires. Nets and busses are 
+  interchangeable. Busses are drawn wider and have normally more than one bundled together.
+  
+- `Create -> Pin`: place a schematic pin with direction (Input/Output/InOut).
+- `Create -> Text`: place an annotation label on schematic to aid the documentation.
+- `Create -> Create Symbol...`: generate a symbol view from the schematic. The schematic pins will be used to generate symbol pins.
 
-<img src="assets/netHighlightingMenu.png" class="small-image" />
+<img src="assets/schematicCreateMenu.png"  class="small-image" />
 
-If the mouse cursor hovers on a net, all the nets connected to that net will be highlighted
-including visual paths connecting centre points of the nets:
 
-<img src="assets/highlightedNets.png" class="image fit" />
+### Tools Menu
 
-## Creating Pins
+- `Tools -> Highlight Net`: enable hover-based net highlighting.
 
-Like symbol pins, schematic pins define the connection points for the circuit in a
-hierarchical
-design. A pin can be created by pressing `p` key or selecting relevant menu item or toolbar
-button. Pins can have three directions:
+<!-- Screenshot: Tools menu with Highlight Net -->
 
-1. Input
-2. Output
-3. InOut
+### Simulation Menu
 
-At the moment, *Pin Type* definition is not used.
+- `Simulation -> Create Netlist...`: export a netlist for the current view.
+- `Simulation -> Simulation Environment...`: open simulation UI (requires `revedasim` plugin).
 
-<img src="assets/schematicPinAdd.png" class="image fit" />
+<!-- Screenshot: Simulation menu -->
 
-Schematic pins will snap to nets if any nets are connected. If the pin is moved, the
-connected nets will rearrange to keep the connection.
+## Core Workflows
 
-<img src="assets/netPinSnappingStart.png" class="small-image" />
-<img src="assets/netPinSnappingResult.png" class="small-image" />
+### 1) Place Instances
 
-## Creating Text
+Use any of the following:
 
-Texts can be placed on the schematics. All monospaced fonts on the system can be used.
-Software will try to find the closest font if it can not find the exact font when the
-schematic were to be used in another system. Text Entry dialogue allows the all the
-available style and sizes of a font to be selected.
+- Press `i`
+- `Create -> Instance...`
+- Toolbar instance button
 
-<img src="assets/schematicTextEntry.png" class="small-image" />
-<img src="assets/schematicTextResult.png" class="small-image" />
+The instance dialog lists symbol views. Select one, click `OK`, then click in the canvas.
+Auto-generated instance names follow the symbol's naming label (for example `[@instName]`).
 
-Text orientation can also be changed to rotate the text.
+<!-- Screenshot: Instance selection dialog -->
 
-<img src="assets/schematicTextOrient.png" class="small-image" />
+Open instance properties with `q`:
 
-If a text is selected and its property window is brought up using *q* key, all these
-properties can also be changed later.
+- Change instance name, location, and rotation
+- Edit label values (including PyLabel-evaluated parameters)
+- View read-only symbol attributes
 
-## Creating Symbols
+<!-- Screenshot: Instance properties dialog -->
 
-A symbol for a schematic can be created automatically using `Create Symbol` menu item.
-Revolution EDA first verify the name of the symbol cell view. As explained earlier, the cell
-view name should include *symbol* in the text. To generate a symbol for a schematic, make
-sure that all the pins for the symbol defined using schematic pins in the schematic. Then,
-select `Create->Create Symbol...` menu item which will bring up symbol creation dialogue:
+Missing instance views appear as a gray placeholder box with full library path.
 
-<img src="assets/createSymbolDialogue.png" class="small-image" />
+<!-- Screenshot: Missing instance placeholder -->
 
-Once the symbol view name is entered, click `OK`. If a view with the same name exists, the
-Revolution EDA will confirm the designer wants to overwrite that view. If the input to that
-dialogue is also `OK`, a new dialogue will be displayed:
+### 2) Wire and Name Nets
 
-<img src="assets/symbolPropertiesDialogue.png" class="small-image" />
+Enter wire mode with `w`.
 
-The initial placement of pins is according to their directions. The designer is free to
-change
-the location of pins. It is advisable to keep *Stub Length* and *Pin spacing* values to keep
-a
-consistent look. Once the designer is satisfied the pin locations and symbol geometry
-parameters, he/she can proceed to creating a symbol view. The symbol view will be opened in
-another window. A library browser will also show a symbol view is added to the relevant
-cell.
+Behavior highlights:
 
-<img src="assets/createdSymbolEditor.png" class="image fit" />
+- Orthogonal routing with automatic bends
+- Snap-to-pin and snap-to-net
+- Collinear merge into a single segment
+- Automatic junction dots on T-connections
 
-We have already explained which attributes are necessary for netlisting a symbol depending
-on the symbol, veriloga or spice cellview, if they exist, would be used for netlisting when
-needed.
+Use `Net Properties` to name a net. The name propagates across connected segments.
 
-## Simulation Integration
+<!-- Screenshot: Net naming dialog -->
 
-The schematic editor provides seamless integration with the simulation environment through
-the **revedasim** plugin:
+Net highlighting:
 
-### Direct Simulation Access
+- Toggle `Tools -> Highlight Net`
+- Hover a net to display the full connected set
 
-- **Revbench Integration**: Create simulation testbenches directly from schematics using the
-  `revbench` cellview type
-- **Analysis Setup**: Configure DC, AC, transient, noise, and harmonic balance analyses
-- **Parameter Sweeps**: Set up multi-dimensional parameter variations
-- **Interactive Selection**: Click on nets and components to auto-populate simulation fields
-- **Plugin-Based**: Requires the `revedasim` plugin to be installed
-
-### Enhanced Netlisting
-
-- **Hierarchical Processing**: Full support for complex design hierarchies with proper view
-  selection
-- **View Selection**: Intelligent view selection based on switch/stop view lists
-- **Config View Support**: Advanced configuration management for large designs through
-  config cellviews
-- **Background Operation**: Netlisting runs in background thread pool without blocking the
-  editor
-- **Xyce Simulator Support**: Native support for Xyce circuit simulator netlisting format
-
-## Creating Netlists
-
-Netlist creation can be done through `Simulation` menu and `Create Netlist` menu item. It
-will
-start an `Export Netlist` dialog. Depending on the availability of *schematic* and *config*
-views, there could be more than one option to choose for `view` combobox. Here we will be
-concentrating on using *Switch view list* field to control the netlisting process. Once we
-explain the *config* view and the associated editor, we will also touch use of config views
-in
-netlisting process.
-
-<img src="assets/exportNetlistDialogue.png" class="small-image"/>
-
-In this dialogue, the view to be netlisted is *schematic*. Switch view list is the order of
-preference in netlisting a cell. If a cell has both veriloga and schematic views,
-*schematic*
-view will be preferred and *veriloga* will not be used. Stop view list defines the views
-that netlister should not go down in hierarchy. At the moment, only "symbol" view entry is
-valid.
-
-*Export directory* field determines the parent folder name for the simulations. It is
-normally
-entered at *Options* menu of main window.
-
-<img src="assets/revedaOptionsDialogue.png" class="small-image"/>
-
-However it could be changed at *export netlist* field as well. However, it ==will not be
-saved==
-in the Revolution EDA configuration file unlike the entries in *Options* dialogue.
-
-When `OK` button is clicked, Revolution EDA performs a full hierarchical netlisting of the
-circuit with the following enhancements:
-
-### Advanced Netlisting Features
-
-- **Background Operation**: Netlisting runs in background thread pool, allowing continued
-  work
-- **Hierarchical Processing**: Full support for complex design hierarchies with proper view
-  selection
-- **Configuration Support**: Integration with config views for advanced design management
-- **Output Management**: Organized output structure under simulation path directory
-- **File Naming**: Consistent naming convention `cellName_viewName.cir`
-- **Thread Pool**: Uses configurable thread pool for efficient processing
-
-### Configuration Views
-
-Config views provide advanced control over netlisting:
-
-- **View Mapping**: Define which views to use for each cell in the hierarchy
-- **Switch Lists**: Specify view preference order for automatic selection
-- **Stop Lists**: Control netlisting depth and prevent unwanted expansion
-- **Design Variants**: Support multiple configurations of the same design
-
-The circuit netlist will be structured as follows:
-
-```verilog
-**********************************************************************************
-** Revolution EDA CDL Netlist
-** Library: anotherLibrary
-** Top Cell Name: example2
-** View Name: schematic
-** Date: 2024-03-16 21:25:51.028310
-**********************************************************************************
-*.GLOBAL gnd!
-
-XI0 example1 net0 intNoe
-.SUBCKT example1 INP  OUT
-CI8 OUT drain 1p 0
-CI5 net0 drain 1p 0
-MI7 drain INP gnd! gnd! nmos w=2u l=0.18u nf=2  as=560n m=1
-Yres I1 net0 drain  resModel 1k
-.ENDS
-XI1 example1 intNoe net1
-Yres I4 net1 gnd!  resModel 1k
-VI2 net0 gnd! PULSE( 1 1m 1k 0 0 0  )
-.END
-.MODEL resModel res R = 1
-*.HDL /home/eskiyerli/OneDrive_reveda/Projects/RevEDA/exampleLibraries/analogLib/resVa/res.va
-```
-
-Note that verilog-a model is used for the resistor, because `veriloga` view is before
-`symbol` view in the *switch view list* field. Let's now reverse their positions and check
-the output netlist:
-
-```verilog
-**********************************************************************************
-** Revolution EDA CDL Netlist
-** Library: anotherLibrary
-** Top Cell Name: example2
-** View Name: schematic
-** Date: 2024-03-16 21:34:45.647943
-**********************************************************************************
-*.GLOBAL gnd!
-
-XI0 example1 net0 intNoe
-.SUBCKT example1 INP  OUT
-RI1 net0 drain 1k
-MI7 drain INP gnd! gnd! nmos w=2u l=0.18u nf=2  as=560n m=1
-CI8 OUT drain 1p 0
-CI5 net0 drain 1p 0
-.ENDS
-XI1 example1 intNoe net1
-RI4 net1 gnd! 1k
-VI2 net0 gnd! PULSE( 1 1m 1k 0 0 0  )
-.END
-```
-
-Now the resistor is netlisted as a symbol using the attributes relevant to symbol
-netlisting, i.e. `SpiceNetlistLine` and `pinOrder`.
-
-### Ignoring Instances
-
-Circuit designers might need netlisting process to ignore some components depending on the
-testbench purpose. It is very easy to mark instances to be ignored in the netlisting by
-selecting `ignore` item in instance context menu. Just select the instance you want to be
-ignored in the netlisting process and click right mouse button to bring up instance context
-menu:
-
-<img src="assets/instanceContextMenu.png" alt="Instance Context Menu" class="image fit"/>
-
-`ignore` menu item is used to toggle if this device instance will be ignored during
-netlisting. If the user selects it once, a red cross on the instance symbol is drawn. If the
-user selects an ignored instance and selects the `ignore` menu item, the red-cross will be
-removed and symbol instance will be netlisted normally.
-
-<img src="assets/instanceIgnore.png" alt="Schematic Instance Ignore" class="image fit" />
-
-Netlister will report the ignored block with a comment as shown in the following netlist for
-the schematic above, helping the design engineer to make sure that the correct netlist is
-being used for simulations.
+<!-- Screenshot: Net highlight overlay -->
+
+### 3) Create Pins
+
+Press `p` and place schematic pins for hierarchical connectivity.
+
+Pin directions:
+
+- Input
+- Output
+- InOut
+
+Pins snap to wires and re-route connected nets when moved.
+
+<!-- Screenshot: Pin placement + snapping example -->
+
+### 4) Text and Annotation
+
+Use text tool to place annotations with monospaced fonts.
+Rotate and edit text in the property dialog (`q`).
+
+<!-- Screenshot: Text entry dialog -->
+<!-- Screenshot: Text rotation controls -->
+
+### 5) Generate a Symbol from a Schematic
+
+Create a symbol from pin definitions:
+
+1. Place all pins in the schematic.
+2. `Create -> Create Symbol...`
+3. Enter symbol view name and confirm overwrite if needed.
+4. Adjust stub length and spacing if desired.
+
+<!-- Screenshot: Create Symbol dialog -->
+<!-- Screenshot: Symbol properties dialog -->
+
+The generated symbol opens in a new window.
+
+<!-- Screenshot: Generated symbol view -->
+
+## Netlisting and Simulation
+
+### Netlisting
+
+Start netlisting with `Simulation -> Create Netlist...`.
+
+Key concepts:
+
+- **Switch view list**: preferred view order (schematic vs veriloga vs symbol)
+- **Stop view list**: stop traversal at a given view (for example `symbol`)
+- **Config view**: explicit per-cell view selection
+
+<!-- Screenshot: Export Netlist dialog -->
+
+The netlister runs in background threads and produces consistent output file naming:
 
 ```
-**********************************************************************************
-** Revolution EDA CDL Netlist
-** Library: anotherLibrary
-** Top Cell Name: example1
-** View Name: schematic
-** Date: 2024-03-19 09:44:44.926891
-**********************************************************************************
-*.GLOBAL gnd!
-
-CI8 OUT net0 2p 0
-MI7 net0 INP gnd! gnd! nmos w=4u l=0.18u nf=6  as=746.7n m=1
-*I9 is marked to be ignored
-RI1 vdd! net0 1k
-CI5 net1 net0 1p 0
-.END
+cellName_viewName.cir
 ```
 
-## Hierarchy Traversing
+### Simulation Integration
 
-Revolution EDA provides convenient hierarchy traversal functionality. A design engineer can
-start editing a schematic and easily navigate to edit the schematic or symbol of an
-instantiated component. This hierarchy traversal maintains the design context and allows
-seamless navigation through the design hierarchy. The function is available for schematic,
-symbol, and layout views.
+Simulation is provided by the `revedasim` plugin.
 
-Select a symbol, and do one of these:
+- Revbench-based testbenches
+- DC/AC/transient/noise analyses
+- Parameter sweeps
+- Interactive net/component selection
 
-- Press on `Go Down` button on the toolbar,
-- Select `Edit->Hierarchy->Go Down` menu item,
-- Press `Shift+E` key combination,
-- Right click on mouse to pop up the context menu and select `Go Down` entry
+<!-- Screenshot: Simulation environment window -->
 
-<img src="assets/goDownHier.png" class="image fit" />
+## Hierarchy Traversal
 
-A dialogue titled `Go Down Hierarchy` will pop up. Depending on the cell, you can choose
-`Symbol` or `Schematic` view to open in either *edit* or *read-only* mode.
+Go down into a cell from a selected instance:
 
-<img src="assets/goDownDialogue.png" class="image fit" />
+- Toolbar `Go Down`
+- `Edit -> Hierarchy -> Go Down`
+- `Shift+E`
+- Context menu `Go Down`
 
-After opening a symbol for editing, the designer can save the symbol after finishing the
-edits and then choose the `Go Up` button on the toolbar to close the window and return to
-the parent schematic. The changes in the symbol will be automatically reflected in the
-original schematic.
+Select view type (schematic/symbol) and open in edit or read-only mode.
+
+<!-- Screenshot: Go Down dialog -->
+
+Return to parent with `Go Up` and the schematic updates immediately.
+
+<!-- Screenshot: Go Up toolbar button -->
