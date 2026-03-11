@@ -175,28 +175,90 @@ Similarly to `Align Edges` option, the user can select alignment direction (hori
 
 ### Create Menu
 
+
+<img src="assets/schematicCreateMenu.png"  class="small-image" />
+
+
 - `Create -> Instance...`: open the symbol selector and place an instance on the schematic. The instance is normally a symbol. Using `Select CellView` dialogue, the user can choose the design library, cell and cellview to instantiate the desired symbol. Instance will follow the mouse cursor and will be placed at where left-mouse button is released and immediately another instance of the same symbol will follow the mouse cursor. If the user wants to stop the instantiation process at that time, `esc` key will return to the selection mode.
 - 
   <img src="assets/schematicSelectCellView.png"  class="small-image" />
+
+  After placing the instance on the schematic, the user can change the instance properties by selecting the instance and pressing `q` key or selection `Edit -> Properties` submenu.
+
+  Like nets, an array of instances can be created using array notation for the instance name:
+
+  <img src="assets/schematicInstanceArrayNotation.png"  class="small-image" />
+
+Such an instance array will be expanded when netlisting to create a list of instances between the two instance terminals.
 
 - `Create -> Net`: enter wire mode and draw orthogonal connections normally between instance 
   pins. You can name the nets using `Edit-> Net Name` menu item, pressing `l` key or using 
   net properties dialogue by selecting the net and pressing `q` key.
 - `Create -> Bus`: enter a bus, i.e. an ordered bundle of wires. Nets and busses are 
-  interchangeable. Busses are drawn wider and have normally more than one bundled together.
+  interchangeable. Busses are drawn wider and have normally more than one wire bundled together.
+  A bus is indicated with bus notation: `bus_name<high:low>` or `bus_name<low:high>`. 
   
-- `Create -> Pin`: place a schematic pin with direction (Input/Output/InOut).
-- `Create -> Text`: place an annotation label on schematic to aid the documentation.
+- `Create -> Pin`: place a schematic pin with direction (Input/Output/InOut). 
+Like busses, a schematic can also have a vector notation to connect indicating more than one pin
+is bundled.
+<img src="assets/schematicCreatePin.png"  class="small-image" />
+
+- `Create -> Text`: place a text annotation on schematic to aid the documentation. Select the menu item or press `Shift+L` key combination to open `Edit Text` menu. Write your annotation text in the provided space. Your text can have more than one paragraph and text breaks.
+
+Unlike legacy software, Revolution EDA can use any fonts installed on your computer at all available font sizes.
+
+<table>
+  <tr>
+    <td><img src="assets/schematicCreateText.png"  class="small-image" /></td>
+    <td><img src="assets/schematicPlaceText.png" class="small-image" /></td>
+  </tr>
+</table>
+
 - `Create -> Create Symbol...`: generate a symbol view from the schematic. The schematic pins will be used to generate symbol pins.
 
-<img src="assets/schematicCreateMenu.png"  class="small-image" />
+A symbol for the schematic can be created using this menu item. The schematic pins will be used to generate symbol pins. The side of the symbol pins, their spacing on each side and the length of pin stubs can all be specified.
+<table>
+  <tr>
+    <td><img src="assets/schematicCreateSymbolDialogue.png"  class="small-image" /></td>
+    <td><img src="assets/createSymbolPinNames.png" class="small-image" /></td>
+  </tr>
+</table>
+
+There are two important points:
+1. Symbol view name should include *symbol* in it. Thus `symbol`, `1symbol`, or `symbol_2` are all valid names, but `symbo` is not a *valid* symbol view name.
+2. Try to be consistent in stub lengths and pin spacing within a design library.
+
+### Options Menu
+
+The schematic editor inherits the `Options` menu from the base editor window.
+
+- `Options -> Display Config...`: configure display options for the editor view. `Grid Spacing` refers to spacing of of the grid dots at the largest zoom of the schematic. The instance and nets can only be drawn on that grid to ease the alignment of the instances, nets and pins. 
+
+`Snap Distance` is the distance where nets are snapped to symbol or schematic pins.
+
+Both of these settings are saved to schematic file and will be reloaded with the schematic.
+
+<img src="assets/schematicDisplayOptionsDialogue.png" class="small-image" />
+
+- `Options -> Selection Config...`: configure canvas selection behavior. The selection behaviour configured by this dialogue refers to how elements on the schematic are selected with selection rectangle:
+1. When `Full` radio button is selected, only items whose selection box fully covered by the selection rectangle will be added to the selection set.
+2. When `Partial` radio button is selected, items whose selection box partially overlaps will also be added to the selection set.
+
+<img src="assets/schematicSelectionConfigDialogue.png" class="small-image" />
 
 
 ### Tools Menu
+- `Tools -> Read Only`: Toggling this menu will lock the schematic to editing. To unlock the schematic, unlock the menu item.
 
-- `Tools -> Highlight Net`: enable hover-based net highlighting.
+- `Tools -> Highlight Net`: enable when checked is used to toggle hover-based net highlighting. When this menu item is toggled and cursor is hovering over a net, purple flight lines will be drawn to all other nets that is connected to that net by other wires or by name:
 
-<!-- Screenshot: Tools menu with Highlight Net -->
+<img src="assets/schematicNetHighlighting.png" class="image fit" />
+
+- `Tools -> Renumber Instances`: This menu starts the process of renumbering of all schematic instances. This might be needed when the instance names could be repeated among different instances, making some operations like netlisting problematic.
+
+- `Tools -> Find related editors`: When the user goes down a symbol to open related schematic, there might be more than a few schematic editor open depending on the hierarchy depth. Moreover, there could be schematic editors open that are not related to that design. This menu item opens a dialogue that allows the user to choose and highlight any schematic editor that was opened as a part of hierarchical editing.
+
+<img src="assets/schematicFindRelatedEditorsDialogue.png" class="image fit" />
 
 ### Simulation Menu
 
