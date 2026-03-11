@@ -444,7 +444,7 @@ class editorWindow(QMainWindow):
         self.menuView.addAction(self.zoomOutAction)
         self.menuView.addAction(self.panAction)
         self.menuView.addAction(self.redrawAction)
-        self.menuView.addAction(self.panZoomConfigAction)
+        # self.menuView.addAction(self.panZoomConfigAction)
         # edit menu
         self.menuEdit.addAction(self.undoAction)
         self.menuEdit.addAction(self.redoAction)
@@ -749,7 +749,7 @@ class editorWindow(QMainWindow):
 
     def redraw(self):
         self.messageLine.setText("Redrawing...")
-        self.centralW.view.update()
+        self.centralW.view.updateSceneRect(self.centralW.view.sceneRect())
 
     def _findTopParent(self):
         current = self

@@ -224,23 +224,7 @@ class schematicScene(editorScene):
             f"Cursor Position: ({cursorPosition.x()}, {cursorPosition.y()})")
         self.messageLine.setText(self.messages[self.editModes.mode()])
 
-    def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent) -> None:
-        if self.editModes.moveItem and self.selectedItemGroup:
-            for item in self.selectedItemGroup.childItems():
-                if isinstance(item, (snet.schematicNet, shp.schematicSymbol, shp.schematicPin)):
-                    if hasattr(item, '_finishSnapLines'):
-                        item._finishSnapLines()
-        
-        # Clean up any remaining guideLine items
-        guideLines = [item for item in self.items() if isinstance(item, snet.guideLine)]
-        for guideLine in guideLines:
-            newNets = self.addStretchWires(guideLine.sceneEndPoints[0], guideLine.sceneEndPoints[1])
-            if newNets:
-                for netItem in newNets:
-                    netItem.inherit(guideLine)
-                self.addListUndoStack(newNets)
-            self.removeItem(guideLine)
-
+    def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent):
         return super().mouseReleaseEvent(event)
 
     def _handleMouseRelease(self, mousePos: QPoint,
@@ -446,9 +430,7 @@ class schematicScene(editorScene):
             points.extend(net.sceneEndPoints)
 
         furthestPoints = self.findFurthestPoints(points)
-        # Snap points to grid before creating net
-        snappedPoints = [self.snapToGrid(p) for p in furthestPoints]
-        mergedNet = snet.schematicNet(*snappedPoints, width=busExists)
+        mergedNet = snet.schematicNet(*furthestPoints, width=busExists)
 
         processedNets = parallelNets | {inputNet}
         for net in processedNets:
@@ -485,10 +467,8 @@ class schematicScene(editorScene):
         is_selected = inputNet.isSelected()
 
         for i in range(len(orderedPoints) - 1):
-            # Snap points to grid before creating net
-            p1 = self.snapToGrid(orderedPoints[i])
-            p2 = self.snapToGrid(orderedPoints[i + 1])
-            splitNet = snet.schematicNet(p1, p2, inputNet.width)
+            splitNet = snet.schematicNet(orderedPoints[i], orderedPoints[i + 1],
+                                         inputNet.width)
             if not splitNet.draftLine.isNull():
                 if is_selected:
                     splitNet.setSelected(True)
@@ -550,30 +530,30 @@ class schematicScene(editorScene):
                 snapPointsSet.add(intersectPoint.toPoint())
         return snapPointsSet
 
-    def findNetStretchPoints(self, netItem: snet.schematicNet,
-                             snapDistance: int) -> dict[int, QPoint]:
-        netEndPointsDict: dict[int, QPoint] = {}
-        sceneEndPoints = netItem.sceneEndPoints
-        for netEnd in sceneEndPoints:
-            snapRect: QRect = QRect(netEnd.x() - snapDistance,
-                                    netEnd.y() - snapDistance, 2 * snapDistance,
-                                    2 * snapDistance, )
-            snapRectItems = set(self.items(snapRect)) - {netItem}
-
-            for item in snapRectItems:
-                if isinstance(item, snet.schematicNet) and any(
-                        list(map(snapRect.contains, item.sceneEndPoints))):
-                    netEndPointsDict[sceneEndPoints.index(netEnd)] = netEnd
-                elif (isinstance(item,
-                                 shp.symbolPin | shp.schematicPin)) and snapRect.contains(
-                    item.mapToScene(item.start).toPoint()):
-                    netEndPointsDict[
-                        sceneEndPoints.index(netEnd)] = item.mapToScene(
-                        item.start).toPoint()
-                if netEndPointsDict.get(sceneEndPoints.index(
-                        netEnd)):  # after finding one point, no need to iterate.
-                    break
-        return netEndPointsDict
+    # def findNetStretchPoints(self, netItem: snet.schematicNet,
+    #                          snapDistance: int) -> dict[int, QPoint]:
+    #     netEndPointsDict: dict[int, QPoint] = {}
+    #     sceneEndPoints = netItem.sceneEndPoints
+    #     for netEnd in sceneEndPoints:
+    #         snapRect: QRect = QRect(netEnd.x() - snapDistance,
+    #                                 netEnd.y() - snapDistance, 2 * snapDistance,
+    #                                 2 * snapDistance, )
+    #         snapRectItems = set(self.items(snapRect)) - {netItem}
+    #
+    #         for item in snapRectItems:
+    #             if isinstance(item, snet.schematicNet) and any(
+    #                     list(map(snapRect.contains, item.sceneEndPoints))):
+    #                 netEndPointsDict[sceneEndPoints.index(netEnd)] = netEnd
+    #             elif (isinstance(item,
+    #                              shp.symbolPin | shp.schematicPin)) and snapRect.contains(
+    #                 item.mapToScene(item.start).toPoint()):
+    #                 netEndPointsDict[
+    #                     sceneEndPoints.index(netEnd)] = item.mapToScene(
+    #                     item.start).toPoint()
+    #             if netEndPointsDict.get(sceneEndPoints.index(
+    #                     netEnd)):  # after finding one point, no need to iterate.
+    #                 break
+    #     return netEndPointsDict
 
     @staticmethod
     def orderPoints(points: list[QPoint]) -> list[QPoint]:
@@ -608,14 +588,13 @@ class schematicScene(editorScene):
         return furthest_points[0], furthest_points[1]
 
     def _handleStretchNet(self, netItem: snet.schematicNet, stretchEnd: str):
-        # Snap endpoints to grid
-        p0 = self.snapToGrid(netItem.sceneEndPoints[0])
-        p1 = self.snapToGrid(netItem.sceneEndPoints[1])
         match stretchEnd:
             case "p2":
-                self._stretchNet = snet.schematicNet(p0, p1)
+                self._stretchNet = snet.schematicNet(netItem.sceneEndPoints[0],
+                                                     netItem.sceneEndPoints[1])
             case "p1":
-                self._stretchNet = snet.schematicNet(p1, p0)
+                self._stretchNet = snet.schematicNet(netItem.sceneEndPoints[1],
+                                                     netItem.sceneEndPoints[0])
         self._stretchNet.stretch = True
         self._stretchNet.mergeNetName(netItem)
         addDeleteStretchNetCommand = us.addDeleteShapeUndo(self, self._stretchNet,
@@ -680,7 +659,7 @@ class schematicScene(editorScene):
 
             if start.y() == end.y() or start.x() == end.x():
                 # Horizontal or vertical line
-                return [snet.schematicNet(self.snapToGrid(start), self.snapToGrid(end))]
+                return [snet.schematicNet(start, end)]
 
             # Calculate intermediate points
             firstPointX = self.snapToBase((end.x() - start.x()) / 3 + start.x(),
@@ -694,7 +673,7 @@ class schematicScene(editorScene):
                         (secondPoint, end), ]
             for seg_start, seg_end in segments:
                 if seg_start != seg_end:
-                    lines.append(snet.schematicNet(self.snapToGrid(seg_start), self.snapToGrid(seg_end)))
+                    lines.append(snet.schematicNet(seg_start, seg_end))
 
             return lines
 
