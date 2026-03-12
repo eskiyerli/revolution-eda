@@ -19,6 +19,139 @@ for
 Edits can be undone or redone using `Undo` or `Redo` toolbar buttons, or `U` or `Shift-U`
 keys.
 
+<img src="assets/symbolEditorWindow.png"  class="image fit" />
+
+## Quick Orientation (for Virtuoso Users)
+
+| Virtuoso Action | Revolution EDA Equivalent | Notes |
+|---|---|---|
+| Add wire/line | `Create -> Create Line...` or `W` | Draws horizontal/vertical line segments |
+| Add rectangle | `Create -> Create Rectangle...` or `R` | Click two diagonal corners |
+| Add circle | `Create -> Create Circle...` | Click centre, drag to set radius |
+| Add arc | `Create -> Create Arc...` | Two-corner bounding box; direction set by diagonal angle |
+| Add polygon | `Create -> Create Polygon...` | Left-click to add points; double-click to finish |
+| Add pin | `Create -> Create Pin...` or `P` | Set name, direction, and type in the dialog |
+| Add label | `Create -> Create Label...` or `L` | Normal, NLPLabel, or PyLabel types |
+| Edit properties | Select item, press `Q` | Shape, pin, or label properties |
+| Edit cellview attributes | `Edit -> Cellview Properties...` | Symbol-level netlist attributes |
+| Stretch shape | Select item, press `S` | Adjust endpoints/radius of lines, arcs, circles |
+| Undo | `U` | Up to 99-level undo stack |
+| Redo | `Shift+U` | Reapply the last undone operation |
+| Fit to window | `F` | Scales the view to show all items |
+
+## Keyboard Shortcuts
+
+| Key | Action |
+|---|---|
+| `W` | Create Line |
+| `R` | Create Rectangle |
+| `P` | Create Pin |
+| `L` | Create Label |
+| `S` | Stretch selected item |
+| `C` | Copy selected items |
+| `U` | Undo |
+| `Shift+U` | Redo |
+| `Q` | Object Properties |
+| `F` | Fit to Window |
+| `Delete` | Delete selected items |
+| `Ctrl+R` | Rotate 90° CW |
+| `Ctrl+A` | Select All |
+| `Shift+A` | Align Items |
+
+## Menu Actions
+
+### File Menu
+
+<img src="assets/symbolEditorFileMenu.png"  class="small-image" />
+
+The File menu handles saving, printing, and exporting the symbol cellview.
+
+| Action | Shortcut | Notes |
+|---|---|---|
+| `File -> Check-Save` | None | Validates and saves the symbol to disk. |
+| `File -> Save` | None | Saves without running checks. |
+| `File -> Update Design` | None | Reloads all referenced cell data from disk. |
+| `File -> Print...` | None | Sends the symbol view to a printer. |
+| `File -> Print Preview...` | None | Preview print output before printing. |
+| `File -> Export...` | None | Exports the symbol as a PNG/JPEG/BMP image file. |
+| `File -> Close Window` | `Ctrl+Q` | Closes the window; symbol is auto-saved on close. |
+
+### View Menu
+
+<!-- Screenshot: Symbol editor View menu -->
+
+| Action | Shortcut | Notes |
+|---|---|---|
+| `View -> Fit to Window` | `F` | Scales the view to show all symbol items. |
+| `View -> Zoom In` | None | Increases magnification; mouse wheel also zooms. |
+| `View -> Zoom Out` | None | Decreases magnification. |
+| `View -> Pan View` | None | Click to re-centre the view at the clicked point. |
+| `View -> Redraw` | None | Forces a full repaint of the scene. |
+
+### Edit Menu
+
+<!-- Screenshot: Symbol editor Edit menu -->
+
+The Edit menu provides shape manipulation, transformation, and undo/redo commands.
+
+| Action | Shortcut | Notes |
+|---|---|---|
+| `Edit -> Undo` | `U` | Reverts the most recent change (up to 99 levels). |
+| `Edit -> Redo` | `Shift+U` | Reapplies the last undone change. |
+| `Edit -> Paste` | None | Pastes copied items at the cursor location. |
+| `Edit -> Delete` | `Delete` | Removes selected items from the symbol. |
+| `Edit -> Copy` | `C` | Copies the current selection for pasting. |
+| `Edit -> Move` | None | Moves selected items interactively on the canvas. |
+| `Edit -> Move By...` | None | Moves the selection by a precise X/Y offset via dialog. |
+| `Edit -> Move Origin` | None | Repositions the scene origin; click to set the new point. |
+| `Edit -> Stretch` | `S` | Adjusts endpoints of lines, arcs, and radius of circles. |
+| `Edit -> Rotate...` | `Ctrl+R` | Rotates selected items 90° clockwise around a pivot point. |
+| `Edit -> Horizontal Flip` | None | Mirrors selected items across the vertical axis. |
+| `Edit -> Vertical Flip` | None | Mirrors selected items across the horizontal axis. |
+| `Edit -> Align Items...` | `Shift+A` | Opens the alignment dialog for edge or guide-line alignment. |
+| `Edit -> Selection -> Select All` | `Ctrl+A` | Selects every item in the symbol view. |
+| `Edit -> Selection -> Unselect All` | None | Clears the current selection. |
+| `Edit -> Cellview Properties...` | None | Opens the symbol attributes and label summary dialog. |
+
+### Create Menu
+
+<!-- Screenshot: Symbol editor Create menu -->
+
+| Action | Shortcut | Notes |
+|---|---|---|
+| `Create -> Create Line...` | `W` | Draw a line segment: click to start, release to end. |
+| `Create -> Create Rectangle...` | `R` | Click two diagonal corners to define the rectangle. |
+| `Create -> Create Polygon...` | None | Left-click to add points; double-click to finish. |
+| `Create -> Create Circle...` | None | Click the centre point, then drag to set the radius. |
+| `Create -> Create Arc...` | None | Click two diagonal corners; arc direction follows the diagonal angle. |
+| `Create -> Create Label...` | `L` | Opens the label dialog; choose Normal, NLPLabel, or PyLabel type. |
+| `Create -> Create Pin...` | `P` | Opens the pin dialog to set pin name, type, and direction. |
+
+### Options Menu
+
+<!-- Screenshot: Symbol editor Options menu -->
+
+The symbol editor inherits the `Options` menu from the base editor window.
+
+- `Options -> Display Config...`: configure the grid display (dot or line grid) and the major/snap grid spacing.
+- `Options -> Selection Config...`: choose between **partial** (intersects items) and **full** (contains items entirely) selection mode.
+
+<!-- Screenshot: Display Config dialog -->
+<!-- Screenshot: Selection Config dialog -->
+
+| Action | Notes |
+|---|---|
+| `Options -> Display Config...` | Major grid, snap grid, dot vs. line grid background. |
+| `Options -> Selection Config...` | Partial selection allows rubber-band to intersect shapes; full selection requires full containment. |
+
+### Tools Menu
+
+<!-- Screenshot: Symbol editor Tools menu -->
+
+| Action | Notes |
+|---|---|
+| `Tools -> Read Only` | Toggle; when checked, no edits are permitted in the current view. |
+
 ## Lines
 
 Lines are drawn by pointing-and-pressing left mouse button at the start and releasing at the
@@ -26,7 +159,7 @@ end
 point of the line. Lines can be horizontal or vertical. A drawn line can be edited either by
 selecting it and pressing `q` key
 
-<img src="assets/Screenshot_20230214_204324.png" class="image fit" />
+<!-- Screenshot: Line properties dialog -->
 
 or by selecting `stretch` mode (`m`-key or selecting `stretch` option at the right-mouse
 button
@@ -34,7 +167,7 @@ click). Then, select either end of the line, the line will turn red and selected
 will
 be indicated by a circle.
 
-<img src="assets/stretchSymbolLine.png" class="image fit" />
+<!-- Screenshot: Stretching a symbol line -->
 
 ## Circles
 
@@ -45,7 +178,7 @@ properties dialogue (select the circle and press `q` key or select the `Properti
 in
 the contextual menu),
 
-<img src="assets/Screenshot_20230214_214328.png"  class="image fit" />
+<!-- Screenshot: Circle properties dialog -->
 
 or by pressing `m` key or selecting `stretch` option. The circle will turn red and a hand
 shape
@@ -53,7 +186,7 @@ will denote that stretch mode is activated. Just move the hand-cursor so that th
 the
 right size.
 
-<img src="assets/Screenshot_20230214_214720.png" class="image fit"/>
+<!-- Screenshot: Stretching a circle -->
 
 Beyond drawing a the symbol outline, the symbol editor can also indicate pins, where the
 element
@@ -65,13 +198,13 @@ Rectangles are similarly created by pressing mouse button at one corner and then
 it at
 the other diagonal corner.
 
-<img src="assets/Screenshot_20230214_215123.png" class="image fit" />
+<!-- Screenshot: Rectangle creation example -->
 
 Rectangles can be similarly edited using properties dialogues or stretching any side by
 selecting that side after pressing `m` key or selecting `stretch` option in the contextual
 menu.
 
-<img src="assets/Screenshot_20230214_215437.png"  class="image fit" />
+<!-- Screenshot: Rectangle properties or stretch example -->
 
 ## Arcs
 
@@ -91,7 +224,7 @@ stretching.
 One caveat in stretching is that if the bounding rectangle of a stretched arc is flipped, it
 will be saved correctly in the cellview file. This is a known bug.
 
-<img src="assets/Screenshot_20230214_215836.png"  class="image fit"/>
+<!-- Screenshot: Arc creation or stretch example -->
 
 ## Polygons
 
@@ -115,7 +248,7 @@ now clicks another point on the editor, a *quadrilateral* will be created. Simil
 another point will yield a
 pentagram and so on.
 
-<img src="assets/createSymbolPolygon.png"  class="image fit" />
+<!-- Screenshot: Polygon creation example -->
 
 A polygon can be edited in a few different ways. The easiest is to select the polygon and
 press `S` key to stretch the polygon. Now press on one of the corners of the polygon, if the
@@ -123,7 +256,7 @@ corner is selected, a blue circle will be placed at that corner. Now move your c
 pressing right mouse button and release it when you polygon corner is where you want it to
 be:
 
-<img src="assets/symbolPolygonStretch.png"  class="image fit" />
+<!-- Screenshot: Polygon stretch example -->
 
 Polygons can be also be edited using a dialogue. Select the polygon and bring up the
 `Symbol Polygon Properties` dialogue. All the points will be listed with their x and y
@@ -132,7 +265,7 @@ edit that point. Alternatively, a new point can be edited using the last empty r
 that row is edited, a new row is created for further point entry. There can be up to 999
 points in a polygon.
 
-<img src="assets/symbolPolygonEditDialogue.png" class="small-image"/>
+<!-- Screenshot: Symbol polygon properties dialog -->
 
 ## Pins
 
@@ -144,7 +277,7 @@ menu. Note that pin direction and pin type information is not saved or used for 
 cell
 views at the moment.
 
-<img src="assets/Screenshot_20230214_220729.png" class="image fit” />
+<!-- Screenshot: Create pin dialog -->
 
 ## Labels
 
@@ -236,7 +369,7 @@ There are three types of labels:
    callbacks can use all the
    facilities of Python, including advanced libraries, to calculate parameters dynamically.
 
-   <img src="assets/Screenshot_20230214_221911.png" class="image fit" />
+    <!-- Screenshot: Python label example -->
 
    Labels can be also be hidden to reduce the clutter in the schematic instance of a symbol.
    Hidden labels are as valid as visible labels. Label properties dialogue also
@@ -257,9 +390,9 @@ Some of the important attributes for a symbol are summarized below:
 
 | Attribute Name          | Attribute Use                                           | Example                                                              |
 |-------------------------|---------------------------------------------------------|----------------------------------------------------------------------|
-| SpiceNetlistLine        | Symbol cellview  used in netlisting                     | `M@instName @pinList %modelName w=@w l=@l nf=@nf  as=@as m=@m`       |
-| XyceVerilogaNetlistLine | Veriloga cellview used in netlisting                    | `Yres @instName @pinList  resModel @R`                               |
-| XyceSpiceNetlistLine    | Spice cellview used in netlisting                       | `X@instName @pinList newckt`                                         |
+| SpiceNetlistLine        | Netlist template used for symbol/spice/veriloga views   | `M@instName %pinOrder %modelName w=@w l=@l nf=@nf as=@as m=@m`      |
+| SpiceNetlistLine        | Veriloga-style template example                         | `Yres @instName %pinOrder resModel @R`                               |
+| SpiceNetlistLine        | Spice subckt template example                           | `X@instName %pinOrder newckt`                                        |
 | vaModelLine             | Used as a model line for Veriloga netlisting            | `.MODEL resModel res R = 1`                                          |
 | vaHDLLine               | Used to by Revolution EDA to create linkable modules    | *`.HDL /home/user/exampleLibraries/analogLib/resVa/res.va`           |
 | pinOrder                | To sync pin order between netlists of various cellviews | `PLUS, MINUS`                                                        |
@@ -273,13 +406,13 @@ for `SpiceNetlistLine` in the table above where `modelName` attribute is referre
 `%modelName`.  `pinOrder`
 attribute is important to synchronise the various formats for netlisting. It should list all
 symbol pins separated by
-commas in the order required for the netlisting. This string will replace `@pinList` string
+commas in the order required for the netlisting. This string will replace `%pinOrder` token
 in the attributes.
 
 Attributes are defined in the `Cellview properties` dialogue that can be accessed under
 `Edit` menu:
 
-<img src="assets/Screenshot_20230214_225857.png" class="image fit" />
+<!-- Screenshot: Cellview properties dialog -->
 
 This dialogue has two parts. The first part summarises the already defined labels. Label
 properties can be changed also
@@ -302,6 +435,10 @@ should add those attributes manually in the symbol editor window.
 
 ### Required attributes for netlisting
 
+The current netlister implementation in `schematicEditor.xyceNetlist` uses
+`SpiceNetlistLine` as the netlist template key for symbol, spice, and veriloga views.
+In templates, use `%pinOrder` to emit the expanded connection list.
+
 #### Symbol
 
 If a *symbol* cellview is to be used in the netlisting, these are the minimum attributes
@@ -310,10 +447,11 @@ symbol.
 
 | Attribute Name   | Example                                                        |
 |------------------|----------------------------------------------------------------|
-| SpiceNetlistLine | `M@instName @pinList %modelName w=@w l=@l nf=@nf  as=@as m=@m` |
+| SpiceNetlistLine | `M@instName %pinOrder %modelName w=@w l=@l nf=@nf as=@as m=@m` |
 | pinOrder         | `D, G, B, S`                                                   |
 
 Note that another attribute `modelName` needs to be defined for the example in the table.
+`pinOrder` controls the net order used by `%pinOrder` during netlisting.
 
 #### Veriloga
 
@@ -324,10 +462,12 @@ added to the symbol.
 
 | Attribute Name          | Example                                                    |
 |-------------------------|------------------------------------------------------------|
-| XyceVerilogaNetlistLine | `Yres @instName @pinList  resModel @R`                     |
+| SpiceNetlistLine        | `Yres @instName %pinOrder resModel @R`                     |
 | vaModelLine             | `.MODEL resModel res R = 1`                                |
 | vaHDLLine               | *`.HDL /home/user/exampleLibraries/analogLib/resVa/res.va` |
 | pinOrder                | a, b, c                                                    |
+
+`vaModelLine` and `vaHDLLine` are collected and written to the netlist output.
 
 #### Spice
 
@@ -337,9 +477,11 @@ netlist inclusion of a SPICE subcircuit are summarised in the table below:
 
 | Attribute Name       | Example                                                              |
 |----------------------|----------------------------------------------------------------------|
-| XyceSpiceNetlistLine | `X@instName @pinList newckt`                                         |
+| SpiceNetlistLine     | `X@instName %pinOrder newckt`                                        |
 | incLine              | `.INC /home/user/exampleLibraries/anotherLibrary/example1/newckt.sp` |
 | pinOrder             | PLUS, MINUS                                                          |
+
+`incLine` is collected and emitted as an include directive in the generated netlist.
 
 ## Other Editing functions
 
@@ -353,4 +495,25 @@ the origin point of the symbol editor, it can use `Move Origin` menu item under 
 Once it is selected, click at the new origin point. Hereafter, all the editing functions
 will
 refer to the new origin point.
+
+## Context Menu (Right-click on Item)
+
+Right-clicking on a selected item opens a context menu with the most frequently needed
+operations without navigating the menu bar.
+
+<!-- Screenshot: Symbol editor context menu -->
+
+| Action | Shortcut | Notes |
+|---|---|---|
+| Copy | `C` | Copies the selected item; paste with `Edit -> Paste`. |
+| Move | None | Starts interactive move mode for the selected item. |
+| Move By... | None | Opens a dialog for a precise X/Y offset move. |
+| Vertical Flip | None | Mirrors the item across the horizontal axis. |
+| Horizontal Flip | None | Mirrors the item across the vertical axis. |
+| Rotate | `Ctrl+R` | Rotates the item 90° clockwise. |
+| Delete | `Delete` | Removes the item from the symbol. |
+| Object Properties... | `Q` | Opens the property dialog for the item (shape, pin, or label). |
+| Select All | `Ctrl+A` | Selects every item in the symbol view. |
+| Unselect All | None | Clears the current selection. |
+| Stretch | `S` | Enters stretch mode for the selected item. |
 

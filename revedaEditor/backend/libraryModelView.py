@@ -580,7 +580,7 @@ class designLibrariesColumnView(BaseDesignLibrariesView):
         # Find or create cell
         cellItem = libm.getCellItem(selectedLibItem, cellName)  # noqa: F811
         if not cellItem:
-            cellItem = libb.createCell(self.libBrowsW, self.libraryModel, selectedLibItem,
+            cellItem = libb.createCell(self.libBrowsW,  selectedLibItem,
                                        cellName)
 
         # Check if view already exists

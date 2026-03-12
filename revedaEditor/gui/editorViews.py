@@ -336,7 +336,6 @@ class schematicView(editorView):
         super().__init__(scene, parent)
         self.viewScene: schematicScene = scene
         self.parent = parent
-        self.viewScene.wireEditFinished.connect(self.mergeSplitViewNets)
 
     def mousePressEvent(self, event):
         self.viewRect = self.mapToScene(self.rect()).boundingRect().toRect()
@@ -345,10 +344,10 @@ class schematicView(editorView):
 
     def mouseReleaseEvent(self, event):
         self.viewRect = self.mapToScene(self.rect()).boundingRect().toRect()
-        self.pruneShortNets()
-        self.mergeSplitViewNets()
-
         super().mouseReleaseEvent(event)
+        if not (self.viewScene.editModes.drawWire or self.viewScene.editModes.drawBus):
+            self.pruneShortNets()
+            self.mergeSplitViewNets()
 
     def pruneShortNets(self):
         """Remove nets shorter than snap spacing."""
