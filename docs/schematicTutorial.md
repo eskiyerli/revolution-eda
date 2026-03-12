@@ -41,7 +41,10 @@ The table below maps common Virtuoso schematic actions to Revolution EDA equival
 4. Add pins for hierarchy and symbol generation with `Create -> Pin`.
 5. Annotate with text labels as needed.
 6. Generate a symbol using `Create -> Create Symbol...`.
-7. Netlist or run simulation via `Simulation` menu.
+7. Create a simulation testbench using Revolution EDA Simulation and Analysis Plugin (Revedasim).
+8. Alternatively, just netlist using `Simulation -> Create Netlist...` and use a third-party tool for
+circuit simulations and verification.
+
 
 <!-- Screenshot: Typical design flow overview -->
 
@@ -138,15 +141,14 @@ Similarly to `Align Edges` option, the user can select alignment direction (hori
 
 #### Edit Menu (Hierarchy)
 
-- `Edit -> Hierarchy -> Go Down`: open selected instance in a child view. A dialogue window opens allowing the user to choose one of the available views to descend to. 
+- `Edit -> Hierarchy -> Go Down`: open selected instance in a child view. A dialogue window opens allowing the user to choose one of the available views to descend to. The user can also use `Shift+e` key combination to go down an instance.
   The view types that can be descended into are:
   - Schematic: Opens the schematic editor for the instance.
   - Symbol: Opens the symbol editor for the instance.
   - Verilog-a: Opens the Verilog-a editor for the instance.
   - Spice: Opens the spice editor for the instance.
   Schematic and Symbol editors have additional buttons on their toolbars for moving back up to hierarchy when they are started with hierarchy operation. Verilog-a and Spice editors also offer the import dialogue when the editing is finished and the window is closed.  
-- `Edit -> Hierarchy -> Go Up`: return to the parent schematic. 
-
+- `Edit -> Hierarchy -> Go Up`: return to the parent schematic. Schematic view is updated if there is a change in the instance symbol.
 
 
 ### Edit menu actions and shortcuts:
@@ -194,6 +196,14 @@ Such an instance array will be expanded when netlisting to create a list of inst
 - `Create -> Net`: enter wire mode and draw orthogonal connections normally between instance 
   pins. You can name the nets using `Edit-> Net Name` menu item, pressing `l` key or using 
   net properties dialogue by selecting the net and pressing `q` key.
+
+  Net behaviour highlights:
+
+  - Orthogonal routing with automatic bends
+  - Snap-to-pin and snap-to-net
+  - Collinear merge into a single segment
+  - Automatic junction dots on T-connections
+
 - `Create -> Bus`: enter a bus, i.e. an ordered bundle of wires. Nets and busses are 
   interchangeable. Busses are drawn wider and have normally more than one wire bundled together.
   A bus is indicated with bus notation: `bus_name<high:low>` or `bus_name<low:high>`. 
@@ -201,6 +211,7 @@ Such an instance array will be expanded when netlisting to create a list of inst
 - `Create -> Pin`: place a schematic pin with direction (Input/Output/InOut). 
 Like busses, a schematic can also have a vector notation to connect indicating more than one pin
 is bundled.
+
 <img src="assets/schematicCreatePin.png"  class="small-image" />
 
 - `Create -> Text`: place a text annotation on schematic to aid the documentation. Select the menu item or press `Shift+L` key combination to open `Edit Text` menu. Write your annotation text in the provided space. Your text can have more than one paragraph and text breaks.
@@ -260,144 +271,76 @@ Both of these settings are saved to schematic file and will be reloaded with the
 
 <img src="assets/schematicFindRelatedEditorsDialogue.png" class="image fit" />
 
+## Context Menu (Right-click on Item)
+
+Right-clicking a selected item in the schematic opens a context menu with common edit and hierarchy actions.
+
+<!-- Screenshot: Schematic editor context menu -->
+
+| Action | Shortcut | Notes |
+| --- | --- | --- |
+| Copy | `C` | Copies the selected item(s); paste with `Edit -> Paste`. |
+| Move | None | Starts interactive move mode for the current selection. |
+| Move By... | None | Opens precise X/Y displacement dialog for selected item(s). |
+| Vertical Flip | None | Mirrors selected item(s) across the horizontal axis. |
+| Horizontal Flip | None | Mirrors selected item(s) across the vertical axis. |
+| Rotate | `Ctrl+R` | Rotates selected item(s) around the chosen pivot. |
+| Delete | `Delete` | Removes selected item(s) from the schematic. |
+| Object Properties... | `Q` | Opens the object properties dialog. |
+| Select All | `Ctrl+A` | Selects all items in the active schematic view. |
+| Unselect All | None | Clears current selection. |
+| Ignore | None | Toggles netlist ignore for selected symbol instance(s). Ignored symbols are commented out during netlisting. |
+| Go Down | `Shift+E` | Descends hierarchy into selected instance (schematic/symbol/veriloga/spice view). |
+
+Notes:
+- `Ignore` applies to schematic symbol instances. If non-symbol objects are selected, this action has no effect on netlisting.
+- `Go Down` is meaningful when an instance is selected.
+
 ### Simulation Menu
 
-- `Simulation -> Create Netlist...`: export a netlist for the current view.
+- `Simulation -> Create Netlist...`: export a netlist for the current view. At the moment, SPICE like netlists are supported. Spectre/VACASK type netlist support is forthcoming.
+
+<img src="assets/schematicExportNetlistDialogue.png" class="image fit" />
+
+Revolution EDA can use two types of views for netlist creation:
+
+1. **Schematic** View: The netlisting of a schematic view is managed through switch view list and stop view.  
+
+    - **Switch view list**: preferred view order (schematic vs veriloga vs symbol)
+    - **Stop view**: stop traversal at a given view (for example `symbol`)
+2. **Config view**: Config view is created through [**Config Editor**](./configEditor.md) which allows cellview selection for netlisting per cell. 
+
+For example, a schematic cellview can be used for the initial stages of the design, while an extracted cellview as a SPICE netlist can be created for final verification of the block.
+
+There is also the option of netlisting the circuit as 
+SPICE subcircuit. 
+
+Under the selected **export directory**, the netlist will be placed at `exportDirectory/libraryName/cellName/cellviewName` directory as `cellName_cellviewName.cir`.
+
+For example, let's assume that you are netlisting this schematic cellview:
+**Library Name**: ihp_designs
+**Cell Name**: tb_tia
+**Cellview Name**: schematic
+
+And you have selected `exportDirectory` as `/home/user/reveda_exports`. The netlist will be placed at the following path:
+
+```
+/home/user/reveda_exports/ihp_designs/tb_tia/schematic/tb_tia_schematic.cir
+```
+
 - `Simulation -> Simulation Environment...`: open simulation UI (requires `revedasim` plugin).
 
-<!-- Screenshot: Simulation menu -->
+Similar to `Create Netlist...` menu item, this menu allows you to use *schematic* or *config* celviews to create a **revbench** cellview. 
 
-## Core Workflows
+A **revbench** cellview collects all the information necessary to run a simulation for a testbench. Among others, the user can:
+1. Setup simulation analyses.
+2. Import variables from the testbench schematic.
+3. Select simulator path and number of concurrent runs.
+4. Select output signals (node voltage or terminal current)
+5. Model libraries.
+6. Included files.
+7. Plot simulation outputs.
+8. Backannotate transient, DC and AC analysis outputs.
 
-### 1) Place Instances
+<img src="assets/schematicCreateRevbenchView.png" class="small-image" />
 
-Use any of the following:
-
-- Press `i`
-- `Create -> Instance...`
-- Toolbar instance button
-
-The instance dialog lists symbol views. Select one, click `OK`, then click in the canvas.
-Auto-generated instance names follow the symbol's naming label (for example `[@instName]`).
-
-<!-- Screenshot: Instance selection dialog -->
-
-Open instance properties with `q`:
-
-- Change instance name, location, and rotation
-- Edit label values (including PyLabel-evaluated parameters)
-- View read-only symbol attributes
-
-<!-- Screenshot: Instance properties dialog -->
-
-Missing instance views appear as a gray placeholder box with full library path.
-
-<!-- Screenshot: Missing instance placeholder -->
-
-### 2) Wire and Name Nets
-
-Enter wire mode with `w`.
-
-Behavior highlights:
-
-- Orthogonal routing with automatic bends
-- Snap-to-pin and snap-to-net
-- Collinear merge into a single segment
-- Automatic junction dots on T-connections
-
-Use `Net Properties` to name a net. The name propagates across connected segments.
-
-<!-- Screenshot: Net naming dialog -->
-
-Net highlighting:
-
-- Toggle `Tools -> Highlight Net`
-- Hover a net to display the full connected set
-
-<!-- Screenshot: Net highlight overlay -->
-
-### 3) Create Pins
-
-Press `p` and place schematic pins for hierarchical connectivity.
-
-Pin directions:
-
-- Input
-- Output
-- InOut
-
-Pins snap to wires and re-route connected nets when moved.
-
-<!-- Screenshot: Pin placement + snapping example -->
-
-### 4) Text and Annotation
-
-Use text tool to place annotations with monospaced fonts.
-Rotate and edit text in the property dialog (`q`).
-
-<!-- Screenshot: Text entry dialog -->
-<!-- Screenshot: Text rotation controls -->
-
-### 5) Generate a Symbol from a Schematic
-
-Create a symbol from pin definitions:
-
-1. Place all pins in the schematic.
-2. `Create -> Create Symbol...`
-3. Enter symbol view name and confirm overwrite if needed.
-4. Adjust stub length and spacing if desired.
-
-<!-- Screenshot: Create Symbol dialog -->
-<!-- Screenshot: Symbol properties dialog -->
-
-The generated symbol opens in a new window.
-
-<!-- Screenshot: Generated symbol view -->
-
-## Netlisting and Simulation
-
-### Netlisting
-
-Start netlisting with `Simulation -> Create Netlist...`.
-
-Key concepts:
-
-- **Switch view list**: preferred view order (schematic vs veriloga vs symbol)
-- **Stop view list**: stop traversal at a given view (for example `symbol`)
-- **Config view**: explicit per-cell view selection
-
-<!-- Screenshot: Export Netlist dialog -->
-
-The netlister runs in background threads and produces consistent output file naming:
-
-```
-cellName_viewName.cir
-```
-
-### Simulation Integration
-
-Simulation is provided by the `revedasim` plugin.
-
-- Revbench-based testbenches
-- DC/AC/transient/noise analyses
-- Parameter sweeps
-- Interactive net/component selection
-
-<!-- Screenshot: Simulation environment window -->
-
-## Hierarchy Traversal
-
-Go down into a cell from a selected instance:
-
-- Toolbar `Go Down`
-- `Edit -> Hierarchy -> Go Down`
-- `Shift+E`
-- Context menu `Go Down`
-
-Select view type (schematic/symbol) and open in edit or read-only mode.
-
-<!-- Screenshot: Go Down dialog -->
-
-Return to parent with `Go Up` and the schematic updates immediately.
-
-<!-- Screenshot: Go Up toolbar button -->

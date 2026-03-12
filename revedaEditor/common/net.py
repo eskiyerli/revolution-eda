@@ -227,8 +227,7 @@ class schematicNet(QGraphicsItem):
                         self.setZValue(self.zValue() - 10)
                         self.scene().selectedNet = None
                 case QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
-                    self._finishSnapLines()
-                    self._snapLines = dict()
+                    self.updateSnapLines()
 
         return super().itemChange(change, value)
 
@@ -333,7 +332,7 @@ class schematicNet(QGraphicsItem):
                                 netItem.inherit(snapLine)
                             scene.addListUndoStack(newNets)
                         scene.removeItem(snapLine)
-                self._snapLines = dict()
+                self._netSnapLines = {}
             except Exception as e:
                 # Log error but continue processing other guidelines
                 scene.logger.error(f"Error processing snap lines: {e}")

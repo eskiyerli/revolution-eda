@@ -195,7 +195,7 @@ class schematicScene(editorScene):
 
             self._newPin.setPos(self.mouseMoveLoc - self._newPin.start)
         elif self._newNet and (self.editModes.drawWire or self.editModes.drawBus):
-            netEndPoint = self.findSnapPoint(self.mouseMoveLoc, set())
+            netEndPoint = self.findSnapPoint(self.mouseMoveLoc, {self._newNet})
             self._snapPointRect.setPos(netEndPoint)
             self._newNet.draftLine = QLineF(self._newNet.draftLine.p1(),
                                             netEndPoint)
@@ -225,6 +225,11 @@ class schematicScene(editorScene):
         self.messageLine.setText(self.messages[self.editModes.mode()])
 
     def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent):
+        # Finalize snap lines for group net moves before the group is destroyed in super()
+        if self.editModes.moveItem and self.selectedItemGroup:
+            for item in self.selectedItemGroup.childItems():
+                if isinstance(item, snet.schematicNet):
+                    item._finishSnapLines()
         return super().mouseReleaseEvent(event)
 
     def _handleMouseRelease(self, mousePos: QPoint,
@@ -281,22 +286,22 @@ class schematicScene(editorScene):
 
     def _handleDrawWire(self, eventLoc: QPoint) -> None:
         """Handle draw wire logic with continuous mode."""
-        startSnapPoint = self.snapToGrid(self.findSnapPoint(eventLoc, set()))
+        ignoredSet = {self._newNet} if self._newNet is not None else set()
+        snapPoint = self.snapToGrid(self.findSnapPoint(eventLoc, ignoredSet))
 
         if self._newNet is None:
             # Start new net
-            self._snapPointRect.setPos(startSnapPoint)
-            self._newNet = snet.schematicNet(startSnapPoint, startSnapPoint, 0)
+            self._snapPointRect.setPos(snapPoint)
+            self._newNet = snet.schematicNet(snapPoint, snapPoint, 0)
             self.addUndoStack(self._newNet)
         else:
-            # Continue from last point
-            self._newNet.draftLine = QLineF(self._newNet.draftLine.p1(),
-                                            self.snapToGrid(eventLoc))
+            # Continue from last point – use same snapPoint for segment end and next start
+            self._newNet.draftLine = QLineF(self._newNet.draftLine.p1(), snapPoint)
             self.wireEditFinished.emit(self._newNet)
 
-            # Start next segment from endpoint
-            self._snapPointRect.setPos(startSnapPoint)
-            self._newNet = snet.schematicNet(startSnapPoint, startSnapPoint, 0)
+            # Start next segment from same endpoint
+            self._snapPointRect.setPos(snapPoint)
+            self._newNet = snet.schematicNet(snapPoint, snapPoint, 0)
             self.addUndoStack(self._newNet)
 
     def _handleAlignItemLine(self, eventLoc: QPoint) -> None:
