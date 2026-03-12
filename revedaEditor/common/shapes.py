@@ -91,7 +91,9 @@ class symbolShape(QGraphicsItem):
 
     @stretch.setter
     def stretch(self, value: bool):
-        self._stretch = value
+        if self._stretch != value:
+            self._stretch = value
+            self.update()
 
     @property
     def draft(self) -> bool:
@@ -822,9 +824,9 @@ class symbolLine(symbolShape):
             self.setFlag(QGraphicsItem.ItemIsMovable, False)
             eventPos = event.pos().toPoint()
             # Check if click is near start or end point
-            if (eventPos - self._start).manhattanLength() <= 2:
+            if (eventPos - self._start).manhattanLength() <= self._ELLIPSE_SIZE:
                 self._stretchSide = "start"
-            elif (eventPos - self._end).manhattanLength() <= 2:
+            elif (eventPos - self._end).manhattanLength() <= self._ELLIPSE_SIZE:
                 self._stretchSide = "end"
             else:
                 self._stretchSide = None

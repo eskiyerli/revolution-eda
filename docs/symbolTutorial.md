@@ -78,7 +78,7 @@ The File menu handles saving, printing, and exporting the symbol cellview.
 
 ### View Menu
 
-<!-- Screenshot: Symbol editor View menu -->
+<img src="assets/symbolEditorViewMenu.png"  class="small-image" />
 
 | Action | Shortcut | Notes |
 |---|---|---|
@@ -90,7 +90,7 @@ The File menu handles saving, printing, and exporting the symbol cellview.
 
 ### Edit Menu
 
-<!-- Screenshot: Symbol editor Edit menu -->
+<img src="assets/symbolEditorEditMenu.png"  class="small-image" />
 
 The Edit menu provides shape manipulation, transformation, and undo/redo commands.
 
@@ -115,7 +115,7 @@ The Edit menu provides shape manipulation, transformation, and undo/redo command
 
 ### Create Menu
 
-<!-- Screenshot: Symbol editor Create menu -->
+<img src="assets/symbolEditorCreateMenu.png"  class="small-image" />
 
 | Action | Shortcut | Notes |
 |---|---|---|
@@ -129,15 +129,19 @@ The Edit menu provides shape manipulation, transformation, and undo/redo command
 
 ### Options Menu
 
-<!-- Screenshot: Symbol editor Options menu -->
+<img src="assets/symbolEditorOptionsMenu.png"  class="small-image" />
 
 The symbol editor inherits the `Options` menu from the base editor window.
 
 - `Options -> Display Config...`: configure the grid display (dot or line grid) and the major/snap grid spacing.
 - `Options -> Selection Config...`: choose between **partial** (intersects items) and **full** (contains items entirely) selection mode.
 
-<!-- Screenshot: Display Config dialog -->
-<!-- Screenshot: Selection Config dialog -->
+<table>
+    <tr>
+        <td><img src="assets/schematicDisplayOptionsDialogue.png"  class="small-image" /></td>
+        <td><img src="assets/schematicSelectionConfigDialogue.png"  class="small-image" /></td>
+    </tr>
+</table> 
 
 | Action | Notes |
 |---|---|
@@ -146,11 +150,12 @@ The symbol editor inherits the `Options` menu from the base editor window.
 
 ### Tools Menu
 
-<!-- Screenshot: Symbol editor Tools menu -->
 
 | Action | Notes |
 |---|---|
 | `Tools -> Read Only` | Toggle; when checked, no edits are permitted in the current view. |
+
+## Drawing Actions
 
 ## Lines
 
@@ -159,15 +164,12 @@ end
 point of the line. Lines can be horizontal or vertical. A drawn line can be edited either by
 selecting it and pressing `q` key
 
-<!-- Screenshot: Line properties dialog -->
+<img src="assets/symbolLineProperties.png" class="small-image" />
 
-or by selecting `stretch` mode (`m`-key or selecting `stretch` option at the right-mouse
-button
-click). Then, select either end of the line, the line will turn red and selected line end
-will
-be indicated by a circle.
+or by selecting `stretch` mode (`s`-key or selecting `stretch` option at the context menu accessible with right-mouse button click). Then, select either end of the line, the line will turn red and end points of the line will be indicated by a circle. The user should click on which ever end point is to be changed and move it to the new location and release the left mouse button.
 
-<!-- Screenshot: Stretching a symbol line -->
+<img src="assets/symbolEditorStretchLine.png" class="small-image" />
+
 
 ## Circles
 
