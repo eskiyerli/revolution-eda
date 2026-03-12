@@ -357,7 +357,7 @@ class editorScene(QGraphicsScene):
         self.itemCycler = None
         self.newAlignLine = None
         self.newNet = None
-        self.stretchNet = None
+        # self.stretchNet = None
         self.newInstance = None
         self.newPin = None
         self.newText = None
@@ -373,13 +373,9 @@ class editorScene(QGraphicsScene):
             self.update()  # update the scene
 
     def stretchSelectedItems(self):
-        if self.selectedItems() is not None:
-            try:
-                for item in self.selectedItems():
-                    if hasattr(item, "stretch"):
-                        item.stretch = True
-            except AttributeError:
-                self.messageLine.setText("Nothing selected")
+        for item in self.selectedItems():
+            if hasattr(item, "stretch"):
+                item.stretch = True
 
     def reloadScene(self):
         """Reload scene with proper painter state management."""

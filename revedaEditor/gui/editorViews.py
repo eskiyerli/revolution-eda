@@ -121,6 +121,9 @@ class editorView(QGraphicsView):
         # Calculate the delta and adjust the scene position
         delta = newPos - oldPos
         self.translate(delta.x(), delta.y())
+        self.determineViewRect()
+    
+    def determineViewRect(self):
         if not self._viewRect_cached:
             self.viewRect = self.mapToScene(self.rect()).boundingRect().toRect()
             self._viewRect_cached = True
@@ -250,6 +253,7 @@ class editorView(QGraphicsView):
                     self.viewScene.editModes.setMode("zoomView")
 
             case Qt.Key.Key_Escape:
+                self.clearStretchItems()
                 self.viewScene.deselectAll()
                 self.viewScene.selectedItemsSet = set()
                 if self.viewScene.selectionRectItem:
@@ -305,6 +309,11 @@ class editorView(QGraphicsView):
             item.setSelected(True)
             self.viewScene.selectedItemsSet = {item}
 
+    def clearStretchItems(self):
+        self.determineViewRect()
+        for item in self.viewScene.items(self.viewRect):
+            if hasattr(item, "stretch"):
+                setattr(item, "stretch", False)
 
 class symbolView(editorView):
     def __init__(self, scene: symbolScene, parent):
