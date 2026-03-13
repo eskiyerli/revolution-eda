@@ -26,6 +26,8 @@
 import json
 # from hashlib import new
 import pathlib
+
+import orjson
 from copy import deepcopy
 from typing import List, Dict
 
@@ -611,8 +613,8 @@ class symbolScene(editorScene):
 
     def loadDesign(self, filePathObj: pathlib.Path) -> None:
         try:
-            with filePathObj.open("r") as file:
-                decodedData = json.load(file)
+            with filePathObj.open("rb") as file:
+                decodedData = orjson.loads(file.read())
             self.blockSignals(True)
             with self.measureDuration():
                 viewDict, gridSettings, *itemData = decodedData
@@ -625,7 +627,7 @@ class symbolScene(editorScene):
                 self.attributeList = []
                 self.createSymbolItems(itemData)
             self.itemsRef = set(self.items())
-        except (json.JSONDecodeError, FileNotFoundError) as e:
+        except (orjson.JSONDecodeError, FileNotFoundError) as e:
             self.logger.error(f"File error while loading symbol: {e}")
             self.attributeList = []
             self.clear()

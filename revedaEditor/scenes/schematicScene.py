@@ -26,6 +26,8 @@
 import json
 import os
 import pathlib
+
+import orjson
 from typing import Dict, List, Set, Tuple, Union
 
 from PySide6.QtCore import (QLineF, QPoint, QPointF, QRect, QRectF,
@@ -888,8 +890,8 @@ class schematicScene(editorScene):
             KeyError: If required grid settings are missing
         """
         try:
-            with filePathObj.open("r") as file:
-                decodedData = json.load(file)
+            with filePathObj.open("rb") as file:
+                decodedData = orjson.loads(file.read())
             with self.measureDuration():
                 if len(decodedData) < 2:
                     viewDict = decodedData[0] if decodedData else {}
@@ -906,10 +908,14 @@ class schematicScene(editorScene):
                     self.editorWindow.configureGridSettings(
                         decodedData[1].get("snapGrid",
                                            (self.majorGrid, self.snapGrid)))
-                self.createSchematicItems(itemData)
+                self.blockSignals(True)
+                try:
+                    self.createSchematicItems(itemData)
+                finally:
+                    self.blockSignals(False)
             self.itemsRefSet = set(self.items())
 
-        except (json.JSONDecodeError, FileNotFoundError) as e:
+        except (orjson.JSONDecodeError, FileNotFoundError) as e:
             self.logger.error(f"File error while loading schematic: {e}")
             return
         except KeyError as e:
@@ -920,8 +926,9 @@ class schematicScene(editorScene):
             return
 
     def createSchematicItems(self, itemsList: List[Dict]):
+        factory = lj.schematicItems(self)
         for itemDict in itemsList:
-            itemShape = lj.schematicItems(self).create(itemDict)
+            itemShape = factory.create(itemDict)
             if (isinstance(itemShape,
                            shp.schematicSymbol) and itemShape.counter > self.instanceCounter):
                 self.instanceCounter = itemShape.counter + 1

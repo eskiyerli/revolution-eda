@@ -850,7 +850,8 @@ class layoutScene(editorScene):
         except orjson.JSONDecodeError:
             self.logger.error("Invalid file format.")
             return False
-        except Exception:
+        except Exception as e:
+            self.logger.error(f"Unexpected error loading layout: {e}")
             return False
 
     def createLayoutItems(self, decoded_data: List[Dict[str, Any]]) -> None:

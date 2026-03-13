@@ -370,11 +370,16 @@ class symbolRectangle(symbolShape):
 
 
 class symbolCircle(symbolShape):
+
+
     def __init__(self, centre: QPoint, end: QPoint):
         super().__init__()
         xlen = abs(end.x() - centre.x())
         ylen = abs(end.y() - centre.y())
-        self._radius = int(math.sqrt(xlen ** 2 + ylen ** 2))
+        distance = math.sqrt(xlen ** 2 + ylen ** 2)
+        
+        self.calculateRadius(distance)
+
         self._centre = centre
         self._topLeft = self._centre - QPoint(self._radius, self._radius)
         self._rightBottom = self._centre + QPoint(self._radius, self._radius)
@@ -405,7 +410,9 @@ class symbolCircle(symbolShape):
     @radius.setter
     def radius(self, radius: int):
         self.prepareGeometryChange()
-        self._radius = radius
+        distance = float(radius)
+        
+        self.calculateRadius(distance)
         self._end = self._centre + QPoint(self._radius, 0)
         self._topLeft = self._centre - QPoint(self._radius, self._radius)
         self._rightBottom = self._centre + QPoint(self._radius, self._radius)
@@ -471,7 +478,16 @@ class symbolCircle(symbolShape):
             distance = math.sqrt((eventPos.x() - self._centre.x()) ** 2 + (
                     eventPos.y() - self._centre.y()) ** 2)
             self.prepareGeometryChange()
-            self._radius = distance
+            
+            # Snap to grid
+            if self.scene() and hasattr(self.scene(), 'snapTuple'):
+                grid = self.scene().snapTuple[0]
+                distance = round(distance / grid) * grid
+            
+            self._radius = int(distance)
+            self._topLeft = self._centre - QPoint(self._radius, self._radius)
+            self._rightBottom = self._centre + QPoint(self._radius, self._radius)
+            self._end = self._centre + QPoint(self._radius, 0)
 
     def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         super().mouseReleaseEvent(event)
@@ -479,11 +495,18 @@ class symbolCircle(symbolShape):
             self._startStretch = False
             self.setFlag(QGraphicsItem.ItemIsMovable, True)
             self.setFlag(QGraphicsItem.ItemIsSelectable, True)
-            self._topLeft = self._centre - QPoint(self._radius, self._radius)
-            self._rightBottom = self._centre + QPoint(self._radius, self._radius)
-            self._end = self._centre + QPoint(self._radius, 0)
+            # self._topLeft = self._centre - QPoint(self._radius, self._radius)
+            # self._rightBottom = self._centre + QPoint(self._radius, self._radius)
+            # self._end = self._centre + QPoint(self._radius, 0)
             self.setCursor(Qt.ArrowCursor)
 
+    def calculateRadius(self, distance):
+        # Snap to grid if scene is available
+        if self.scene() and hasattr(self.scene(), 'snapTuple'):
+            grid = self.scene().snapTuple[0]
+            distance = round(distance / grid) * grid
+        
+        self._radius = int(distance)
 
 class symbolArc(symbolShape):
     """
