@@ -90,8 +90,8 @@ class editorScene(QGraphicsScene):
         self.itemsAtPressSet = set()
         self._draftPen = QPen(QColor(0, 150, 0, 128), int(self.snapGrid / 2), Qt.DashLine)
         self._zoomPen = QPen(QColor(255, 0, 0, 255), 2, Qt.DashLine)
-        self._draftPen.setCosmetic(True)
-        self._zoomPen.setCosmetic(True)
+        self._draftPen.setCosmetic(False)
+        self._zoomPen.setCosmetic(False)
 
         # Initialize UI elements
         self.origin = QPoint(0, 0)

@@ -25,6 +25,7 @@
 from __future__ import annotations
 
 import datetime
+import functools
 import json
 import pathlib
 import re
@@ -608,6 +609,11 @@ class schematicContainer(edw.editorContainer):
 
 
 class xyceNetlist:
+    # Pre-compiled regex to strip dangling parameter assignments (e.g. ` width =`) left
+    # after token substitution.  Compiled once at class level avoids re.compile() on every
+    # netlist line inside the hot loop.
+    _PARAM_RE = re.compile(r'\s+\w+\s*=(?=\s|$)')
+
     def __init__(self, schematic, filePathObj: pathlib.Path, useConfig: bool = False,
                  topSubckt: bool = False):
         self.filePathObj = filePathObj
@@ -628,6 +634,9 @@ class xyceNetlist:
         self.includeLines = set()  # keeps track of include lines.
         self.vamodelLines = set()  # keeps track of vamodel lines.
         self.vahdlLines = set()  # keeps track of *.HDL lines.
+        # Caches to avoid repeated Qt model traversals for the same cells.
+        self._viewNameCache: dict[tuple, str] = {}  # (libName, cellName) -> netlist view name
+        self._cellItemCache: dict[tuple, object] = {}  # (libName, cellName) -> cellItem
 
     def __repr__(self):
         return f"xyceNetlist(filePathObj={self.filePathObj}, schematic={self.schematic}, useConfig={self._useConfig})"
@@ -672,7 +681,7 @@ class xyceNetlist:
             self.recursiveNetlisting(self.schematic, cirFile)
 
             # Write all subcircuit definitions at the end
-            if hasattr(self, 'subcircuitDefs') and self.subcircuitDefs:
+            if self.subcircuitDefs:
                 cirFile.write("\n* Subcircuit Definitions\n")
                 for subcktDef in self.subcircuitDefs:
                     cirFile.write(subcktDef)
@@ -694,25 +703,24 @@ class xyceNetlist:
         for elementSymbol in sceneSymbolSet:
             if elementSymbol.symattrs.get("NetlistIgnore") != "1" and (
                     not elementSymbol.netlistIgnore):
-                libItem = libm.getLibItem(schematic.libraryView.libraryModel,
-                                          elementSymbol.libraryName)
-                cellItem = libm.getCellItem(libItem, elementSymbol.cellName)
+                cellItem = self._getCellItem(elementSymbol.libraryName,
+                                             elementSymbol.cellName)
                 netlistView = self.determineNetlistView(elementSymbol, cellItem)
 
                 if "schematic" in netlistView:
                     lines = self.createXyceSymbolLine(elementSymbol)
                     content.extend(lines if isinstance(lines, list) else [lines])
-                    schematicItem = libm.getViewItem(cellItem, netlistView)
                     if netlistView not in self._stopViewList:
-                        schematicObj = schematicEditor(schematicItem, self.libraryDict,
-                                                       self.libraryView)
-                        schematicObj.loadSchematic()
-                        viewTuple = ddef.viewNameTuple(schematicObj.libName,
-                                                       schematicObj.cellName,
-                                                       schematicObj.viewName)
-
+                        # Check deduplication before loading the schematic to avoid
+                        # creating a schematicEditor object for every repeated instance.
+                        viewTuple = ddef.viewNameTuple(elementSymbol.libraryName,
+                                                       elementSymbol.cellName, netlistView)
                         if viewTuple not in self.netlistedViewsSet:
                             self.netlistedViewsSet.add(viewTuple)
+                            schematicItem = libm.getViewItem(cellItem, netlistView)
+                            schematicObj = schematicEditor(schematicItem, self.libraryDict,
+                                                           self.libraryView)
+                            schematicObj.loadSchematic()
                             expandedPinsString = self.expandPinNames(
                                 list(elementSymbol.pinNetMap.keys()))
                             subcktContent = []
@@ -731,9 +739,10 @@ class xyceNetlist:
                     content.extend(lines if isinstance(lines, list) else [lines])
             elif elementSymbol.netlistIgnore:
                 content.append(f"*{elementSymbol.instanceName} is marked to be ignored\n")
-            elif not elementSymbol.symattrs.get("NetlistIgnore", False):
+            else:
+                # NetlistIgnore attribute == "1" but netlistIgnore flag is False
                 content.append(
-                    f"*{elementSymbol.instanceName} has no SpiceNetlistLine attribute\n")
+                    f"*{elementSymbol.instanceName} is excluded via NetlistIgnore attribute\n")
 
     def recursiveNetlisting(self, schematicEdObj: schematicEditor, cirFile):
         """
@@ -763,31 +772,49 @@ class xyceNetlist:
     def processElementSymbol(self, elementSymbol, schematic, cirFile):
         if elementSymbol.symattrs.get("NetlistIgnore") != "1" and (
                 not elementSymbol.netlistIgnore):
-            libItem = libm.getLibItem(schematic.libraryView.libraryModel,
-                                      elementSymbol.libraryName)
-            cellItem = libm.getCellItem(libItem, elementSymbol.cellName)
+            cellItem = self._getCellItem(elementSymbol.libraryName,
+                                         elementSymbol.cellName)
             netlistView = self.determineNetlistView(elementSymbol, cellItem)
 
             # Create the netlist line for the item.
             self.createItemLine(cirFile, elementSymbol, cellItem, netlistView)
         elif elementSymbol.netlistIgnore:
             cirFile.write(f"*{elementSymbol.instanceName} is marked to be ignored\n")
-        elif not elementSymbol.symattrs.get("NetlistIgnore", False):
+        else:
+            # NetlistIgnore attribute == "1" but netlistIgnore flag is False
             cirFile.write(
-                f"*{elementSymbol.instanceName} has no SpiceNetlistLine attribute\n")
+                f"*{elementSymbol.instanceName} is excluded via NetlistIgnore attribute\n")
 
-    def determineNetlistView(self, elementSymbol, cellItem):
+    def _getCellItem(self, libraryName: str, cellName: str) -> libb.cellItem | None:
+        """Return the cellItem for (libraryName, cellName), cached to avoid repeated model traversals."""
+        key = (libraryName, cellName)
+        if key not in self._cellItemCache:
+            libItem = libm.getLibItem(self.libraryView.libraryModel, libraryName)
+            self._cellItemCache[key] = libm.getCellItem(libItem, cellName)
+        return self._cellItemCache[key]
+
+    def determineNetlistView(self, elementSymbol, cellItem) -> str:
+        cacheKey = (elementSymbol.libraryName, elementSymbol.cellName)
+        if cacheKey in self._viewNameCache:
+            return self._viewNameCache[cacheKey]
+
         viewItems = [cellItem.child(row) for row in range(cellItem.rowCount())]
         viewNames = [view.viewName for view in viewItems]
 
         if self._useConfig:
-            return self.configDict.get(elementSymbol.cellName)[1]
+            config_entry = self.configDict.get(elementSymbol.cellName)
+            result = config_entry[1] if config_entry else "symbol"
         else:
             # Iterate over the switch view list to determine the appropriate netlist view.
             for viewName in self._switchViewList:
                 if viewName in viewNames:
-                    return viewName
-            return "symbol"
+                    result = viewName
+                    break
+            else:
+                result = "symbol"
+
+        self._viewNameCache[cacheKey] = result
+        return result
 
     def createItemLine(self, cirFile, elementSymbol: shp.schematicSymbol,
                        cellItem: libb.cellItem, netlistView: str, ):
@@ -796,23 +823,22 @@ class xyceNetlist:
             for line in elementLines:
                 cirFile.write(f"{line}\n")
 
-            schematicItem = libm.getViewItem(cellItem, netlistView)
             if netlistView not in self._stopViewList:
-                schematicObj = schematicEditor(schematicItem, self.libraryDict,
-                                               self.libraryView)
-                schematicObj.loadSchematic()
-
-                viewTuple = ddef.viewNameTuple(schematicObj.libName, schematicObj.cellName,
-                                               schematicObj.viewName)
-
+                # Build viewTuple from symbol attributes before touching the filesystem;
+                # this avoids creating a heavy schematicEditor object for every instance
+                # of an already-netlisted cell (the common case in large designs).
+                viewTuple = ddef.viewNameTuple(elementSymbol.libraryName,
+                                               elementSymbol.cellName, netlistView)
                 if viewTuple not in self.netlistedViewsSet:
                     self.netlistedViewsSet.add(viewTuple)
+                    schematicItem = libm.getViewItem(cellItem, netlistView)
+                    schematicObj = schematicEditor(schematicItem, self.libraryDict,
+                                                   self.libraryView)
+                    schematicObj.loadSchematic()
                     expandedPinsString = self.expandPinNames(
                         list(elementSymbol.pinNetMap.keys()))
-                
                     subcktContent = []
                     self.collectSubcircuitContent(schematicObj, subcktContent)
-
                     subcktDef = f"\n.SUBCKT {schematicObj.cellName} {expandedPinsString}\n" + '\n'.join(
                         subcktContent) + "\n.ENDS\n"
                     self.subcircuitDefs.append(subcktDef)
@@ -847,24 +873,22 @@ class xyceNetlist:
             instNameToken = instNameLabel.labelName
             symbolLines = []
 
-            # Parse net information
-            netSizeList, netTupleList, netBaseNameList = [], [], []
-            for netName in elementSymbol.pinNetMap.values():
-                netBaseName, netSizeTuple = self.parseArrayNotation(netName)
-                netBaseNameList.append(netBaseName)
-                netTupleList.append(netSizeTuple)
-                netSizeList.append(abs(netSizeTuple[0] - netSizeTuple[1]) + 1)
+            # Pre-compute substitution lists once; avoids repeated dict iteration
+            # for every element in an arrayed instance (e.g. inst<0:99>).
+            attr_replacements = [(f"%{a}", v) for a, v in elementSymbol.symattrs.items()]
+            label_replacements = [(lbl.labelName, lbl.labelValue)
+                                  for lbl in elementSymbol.labels.values()]
 
             def processLine(line, netsList):
                 line = line.replace("%pinOrder", netsList)
-                for attrb, value in elementSymbol.symattrs.items():
-                    line = line.replace(f"%{attrb}", value)
-                return re.sub(r'\s+\w+\s*=(?=\s|$)', '', line)
+                for token, value in attr_replacements:
+                    line = line.replace(token, value)
+                return xyceNetlist._PARAM_RE.sub('', line)
 
             def createInstanceLine(instanceName):
                 line = baseNetlistLine.replace(instNameToken, instanceName)
-                for labelItem in elementSymbol.labels.values():
-                    line = line.replace(labelItem.labelName, labelItem.labelValue)
+                for labelName, labelValue in label_replacements:
+                    line = line.replace(labelName, labelValue)
                 return line
 
             def expandNet(netName):
@@ -901,7 +925,7 @@ class xyceNetlist:
     def createXyceSymbolLine(self, elementSymbol: shp.schematicSymbol) -> list[str]:
         return self._createNetlistLine(elementSymbol, "SpiceNetlistLine")
 
-    def createSpiceLine(self, elementSymbol: shp.schematicSymbol):
+    def createSpiceLine(self, elementSymbol: shp.schematicSymbol) -> list[str]:
         try:
             spiceLines = self.createXyceSymbolLine(elementSymbol)
             self.includeLines.add(elementSymbol.symattrs.get("incLine",
@@ -909,9 +933,9 @@ class xyceNetlist:
             return spiceLines
         except Exception as e:
             self._scene.logger.error(f"Spice subckt netlist error: {e}")
-            return f"*Netlist line is not defined for symbol of {elementSymbol.instanceName}\n"
+            return [f"*Netlist line is not defined for symbol of {elementSymbol.instanceName}\n"]
 
-    def createVerilogaLine(self, elementSymbol):
+    def createVerilogaLine(self, elementSymbol) -> list[str]:
         try:
             symbolLines = self._createNetlistLine(elementSymbol, "SpiceNetlistLine")
             self.vamodelLines.add(elementSymbol.symattrs.get("vaModelLine",
@@ -921,9 +945,10 @@ class xyceNetlist:
             return symbolLines
         except Exception as e:
             self._scene.logger.error(e)
-            return f"*Netlist line is not defined for symbol of {elementSymbol.instanceName}\n"
+            return [f"*Netlist line is not defined for symbol of {elementSymbol.instanceName}\n"]
 
     @staticmethod
+    @functools.lru_cache(maxsize=None)
     def parseArrayNotation(name: str) -> tuple[str, tuple[int, int]]:
         """
         Parse net/instance array notation like 'name<0:5>' into base name and index range.

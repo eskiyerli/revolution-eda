@@ -164,6 +164,8 @@ end
 point of the line. Lines can be horizontal or vertical. A drawn line can be edited either by
 selecting it and pressing `q` key
 
+
+
 <img src="assets/symbolLineProperties.png" class="small-image" />
 
 or by selecting `stretch` mode (`s`-key or selecting `stretch` option at the context menu accessible with right-mouse button click). Then, select either end of the line, the line will turn red and end points of the line will be indicated by a circle. The user should click on which ever end point is to be changed and move it to the new location and release the left mouse button.
@@ -176,23 +178,18 @@ or by selecting `stretch` mode (`s`-key or selecting `stretch` option at the con
 Circles are drawn by selecting a centre point, pressing left-mouse button at that point and
 releasing left-mouse button. It can be also edited similarly to a line either by displaying
 the
-properties dialogue (select the circle and press `q` key or select the `Properties` option
-in
-the contextual menu),
+properties dialogue (select the circle and press `q` key or select the `Properties` option in the contextual menu),
 
-<!-- Screenshot: Circle properties dialog -->
+<table>
+    <tr>
+        <td><img src="assets/symbolCreateCircle.png" class="small-image" /></td>
+        <td><img src="assets/symbolCircleProperties.png"  class="small-image" /></td>
+    </tr>
+</table> 
 
-or by pressing `m` key or selecting `stretch` option. The circle will turn red and a hand
-shape
-will denote that stretch mode is activated. Just move the hand-cursor so that the circle is
-the
-right size.
+Circles can be made larger or smaller, *stretched*, first selecting a circle and then by pressing `s` key or selecting `stretch` option in the context menu. The circle will turn red and a hand shape
+will denote that stretch mode is activated. Just move the hand-cursor so that the circle is the right size.
 
-<!-- Screenshot: Stretching a circle -->
-
-Beyond drawing a the symbol outline, the symbol editor can also indicate pins, where the
-element
-or the circuit is connected to the other elements or circuits.
 
 ## Rectangles
 

@@ -214,6 +214,16 @@ class schematicItems:
         self.libraryDict = scene.libraryDict
         self.snapTuple = scene.snapTuple
 
+    @staticmethod
+    @functools.lru_cache(maxsize=256)
+    def _load_sym_json(file_path_str: str):
+        """Cache symbol file contents keyed by path to avoid repeated I/O for repeated cells."""
+        try:
+            with open(file_path_str, "rb") as f:
+                return orjson.loads(f.read())
+        except (orjson.JSONDecodeError, FileNotFoundError, OSError):
+            return None
+
     def create(self, item: dict):
         if isinstance(item, dict):
             match item["type"]:
@@ -315,48 +325,51 @@ class schematicItems:
                 return symbolInstance
             else:
                 # load json file and create shapes
-                with file.open(mode="r", encoding="utf-8") as temp:
-                    try:
-                        jsonItems = json.load(temp)
-                        symbolShape = symbolItems(self.scene)
-                        for jsonItem in jsonItems[2:]:  # skip first two entries.
-                            if jsonItem["type"] == "attr":
-                                symbolAttributes[jsonItem["nam"]] = (
-                                    jsonItem["def"]
-                                )
-                            else:
-                                itemShapes.append(
-                                    symbolShape.create(jsonItem)
-                                )
-                        symbolInstance.shapes = itemShapes
-                        for labelItem in symbolInstance.labels.values():
-                            if (
+                file_path_str = str(file)
+                jsonItems = self._load_sym_json(file_path_str)
+                if jsonItems is None:
+                    self.scene.logger.error("Error: Invalid or missing Symbol file")
+                    return None
+                try:
+                    symbolShape = symbolItems(self.scene)
+                    for jsonItem in jsonItems[2:]:  # skip first two entries.
+                        if jsonItem["type"] == "attr":
+                            symbolAttributes[jsonItem["nam"]] = (
+                                jsonItem["def"]
+                            )
+                        else:
+                            itemShapes.append(
+                                symbolShape.create(jsonItem)
+                            )
+                    symbolInstance.shapes = itemShapes
+                    for labelItem in symbolInstance.labels.values():
+                        if (
+                                labelItem.labelName
+                                in labelDict.keys()
+                        ):
+                            labelItem.labelValue = (
+                                labelDict[
                                     labelItem.labelName
-                                    in labelDict.keys()
-                            ):
-                                labelItem.labelValue = (
-                                    labelDict[
-                                        labelItem.labelName
-                                    ][0]
-                                )
-                                labelItem.labelVisible = (
-                                    labelDict[
-                                        labelItem.labelName
-                                    ][1]
-                                )
-                        symbolInstance.symattrs = symbolAttributes
-                        [
-                            labelItem.labelDefs()
-                            for labelItem in symbolInstance.labels.values()
-                        ]
-                        symbolInstance.angle = item.get("ang", 0)
-                        symbolInstance.flipTuple = item.get('fl', (1, 1))
-                        return symbolInstance
-                    except json.decoder.JSONDecodeError:
-                        self.scene.logger.error(
-                            "Error: Invalid Symbol file"
-                        )
-                        return None
+                                ][0]
+                            )
+                            labelItem.labelVisible = (
+                                labelDict[
+                                    labelItem.labelName
+                                ][1]
+                            )
+                    symbolInstance.symattrs = symbolAttributes
+                    [
+                        labelItem.labelDefs()
+                        for labelItem in symbolInstance.labels.values()
+                    ]
+                    symbolInstance.angle = item.get("ang", 0)
+                    symbolInstance.flipTuple = item.get('fl', (1, 1))
+                    return symbolInstance
+                except Exception as e:
+                    self.scene.logger.error(
+                        f"Error creating symbol instance: {e}"
+                    )
+                    return None
 
     def createDraftSymbol(self, item: dict, symbolInstance: shp.schematicSymbol):
         rectItem = shp.symbolRectangle(
