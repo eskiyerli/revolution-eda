@@ -2,6 +2,15 @@
 
 This guide explains what plugins are in Revolution EDA, how users install and use them, how developers create them, how `config.json` works, and how plugins are published to the Revolution EDA plugin registry.
 
+## Quick Orientation
+
+- Plugins extend Revolution EDA without changing the core application.
+- End users typically encounter plugins as extra menu items, new editor actions, or support for
+  additional view flows.
+- Most users install plugins through `Tools -> Plugins -> Setup Plugins...`.
+- Developers package plugins as Python packages with a `config.json` file and callable
+  callback functions.
+
 ## What Plugins Are
 
 Plugins are add-ons that extend Revolution EDA without modifying the core application. Typical plugin categories are:
@@ -45,13 +54,19 @@ Minimum required files:
 
 ## Using Plugins (End Users)
 
+Most users only need three steps:
+
+1. Open the plugin registry UI from `Tools -> Plugins -> Setup Plugins...`.
+2. Install the plugin you want.
+3. Restart Revolution EDA.
+
 ### Install from Plugin Registry UI
 
 1. Open Plugins Registry Dialogue: `Tools -> Plugins -> Setup Plugins...`.
 2. The Plugin Registry window downloads plugin metadata from:
    `https://raw.githubusercontent.com/eskiyerli/revolutionEDA_plugins/main/plugins.json`
 
-<img src="assets/pluginsRegistry.png"  class="image fit" /> 
+<img src="assets/pluginsRegistry.png" alt="Plugins registry window" class="image fit" /> 
 
 2. Select a plugin and click `Download / Install`.
 3. Restart Revolution EDA after installation.

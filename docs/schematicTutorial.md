@@ -46,8 +46,6 @@ The table below maps common Virtuoso schematic actions to Revolution EDA equival
 circuit simulations and verification.
 
 
-<!-- Screenshot: Typical design flow overview -->
-
 ## Menu Actions You Will Use Most
 
 This section summarizes the most common schematic editor actions by menu.
@@ -56,6 +54,8 @@ This section summarizes the most common schematic editor actions by menu.
 ### File Menu
 
 The File menu handles saving, printing, and exporting your schematic designs.
+
+![schematicEditorFileMenu.png](assets/schematicEditorFileMenu.png)
 
 - `File -> Check-Save`: validates the schematic and saves it to disk.
 - `File -> Save`: saves the current schematic without validation.
@@ -81,6 +81,8 @@ File menu actions and shortcuts:
 
 The View menu controls how you see and navigate your schematic.
 
+![schematicEditorViewMenu.png](assets/schematicEditorViewMenu.png)
+
 - `View -> Fit to Window`: zooms and pans to show the entire schematic.
 - `View -> Zoom In`: increases magnification for detailed work.
 - `View -> Zoom Out`: decreases magnification to see more of the design.
@@ -100,7 +102,6 @@ View menu actions and shortcuts:
 ### Edit Menu
 
 <img src="assets/schematicEditMenu.png"  class="small-image" />
-
 
 - `Edit -> Net Name`: Enter the net name string in the dialogue and then select a net to set its name.
 - `Edit -> Properties -> Object Properties`: inspect or edit properties for the selection. Depending on the instance, the use also can inspect the instance attributes for the instance, but not edit them.

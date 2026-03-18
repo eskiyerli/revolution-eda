@@ -108,11 +108,11 @@ class addShapesUndo(QUndoCommand):
 
     def undo(self):
         for item in self._shapes:
-            self._scene.removeItem(item)
-        try:
-            self._scene.itemsRefSet -= set(self._shapes)
-        except KeyError:
-            pass
+            try:
+                self._scene.removeItem(item)
+                self._scene.itemsRefSet -= set(self._shapes)
+            except Exception as e:
+                self._scene.logger.warning(f'Error in undo: {e}')
 
     def redo(self):
         for item in self._shapes:

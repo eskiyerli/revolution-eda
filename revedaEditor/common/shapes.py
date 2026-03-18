@@ -59,6 +59,7 @@ class symbolShape(QGraphicsItem):
         self._brush: QBrush = schlyr.draftBrush
         self._flipTuple = (1, 1)
 
+
     def __repr__(self) -> str:
         return "symbolShape()"
 
@@ -132,6 +133,7 @@ class symbolShape(QGraphicsItem):
         return super().itemChange(change, value)
 
     def mouseMoveEvent(self, event: QGraphicsSceneMouseEvent) -> None:
+
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent) -> None:
@@ -349,19 +351,18 @@ class symbolRectangle(symbolShape):
                 self.rect.setLeft(eventPos.x())
             elif self.stretchSide == symbolRectangle.sides[1]:
                 self.setCursor(Qt.SizeHorCursor)
-                self.rect.setRight(eventPos.x() - int(self._pen.width() / 2))
+                self.rect.setRight(eventPos.x())
             elif self.stretchSide == symbolRectangle.sides[2]:
                 self.setCursor(Qt.SizeVerCursor)
                 self.rect.setTop(eventPos.y())
             elif self.stretchSide == symbolRectangle.sides[3]:
                 self.setCursor(Qt.SizeVerCursor)
-                self.rect.setBottom(eventPos.y() - int(self._pen.width() / 2))
+                self.rect.setBottom(eventPos.y())
             self.update()
         else:
             super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent) -> None:
-        self.setFlag(QGraphicsItem.ItemIsMovable, True)
         super().mouseReleaseEvent(event)
         if self.stretch:
             self._stretch = False
@@ -370,7 +371,6 @@ class symbolRectangle(symbolShape):
 
 
 class symbolCircle(symbolShape):
-
 
     def __init__(self, centre: QPoint, end: QPoint):
         super().__init__()
@@ -493,8 +493,6 @@ class symbolCircle(symbolShape):
         super().mouseReleaseEvent(event)
         if self._startStretch:
             self._startStretch = False
-            self.setFlag(QGraphicsItem.ItemIsMovable, True)
-            self.setFlag(QGraphicsItem.ItemIsSelectable, True)
             # self._topLeft = self._centre - QPoint(self._radius, self._radius)
             # self._rightBottom = self._centre + QPoint(self._radius, self._radius)
             # self._end = self._centre + QPoint(self._radius, 0)
@@ -507,6 +505,7 @@ class symbolCircle(symbolShape):
             distance = round(distance / grid) * grid
         
         self._radius = int(distance)
+
 
 class symbolArc(symbolShape):
     """
@@ -594,15 +593,11 @@ class symbolArc(symbolShape):
         if self._arcType == symbolArc.arcTypes[0]:
             brect = QRectF(self._rect.left(), self._rect.top(),
                            self._rect.width(),
-                           0.5 * self._rect.height()).adjusted(-2, -2,
-                                                               2,
-                                                               2)
+                           0.5 * self._rect.height()).adjusted(-2, -2, 2, 2)
         elif self._arcType == symbolArc.arcTypes[1]:
             brect = QRectF(self._rect.left(), self._rect.top(),
                            0.5 * self._rect.width(),
-                           self._rect.height()).adjusted(-2, -2,
-                                                         2,
-                                                         2)
+                           self._rect.height()).adjusted(-2, -2, 2, 2)
         elif self._arcType == symbolArc.arcTypes[2]:
             brect = QRectF(self._rect.left(),
                            self._rect.top() + self._rect.height() * 0.5,
@@ -613,28 +608,6 @@ class symbolArc(symbolShape):
                            self._rect.top(), 0.5 * self._rect.width(),
                            self._rect.height()).adjusted(-2, -2, 2, 2)
         return brect
-
-    #
-    # @property
-    # def bRect(self):
-    #     brect = QRectF(0, 0, 0, 0)
-    #     if self._arcType == symbolArc.arcTypes[0]:
-    #         brect = QRectF(QRectF(self._rect.left(), self._rect.top(), self._rect.width(),
-    #             0.5 * self._rect.height().adjusted(-2, -2, 2, 2) elif self._arcType ==
-    #                                                                   symbolArc.arcTypes[
-    #                                                                       1]: brect = QRectF(
-    #             QRectF(self._rect.left(), self._rect.top(), 0.5 * self._rect.width(),
-    #                 self._rect.height().adjusted(-2, -2, 2, 2) elif self._arcType ==
-    #                                                                 symbolArc.arcTypes[
-    #                                                                     2]: brect = QRectF(
-    #             self._rect.left(), self._rect.top() + self._rect.height() * 0.5,
-    #             self._rect.width(), 0.5 * self._rect.height()).adjusted(-2, -2, 2,
-    #                                                                     2) elif self._arcType == \
-    #                                                                             symbolArc.arcTypes[
-    #                                                                                 3]: brect = QRectF(
-    #             self._rect.left() + 0.5 * self._rect.width(), self._rect.top(),
-    #             0.5 * self._rect.width(), self._rect.height()).adjusted(-2, -2, 2, 2)
-    #     return brect
 
     @property
     def adjustment(self):
@@ -699,64 +672,89 @@ class symbolArc(symbolShape):
         eventPos = event.pos().toPoint()
         if self._stretch:
             self.setFlag(QGraphicsItem.ItemIsMovable, False)
-            if (
-                    eventPos.x() == self._rect.left() and self._rect.top() <= eventPos.y() <= self._rect.bottom()):
+            _T = 5  # hit tolerance in pixels
+            if (abs(eventPos.x() - self._rect.left()) <= _T and
+                    self._rect.top() - _T <= eventPos.y() <= self._rect.bottom() + _T):
                 self.setCursor(Qt.CursorShape.SizeHorCursor)
                 self._stretchSide = symbolArc.sides[0]
-            elif (
-                    eventPos.x() == self._rect.right() and self._rect.top() <= eventPos.y() <= self._rect.bottom()):
+            elif (abs(eventPos.x() - self._rect.right()) <= _T and
+                    self._rect.top() - _T <= eventPos.y() <= self._rect.bottom() + _T):
                 self.setCursor(Qt.CursorShape.SizeHorCursor)
                 self._stretchSide = symbolArc.sides[1]
-            elif (
-                    eventPos.y() == self._rect.top() and self._rect.left() <= eventPos.x() <= self._rect.right()):
+            elif (abs(eventPos.y() - self._rect.top()) <= _T and
+                    self._rect.left() - _T <= eventPos.x() <= self._rect.right() + _T):
                 self.setCursor(Qt.CursorShape.SizeVerCursor)
                 self._stretchSide = symbolArc.sides[2]
-            elif (
-                    eventPos.y() == self._rect.bottom() and self._rect.left() <= eventPos.x() <= self._rect.right()):
+            elif (abs(eventPos.y() - self._rect.bottom()) <= _T and
+                    self._rect.left() - _T <= eventPos.x() <= self._rect.right() + _T):
                 self.setCursor(Qt.CursorShape.SizeVerCursor)
                 self._stretchSide = symbolArc.sides[3]
 
     def mouseMoveEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         super().mouseMoveEvent(event)
-
         eventPos = event.pos().toPoint()
-        if self._stretch:
+        if self._stretch and self._stretchSide is not None:
             self.prepareGeometryChange()
+            rect = QRectF(self._rect)
             if self._stretchSide == symbolArc.sides[0]:
                 self.setCursor(Qt.CursorShape.SizeHorCursor)
-                self._rect.setLeft(eventPos.x())
+                rect.setLeft(eventPos.x())
             elif self._stretchSide == symbolArc.sides[1]:
                 self.setCursor(Qt.CursorShape.SizeHorCursor)
-                self._rect.setRight(eventPos.x() - self._adjustment)
+                rect.setRight(eventPos.x())
             elif self._stretchSide == symbolArc.sides[2]:
                 self.setCursor(Qt.CursorShape.SizeVerCursor)
-                self._rect.setTop(eventPos.y())
+                rect.setTop(eventPos.y())
             elif self._stretchSide == symbolArc.sides[3]:
                 self.setCursor(Qt.CursorShape.SizeVerCursor)
-                self._rect.setBottom(eventPos.y() - self._adjustment)
-            self.update()
+                rect.setBottom(eventPos.y())
+
+            # Detect whether normalization will flip the rect (dragged edge crossed
+            # the opposite edge). Both the arc type and the active stretch side must
+            # be updated to reflect the new orientation so that dragging continues
+            # smoothly and the arc renders correctly after the flip.
+            if rect.width() < 0:
+                # Horizontal flip: swap "Right" ↔ "Left" arc type and "Left" ↔ "Right" side
+                _hArcFlip = {symbolArc.arcTypes[1]: symbolArc.arcTypes[3],
+                             symbolArc.arcTypes[3]: symbolArc.arcTypes[1]}
+                self._arcType = _hArcFlip.get(self._arcType, self._arcType)
+                _hSideFlip = {symbolArc.sides[0]: symbolArc.sides[1],
+                              symbolArc.sides[1]: symbolArc.sides[0]}
+                self._stretchSide = _hSideFlip.get(self._stretchSide, self._stretchSide)
+
+            if rect.height() < 0:
+                # Vertical flip: swap "Up" ↔ "Down" arc type and "Top" ↔ "Bottom" side
+                _vArcFlip = {symbolArc.arcTypes[0]: symbolArc.arcTypes[2],
+                             symbolArc.arcTypes[2]: symbolArc.arcTypes[0]}
+                self._arcType = _vArcFlip.get(self._arcType, self._arcType)
+                _vSideFlip = {symbolArc.sides[2]: symbolArc.sides[3],
+                              symbolArc.sides[3]: symbolArc.sides[2]}
+                self._stretchSide = _vSideFlip.get(self._stretchSide, self._stretchSide)
+
+            self._rect = rect.normalized()
+
+            # Rebuild _start/_end from the normalized rect corners that correspond
+            # to the (possibly flipped) arc type.
+            if self._arcType == symbolArc.arcTypes[0]:      # "Up"
+                self._start = self._rect.bottomLeft().toPoint()
+                self._end = self._rect.topRight().toPoint()
+            elif self._arcType == symbolArc.arcTypes[1]:    # "Right"
+                self._start = self._rect.bottomRight().toPoint()
+                self._end = self._rect.topLeft().toPoint()
+            elif self._arcType == symbolArc.arcTypes[2]:    # "Down"
+                self._start = self._rect.topRight().toPoint()
+                self._end = self._rect.bottomLeft().toPoint()
+            else:                                            # "Left"
+                self._start = self._rect.topLeft().toPoint()
+                self._end = self._rect.bottomRight().toPoint()
+            self._arcLine = QLineF(self._start, self._end)
 
     def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent) -> None:
-        self.setFlag(QGraphicsItem.ItemIsMovable, True)
         super().mouseReleaseEvent(event)
         if self.stretch:
             self._stretch = False
             self._stretchSide = None
             self.setCursor(Qt.CursorShape.ArrowCursor)
-
-            if self._arcType == symbolArc.arcTypes[0]:
-                self._start = self._rect.bottomLeft()
-                self._end = self._rect.topRight()
-            elif self._arcType == symbolArc.arcTypes[1]:
-                self._start = self._rect.topLeft()
-                self._end = self._rect.bottomRight()
-            elif self._arcType == symbolArc.arcTypes[2]:
-                self._start = self._rect.topRight()
-                self._end = self._rect.bottomLeft()
-            elif self._arcType == symbolArc.arcTypes[3]:
-                self._start = self._rect.bottomRight()
-                self._end = self._rect.topLeft()
-            self._rect = QRectF(self._start, self._end).normalized()
 
 
 class symbolLine(symbolShape):
@@ -870,7 +868,6 @@ class symbolLine(symbolShape):
 
     def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         self._stretchSide = None
-        self.setFlag(QGraphicsItem.ItemIsMovable, True)
         super().mouseReleaseEvent(event)
 
 
@@ -891,13 +888,16 @@ class symbolPolygon(symbolShape):
         return f"symbolPolygon({self._points})"
 
     def paint(self, painter, option, widget):
-        # Cache the selection state to avoid multiple calls
         is_selected = self.isSelected()
-
-        # Set up the pen only once
-        painter.setPen(
-            symlyr.selectedSymbolPen if is_selected else symlyr.symbolPen)
-
+        if is_selected:
+            painter.setPen(symlyr.selectedSymbolPen)
+            self.setZValue(symlyr.selectedSymbolLayer.z)
+            if self._stretch:
+                painter.setPen(symlyr.stretchSymbolPen)
+                self.setZValue(symlyr.stretchSymbolLayer.z)
+        else:
+            painter.setPen(symlyr.symbolPen)
+            self.setZValue(symlyr.symbolLayer.z)
         # Draw the main polygon first
         painter.drawPolygon(self._polygon)
 
@@ -944,8 +944,11 @@ class symbolPolygon(symbolShape):
 
     def _findNearestPoint(self, eventPos: QPoint) -> tuple[int, QPoint | None]:
         """Find the nearest point to the event position"""
+        snapDistance = 10  # default
+        if self.scene() and hasattr(self.scene(), 'snapTuple'):
+            snapDistance = self.scene().snapTuple[0]
         for i, point in enumerate(self._points):
-            if (eventPos - point).manhattanLength() <= self.scene().snapDistance:
+            if (eventPos - point).manhattanLength() <= snapDistance:
                 return i, point
         return self._NO_SELECTION, None
 
@@ -971,9 +974,10 @@ class symbolPolygon(symbolShape):
 
     def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         super().mouseReleaseEvent(event)
-        self.setFlag(QGraphicsItem.ItemIsMovable, True)
+
         if self.stretch:
             self._resetStretchState()
+            self._stretch = False
 
     def _resetStretchState(self):
         """Reset the stretch state of the polygon"""
@@ -1039,9 +1043,9 @@ class symbolPin(symbolShape):
     def __repr__(self):
         return f"pin({self._start},{self._pinName}, {self._pinDir}, {self._pinType})"
 
-    def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent) -> None:
-        super().mouseReleaseEvent(event)
-        self.setSelected(True)
+    # def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent) -> None:
+    #     super().mouseReleaseEvent(event)
+
 
     def itemChange(self, change, value):
         # if change == QGraphicsItem.ItemSceneHasChanged:
@@ -1876,18 +1880,18 @@ class schematicPin(symbolShape):
 
     def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         super().mouseReleaseEvent(event)
-        lines: list[net.schematicNet] = []
-        if hasattr(self, "snapLines"):
-            for snapLine in self._snapLines:
-                lines = self.scene().addStretchWires(
-                    self.mapToScene(self.start).toPoint(),
-                    snapLine.mapToScene(snapLine.line().p2()).toPoint(), )
-                if lines:
-                    for line in lines:
-                        line.inherit(snapLine)
-                    self.scene().addListUndoStack(lines)
-                self.scene().removeItem(snapLine)
-        self._snapLines = dict()
+        # lines: list[net.schematicNet] = []
+        # if hasattr(self, "snapLines"):
+        #     for snapLine in self._snapLines:
+        #         lines = self.scene().addStretchWires(
+        #             self.mapToScene(self.start).toPoint(),
+        #             snapLine.mapToScene(snapLine.line().p2()).toPoint(), )
+        #         if lines:
+        #             for line in lines:
+        #                 line.inherit(snapLine)
+        #             self.scene().addListUndoStack(lines)
+        #         self.scene().removeItem(snapLine)
+        # self._snapLines = dict()
 
     def mouseMoveEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         super().mouseMoveEvent(event)
