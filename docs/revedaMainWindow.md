@@ -1,363 +1,294 @@
+dialogue to choose pin locations and stub size and
+the spacing between pins will be
+
+displayed:
+the symbol editor section.
 # Revolution EDA Main Window
 
-The Revolution EDA main window is the primary interface for the application. It features a
-clean, professional layout with menu-driven access to all major functions and includes an
-integrated Python REPL console for advanced scripting and automation.
+The main window is the starting point for Revolution EDA. It gives you access to the Library
+Browser, import tools, plugin and PDK setup, application options, and an integrated Python
+console area that shows startup messages and logging output.
 
-<img src="assets/revedaMainWindow.png" class="image fit" />
+<img src="assets/revedaMainWindow.png" alt="Revolution EDA main window" class="image fit">
 
-## Core Features
+## Quick Orientation
 
-- **Integrated Python Console**: Full Python REPL with access to Revolution EDA APIs
-- **Multi-threaded Architecture**: Efficient background processing with configurable thread
-  pool
-- **Persistent Configuration**: Automatic saving and restoration of user preferences
-- **Plugin Architecture**: Extensible design supporting custom plugins
-- **Environment Integration**: Smart path resolution and configuration management
+- The main window is intentionally simple: most editing happens in the schematic, symbol,
+  layout, and config editors opened from the Library Browser.
+- The central area includes an integrated **Python console**.
+- The menu bar is focused on application setup rather than geometry editing.
+- The **Tools** menu is where you will spend most of your time when setting up a working
+  environment.
 
-We will now review the functionalities that can be accessed through menus.
+## Typical Startup Flow
 
-## Tools Menu
+1. Launch Revolution EDA.
+2. Open the **Library Browser** from `Tools -> Library Browser`.
+3. Create or open a library.
+4. Create a cell and then create or open a cellview such as `schematic`, `symbol`, or
+   `layout`.
+5. If needed, configure PDKs, plugins, and library registries from the main window menus.
 
-`Tools` menu has several sub-menus and items:  `Library Browser`, `Plugins`, `Libraries`, `PDKs`, `Import` and `Create Stipple`.
+## Menu Actions You Will Use Most
 
-### Library Browser
+### File Menu
 
-A typical user will be regularly interacting with `Library Browser` to access design data
-files.
-Library Browser is used to create, open and delete libraries, create, copy and rename cells
-and
-cellviews. Note that Revolution EDA does not have a central database structure. Each library
-is
-in its folder and each cell is a sub-folder under the library folder. Each cellview is a
-file is a JSON formatted in
-the cell folder. Library folders are denoted by an empty `reveda.lib` file. Library browser
-window is designed to be familiar to the experienced custom integrated circuit designers.
+The main window File menu is intentionally minimal.
 
-<img src="assets/libraryBrowser.png"  class="small-image"/>
+- `File -> Exit`: closes the application.
 
-**Library Browser** menubar includes four menus:
+| Action | Shortcut | Notes |
+| --- | --- | --- |
+| `File -> Exit` | `Ctrl+Q` | Closes Revolution EDA. |
 
-1. `Library` This menu has again four items: `Create/Open Lib…`, `Library Editor`,
-   `Close Lib…`,
-   and `Update Library…`
+### Tools Menu
 
-   1. A library can be created using `Create/Open Lib...` dialogue, which will open a file
-      browser. An
-      existing library can be selected or a new folder can be created. Revolution EDA will
-      create
-      a `reveda.lib` file to denote that it is a valid library. At the moment, it is an
-      empty
-      file.
-   2. `Library Editor` dialogue can be used to open existing design libraries as well as
-      saving
-      library paths in a `library.json` file so that the next time Revolution EDA is
-      started
-      the user
-      will not have to open the libraries again.
-   3. `Close Lib` dialogue is used to close a design library.
-   4. `Update Library` will rescan the library paths to reconstruct the library browser content.
-   5. `Update Library Refs...` dialogue is used to update references in a library.
+The Tools menu is the main control center of the application.
 
-   <img src="assets/updateLibraryReferences.png"  class="small-image"/>
+Most actions in this menu open a dedicated window or dialog rather than directly modifying
+the current design. In practice, `Tools` is where you configure application resources,
+import external design data, and launch utility editors that support the main schematic,
+symbol, and layout workflows.
 
-2. `Cell` menu item has two items:
+<img src="assets/revedaToolsMenu.png" alt="Revolution EDA Tools menu">
 
-   1. `New Cell…` is used to create a new cell. It starts a dialogue to choose the library
-      cell
-      will be placed and its name. In the file system, it creates an empty folder under the
-      library folder. 
+It includes the following menu items:
 
-        <img src="assets/createCellDialogue.png"  class="small-image"/>
+- `Library Browser`
+- `Import`
+- `Plugins`
+- `Libraries`
+- `PDKs`
+- `Create Stipple...`
 
-   2. `Delete Cell…` starts a dialogue to choose which cell will be deleted. When a cell is
-      deleted, its child cellviews are also deleted. This is not reversible unless a
-      revision
-      control system is in place.
+#### Library Browser
 
-3. `View` menu item has three items:
+The Library Browser is the main user workspace for opening and organizing design data.
 
-   1. `Create New CellView...` dialogue is used to create a new cell view.
+<img src="assets/libraryBrowser.png" alt="Revolution EDA Library Browser">
 
-      <img src="assets/createNewCellViewDialogue.png" class="small-image" />
+From the Library Browser, users typically:
 
-      The following cellviews are functional at the moment:
+- create or open libraries
+- create, rename, copy, or delete cells
+- create, open, copy, rename, or delete cellviews
 
-      | Cellview  | Tool                                                         |
-      | --------- | ------------------------------------------------------------ |
-      | schematic | Schematic Editor                                             |
-      | symbol    | Symbol Editor                                                |
-      | config    | Config Editor                                                |
-      | veriloga  | Text Editor (opens associated Verilog-A file)                |
-      | pcell     | Text Editor (JSON-based parametric cell reference)           |
-      | spice     | Text Editor (opens associated SPICE file)                    |
-      | layout    | Layout Editor                                                |
-      | revbench  | Simulation & Analysis Environment (requires revedasim plugin) |
+It is also the normal entry point into the actual editors. Once a library and cell exist,
+you usually open a cellview from here and continue your work in the schematic, symbol,
+layout, or config window associated with that view.
 
-   2. `Open CellView...` menu item is used to the start the relevant tool for a cellview.
+In day-to-day use, think of the Library Browser as the design-data manager for the whole
+project: it shows the available libraries, their cells, and the set of cellviews stored in
+each cell.
 
-   3. `Delete CellView…` menu item is used to delete a cellview.
+Implemented cellview types include but not limited to:
 
-      <img src="assets/deleteCellviewDialogue.png" class="small-image"  />
+| Cellview | Tool |
+| --- | --- |
+| `schematic` | Schematic Editor |
+| `symbol` | Symbol Editor |
+| `layout` | Layout Editor |
+| `config` | Config Editor |
+| `veriloga` | Text editor / linked Verilog-A flow |
+| `spice` | Text editor / linked SPICE flow |
+| `pcell` | Text editor / PCell reference flow |
+| `revbench` | Simulation environment (when available) |
 
 
-#### Contextual Menus
+#### Import Submenu
 
-The Library Browser provides context-sensitive menus when right-clicking on items in the three main lists:
+The Import submenu is used to bring design data in various formats into Revolution EDA.
 
-**Libraries List Context Menu** (right-click on a library):
+![importMenus.png](assets/importMenus.png)
 
-- **Rename Library**: Rename the selected library
-- **Remove Library**: Remove the library from the browser (does not delete files)
-- **Create Cell**: Create a new cell in the selected library
-- **File Information...**: Display file system information about the library
+Available import actions include:
 
-**Cells List Context Menu** (right-click on a cell):
+- `Import Verilog-a file...`
+- `Import Spice file...`
+- `Import KLayout Layer Prop. File...`
+- `Import Xschem Symbols...`
+- `Import GDS...`
 
-- **Create CellView...**: Create a new cellview (schematic, symbol, layout, etc.) for the cell
-- **Copy Cell...**: Copy the cell to another library or rename within the same library
-- **Rename Cell...**: Rename the selected cell
-- **Delete Cell...**: Delete the cell and all its cellviews
-- **File Information...**: Display file system information about the cell
+These actions are used to build libraries, symbols, and layouts from external sources.
 
-**Views List Context Menu** (right-click on a cellview):
+The import tools serve different purposes:
 
-- **Open View**: Open the cellview in the appropriate editor
-- **Copy View...**: Copy the cellview to create a new version
-- **Rename View...**: Rename the cellview
-- **Delete View...**: Delete the cellview
-- **File Information...**: Display file system information about the cellview
+- `Import Verilog-a file...`: imports a Verilog-A module into a library/cell as a Verilog-A
+  view. This flow is useful when you already have behavioral model source and want to add it
+  to a design library. The import dialog can also create a symbol for the module.
 
-### Import Submenu
+![verilogaimport.png](assets/verilogaimport.png)
+If `Create a new Symbol` checkbox is checked, a new symbol for Verilog-A module will be
+generated. You will be able to determine the pin locations and stub size in the symbol editor after import.
 
-Import Menu is used to import and create symbols for Verilog-a modules and SPICE/Xyce
-subcircuits.
+![createImportSymbolDialogue.png](assets/createImportSymbolDialogue.png)
 
-<img src="assets/importMenus.png" class="image fit" />
-
-#### Verilog-a import
+Generated symbol will have the correct attributes set for successful netlisting and 
+simulation with Xyce simulator.
 
-Selecting `Import Verilog-a file…` menu item will display a dialogue
-titled `Import a Verilog-a Module File` dialogue. With this dialogue, the user can select,
-the
-file that has a single Verilog-a module, the library the module will be imported, the cell
-name
-and cellview name. Note that cell name field is editable, and thus a new cell name can be
-input
-as well as selecting one of the existing cells. The cellview name field should also be
-filled.
-The important point is that cellview name should include `veriloga` in the string. If a new
-symbol is to be created, `Create a new symbol?` checkbox can be checked. A symbol should be
-created to be able to use the Verilog-A module in creation of circuit netlists. Note that
-the
-veriloga cellview is in fact a JSON file with a link to Verilog-A module file which is
-copied to
-be under cell directory.
+![importedVerilogaSymbolAttributes.png](assets/importedVerilogaSymbolAttributes.png)
 
-<img src="assets/verilogaImport.png" class="small-image" />
+- `Import Spice file...`: imports a SPICE subcircuit into a selected library/cell as a SPICE
+  view. Like the Verilog-A flow, this is a convenient way to seed a design library from an
+  existing netlist and optionally create a matching symbol.
 
-#### Spice Import
+![importSpice.png](assets/importSpice.png)
 
-Similarly, selecting `Import Spice File…`menu item will lead to a dialogue
-titled `Import a Spice Subcircuit File`. Once again, the user can decide if a symbol will be
-created for the imported subcircuit. It is advised to create a symbol when the subcircuit is
-first imported or the subcircuit pins are changed in any way such as the names or the order.
+If `Create a new Symbol` checkbox is checked, a new symbol for SPICE subcircuit will be 
+generated:
 
-<img src="assets/importSpice.png"  class="small-image"/>
+![importedSpiceSubcktSymbol.png](assets/importedSpiceSubcktSymbol.png)
 
-#### Symbol Creation
+Symbol for imported Spice file will have symbol attributes generated for successful 
+netlisting with SPICE like simulators.
 
-While either importing a Verilog-A module or a SPICE subcircuit, a new symbol can be
-created. If
-the new symbol creation checkbox is checked, a new dialogue for naming the to-be-created
-symbol
-is displayed:
+![importedSpiceSymbolAttributes.png](assets/importedSpiceSymbolAttributes.png)
 
-<img src="assets/createSymbolViewDialogue.png"  class="small-image" />
+- `Import KLayout Layer Prop. File...`: converts a KLayout `.lyp` layer-properties file into
+  Revolution EDA layer-definition output. This is mainly a technology-setup helper when you
+  want to reuse an existing KLayout layer/color description as a starting point.
+- `Import Xschem Symbols...`: imports one or more Xschem `.sym` symbol files into a selected
+  library. The dialog lets you choose the destination library and a scale factor, so this
+  tool is especially useful when migrating symbol sets from an Xschem-based flow.
+- `Import GDS...`: imports geometry from a GDS file into a dedicated Revolution EDA library.
+  The dialog asks for a target library name plus GDS unit and precision values, making it a
+  practical bridge from external layout data into native layout cellviews.
 
-Once again, the chosen view name should include `symbol` in the string. Click `OK` and now a
-new
-dialogue to choose pin locations and stub size and the spacing between pins will be
-displayed:
+Practical notes:
 
-<img src="assets/createImportSymbolDialogue.png"  class="small-image" />
+- Use imports as starting points, not as a guarantee of perfect one-to-one translation.
+- For symbol and layout imports, it is often worth opening the generated result afterward to
+  check scaling, layers, labels, and hierarchy.
+- The GDS import dialog defaults the target library name to `importLib`, which is useful for
+  keeping imported layout data separate from other design libraries.
 
-Our advice is not to change stub length and pin spacing values between symbols to keep
-consistent within a design library. Of course, you could assign subcircuit pins as you see
-fit
-between top, left, bottom and right sides. A basic symbol is created ready to be edited
-further.
+<!-- Screenshot placeholder: Import submenu and import dialogs -->
 
-<img src="assets/importedSpiceSubcktSymbol.png"  class="image fit" />
+#### Plugins Submenu
 
-This symbol has in this example three attributes [^1]:Attributes will be further explained
-in
-the symbol editor section.
+`Tools -> Plugins -> Setup Plugins...` opens plugin management for installed or available
+plugins.
 
-that is needed for the inclusion of a spice subcircuit in SPICE-like netlist:
+The plugin registry window shows available plugins, whether each one is already installed,
+and basic metadata such as type, version, and license. It will check the 
+`REVEDA_PLUGIN_PATH` environment variable if it is already set or `Plugins Path`  from 
+Options Dialogue if it set there separately.
 
-1. **SpiceNetlistLine**: This attribute is checked when netlisting the symbol in a
-   schematic. It defines the template for the netlisting.
-2. **SpectreNetlistLine**: This attribute is used as a template for netlisting when
-   Spectre/Vacask type circuit simulators.
-3. **pinOrder**: Pin order defines the order of the pins so that they can replace `%pinOrder`
-   field in `SpiceNetlistLine` in the correct order.
-4. **incLine**: The include line is needed so that the simulator can add the subcircuit in
-   the
-   netlist.
+![pluginsRegistry.png](assets/pluginsRegistry.png)
 
-<img src="assets/importedSpiceSymbolAttributes.png"  class="image fit" />
+From `Revolution EDA Plugin Registry` dialogue, you can:
 
-#### Verilog-A module symbol
+- refresh the registry listing
+- inspect plugin descriptions
+- download and install a plugin
+- uninstall an installed plugin
 
-The following attributes will be added to a symbol created by importing a Verilog-A module:
+In normal use, this is the preferred way to add optional capabilities such as simulation,
+plotting, or AI-assisted tools. After installing or uninstalling plugins, restarting the
+application is the safest way to ensure menu integrations are reloaded cleanly.
 
-1. **SpiceNetlistLine**: This attribute is the template for the netlisting of this
-   symbol
-   when Verilog-a cellview is used.
-2. **pinOrder**: Pin order defines the order of pins that replaces `%pinOrder` field
-   in `SpiceNetlistLine` attribute.
-3. **vaModelLine**: This is added to the netlist to define the model for this particular
-   symbol.
-   More than one Verilog-A model can refer to same module
-   with different model parameters.
-4. **vaHDLLine**: This is an extension to Xyce netlist format devised by Revolution EDA. It
-   will
-   include a line in final simulation deck that starts with `*.HDL` and points
-   to Verilog-A module file location.
+For more detail, see [Plugins](./plugins.md).
 
-Furthermore, this symbol has an attribute that will be used as a model parameter.
+#### Libraries Submenu
 
-1. **td**. An example model parameter can be seen in this particular example, i.e. _td_.
-   Depending on whether the parameter is denoted with
-   `(*type = "instance", xyceAlsoModel = "yes" *)` in module body, this can be also an
-   instance
-   parameter. A user might possibly copy this symbol to another cell/cellview with another model
-   parameter attribute value and model name to create another model.
+`Tools -> Libraries -> Setup Libraries` opens the library registry and installation tools.
 
-<img src="assets/importedVerilogaSymbolAttributes.png"  class="image fit" />
+![libraryRegistry.png](assets/libraryRegistry.png)
 
-### Plugins Submenu
+This window is used to browse downloadable design libraries and install them into a chosen
+installation prefix. It shows whether a listed library is already installed, provides a
+description panel, and supports refresh, install, and uninstall operations.
 
-The Plugins submenu allows users to manage and configure plugins that extend Revolution EDA's functionality. Revolution EDA plugins can be source and/or binary. A company could decide to create its own plugin store to distribute its internally developed plugins.
+Unlike the Library Browser, which manages the libraries already visible in your working
+environment, the library registry is focused on acquiring library content. When a library is
+installed from this window, Revolution EDA also updates the active library definitions so the
+new library becomes available in the Library Browser.
 
-#### Setup Plugins
+#### PDKs Submenu
 
-Selecting `Setup Plugins...` opens the Plugin Registry window where users can:
+`Tools -> PDKs -> Setup PDK...` opens the PDK management flow.
 
-- View installed plugins
-- Install new plugins
-- Uinstall installed plugins
+![pdkRegistry.png](assets/pdkRegistry.png)
+The PDK registry window lets you browse available PDK packages, view process and version
+information, choose the local PDK storage directory, and install or uninstall PDKs. The list
+also indicates whether an entry is source or binary and can show when an installed PDK has a
+newer version available.
 
-<img src="assets/pluginsRegistry.png"  class="image fit" />
+This tool is mainly about obtaining and maintaining local PDK packages. Selecting which PDK
+the application actively uses is still handled through application configuration such as the
+Options dialog or environment variables like `REVEDA_PDK_PATH`.
 
-### Libraries Submenu
+#### Create Stipple
 
-The Libraries submenu provides tools for managing design libraries.
+`Tools -> Create Stipple...` opens the stipple editor used for layout fill-pattern design.
 
-#### Setup Libraries
+This is a small utility editor for creating or adjusting stipple patterns used in layout
+display and related layer-visualization workflows. You typically use it when defining custom
+fill appearances rather than while editing device geometry directly.
 
-Selecting `Setup Libraries` opens the Library Registry window for:
+<img src="assets/stippleEditor.png" alt="Revolution EDA stipple editor" class="image fit">
 
-- Selecting library prefix paths to organise library installation.
-- Installing third party libraries.
-- Uninstalling libraries installed using library registry.
+### Options Menu
 
-<img src="assets/libraryRegistry.png"  class="image fit" />
+`Options -> Options...` opens the main application settings dialog.
 
-### PDKs Submenu
+This is where you configure application-level paths and defaults such as:
 
-The PDKs submenu is used to manage Process Design Kits (PDKs) for different technologies.
+- run/root path
+- PDK path
+- simulation output path
+- plugins path
+- Verilog-A module path
+- switch view list
+- stop view list
+- thread-pool size
 
-#### Setup PDK
+Important environment-related paths may also be provided through environment variables such as:
 
-Selecting `Setup PDK...` opens the PDK Registry window to:
+- `REVEDA_PDK_PATH`
+- `REVEDA_PLUGIN_PATH`
+- `REVEDA_VA_MODULE_PATH`
 
-- Download and install source or binary PDKs.
-- Uninstall PDKs installed through PDK registry.
-
-<img src="assets/pdkRegistry.png"  class="image fit" />
-
-### Create Stipple Submenu
-
-The `Create Stipple` tool allows users to generate custom fill patterns for layout visualization. This is useful for creating stipple patterns used in layout editors for different layers or regions.
-
-Selecting `Create Stipple...` opens the Stipple Editor where users can:
-
-- Design custom stipple patterns
-- Save patterns for reuse in layouts
-
-<img src="assets/stippleEditor.png"  class="small-image" />
-
-## Options Menu
-The `Options` menu provides access to the application settings and configuration management:
-
-<img src="assets/optionsDialogue.png" class="image fit" />
-
-
-## Path Settings
-
-- **Root (Run) Path**: This is the root path of the Revolution EDA installation.
-- **PDK Path**: Configure the Process Design Kit directory (can be set via `REVEDA_PDK_PATH` environment variable or `.env` file)
-- **Simulation Outputs Path**: Set default directory prefix for simulation exports and generated files.
-- **Plugins Path**: Specify custom plugin directory location (can also be set via `REVEDA_PLUGIN_PATH` environment variable)
-
-## View Lists
-
-- **Switch View List**: Define the preference order for netlisting traversal (e.g., "schematic" → "symbol")
-- **Stop View List**: Specify views where netlisting should halt (e.g., "symbol" to prevent further descent)
-
-## Thread Pool Configuration
-
-- **Maximum Thread Count**: Adjust the number of background threads for parallel processing (defaults to CPU core count)
-- **Thread Expiry Timeout**: Set timeout for thread cleanup (fixed at 30 seconds)
-
-## Persistence Options
-
-- **Save options to configuration file**: Toggle automatic saving of configuration changes to `reveda.conf`
-
-The dialog supports cross-platform path resolution with both relative and absolute paths, and changes take effect immediately or after application restart as needed. Settings are stored in JSON format for easy manual editing if required.
+<img src="assets/optionsDialogue.png" alt="Revolution EDA options dialog" class="image fit">
 
 ### Help Menu
 
-- **Help...**: Access integrated documentation browser
-- **About**: Application information and version details
+The Help menu contains:
 
-## Environment Configuration
+- `Help...`
+- `About`
 
-Revolution EDA supports flexible configuration through multiple mechanisms:
+Use these actions to open the integrated help browser or view application information.
 
-### Environment Variables
+## Main Window Concepts
 
-- **REVEDA_PDK_PATH**: Process Design Kit location for technology files
-- **REVEDA_PLUGIN_PATH**: Custom plugin directory location
+### Integrated Python Console
 
-These can be set in a `.env` file in the Revolution EDA root directory for convenience.
+The main window embeds a Python console widget that shows welcome text and logging output.
+This makes the main window useful for diagnostics, scripting experiments, and observing
+application messages.
 
-## Thread Pool Management
+### Thread Pool and Background Work
 
-Revolution EDA uses a sophisticated threading system:
+Revolution EDA uses a shared thread pool for background work. The thread count is configured
+at application level and exposed through the Options dialog.
 
-- Configurable maximum thread count (defaults to CPU core count)
-- 30-second expiry timeout for efficient resource management
-- Background processing for import/export operations
-- Graceful shutdown with proper thread cleanup
+### Plugin and PDK Integration
 
+Plugins and PDKs can extend application behavior, menus, and downstream flows. Their setup is
+managed from the main window rather than from the individual drawing editors.
 
-### Plugin Configuration
+## Final Notes
 
-- Plugins are automatically discovered from the `REVEDA_PLUGIN_PATH` directory
-- Set the plugin path via environment variable or the Options dialog
-- Plugins extend menus and functionality dynamically when loaded.
+- Think of the main window as the **launch and configuration hub** for the application.
+- Think of the Library Browser as the **entry point to actual design data**.
+- Once your libraries and PDK are configured, most day-to-day design work moves into the
+  editor windows rather than the main window itself.
 
-More information on plugins within Revolution EDA can be found in [Plugins Documentation](./plugins.md).
+For the next step in a typical workflow, continue with:
 
-## Python Console Integration
-
-The integrated Python console provides:
-
-- Full access to Revolution EDA's internal APIs
-- Real-time feedback and logging integration
-- Support for custom automation scripts
-- Interactive debugging capabilities
+- [Installation](./installation.md)
+- [Schematic Editor Tutorial](./schematicTutorial.md)
+- [Symbol Editor Tutorial](./symbolTutorial.md)
+- [Layout Editor Tutorial](./layoutTutorial.md)
 

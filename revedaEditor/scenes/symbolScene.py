@@ -199,10 +199,6 @@ class symbolScene(editorScene):
 
     def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         super().mouseReleaseEvent(event)
-        if event.button() == Qt.MouseButton.LeftButton:
-            self.mouseReleaseLoc = event.scenePos().toPoint()
-
-            self._handleMouseRelease(self.mouseReleaseLoc, event.button())
 
     def _handleMouseRelease(self, mousePos: QPoint, button: Qt.MouseButton) -> None:
         modifiers = QGuiApplication.keyboardModifiers()
@@ -352,10 +348,10 @@ class symbolScene(editorScene):
             instProp = parts[0]
 
     def startPolygon(self, startLoc: QPoint):
-        newPolygon = shp.symbolPolygon([startLoc, startLoc])
+        newPolygon = shp.symbolPolygon([startLoc])
         self.addUndoStack(newPolygon)
         # Create guide line
-        guideLine = QLineF(newPolygon.points[-2], newPolygon.points[-1])
+        guideLine = QLineF(startLoc, startLoc)
         polygonGuideLine = QGraphicsLineItem(guideLine)
         polygonGuideLine.setPen(QPen(QColor(255, 255, 0), 1, Qt.DashLine))
         self.addUndoStack(polygonGuideLine)
@@ -364,8 +360,6 @@ class symbolScene(editorScene):
     def finishPolygon(self, event):
         if (hasattr(event, 'button') and event.button() == Qt.MouseButton.LeftButton
                 and self.editModes.drawPolygon and self._newPolygon):
-            self._newPolygon.polygon.remove(0)
-            self._newPolygon.points.pop(0)
             self.editModes.setMode("selectItem")
             self._newPolygon = None
             self.removeItem(self.polygonGuideLine)
@@ -392,9 +386,6 @@ class symbolScene(editorScene):
                 self.newAlignLine = shp.alignLine(QLineF(eventLoc, eventLoc), 1,
                                                   1)
             self.addUndoStack(self.newAlignLine)
-
-            # self.newAlignLine.draftLine = QLineF(
-            #     self.newAlignLine.draftLine.p1(), eventLoc)
 
     def moveBySelectedItems(self):
         if self.selectedItems():
@@ -734,15 +725,22 @@ class symbolScene(editorScene):
                 self.attributeList = deepcopy(localAttributeList)
 
     def copySelectedItems(self):
-        selectedItems = [item for item in self.selectedItems()]
+        # Only consider top-level items (same as schematic/layout editors)
+        selectedItems = [item for item in self.selectedItems() if item.parentItem() is None]
+        if not selectedItems:
+            return
         copyShapesList = []
-        if selectedItems:
-            for item in selectedItems:
-                selectedItemJson = json.dumps(item, cls=symenc.symbolEncoder)
-                itemCopyDict = json.loads(selectedItemJson)
-                shape = lj.symbolItems(self).create(itemCopyDict)
-                if shape is not None:
-                    copyShapesList.append(shape)
-            self._selectedItemGroup = self.createItemGroup(copyShapesList)
-            self._selectedItemGroup.setSelected(True)
+        factory = lj.symbolItems(self)
+        for item in selectedItems:
+            selectedItemJson = json.dumps(item, cls=symenc.symbolEncoder)
+            itemCopyDict = json.loads(selectedItemJson)
+            shape = factory.create(itemCopyDict)
+            if shape is not None:
+                copyShapesList.append(shape)
+        if copyShapesList:
+            # Add to undo stack before grouping (matches schematic/layout pattern)
             self.addListUndoStack(copyShapesList)
+            # Use base-class attribute so mouseMoveEvent/mouseReleaseEvent can move
+            # the group as the cursor moves and place it on mouse button release
+            self.selectedItemGroup = self.createItemGroup(copyShapesList)
+            self.selectedItemGroup.setSelected(True)

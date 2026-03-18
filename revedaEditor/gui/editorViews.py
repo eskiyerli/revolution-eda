@@ -84,22 +84,25 @@ class editorView(QGraphicsView):
         # Defer expensive operations
         self.viewRect = None
         self.init_UI()
+        glWidget = QOpenGLWidget()
+        glWidget.setUpdateBehavior(QOpenGLWidget.UpdateBehavior.PartialUpdate)
+        self.setViewport(glWidget)
+
 
     def init_UI(self):
         """
         Initializes the user interface.
         """
         # Batch all settings to minimize Qt overhead
-        self.setViewportUpdateMode(QGraphicsView.SmartViewportUpdate)
-        self.setCacheMode(QGraphicsView.CacheBackground)
+        self.setViewportUpdateMode(QGraphicsView.ViewportUpdateMode.SmartViewportUpdate)
+        self.setCacheMode(QGraphicsView.CacheModeFlag.CacheBackground)
         self.setMouseTracking(True)
-        self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
-        self.setResizeAnchor(QGraphicsView.AnchorUnderMouse)
+        self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
+        self.setResizeAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
         self.setInteractive(True)
-        self.setCursor(Qt.CrossCursor)
-        self.setRenderHints(QPainter.Antialiasing | QPainter.TextAntialiasing)
+        self.setCursor(Qt.CursorShape.CrossCursor)
+        self.setRenderHints(QPainter.RenderHint.Antialiasing | QPainter.RenderHint.TextAntialiasing)
 
-        self._viewRect_cached = False
 
     def wheelEvent(self, event: QWheelEvent) -> None:
         """
@@ -124,9 +127,7 @@ class editorView(QGraphicsView):
         self.determineViewRect()
     
     def determineViewRect(self):
-        if not self._viewRect_cached:
-            self.viewRect = self.mapToScene(self.rect()).boundingRect().toRect()
-            self._viewRect_cached = True
+        self.viewRect = self.mapToScene(self.rect()).boundingRect().toRect()
 
     def drawBackground(self, painter, rect):
         """
@@ -185,7 +186,7 @@ class editorView(QGraphicsView):
                 painter.drawLines(vertical_lines)
                 painter.drawLines(horizontal_lines)
         elif self._transparent:
-            self.viewport().setAttribute(Qt.WA_TranslucentBackground)
+            self.viewport().setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         else:
             painter.fillRect(rect, QColor("black"))
             super().drawBackground(painter, rect)
@@ -448,10 +449,7 @@ class layoutView(editorView):
         super().__init__(scene, parent)
         self.viewScene: layoutScene = scene
         self.parent = parent
-        # # Configure OpenGL viewport for better performance
-        glWidget = QOpenGLWidget()
-        glWidget.setUpdateBehavior(QOpenGLWidget.UpdateBehavior.PartialUpdate)
-        self.setViewport(glWidget)
+        # OpenGL viewport is already configured by editorView.__init__
 
     def keyPressEvent(self, event: QKeyEvent):
         modifiers = event.modifiers()

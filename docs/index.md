@@ -23,6 +23,10 @@ create sophisticated electronic designs. The software is built on modern Python 
 PySide6) and uses JSON-based file formats for maximum transparency and version control
 compatibility.
 
+Because Revolution EDA can work on various operating systems, whether Windows or Linux or MacOS, 
+the screenshots in this document are also from various platforms. Revolution EDA unlike other 
+legacy electronic design automation systems does not force the user to a certain platform but fits
+into their usual workflow.
 
 
 ------

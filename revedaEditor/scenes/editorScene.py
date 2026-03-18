@@ -161,13 +161,14 @@ class editorScene(QGraphicsScene):
 
             if self.editModes.moveItem:
                 self.selectedItemGroup = self.createItemGroup(self.selectedItems())
-
-                self.selectedItemGroup.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable,
-                                               True)
                 self._initialGroupPos = self.selectedItemGroup.pos().toPoint()
                 self._initialGroupPosList = []
                 for item in self.selectedItemGroup.childItems():
-                    # Store scene positions before move
+                    # Disable individual item movement so Qt's drag-tracking (which
+                    # stored press offsets before the group existed) cannot apply
+                    # stale, wrong offsets that would cause the items to jump.
+                    # The scene moves the whole group manually in mouseMoveEvent.
+                    item.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, False)
                     self._initialGroupPosList.append(item.scenePos().toPoint())
             elif self.editModes.panView:
                 self.centerViewOnPoint(self.mousePressLoc)
@@ -192,14 +193,17 @@ class editorScene(QGraphicsScene):
                 self.zoomRectItem.setRect(QRectF(self.mousePressLoc.toPointF(),
                                                  self.mouseMoveLoc.toPointF()).normalized())
 
+        elif self.editModes.moveItem and self.selectedItemGroup:
+            offset = self.mouseMoveLoc - self.mousePressLoc
+            self.selectedItemGroup.setPos(offset)
         elif self.editModes.copyItem and self.selectedItemGroup:
             offset = self.mouseMoveLoc - self.mousePressLoc
             self.selectedItemGroup.setPos(offset)
 
     def mouseReleaseEvent(self, event):
-        if event.button() != Qt.MouseButton.LeftButton:
-            super().mouseReleaseEvent(event)
-            return
+        # if event.button() != Qt.MouseButton.LeftButton:
+        #     super().mouseReleaseEvent(event)
+        #     return
 
         modifiers = QGuiApplication.keyboardModifiers()
         self.mouseReleaseLoc = event.scenePos().toPoint()
@@ -220,10 +224,12 @@ class editorScene(QGraphicsScene):
             [item.setSelected(False) for item in _groupItems]
             self.editModes.setMode("selectItem")
         elif self.editModes.copyItem and self.selectedItemGroup:
+            _groupItems = self.selectedItemGroup.childItems()
             self.destroyItemGroup(self.selectedItemGroup)
             self.selectedItemGroup = None
-            self.editModes.setMode(
-                "selectItem")  
+            for item in _groupItems:
+                item.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
+            self.editModes.setMode("selectItem")
         elif self.editModes.selectItem:
             if self.selectionRectItem:
                 selectionPath = QPainterPath()
@@ -261,6 +267,7 @@ class editorScene(QGraphicsScene):
         else:
             self._handleMouseRelease(self.mouseReleaseLoc, event.button())
         self.messageLine.setText(self.messages.get(self.editModes.mode(), ""))
+        super().mouseReleaseEvent(event)
 
     def snapToGrid(self, point: QPoint) -> QPoint:
         """Snap point to scene grid."""

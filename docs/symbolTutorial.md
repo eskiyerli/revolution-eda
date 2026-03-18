@@ -1,14 +1,12 @@
 # Revolution EDA Symbol Editor
 
-Symbol Editor is where the schematic representation of a basic circuit component, such as an
-inductor, capacitor or even an entire circuit can be created to be later used in the
-schematic
-editor.
+This guide targets designers already familiar with symbol editing in custom IC design tools
+such as Cadence Virtuoso. The Symbol Editor is where you create the graphical representation
+of a device or cell for later use in the schematic editor.
 
-Revolution EDA symbol editor is geared towards representation of integrated circuit
-components
-with complex geometry dependent parameters. Symbol editor has basic drawing functionality
-for
+The Revolution EDA Symbol Editor is designed for representing integrated circuit components
+with geometry, pins, labels, and netlisting attributes. It provides basic drawing tools for
+creating:
 
 1. Lines
 2. Circles
@@ -16,10 +14,10 @@ for
 4. Rectangles
 5. Polygons
 
-Edits can be undone or redone using `Undo` or `Redo` toolbar buttons, or `U` or `Shift-U`
+Edits can be undone or redone using toolbar buttons or the `U` / `Shift+U`
 keys.
 
-<img src="assets/symbolEditorWindow.png"  class="image fit" />
+<img src="assets/symbolEditorWindow.png" alt="Symbol editor window" class="image fit" />
 
 ## Quick Orientation (for Virtuoso Users)
 
@@ -39,7 +37,18 @@ keys.
 | Redo | `Shift+U` | Reapply the last undone operation |
 | Fit to window | `F` | Scales the view to show all items |
 
-## Keyboard Shortcuts
+## Typical Symbol Flow
+
+1. Open or create a symbol view from the Library Browser.
+2. Draw the basic outline using lines, rectangles, circles, arcs, or polygons.
+3. Add symbol pins.
+4. Add labels for instance-visible parameters or metadata.
+5. Open `Edit -> Cellview Properties...` to review labels and symbol attributes.
+6. Use the symbol in the schematic editor.
+
+<!-- Screenshot placeholder: Typical symbol editing flow -->
+
+## Symbol Shortcuts at a Glance
 
 | Key | Action |
 |---|---|
@@ -58,11 +67,11 @@ keys.
 | `Ctrl+A` | Select All |
 | `Shift+A` | Align Items |
 
-## Menu Actions
+## Menu Actions You Will Use Most
 
 ### File Menu
 
-<img src="assets/symbolEditorFileMenu.png"  class="small-image" />
+<img src="assets/symbolEditorFileMenu.png" alt="Symbol editor file menu" class="small-image" />
 
 The File menu handles saving, printing, and exporting the symbol cellview.
 
@@ -78,7 +87,7 @@ The File menu handles saving, printing, and exporting the symbol cellview.
 
 ### View Menu
 
-<img src="assets/symbolEditorViewMenu.png"  class="small-image" />
+<img src="assets/symbolEditorViewMenu.png" alt="Symbol editor view menu" class="small-image" />
 
 | Action | Shortcut | Notes |
 |---|---|---|
@@ -90,7 +99,7 @@ The File menu handles saving, printing, and exporting the symbol cellview.
 
 ### Edit Menu
 
-<img src="assets/symbolEditorEditMenu.png"  class="small-image" />
+<img src="assets/symbolEditorEditMenu.png" alt="Symbol editor edit menu" class="small-image" />
 
 The Edit menu provides shape manipulation, transformation, and undo/redo commands.
 
@@ -115,7 +124,7 @@ The Edit menu provides shape manipulation, transformation, and undo/redo command
 
 ### Create Menu
 
-<img src="assets/symbolEditorCreateMenu.png"  class="small-image" />
+<img src="assets/symbolEditorCreateMenu.png" alt="Symbol editor create menu" class="small-image" />
 
 | Action | Shortcut | Notes |
 |---|---|---|
@@ -129,7 +138,7 @@ The Edit menu provides shape manipulation, transformation, and undo/redo command
 
 ### Options Menu
 
-<img src="assets/symbolEditorOptionsMenu.png"  class="small-image" />
+<img src="assets/symbolEditorOptionsMenu.png" alt="Symbol editor options menu" class="small-image" />
 
 The symbol editor inherits the `Options` menu from the base editor window.
 
@@ -138,8 +147,8 @@ The symbol editor inherits the `Options` menu from the base editor window.
 
 <table>
     <tr>
-        <td><img src="assets/schematicDisplayOptionsDialogue.png"  class="small-image" /></td>
-        <td><img src="assets/schematicSelectionConfigDialogue.png"  class="small-image" /></td>
+        <td><img src="assets/schematicDisplayOptionsDialogue.png" alt="Display options dialog" class="small-image" /></td>
+        <td><img src="assets/schematicSelectionConfigDialogue.png" alt="Selection options dialog" class="small-image" /></td>
     </tr>
 </table> 
 
@@ -150,6 +159,7 @@ The symbol editor inherits the `Options` menu from the base editor window.
 
 ### Tools Menu
 
+The symbol editor currently adds a simple tools section focused on edit safety.
 
 | Action | Notes |
 |---|---|
@@ -157,59 +167,62 @@ The symbol editor inherits the `Options` menu from the base editor window.
 
 ## Drawing Actions
 
-## Lines
+### Lines
 
-Lines are drawn by pointing-and-pressing left mouse button at the start and releasing at the
-end
-point of the line. Lines can be horizontal or vertical. A drawn line can be edited either by
-selecting it and pressing `q` key
-
+Lines are drawn by pressing the left mouse button at the start point and releasing it at the
+end point. Lines can be horizontal or vertical. A drawn line can be edited by selecting it
+and pressing `q`.
 
 
-<img src="assets/symbolLineProperties.png" class="small-image" />
 
-or by selecting `stretch` mode (`s`-key or selecting `stretch` option at the context menu accessible with right-mouse button click). Then, select either end of the line, the line will turn red and end points of the line will be indicated by a circle. The user should click on which ever end point is to be changed and move it to the new location and release the left mouse button.
+<img src="assets/symbolLineProperties.png" alt="Symbol line properties dialog" class="small-image" />
 
-<img src="assets/symbolEditorStretchLine.png" class="small-image" />
+Alternatively, enter Stretch mode by pressing `s` or selecting **Stretch** from the
+right-click context menu. The line will turn red, and its endpoints will be indicated by
+circles. Click the endpoint to move, drag it to the new location, and release the mouse
+button.
+
+<img src="assets/symbolEditorStretchLine.png" alt="Stretching a symbol line" class="small-image" />
 
 
-## Circles
+### Circles
 
-Circles are drawn by selecting a centre point, pressing left-mouse button at that point and
-releasing left-mouse button. It can be also edited similarly to a line either by displaying
-the
-properties dialogue (select the circle and press `q` key or select the `Properties` option in the contextual menu),
+Circles are drawn by pressing the left mouse button at the desired centre point and dragging
+to set the radius, then releasing. A circle can also be edited by opening the Properties
+dialog (select the circle and press `q`, or select **Properties** from the right-click
+context menu),
 
 <table>
     <tr>
-        <td><img src="assets/symbolCreateCircle.png" class="small-image" /></td>
-        <td><img src="assets/symbolCircleProperties.png"  class="small-image" /></td>
+        <td><img src="assets/symbolCreateCircle.png" alt="Creating a symbol circle" class="small-image" /></td>
+        <td><img src="assets/symbolCircleProperties.png" alt="Symbol circle properties dialog" class="small-image" /></td>
     </tr>
 </table> 
 
-Circles can be made larger or smaller, *stretched*, first selecting a circle and then by pressing `s` key or selecting `stretch` option in the context menu. The circle will turn red and a hand shape
-will denote that stretch mode is activated. Just move the hand-cursor so that the circle is the right size.
+Circles can be resized by selecting a circle and pressing `s`, or by selecting **Stretch**
+from the right-click context menu. The circle will turn red, and a hand cursor will indicate
+that stretching is active. Drag the cursor to resize the circle to the desired radius.
 
+<img src="assets/symbolCircleStretch.png" alt="Stretching a symbol circle" class="small-image" />
 
-## Rectangles
+### Rectangles
 
-Rectangles are similarly created by pressing mouse button at one corner and then releasing
-it at
-the other diagonal corner.
+Rectangles are created by pressing the left mouse button at one corner and then
+releasing it at the opposite diagonal corner.
 
-<!-- Screenshot: Rectangle creation example -->
+<img src="assets/symbolCreateRectangle.png" alt="Creating a symbol rectangle" class="small-image" />
 
-Rectangles can be similarly edited using properties dialogues or stretching any side by
-selecting that side after pressing `m` key or selecting `stretch` option in the contextual
-menu.
+Rectangles can be similarly edited using the properties dialog, or by stretching any side:
+select the side and press `s`, or choose **Stretch** from the right-click context menu.
 
-<!-- Screenshot: Rectangle properties or stretch example -->
+<img src="assets/symbolRectangleProperties.png" alt="Symbol rectangle properties dialog" class="small-image" />
 
-## Arcs
+### Arcs
 
-Arc drawing is performed similarly to a rectangle drawing. Depending on the angle of
-diagonal
-arc will be pointing any of the four directions:
+Arc drawing is performed similarly to rectangle drawing. Depending on the diagonal angle 
+for the rectangle drawn,  the arc will point in one of the four directions:
+
+<img src="assets/symbolArcCreate.png" alt="Creating a symbol arc" class="small-image" />
 
 | Diagonal Angle       | Arc Direction |
 |----------------------|---------------|
@@ -218,44 +231,43 @@ arc will be pointing any of the four directions:
 | 270 > $\theta$ > 180 | Down          |
 | 360 > $\theta$ > 270 | Right         |
 
-Similarly to other shapes, arcs can be also be edited using property dialogue or by
-stretching.
-One caveat in stretching is that if the bounding rectangle of a stretched arc is flipped, it
-will be saved correctly in the cellview file. This is a known bug.
+Arcs can also be edited using the property dialog or by stretching. To stretch an arc,
+select the arc and press `s`, or select **Stretch** from the right-click context menu. The arc will
+turn red Click on the desired side to be stretched and move that side while holding the mouse button 
+pressed to stretch the arc. Release the mouse button when arc is stretched to the 
+desired shape.
 
-<!-- Screenshot: Arc creation or stretch example -->
+<table>
+    <tr>
+        <td><img src="assets/symbolArcStretch.png" alt="Stretching a symbol arc" class="small-image" /></td>
+        <td><img src="assets/symbolArcProperties.png" alt="Symbol arc properties dialog" class="small-image" /></td>
+    </tr>
+</table> 
 
-## Polygons
 
-Polygons are created by selecting `Create->Create Polygon…` menu item or pressing
-`Create Polygon` item from the
-toolbar. To start the polygon, click on the right mouse button for the first point. A guide
-line will be shown between
-that point and the present cursor location. Now press the right mouse button again to select
-the second point of the
-polygon. A line will be created between the first and second point, while the guideline
-between these points will be
-erased. Instead, there will be another guide line between the second point and the cursor
-position. Once again pressing
-right mouse button will create another line between second and third points. Moreover a
-triangle consisting of first,
-second and third points will be drawn. If the user double clicks right mouse button at this
-point, the polygon create
-action will be stopped. Alternatively, the user can press `Esc` button on the keyboard. On
-the other hand, if the user
-now clicks another point on the editor, a *quadrilateral* will be created. Similarly adding
-another point will yield a
-pentagram and so on.
+### Polygons
 
-<!-- Screenshot: Polygon creation example -->
+Polygons are created by selecting **Create → Create Polygon…** from the menu or clicking
+the **Create Polygon** toolbar button. To place the first point, left-click on the canvas.
+A guide line will be shown between that point and the current cursor location. Left-click
+again to place the second point; a line will be drawn between the first and second points,
+and the guide line will advance to follow the cursor from the second point. Each
+subsequent left-click adds a new vertex and extends the polygon. Once three or more points
+have been placed, the enclosed area is highlighted. Double-click to finish the polygon, or
+press `Esc` to cancel. Each additional point yields a polygon with one more side
+(quadrilateral, pentagon, and so on).
 
-A polygon can be edited in a few different ways. The easiest is to select the polygon and
-press `S` key to stretch the polygon. Now press on one of the corners of the polygon, if the
-corner is selected, a blue circle will be placed at that corner. Now move your cursor while
-pressing right mouse button and release it when you polygon corner is where you want it to
-be:
+<table>
+    <tr>
+        <td><img src="assets/symbolPolygonCreateFirst.png" alt="Creating a symbol polygon first step" class="small-image" /></td>
+        <td><img src="assets/symbolPolygonCreate2nd.png" alt="Creating a symbol polygon second step" class="small-image" /></td>
+    </tr>
+</table> 
 
-<!-- Screenshot: Polygon stretch example -->
+A polygon can be edited in several ways. The simplest is to select the polygon and press
+`S` to enter Stretch mode. Click one of the corners to select it; a red circle will
+appear at that corner. Drag the cursor to the desired position and release the mouse button
+to set the new corner location.
 
 Polygons can be also be edited using a dialogue. Select the polygon and bring up the
 `Symbol Polygon Properties` dialogue. All the points will be listed with their x and y
@@ -264,31 +276,40 @@ edit that point. Alternatively, a new point can be edited using the last empty r
 that row is edited, a new row is created for further point entry. There can be up to 999
 points in a polygon.
 
-<!-- Screenshot: Symbol polygon properties dialog -->
+<table>
+    <tr>
+        <td><img src="assets/symbolPolygonStretch.png" alt="Stretching a symbol polygon" class="small-image" /></td>
+        <td><img src="assets/symbolPolygonProperties.png" alt="Symbol polygon properties dialog" class="small-image" /></td>
+    </tr>
+</table> 
 
-## Pins
+### Pins
 
-Pins denote the connection of the element or circuit defined by symbol to the external
-circuits.
-Pins can be created by clicking toolbar icon or selecting `create Pin…` menu item under
-`Create`
-menu. Note that pin direction and pin type information is not saved or used for the symbol
-cell
-views at the moment.
+Pins denote the connections of the element or circuit defined by the symbol to external
+circuits. Pins can be created by clicking the toolbar icon or by selecting
+**Create → Create Pin…** from the menu. Once the dialogue is closed, the newly created 
+symbol pin can be placed on the symbol.
 
-<!-- Screenshot: Create pin dialog -->
+<table>
+    <tr>
+        <td><img src="assets/symbolPinCreate.png" alt="Creating a symbol pin" class="small-image" /></td>
+        <td><img src="assets/symbolPinCreate2nd.png" alt="Placing a symbol pin" class="small-image" /></td>
+    </tr>
+</table> 
 
-## Labels
+> **Note:** Pin direction and pin type information is currently not used or saved for symbol
+> cell views.
+
+
+## Labels and Symbol Metadata
 
 Labels carry all the relevant information for an instance of a cellview. Thus labels may
-have
-different values (texts) for each instance.
+have different values (texts) for each instance.
 
 There are three types of labels:
 
-1. **Normal**: These type of labels is just adding some notes on the text. They are not used
-   in
-   netlisting.
+1. **Normal**: These labels add static text annotations to the schematic. They are not used
+   in netlisting.
 
 2. **NLPLabel**: These types of labels are evaluated using simple rules. Their format is:
 
@@ -303,7 +324,7 @@ There are three types of labels:
    These are:
 
    | Label Name     | Label Definition | Explanation                                       |
-      | -------------- | ---------------- | ------------------------------------------------- |
+   | -------------- | ---------------- | ------------------------------------------------- |
    | cell name      | `[@cellName]`    | Cell Name, e.g. nand2, nmos, etc                  |
    | instance name  | `[@instName]`    | Instance name for netlisting, e.g. I1, I15, etc.  |
    | library Name   | `[@libName]`     | Library Name for the symbol                       |
@@ -316,66 +337,64 @@ There are three types of labels:
    for the instance. If the label value is entered, then the second part is used to display
    the label, if not the third part is shown and used.
 
-   NLP labels can be referred by their the first part of the label definition. For example,
+   NLP labels are referenced by the first part of their label definition. For example,
    if the label definition
-   is `[@w:w=%:w=1u]`, then the label can be referred in the symbol attributes as `@w`.
+   is `[@w:w=%:w=1u]`, then the label can be referenced in the symbol attributes as `@w`.
 
+   <img src="assets/symbolLabelsDialogue.png" alt="Symbol labels dialog" class="small-image" />
+   
 3. **Python Label**: Python labels allow the label values to be determined dynamically based
    on the
    values of other labels or any other values defined in the process design kit (PDK). The
    relevant functions that can be used in Python labels are defined in the
    `PDK/callbacks.py`
-   file. Each symbol should have a corresponding class defined in `callbacks.py`. A few
-   sample
-   definitions are shown in the included `PDK/callbacks.py` file:
+   file. Each symbol should have a corresponding class defined in `callbacks.py`. The 
+   code below is extracted from IHP SG13G2 PDK. Quantity is a method from `quantiphy` 
+   package to recognize the scientific numbers and units.
 
    ```python
+   from quantiphy import Quantity
+
    class baseInst:
        def __init__(self, labels_dict: dict):
            self._labelsDict = labels_dict
    
-   
-   class res(baseInst):
-       def __init__(self, labels_dict: dict):
-           super().__init__(labels_dict)
-   
-       def doubleR(self):
-           Rvalue = self._labelsDict.get("R").labelValue
-           if Rvalue.isalnum():
-               return str(2 * Quantity(Rvalue))
-           return "?"
-   
-   
-   class nmos(baseInst):
+       def __repr__(self):
+           return f"{self.__class__.__name__}({self._labelsDict})"
+
+   class rsil(baseInst):
        def __init__(self, labels_dict: dict):
            super().__init__(labels_dict)
            self.w = Quantity(self._labelsDict["@w"].labelValue)
            self.l = Quantity(self._labelsDict["@l"].labelValue)
-           self.nf = Quantity(self._labelsDict["@nf"].labelValue)
-           self.sd1p8v = 0.28
-           self.sa1p8v = sb1p8v = 0.265
-           self.sourceDiffs = lambda nf: int(int(nf) / 2 + 1)
-   
-       def asparm(self):
-           return self.sourceDiffs(self.nf) * (self.w / self.nf) * self.sd1p8v
+           self.b = Quantity(self._labelsDict["@b"].labelValue)
+           self.m = Quantity(self._labelsDict["@m"].labelValue)
+
+       def R_parm(self):
+           return (
+               9.0e-6 / self.w
+               + 7.0
+               * ((self.b + 1) * self.l + (1.081 * (self.w + 1.0e-8) + 0.18e-6) * self.b)
+               / (self.w + 1.0e-8)
+           ) / self.m
    ```
 
-   For example, an `nmos` symbol has an `asparm()` function defined. We can use it to define
-   the value of a label
-   for the `nmos` symbol. When this symbol is instantiated in a schematic, the value of the
-   `as` label will be determined
-   by the `asparm()` function defined in the `callbacks.py` file. This means that instance
-   callbacks can use all the
-   facilities of Python, including advanced libraries, to calculate parameters dynamically.
+For example, an `rsil` symbol has an `R_parm()` method defined. We can use it to define
+the value of a label for the `rsil` symbol. When this symbol is instantiated in a schematic, the value of the
+`R` label will be determined  by the `R_parm()` function defined in the `callbacks.py` 
+file of IHP PDK. This means that instance callbacks can use all the facilities of Python,
+including advanced libraries, to calculate parameters dynamically. Note that `R` value 
+can depend on the evaluate value of other `NLPLabel`s.
 
-    <!-- Screenshot: Python label example -->
+<img src="assets/symbolPyLabelDialogue.png" alt="Python label dialog in symbol editor" class="image fit" />
 
-   Labels can be also be hidden to reduce the clutter in the schematic instance of a symbol.
-   Hidden labels are as valid as visible labels. Label properties dialogue also
-   have `labelAlignment`, `labelOrientation` and `labelUse` fields, which are currently not
-   implemented. However, labels can be rotated using context menu’s `rotate` option.
+Labels can also be hidden to reduce clutter in the schematic view of a symbol.
+Hidden labels are as valid as visible labels. The Label Properties dialog also
+has `labelAlignment`, `labelOrientation`, and `labelUse` fields, which are currently not
+implemented. However, labels can be rotated using the **Rotate** option in the context
+menu.
 
-## Attributes
+## Symbol Attributes
 
 Attributes are properties that are common to all instances of a symbol. They could denote
 for example, how a particular
@@ -397,40 +416,32 @@ Some of the important attributes for a symbol are summarized below:
 | pinOrder                | To sync pin order between netlists of various cellviews | `PLUS, MINUS`                                                        |
 | incLine                 | To include imported Spice subcircuit                    | `.INC /home/user/exampleLibraries/anotherLibrary/example1/newckt.sp` |
 
-Note that the labels are referred by their names prefixed by `@` in the attributes of a
-symbol. If a symbol attribute
-should be referred in another symbol attribute, it should be prefixed by `%`, see the
-example
-for `SpiceNetlistLine` in the table above where `modelName` attribute is referred as
-`%modelName`.  `pinOrder`
-attribute is important to synchronise the various formats for netlisting. It should list all
-symbol pins separated by
-commas in the order required for the netlisting. This string will replace `%pinOrder` token
-in the attributes.
+Note that labels are referenced in symbol attributes by their names prefixed with `@`.
+If a symbol attribute is referenced within another symbol attribute, it must be prefixed
+with `%`; see the example
+for `SpiceNetlistLine` in the table above, where the `modelName` attribute is referenced
+as `%modelName`. The `pinOrder`
+attribute is important for synchronising the various netlisting formats. It should list all
+symbol pins separated by commas in the order required for netlisting. This string replaces
+the `%pinOrder` token in the attributes.
 
-Attributes are defined in the `Cellview properties` dialogue that can be accessed under
-`Edit` menu:
+Attributes are defined in the **Cellview Properties** dialog, accessible from the
+**Edit** menu:
 
 <!-- Screenshot: Cellview properties dialog -->
 
-This dialogue has two parts. The first part summarises the already defined labels. Label
-properties can be changed also
-here.
-However labels can be deleted or added here. The second part is the `Symbol attributes`
-part. In this dialogue, any
-number of symbol attributes can be defined. These attributes will not be shown but can also
-be inspected but not edited
+This dialog has two parts. The first part lists the labels already defined for the symbol;
+label properties can be modified, added, or deleted here. The second part is the
+**Symbol Attributes** section, where any number of symbol attributes can be defined. These
+attributes are not displayed on the canvas, but they can be inspected (though not edited)
 in the schematic view.
 
-Depending on how symbol is created not all the attributes needed to use various cellviews
-for netlisting are not
-available on the same symbol. For example, a designer creates a symbol from the schematic,
-but there is also a Verilog-a
-view for that cell. In that case, the symbol will have `SpiceNetlistLine` needed for the use
-of the Symbol View in
-the netlisting but not the attributes to have veriloga cellview to be used in the
-netlisting. In that case, the user
-should add those attributes manually in the symbol editor window.
+Depending on how a symbol is created, not all attributes required for netlisting with the
+available cell views may be present on that symbol. For example, if a symbol is created
+from a schematic but a Verilog-A cell view also exists, the symbol will contain the
+`SpiceNetlistLine` attribute for netlisting the symbol view, but it will not include the
+attributes needed to netlist the Verilog-A cell view. In that case, those attributes must
+be added manually in the Symbol Editor.
 
 ### Required attributes for netlisting
 
@@ -454,10 +465,9 @@ Note that another attribute `modelName` needs to be defined for the example in t
 
 #### Veriloga
 
-If the veriloga cellview is to be used in the circuit netlisting, these attributes should be
-added to symbol. Note that
-if the veriloga file is imported and used to create a symbol, they will be automatically
-added to the symbol.
+If the veriloga cell view is to be used in the circuit netlisting, these attributes should
+be added to the symbol. If the Verilog-A file was imported and used to create the symbol,
+they will be added automatically.
 
 | Attribute Name          | Example                                                    |
 |-------------------------|------------------------------------------------------------|
@@ -482,18 +492,16 @@ netlist inclusion of a SPICE subcircuit are summarised in the table below:
 
 `incLine` is collected and emitted as an include directive in the generated netlist.
 
-## Other Editing functions
+## Other Editing Functions
 
-Any item on the symbol editor can be ==rotated, moved or copied== using by selecting menu
-item or by clicking on the
-relevant button on the toolbar as well as using context menu.
+Any item in the Symbol Editor can be rotated, moved, or copied by selecting the
+corresponding menu item, clicking the relevant toolbar button, or using the right-click
+context menu.
 
-The cursor position is displayed at left-bottom corner of the editor. If the user wants to
-move
-the origin point of the symbol editor, it can use `Move Origin` menu item under `Edit` menu.
-Once it is selected, click at the new origin point. Hereafter, all the editing functions
-will
-refer to the new origin point.
+The cursor position is displayed at the bottom-left corner of the editor. To reposition
+the symbol editor's origin point, select **Edit → Move Origin** and click at the desired
+new origin location. All subsequent editing operations will use the new origin as the
+reference point.
 
 ## Context Menu (Right-click on Item)
 
@@ -515,4 +523,13 @@ operations without navigating the menu bar.
 | Select All | `Ctrl+A` | Selects every item in the symbol view. |
 | Unselect All | None | Clears the current selection. |
 | Stretch | `S` | Enters stretch mode for the selected item. |
+
+## Final Notes
+
+- Use the Symbol Editor for both graphics and netlisting metadata; a good symbol needs both.
+- `Q` and `Edit -> Cellview Properties...` are the two most important follow-up tools after
+  drawing the symbol outline.
+- Keep pin naming and `pinOrder` consistent with the cellviews you intend to netlist.
+- If a symbol is created automatically from another flow, review its labels and attributes
+  before using it widely in schematics.
 
