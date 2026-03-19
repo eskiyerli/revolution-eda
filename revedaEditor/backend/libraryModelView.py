@@ -130,7 +130,7 @@ class BaseDesignLibrariesView(QWidget):
                             range(itemTuple.cellItem.rowCount()) if
                             itemTuple.cellItem.child(row).viewType == "schematic"]
             dlg = fd.createConfigViewDialogue(self.appMainW)
-            dlg.libraryNameEdit.setText(itemTuple.libItem.libraryName)
+            dlg.libraryNameEdit.setText(itemTuple.libraryItem.libraryName)
             dlg.cellNameEdit.setText(itemTuple.cellItem.cellName)
             dlg.viewNameCB.addItems(schViewsList)
             dlg.switchViews.setText(", ".join(self.appMainW.switchViewList))
