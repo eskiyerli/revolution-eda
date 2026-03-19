@@ -600,8 +600,12 @@ class MainWindow(QMainWindow):
         if reply == QMessageBox.Yes:
             if not self.threadPool.waitForDone(5000):
                 self.threadPool.clear()
-            # for item in self.app.topLevelWidgets():
+            # Explicitly close all tracked editor/plugin windows
+            for window in list(self.openViews.values()):
+                window.close()
+            self.openViews.clear()
             self.app.closeAllWindows()
+            event.accept()
         else:
             event.ignore()
 

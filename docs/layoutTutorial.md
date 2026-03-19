@@ -1,7 +1,7 @@
 # Revolution EDA Layout Editor
 
 This guide targets designers already familiar with custom IC layout tools such as Cadence
-Virtuoso Layout XL. Revolution EDA follows the same core workflow: choose layers, place
+Virtuoso Layout L. Revolution EDA follows the same core workflow: choose layers, place
 geometry, add pins and labels, reuse hierarchy, and export the finished cell for downstream
 verification and tapeout-oriented flows.
 
@@ -232,16 +232,20 @@ edited through the object properties dialog.
 Draws a rectangle on the currently active LSW layer.
 
 - Select the target layer in the LSW.
-- Start rectangle mode.
-- Click two opposite corners.
+- Start rectangle mode by pressing 'r' key or selecting `Create Rectangle` menu item.
+- Click left-mouse button on the first point of the rectangle and drag the mouse cursor along diagonal of the desired rectangle and release the mouse button.
+
+![layoutEditorCreateRectangle.png](assets/layoutEditorCreateRectangle.png)
 
 Rectangle properties let you edit the layer, width, height, and top-left coordinate.
 
-<!-- Screenshot placeholder: Rectangle creation and rectangle properties -->
+![layoutEditorRectangleProperties.png](assets/layoutEditorRectangleProperties.png)
 
 ### Create -> Create Path... (`W`)
 
 Opens the path creation dialog before entering path drawing mode.
+
+![layoutEditorCreatePathDialogue.png](assets/layoutEditorCreatePathDialogue.png)
 
 Configurable path settings include:
 
@@ -265,11 +269,12 @@ definitions.
 
 Path properties can later edit the path name, layer, width, endpoints, extensions, and angle.
 
-<!-- Screenshot placeholder: Path creation dialog and path properties -->
 
 ### Create -> Create Pin... (`P`)
 
 Creates a layout pin and its associated label.
+
+![layoutEditorCreatePinDialogue.png](assets/layoutEditorCreatePinDialogue.png)
 
 The pin dialog includes:
 
@@ -281,12 +286,22 @@ The pin dialog includes:
 - label font family, style, size, alignment, and orientation
 
 Pin properties can later edit pin geometry, type information, and coordinates.
+Unlike legacy layout editors, user can choose any mono-spaced font installed in the 
+computer. 
 
-<!-- Screenshot placeholder: Layout pin creation dialog -->
+Once `OK` button is clicked, layout pin rectangle can be drawn similar to layout 
+rectangle is drawn, i.e. diagonally. Once layout pin rectangle is drawn, the label will 
+follow the mouse cursor and can be placed on the layout. Note that Calibre or KLayout 
+will extract the layout netlist starting from label locations.
+
+![layoutEditorPinRectangle.png](assets/layoutEditorPinRectangle.png)
+![layoutEditorLabelPlace.png](assets/layoutEditorLabelPlace.png)
 
 ### Create -> Create Label... (`L`)
 
 Creates a standalone layout label on one of the available text layers.
+
+![layoutEditorLabelDialogue.png](assets/layoutEditorLabelDialogue.png)
 
 The label dialog lets you set:
 
@@ -299,7 +314,7 @@ The label dialog lets you set:
 
 Labels are useful both for documentation and for flows that rely on layout text markers.
 
-<!-- Screenshot placeholder: Layout label dialog and placed label -->
+![layoutEditorLabelPlace.png](assets/layoutEditorLabelPlace.png)
 
 ### Create -> Create Via... (`V`)
 
@@ -310,9 +325,17 @@ The via dialog supports two modes:
 - **Single**: one via cut
 - **Array**: repeated via cuts with entered row/column spacing and row/column counts
 
-Via dimensions are validated against the selected via definition.
+Via dimensions are validated against the selected via definition in the PDK.
 
-<!-- Screenshot placeholder: Via creation dialog -->
+
+![layoutEditorCreateSingleViaDialogue.png](assets/layoutEditorCreateSingleViaDialogue.png)
+
+![layoutEditorCreateArrayViaDialogue.png](assets/layoutEditorCreateArrayViaDialogue.png)
+
+Once `OK` button is clicked, the created single via or via array will follow the mouse 
+cursor and can be place wherever necessary.
+
+![layoutEditorArrayViaPlacement.png](assets/layoutEditorArrayViaPlacement.png)
 
 ### Create -> Create Polygon... (`G`)
 
@@ -324,7 +347,9 @@ Creates a polygon on the active LSW layer.
 
 Polygon properties allow direct point-table editing and layer reassignment.
 
-<!-- Screenshot placeholder: Polygon drawing and polygon properties -->
+![layoutEditorCreatePolyon.png](assets/layoutEditorCreatePolyon.png)
+
+![layoutEditorPolygonPropertiesDialogue.png](assets/layoutEditorPolygonPropertiesDialogue.png)
 
 ### Create -> Add Ruler (`K`) / Delete Rulers (`Shift+K`)
 
@@ -335,7 +360,7 @@ Rulers are measurement aids drawn in the layout canvas.
 
 Rulers display measurement ticks and numeric values and follow the layout grid.
 
-<!-- Screenshot placeholder: Ruler placement example -->
+![layoutEditorRuler.png](assets/layoutEditorRuler.png)
 
 ### Options Menu
 
@@ -343,7 +368,12 @@ The layout editor inherits the shared `Options` menu from the editor framework.
 
 - `Options -> Display Config...`: configures major grid spacing, snap grid spacing, and grid
   display style (dots, lines, or no grid). The layout version of this dialog also shows the
-  active process resolution as **Process Points per um**.
+  active process resolution as **Process Points per um**. In other words, this field 
+  explains how many grids on the layout editor, 1um layout length corresponds to. It can 
+  be changed through `Layout Display Options` dialogue as it is a PDK property.
+
+![layoutEditorOptionsDialogue.png](assets/layoutEditorOptionsDialogue.png)
+
 - `Options -> Selection Config...`: configures how box selection works.
   1. `Full`: only items fully enclosed by the selection rectangle are selected.
   2. `Partial`: items intersecting the selection rectangle are also selected.
@@ -357,15 +387,15 @@ editor. The LSW is not a menu, but it is central to layout editing:
 - quickly make all layers visible / invisible
 - quickly make all layers selectable / non-selectable
 
-<!-- Screenshot placeholder: Display Config, Selection Config, and LSW -->
+![layoutEditorLSW.png](assets/layoutEditorLSW.png)
 
 ### Check Menu
 
 The base layout editor does not add a mandatory check action by itself, but the active PDK
 may populate the `Check` menu with verification commands.
 
-For example, some PDKs add **KLayout DRC** to the `Check` menu. Treat these as optional,
-PDK-provided features rather than core layout-editor functionality.
+For example, some IHP PDK currently adds **KLayout DRC** to the `Check` menu. 
+Treat these as optional, PDK-provided features rather than core layout-editor functionality.
 
 ### Tools Menu
 
@@ -377,16 +407,17 @@ PDK-provided features rather than core layout-editor functionality.
 - `Tools -> Export GDS`: exports the current layout hierarchy to GDS. The dialog lets you set
   unit, precision, and export directory. Defaults come from the active PDK process settings.
 
+![layoutEditorGDSExport.png](assets/layoutEditorGDSExport.png)
+
 Some PDKs and plugins may also add extra commands to the menu bar or tools area.
 
-<!-- Screenshot placeholder: GDS export dialog -->
 
 ## Context Menu (Right-click on Item)
 
 Right-clicking a selected layout item opens a context menu with common edit and hierarchy
 actions.
 
-<!-- Screenshot placeholder: Layout editor context menu -->
+![layoutEditorContextMenu.png](assets/layoutEditorContextMenu.png)
 
 | Action | Shortcut | Notes |
 | --- | --- | --- |

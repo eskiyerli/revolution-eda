@@ -259,13 +259,14 @@ class schematicNet(QGraphicsItem):
 
     def generateEndPointNetDict(self):
         self._endPointNetDict = dict[int, Set[schematicNet]]()
-        for i, endPoint in enumerate(self.sceneEndPoints):
-            netSet: Set["schematicNet"] = {
-                                              item
-                                              for item in self.scene().items(endPoint)
-                                              if isinstance(item, schematicNet)
-                                          } - {self}
-            self._endPointNetDict[i] = netSet
+        if self.scene():
+            for i, endPoint in enumerate(self.sceneEndPoints):
+                netSet: Set["schematicNet"] = {
+                                                  item
+                                                  for item in self.scene().items(endPoint)
+                                                  if isinstance(item, schematicNet)
+                                              } - {self}
+                self._endPointNetDict[i] = netSet
 
     def initializeSnapLines(self):
         """Initialize snap lines for the net."""
