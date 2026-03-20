@@ -3,18 +3,16 @@
 ## Introduction
 
 Revolution EDA is a new generation of schematic and symbol editor targeting custom
-integrated
-circuit design with integrated simulation and plotting capabilities.
+integrated circuit design with integrated simulation and plotting capabilities.
+Current version is **0.8.8**.
 
 ## Core Features
 
 1. **Advanced Symbol Creation**: Create symbols with both common symbol attributes and
-   instance
-   parameters. Instance parameters can be Python functions for dynamic parameter
+   instance parameters. Instance parameters can be Python functions for dynamic parameter
    calculation.
 2. **Automatic Symbol Generation**: Generate symbols automatically from schematics and
-   Verilog-A
-   modules with support for circles, lines, rectangles, and arches.
+   Verilog-A modules with support for circles, lines, rectangles, and arches.
 3. **Verilog-A Integration**: Clear separation between model and instance parameters for
    Verilog-A symbols.
 4. **JSON-Based File Format**: Human-readable JSON format allows easy inspection and editing
@@ -22,30 +20,41 @@ circuit design with integrated simulation and plotting capabilities.
 5. **Configuration-Driven Netlisting**: Config view support similar to commercial tools for
    choosing simulation views.
 6. **Hierarchical Netlisting**: Full hierarchical netlisting capability with Xyce simulator
-   support.
+   support, including bus and instance array netlisting.
 7. **Python-Powered Labels**: Labels support Python functions enabling professional PDK
    development.
 8. **Layout Editor**: Full-featured hierarchical layout editor with support for rectangles,
-   polygons, paths, pins, labels, vias (single and array) and python-based parametric
-   layout cells. Includes layer management (selectibility and visibility
-   management), and GDS import/export capabilities.
+   polygons, paths, pins, labels, vias (single and array), and python-based parametric
+   layout cells. Includes layer management (selectability and visibility management), rulers,
+   and GDS import/export capabilities.
 9. **Comprehensive Library Management**: Familiar library browser for creating, renaming,
    copying, and deleting libraries, cells, and views.
-10. **Persistent Configuration**: Save and restore configuration parameters.
-11. **Comprehensive Logging**: Error, warning, and info message logging.
+10. **Library Registry**: Built-in registry UI (`Tools → Libraries`) for downloading
+    Revolution EDA-compatible design libraries directly from the GitHub library registry.
+11. **Plugin Registry**: GUI-based plugin installer (`Tools → Plugins → Setup Plugins…`)
+    that downloads and installs plugins from the Revolution EDA plugin registry.
+12. **PDK Registry**: GUI for registering and switching PDKs without editing configuration
+    files manually.
+13. **AI Terminal**: Natural-language design modification through Claude (Anthropic) and
+    Gemini (Google) AI backends; API keys are stored in encrypted form.
+14. **Integrated Python Console**: Full Python REPL in the main window for automation and
+    scripting against Revolution EDA's internal APIs.
+15. **Stipple Pattern Editor**: Built-in editor for creating custom layer fill stipple
+    patterns.
+16. **Persistent Configuration**: Save and restore configuration parameters.
+17. **Comprehensive Logging**: Error, warning, and info message logging to `reveda.log`.
 
 ## Plugin Architecture
 
 Revolution EDA features a modular plugin architecture that enables extensible functionality.
-There are already two plugins available, *revedasim* and *revedaplot*. These plugins are not
-open-source, emphasizing the fact that Revolution EDA allows the independent Electronic
-Design Automation Software vendors a base they can build upon. Please inquire at Revolution
-EDA website
+Plugins can add their own menus and actions to editor windows through a `config.json`
+declaration — no changes to the core codebase are required.
+
+There are already several plugins available, including *revedasim*, *revedaplot*, and
+*aiTerminal*. Proprietary plugins can be distributed as pre-compiled binaries alongside
+open-source source plugins.
 
 ## Simulation and Plotting
-
-There are already two plugins available developed by Revolution Semiconductor for Revolution
-EDA:
 
 ### Revolution EDA Simulation and Analysis Environment (revedasim)
 
@@ -65,13 +74,24 @@ EDA:
 - **Parameter Sweep Visualization**: Automatic plotting of parametric simulation results
 - **Export Capabilities**: High-quality plot export functionality
 
+### AI Terminal (aiTerminal)
+
+- **Natural-Language Design Editing**: Modify schematics, symbols, and layouts using
+  conversational requests sent to an AI model.
+- **Multiple AI Backends**: Claude (Anthropic) and Gemini (Google) supported; OpenAI
+  planned.
+- **Secure API Key Storage**: Keys encrypted with Fernet and stored under `~/.reveda/`.
+- **Automatic Backup & Undo**: A backup is created before every AI modification; one-click
+  restore via the `undo` command or **Undo Changes** button.
+- **Read & Inspect**: Run `read` to display the current design JSON directly in the
+  terminal.
+
 ## Installation
 
 ### Prerequisites
 
-- Python 3.12 or 3.13
-- [Poetry](https://python-poetry.org/docs/#installation) dependency management tool if
-  installing from source.
+- Python 3.12, 3.13, or 3.14
+- [Poetry](https://python-poetry.org/docs/#installation) if installing from source
 
 ### From PyPI
 
@@ -99,39 +119,57 @@ poetry install
 poetry run reveda
 ```
 
+### Binary Releases
+
+Standalone binaries built with [Nuitka](https://nuitka.net) are available on the
+[GitHub Releases page](https://github.com/eskiyerli/revolution-eda/releases) and do not
+require a separate Python installation.
+
+- **Windows**: `reveda.exe`
+- **Linux**: `reveda.bin` (mark executable with `chmod +x reveda.bin` before running)
+
 ### PDK Installation
 
-To use preliminerary IHP PDK, clone the ihp_pdk repository preferably to a directory:
+To use the preliminary IHP PDK, clone the `ihp_pdk` repository:
 
 ```bash
 git clone https://github.com/eskiyerli/ihp_pdk.git
 ```
 
-If you would like to use preliminary IHP PDK, make sure that `REVEDA_PDK_PATH` variable in
-`.env` file points to where it is downloaded. The `.env` file could be under package
-directoryFor example, you had cloned the
-repository
-under
-the same directory where `revolution-eda` repo is cloned, `.env` file content could be:
+Set the `REVEDA_PDK_PATH` variable in the `.env` file to the cloned directory. If both
+repositories are cloned side-by-side, the `.env` entry would be:
 
 ```
 REVEDA_PDK_PATH=../ihp_pdk
 ```
 
-You could also clone `example_libraries` repo to have some ideal elements and IHP sg13g2_pr
-library. The second library also three layout parametric cells included for `rsil`,
-`cap_cmim`
-and `sg13_lv_nmos`. There is no guarantee given that these parametric cells are error-free
-and
-can be used with the relevant IHP process.
+PDKs can also be registered and switched through the **PDK Registry** dialog
+(`Tools → PDKs → Setup PDKs…`) without editing `.env` directly.
 
-Once again, the user can clone the relevant repository to download the example libraries:
+### Example Libraries
+
+Clone the `exampleLibraries` repository for a set of ideal elements and IHP sg13g2_pr
+library cells (including pcells for `rsil`, `cap_cmim`, and `sg13_lv_nmos`):
 
 ```bash
 git clone https://github.com/eskiyerli/exampleLibraries.git
 ```
 
-User Library Path Editor to add the paths to downloaded libraries to library browser.
+Use the **Library Registry** (`Tools → Libraries`) to download additional Revolution
+EDA-compatible libraries directly from within the application.
+
+## Documentation
+
+Full documentation is available in the `docs/` directory and covers:
+
+- [Installation](docs/installation.md)
+- [Main Window](docs/revedaMainWindow.md)
+- [Schematic Editor Tutorial](docs/schematicTutorial.md)
+- [Symbol Editor Tutorial](docs/symbolTutorial.md)
+- [Layout Editor Tutorial](docs/layoutTutorial.md)
+- [Config Editor](docs/configEditor.md)
+- [AI Terminal](docs/AI_TERMINAL.md)
+- [Plugins](docs/plugins.md)
 
 ## Attribution
 
