@@ -1,141 +1,180 @@
 # AI Terminal for Revolution EDA
 
-## Overview
+This guide explains how to use the AI Terminal plugin inside Revolution EDA. The AI Terminal
+lets you inspect the current design JSON, send natural-language modification requests, and
+undo AI-driven changes if the result is not what you wanted.
 
-The AI Terminal provides an interface to interact with AI agents (like Claude) to modify
-design files through natural language commands. The AI agent can read, understand, and
-modify JSON design files while ensuring all changes remain within the design library
-boundaries.
+## Quick Orientation
 
-## Features
+- The AI Terminal opens inside an editor window such as schematic, symbol, or layout.
+- It works on the **current design file** associated with that editor.
+- Before an AI modification is attempted, the plugin creates a **backup** of the file.
+- Successful AI edits trigger a **design reload** in the editor.
+- API keys can be entered from the terminal and are stored in encrypted form under the user's
+  local configuration directory.
 
-- **Safe Modifications**: Automatic backup before any AI-driven changes
-- **Undo Support**: Revert to previous version if changes are unsatisfactory
-- **Library Boundary Enforcement**: AI can only access files within design libraries
-- **JSON Validation**: Ensures all modifications produce valid JSON
+## What the AI Terminal Is For
 
-## Usage
+The AI Terminal is designed for command-driven edits and design inspection, for example:
 
-### Opening the AI Terminal
+- reading the current design JSON
+- requesting an explanation of a design structure
+- making controlled changes to the current file
+- undoing the last AI-driven change via the generated backup
 
-1. Open any design (schematic, symbol, or layout) in Revolution EDA
-2. Go to **Tools → AI Terminal** menu
-3. The AI Terminal window will appear
+## Opening the AI Terminal
 
-### Commands
+1. Open a schematic, symbol, or layout editor window.
+2. Use the **AI Terminal** action added by the plugin/PDK configuration.
+3. The terminal panel appears inside the editor window.
 
-- `help` - Display available commands
-- `read` - Show current design JSON
-- `setkey` - Set your Claude API key (required for AI features)
-- `ai:<request>` - Send a request to the AI agent
-- `undo` - Revert to backup and reload design
-- `clear` - Clear terminal output
+Depending on your setup, the action may be added through the plugin system or PDK menu
+configuration.
 
-### Example Workflow
+## Terminal Layout
 
-```
+The panel contains:
+
+- an output area
+- a single-line command input
+- a **Send** button
+- an **Undo Changes** button
+- a **Clear** button
+- a **Model** selector
+
+The current model selector offers:
+
+- **Claude**
+- **OpenAI**
+- **Gemini**
+
+At the moment, the OpenAI backend is listed in the UI but is not implemented yet.
+
+## Commands You Will Use Most
+
+The terminal understands a small command set.
+
+| Command | Purpose |
+| --- | --- |
+| `help` | Show the built-in help text |
+| `read` | Display the current design JSON |
+| `setkey` | Prompt for an API key for the currently selected model |
+| `ai:<request>` | Send a natural-language request to the active AI backend |
+| `undo` | Restore the backup file and reload the design |
+
+The **Clear** button clears the output area, but it is a button action rather than a typed
+terminal command.
+
+## Typical Workflow
+
+1. Open the AI Terminal from an editor window.
+2. Select the model you want to use.
+3. Run `setkey` and enter your API key.
+4. Optionally run `read` to inspect the current design JSON.
+5. Submit a request using `ai:<request>`.
+6. If the result is not acceptable, use `undo` or click **Undo Changes**.
+
+Example session:
+
+```text
 > setkey
-[Enter your Claude API key in the dialog]
+[enter API key in the dialog]
 
-> ai:Analyze design and explain its problems.
+> read
+[current design JSON is shown]
+
+> ai:Analyze this design and suggest improvements.
 
 > undo
-[If you want to revert the changes]
+[restores the backup and reloads the design]
 ```
 
-## AI Request Examples
+## Example Requests
 
-- `ai:Add a resistor with value 1k between nodes A and B`
-- `ai:Change the width of transistor M1 to 2um`
-- `ai:Add a label "VDD" at position (100, 200)`
-- `ai:Rename instance I1 to I_buffer`
-- `ai:Move all components 50 units to the right`
+The best requests are concrete and limited to the currently open design.
 
-## Setup
+- `ai:Analyze this design and explain what each block does.`
+- `ai:Rename instance I1 to I_buffer.`
+- `ai:Add a label named VDD near the power connection.`
+- `ai:Move the selected structure 50 units to the right.`
+- `ai:Change the width of transistor M1 to 2um.`
 
-### Prerequisites
+Exact results depend on the current editor type and what the backend can safely represent in
+the design JSON.
 
-1. Python 3.12 or 3.13
-2. Install the Anthropic package:
-   ```bash
-   pip install anthropic
-   ```
+## Safety Features
 
-3. Obtain a Claude API key from [Anthropic](https://www.anthropic.com/)
+The AI Terminal includes several safeguards.
 
-### Configuration
+- **Automatic backup**: before an AI modification, the plugin copies the current design file
+  to a backup.
+- **Undo support**: the backup can be restored through `undo` or the **Undo Changes** button.
+- **Library path scoping**: the AI agent is initialized with the current library path.
+- **Reload on success**: after a successful change, the editor reloads the design.
 
-The AI agent is automatically configured with:
+Backup files are created as:
 
-- Current design file path
-- Library paths from the current design
-- Restrictions to prevent modifications outside library boundaries
+```text
+<design_file>.json.bak
+```
 
-## Security & Safety
+When an undo succeeds, the backup is removed.
 
-- **Backup System**: Every AI modification creates a backup (.json.bak)
-- **Path Validation**: AI cannot access files outside design libraries
-- **JSON Validation**: All modifications are validated before saving
-- **Undo Support**: Easy rollback to previous version
+## API Key Handling
+
+API keys are entered through the `setkey` command. The plugin stores keys in encrypted form in
+the user's local configuration directory.
+
+The terminal currently supports loading and saving keys per provider, such as:
+
+- `claude`
+- `gemini`
+- `openai`
+
+If a saved key is available for the selected model, the plugin loads it automatically when the
+backend is created.
 
 ## Limitations
 
-- AI agent can only modify the current design file
-- Changes are limited to valid JSON structure
-- File references must be within library paths
-- Requires active internet connection for AI API calls
-- API usage may incur costs based on your Anthropic plan
+- The AI Terminal works on the **current design file**, not on an entire project at once.
+- OpenAI is visible in the model selector but is **not implemented yet**.
+- AI requests require network access and a valid API key.
+- AI-driven changes are constrained by the structure the backend can safely read and write.
 
 ## Troubleshooting
 
-**"API key not set"**
+### “API key not set”
 
-- Use the `setkey` command to configure your Claude API key
+- Run `setkey` and enter a valid key for the currently selected model.
 
-**"anthropic package not installed"**
+### “OpenAI backend not implemented yet”
 
-- Install with: `pip install anthropic`
+- Switch the model selector to **Claude** or **Gemini**.
 
-**"Modified design contains invalid paths"**
+### Changes do not appear in the editor
 
-- The AI tried to reference files outside library boundaries
-- Try rephrasing your request to work within the current library
+- Successful AI changes should trigger an automatic reload.
+- If needed, use the editor's `File -> Update Design` action.
 
-**Changes not appearing**
+### `undo` says no backup is available
 
-- The design should auto-reload after successful modifications
-- If not, use **File → Update Design** menu
+- A backup is only created when an AI modification is attempted successfully enough to start
+  the change flow.
+- If no AI change was run, there may be nothing to undo.
 
-## Future Enhancements
+## File Locations
 
-- Support for multiple AI providers (OpenAI, local models)
-- Persistent API key storage (encrypted)
-- Multi-file modifications
-- AI-assisted debugging and validation
-- Design optimization suggestions
-- Batch operations across multiple designs
+For users who want to inspect the implementation:
 
-## Technical Details
+- Plugin UI: `plugins/aiTerminal/aiTerminal.py`
+- Claude backend: `plugins/aiTerminal/claudeAiAgent.py`
+- Gemini backend: `plugins/aiTerminal/geminiAiAgent.py`
 
-### Architecture
+## Final Notes
 
-```
-editorWindow
-    ↓
-aiTerminal (GUI)
-    ↓
-aiAgent (Backend)
-    ↓
-Claude API
-```
-
-### File Locations
-
-- Terminal GUI: `revedaEditor/gui/aiTerminal.py`
-- AI Agent Backend: `revedaEditor/backend/aiAgent.py`
-- Integration: `revedaEditor/gui/editorWindow.py`
-
-### Backup Files
-
-Backups are created as `<design_file>.json.bak` in the same directory as the original file.
-They are automatically deleted after successful undo operations.
+- Use small, specific requests instead of broad “rewrite everything” prompts.
+- Run `read` first if you want to understand what the AI is about to modify.
+- Keep in mind that the plugin operates on editor design files rather than arbitrary project
+  documents.
+- Use `undo` as soon as a result looks wrong; the backup/restore flow is built for exactly
+  that purpose.
