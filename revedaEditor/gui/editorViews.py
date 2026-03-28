@@ -303,12 +303,14 @@ class editorView(QGraphicsView):
         painter.end()
 
     def cycleSelection(self, event):
-        modifiers = event.modifiers()
         if self.viewScene.itemCycler:
             item = next(self.viewScene.itemCycler)
-            self.viewScene.deselectAll()
-            item.setSelected(True)
+            # Deselect without calling deselectAll(), which would reset itemCycler.
+            for i in self.viewScene.selectedItems():
+                i.setSelected(False)
+            self.viewScene.clearSelection()
             self.viewScene.selectedItemsSet = {item}
+            item.setSelected(True)
 
     def clearStretchItems(self):
         self.determineViewRect()
