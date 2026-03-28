@@ -151,9 +151,11 @@ class gdsExporter:
         if via_key not in self._cellCache:
             viaName = f"via_{item.via.width}_{item.via.height}_{item.via.layer.name}_{item.via.layer.purpose}"
             viaCell = library.new_cell(viaName)
+            # Define single via at (0, 0) in cell-local coordinates.
+            # The Reference origin carries the scene position; mixing both causes a double-offset.
             via = gdstk.rectangle(
-                item.mapToScene(item.via.rect.topLeft()).toTuple(),
-                item.mapToScene(item.via.rect.bottomRight()).toTuple(),
+                (0, 0),
+                (item.via.width, item.via.height),
                 layer=item.via.layer.gdsLayer,
                 datatype=item.via.layer.datatype,
             )
@@ -164,7 +166,7 @@ class gdsExporter:
 
         viaArray = gdstk.Reference(
             cell=viaCell,
-            origin=item.start.toTuple(),
+            origin=item.mapToScene(item.start).toTuple(),
             columns=item.xnum,
             rows=item.ynum,
             spacing=(item.xs + item.width, item.ys + item.height),

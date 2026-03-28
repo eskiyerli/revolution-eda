@@ -928,8 +928,14 @@ class xyceNetlist:
     def createSpiceLine(self, elementSymbol: shp.schematicSymbol) -> list[str]:
         try:
             spiceLines = self.createXyceSymbolLine(elementSymbol)
-            self.includeLines.add(elementSymbol.symattrs.get("incLine",
-                                                             "* no include line is found for {item.cellName}").strip())
+            incFileName = elementSymbol.symattrs.get("incLine", "").strip()
+            if incFileName:
+                cellItem = self._getCellItem(elementSymbol.libraryName, elementSymbol.cellName)
+                cellPath = cellItem.data(Qt.ItemDataRole.UserRole + 2)
+                incFilePath = pathlib.Path(cellPath) / incFileName
+                self.includeLines.add(f'.INC "{incFilePath}"')
+            else:
+                self.includeLines.add(f"* no include line found for {elementSymbol.cellName}")
             return spiceLines
         except Exception as e:
             self._scene.logger.error(f"Spice subckt netlist error: {e}")

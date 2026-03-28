@@ -354,8 +354,7 @@ def createSpiceSymbol(
                 se.symbolAttribute("pinOrder", importedSpiceObj.pinOrder)
             )
             symbolScene.attributeList.append(
-                se.symbolAttribute("incLine",
-                                   f'.INC "{str(newSpiceFilePathObj)}"\n')
+                se.symbolAttribute("incLine", importedSpiceObj.pathObj.name)
             )
 
             symbolScene.attributeList.append(
