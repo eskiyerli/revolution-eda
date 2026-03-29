@@ -43,13 +43,12 @@
 # nuitka-project: --nofollow-import-to=plugins
 # nuitka-project: --nofollow-import-to=defaultPDK
 # nuitka-project: --include-package-data=defaultPDK
-# nuitka-project: --include-data-files=.env=.env
 # nuitka-project-if: {OS} == "Windows":
 #    nuitka-project: --output-dir=C:\Users\eskiye50\dist
 # nuitka-project-if: {OS} == "Linux":
 #    nuitka-project: --output-dir=/home/eskiyerli/dist
 # nuitka-project: --product-name="Revolution EDA"
-# nuitka-project: --product-version="0.8.8"
+# nuitka-project: --product-version="0.8.9"
 # nuitka-project: --company-name="Revolution EDA"
 # nuitka-project: --file-description="Electronic Design Automation Software for Professional Custom IC Design Engineers"
 # nuitka-project: --windows-icon-from-ico=revedaCoreLogo.ico
