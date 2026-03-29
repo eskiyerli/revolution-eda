@@ -899,19 +899,36 @@ class xyceNetlist:
                 return [f"{baseName}<{i}>" for i in
                         range(netTuple[0], netTuple[1] + netStep, netStep)]
 
-            # Expand all nets
-            expandedNets = []
-            for netName in elementSymbol.pinNetMap.values():
-                expandedNets.extend(expandNet(netName))
-            netsList = " ".join(expandedNets)
+            # Expand nets per pin
+            expandedPinNets = [expandNet(netName) for netName in elementSymbol.pinNetMap.values()]
 
             # Generate instance lines
             if arraySize == 1:
-                symbolLines.append(processLine(createInstanceLine(baseInstName), netsList))
+                # Scalar instance logic
+                flatNetsList = " ".join([nets[0] for nets in expandedPinNets])
+                symbolLines.append(processLine(createInstanceLine(baseInstName), flatNetsList))
             else:
-                for i in range(arrayTuple[0], arrayTuple[1] + arrayStep, arrayStep):
+                # Array instance logic
+                arrayIndices = list(range(arrayTuple[0], arrayTuple[1] + arrayStep, arrayStep))
+                
+                for j, i in enumerate(arrayIndices):
+                    instanceNets = []
+                    for nets in expandedPinNets:
+                        if len(nets) == arraySize:
+                            instanceNets.append(nets[j])  # 1-to-1 matching across array width
+                        elif len(nets) == 1:
+                            instanceNets.append(nets[0])  # Scalar broadcasted to all array nodes
+                        else:
+                            # Log a connection width mismatch warning if len is neither 1 nor arraySize
+                            self._scene.logger.warning(
+                                f"Net connection width mismatch for {elementSymbol.instanceName}: "
+                                f"expected 1 or {arraySize}, got {len(nets)}. Falling back to element 0."
+                            )
+                            instanceNets.append(nets[0])
+                            
+                    specificNetsList = " ".join(instanceNets)
                     symbolLines.append(
-                        processLine(createInstanceLine(f"{baseInstName}<{i}>"), netsList))
+                        processLine(createInstanceLine(f"{baseInstName}<{i}>"), specificNetsList))
 
             return symbolLines
 

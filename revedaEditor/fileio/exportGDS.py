@@ -75,6 +75,18 @@ class gdsExporter:
         writer = startThread(lib.write_gds, str(self._outputFileObj))
         threadPool.start(writer)
 
+    def oasExportThreaded(self, threadPool):
+        self._outputFileObj.parent.mkdir(parents=True, exist_ok=True)
+        lib = gdstk.Library(unit=self._unit, precision=self._precision)
+        self._topCell = lib.new_cell(self._cellname)
+        for item in self._items:
+            self.createCells(lib, item, self._topCell)
+
+        # Run write in thread
+        from revedaEditor.backend.startThread import startThread
+        writer = startThread(lib.write_oas, str(self._outputFileObj))
+        threadPool.start(writer)
+
     def createCells(self, library: gdstk.Library, item: lshp.layoutShape,
                     parentCell: gdstk.Cell):
         item_type = type(item)

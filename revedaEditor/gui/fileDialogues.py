@@ -368,11 +368,11 @@ class netlistExportDialogue(QDialog):
             self.netlistDirEdit.setText(self.dirName)
 
 
-class gdsExportDialogue(QDialog):
-    def __init__(self, parent):
-        super().__init__(parent)
-        self.parent = parent
-        self.setWindowTitle(f"Export GDS for {parent.cellName}-{parent.viewName}")
+class layoutExportDialogue(QDialog):
+    def __init__(self, parentW, export_format="GDS"):
+        super().__init__(parentW)
+        self.parentW = parentW
+        self.export_format = export_format.upper()
         self.setMinimumWidth(500)
         QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
 
@@ -382,24 +382,24 @@ class gdsExportDialogue(QDialog):
 
         self.mainLayout = QVBoxLayout()
         self.mainLayout.addStretch(2)
-        settingsBox = QGroupBox("GDS Export Settings")
+        settingsBox = QGroupBox(f"{self.export_format} Export Settings")
         settingsBoxLayout = QFormLayout()
         settingsBox.setLayout(settingsBoxLayout)
         self.unitEdit = edf.shortLineEdit()
-        self.unitEdit.setToolTip("The unit of the GDS file.")
+        self.unitEdit.setToolTip(f"The unit of the {self.export_format} file.")
         settingsBoxLayout.addRow(edf.boldLabel("Unit:"), self.unitEdit)
         self.precisionEdit = edf.shortLineEdit()
-        self.precisionEdit.setToolTip("The precision of the GDS file.")
+        self.precisionEdit.setToolTip(f"The precision of the {self.export_format} file.")
         settingsBoxLayout.addRow(edf.boldLabel("Precision:"), self.precisionEdit)
         self.mainLayout.addWidget(settingsBox)
-        fileBox = QGroupBox("GDS Export Directory")
+        fileBox = QGroupBox(f"{self.export_format} Export Directory")
         fileDialogLayout = QHBoxLayout()
         fileDialogLayout.addWidget(edf.boldLabel("Export Directory/File:"))
         self.exportPathEdit = edf.longLineEdit()
         fileDialogLayout.addWidget(self.exportPathEdit)
-        self.gdsExportButton = QPushButton("...")
-        self.gdsExportButton.clicked.connect(self.onDirButtonClicked)
-        fileDialogLayout.addWidget(self.gdsExportButton)
+        self.exportButton = QPushButton("...")
+        self.exportButton.clicked.connect(self.onDirButtonClicked)
+        fileDialogLayout.addWidget(self.exportButton)
         fileBox.setLayout(fileDialogLayout)
         self.mainLayout.addWidget(fileBox)
         self.mainLayout.addStretch(2)
@@ -410,9 +410,18 @@ class gdsExportDialogue(QDialog):
         dirName = QFileDialog.getExistingDirectory()
         if dirName:
             self.exportPathEdit.setText(
-                f"{dirName}/{self.parent.cellName}"
+                f"{dirName}/{self.parentW.cellName}"
             )
 
+
+class gdsExportDialogue(layoutExportDialogue):
+    def __init__(self, parentW):
+        super().__init__(parentW, "GDS")
+
+
+class oasExportDialogue(layoutExportDialogue):
+    def __init__(self, parentW):
+        super().__init__(parentW, "OAS")
 
 class gdsImportDialogue(QDialog):
     def __init__(self, parent):
@@ -507,23 +516,46 @@ class goDownHierDialogue(QDialog):
         self.buttonId = self.buttonGroup.checkedId()
 
 
-class importVerilogaCellDialogue(QDialog):
-    def __init__(self, model, parent):
+class importCellDialogue(QDialog):
+    def __init__(self, model, parent, file_type="Verilog-A"):
         super().__init__(parent)
         self._parent = parent
-        self.setWindowTitle("Import a Verilog-a Module File")
+        self.file_type = file_type
         self._model = model
-        self.setMinimumSize(500, 400)
+
+        # Configure dialog based on file type
+        if file_type == "Verilog-A":
+            self.setWindowTitle("Import a Verilog-a Module File")
+            self.setMinimumSize(500, 400)
+            self.file_extension = ".va"
+            self.file_filter = "Verilog-A files (*.va)"
+            self.file_label = "Select Verilog-A file:"
+            self.view_label = "Verilog-A view:"
+            self.caption = "Select Verilog-A file."
+        elif file_type == "Spice":
+            self.setWindowTitle("Import a Spice Subcircuit File")
+            self.setMinimumSize(500, 200)
+            self.file_extension = ".sp"
+            self.file_filter = "Spice files (*.sp, *.cir)"
+            self.file_label = "Select Spice file:"
+            self.view_label = "Spice  cellview:"
+            self.caption = "Select Spice file."
+
+        self._setup_ui()
+        self.show()
+
+    def _setup_ui(self):
         mainLayout = QVBoxLayout()
         fileDialogLayout = QHBoxLayout()
-        fileDialogLayout.addWidget(edf.boldLabel("Select Verilog-A file:"), 1)
-        self.vaFileEdit = edf.longLineEdit()
-        fileDialogLayout.addWidget(self.vaFileEdit, 4)
-        self.vaFileButton = QPushButton("...")
-        self.vaFileButton.clicked.connect(self.onFileButtonClicked)
-        fileDialogLayout.addWidget(self.vaFileButton, 1)
+        fileDialogLayout.addWidget(edf.boldLabel(self.file_label), 1)
+        self.fileEdit = edf.longLineEdit()
+        fileDialogLayout.addWidget(self.fileEdit, 4)
+        self.fileButton = QPushButton("...")
+        self.fileButton.clicked.connect(self.onFileButtonClicked)
+        fileDialogLayout.addWidget(self.fileButton, 1)
         mainLayout.addLayout(fileDialogLayout)
         mainLayout.addSpacing(20)
+
         layout = QFormLayout()
         layout.setSpacing(10)
         self.libNamesCB = QComboBox()
@@ -532,19 +564,32 @@ class importVerilogaCellDialogue(QDialog):
         layout.addRow(edf.boldLabel("Library:"), self.libNamesCB)
         self.cellNamesCB = QComboBox()
         self.cellNamesCB.setEditable(True)
+
+        # Handle initial cell names
         try:
-            initialCellNames = [
-                self._model.item(0).child(i).cellName
-                for i in range(self._model.item(0).rowCount())
-            ]
-        except Exception as e:
+            if self.file_type == "Verilog-A":
+                try:
+                    initialCellNames = [
+                        self._model.item(0).child(i).cellName
+                        for i in range(self._model.item(0).rowCount())
+                    ]
+                except Exception as e:
+                    initialCellNames = []
+                    print(f'No libraries could be found.')
+            else:  # Spice
+                initialCellNames = [
+                    self._model.item(0).child(i).cellName
+                    for i in range(self._model.item(0).rowCount())
+                ]
+        except (AttributeError, IndexError):
             initialCellNames = []
-            print(f'No libraries could be found.')
+
         self.cellNamesCB.addItems(initialCellNames)
         layout.addRow(edf.boldLabel("Cell:"), self.cellNamesCB)
-        self.vaViewName = edf.longLineEdit()
-        layout.addRow(edf.boldLabel("Verilog-A view:"), self.vaViewName)
+        self.viewName = edf.longLineEdit()
+        layout.addRow(edf.boldLabel(self.view_label), self.viewName)
         mainLayout.addLayout(layout)
+
         symbolGroupBox = QGroupBox("Symbol Creation")
         symbolGBLayout = QVBoxLayout()
         self.symbolCheckBox = QCheckBox("Create a new symbol?")
@@ -552,14 +597,13 @@ class importVerilogaCellDialogue(QDialog):
         symbolGroupBox.setLayout(symbolGBLayout)
         mainLayout.addWidget(symbolGroupBox)
         mainLayout.addSpacing(20)
-        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
 
+        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         self.buttonBox = QDialogButtonBox(QBtn)
         self.buttonBox.accepted.connect(self.accept)
         self.buttonBox.rejected.connect(self.reject)
         mainLayout.addWidget(self.buttonBox)
         self.setLayout(mainLayout)
-        self.show()
 
     def changeCells(self):
         selectedLibItemRow = self._model.findItems(self.libNamesCB.currentText())[
@@ -573,90 +617,64 @@ class importVerilogaCellDialogue(QDialog):
         self.cellNamesCB.addItems(libCellNames)
 
     def onFileButtonClicked(self):
-        vaFilePathObj = pathlib.Path(self.vaFileEdit.text())
+        filePathObj = pathlib.Path(self.fileEdit.text())
         fileDialog = QFileDialog()
-        fileDialog.setNameFilter("Verilog-A files (*.va)")
-        fileDialog.setDirectory(str(vaFilePathObj.parent))
-        fileDialog.selectFile(vaFilePathObj.name)
-        self.vaFileName = fileDialog.getOpenFileName(
-            self, caption="Select Verilog-A " "file."
+        fileDialog.setNameFilter(self.file_filter)
+        fileDialog.setDirectory(str(filePathObj.parent))
+        fileDialog.selectFile(filePathObj.name)
+        fileName = fileDialog.getOpenFileName(
+            self, caption=self.caption
         )[0]
-        if self.vaFileName:
-            self.vaFileEdit.setText(self.vaFileName)
+        if fileName:
+            self.fileEdit.setText(fileName)
 
 
-class importSpiceCellDialogue(QDialog):
+class importVerilogaCellDialogue(importCellDialogue):
     def __init__(self, model, parent):
-        super().__init__(parent)
-        self._parent = parent
-        self.setWindowTitle("Import a Spice Subcircuit File")
-        self._model = model
-        self.setMinimumSize(500, 200)
-        mainLayout = QVBoxLayout()
-        fileDialogLayout = QHBoxLayout()
-        fileDialogLayout.addWidget(edf.boldLabel("Select Spice file:"), 1)
-        self.spiceFileEdit = edf.longLineEdit()
-        fileDialogLayout.addWidget(self.spiceFileEdit, 4)
-        self.vaFileButton = QPushButton("...")
-        self.vaFileButton.clicked.connect(self.onFileButtonClicked)
-        fileDialogLayout.addWidget(self.vaFileButton, 1)
-        mainLayout.addLayout(fileDialogLayout)
-        mainLayout.addSpacing(20)
-        layout = QFormLayout()
-        layout.setSpacing(10)
-        self.libNamesCB = QComboBox()
-        self.libNamesCB.setModel(self._model)
-        self.libNamesCB.currentTextChanged.connect(self.changeCells)
-        layout.addRow(edf.boldLabel("Library:"), self.libNamesCB)
-        self.cellNamesCB = QComboBox()
-        self.cellNamesCB.setEditable(True)
-        initialCellNames = [
-            self._model.item(0).child(i).cellName
-            for i in range(self._model.item(0).rowCount())
-        ]
-        self.cellNamesCB.addItems(initialCellNames)
-        layout.addRow(edf.boldLabel("Cell:"), self.cellNamesCB)
-        self.spiceViewName = edf.longLineEdit()
-        layout.addRow(edf.boldLabel("Spice  cellview:"), self.spiceViewName)
-        mainLayout.addLayout(layout)
-        symbolGroupBox = QGroupBox("Symbol Creation")
-        symbolGBLayout = QVBoxLayout()
-        self.symbolCheckBox = QCheckBox("Create a new symbol?")
-        symbolGBLayout.addWidget(self.symbolCheckBox)
-        symbolGroupBox.setLayout(symbolGBLayout)
-        mainLayout.addWidget(symbolGroupBox)
-        mainLayout.addSpacing(20)
-        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        super().__init__(model, parent, "Verilog-A")
 
-        self.buttonBox = QDialogButtonBox(QBtn)
-        self.buttonBox.accepted.connect(self.accept)
-        self.buttonBox.rejected.connect(self.reject)
-        mainLayout.addWidget(self.buttonBox)
-        self.setLayout(mainLayout)
-        self.show()
+    @property
+    def vaFileEdit(self):
+        """Compatibility property for existing code"""
+        return self.fileEdit
 
-    def changeCells(self):
-        selectedLibItemRow = self._model.findItems(self.libNamesCB.currentText())[
-            0
-        ].row()
-        libCellNames = [
-            self._model.item(selectedLibItemRow).child(i).cellName
-            for i in range(self._model.item(selectedLibItemRow).rowCount())
-        ]
-        self.cellNamesCB.clear()
-        self.cellNamesCB.addItems(libCellNames)
+    @property
+    def vaViewName(self):
+        """Compatibility property for existing code"""
+        return self.viewName
 
-    def onFileButtonClicked(self):
-        spiceFilePathObj = pathlib.Path(self.spiceFileEdit.text())
-        fileDialog = QFileDialog()
-        fileDialog.setNameFilter("Spice files (*.sp, *.cir)")
-        fileDialog.setDirectory(str(spiceFilePathObj.parent))
-        fileDialog.selectFile(spiceFilePathObj.name)
-        self.spiceFileName = fileDialog.getOpenFileName(
-            self, caption="Select Spice " "file."
-        )[0]
-        if self.spiceFileName:
-            self.spiceFileEdit.setText(self.spiceFileName)
+    @property
+    def vaFileName(self):
+        """Compatibility property for existing code"""
+        return getattr(self, '_fileName', None)
+
+    @vaFileName.setter
+    def vaFileName(self, value):
+        self._fileName = value
+
+
+class importSpiceCellDialogue(importCellDialogue):
+    def __init__(self, model, parent):
+        super().__init__(model, parent, "Spice")
+
+    @property
+    def spiceFileEdit(self):
+        """Compatibility property for existing code"""
+        return self.fileEdit
+
+    @property
+    def spiceViewName(self):
+        """Compatibility property for existing code"""
+        return self.viewName
+
+    @property
+    def spiceFileName(self):
+        """Compatibility property for existing code"""
+        return getattr(self, '_fileName', None)
+
+    @spiceFileName.setter
+    def spiceFileName(self, value):
+        self._fileName = value
 
 
 class createConfigViewDialogue(QDialog):

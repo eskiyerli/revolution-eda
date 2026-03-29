@@ -1,3 +1,4 @@
+import importlib.resources
 import re
 from pathlib import Path
 
@@ -7,15 +8,49 @@ from PySide6.QtCore import QUrl, Qt
 from PySide6.QtGui import (QDesktopServices, QAction, QIcon)
 from PySide6.QtPrintSupport import (QPrinter, QPrintDialog)
 from PySide6.QtWidgets import (QMainWindow, QVBoxLayout, QWidget,
-                               QTextBrowser, QDialog, QPushButton, QLabel, )
+                               QTextBrowser, QDialog, QPushButton, QLabel,
+                               QApplication)
+
+
+def _resolve_docs_path() -> Path:
+    """Return the absolute path to the docs directory.
+
+    Search order:
+    1. ``revedaEditor/docs/`` via importlib.resources — the correct location
+       for an installed wheel where docs is bundled as package data.
+    2. Project-root ``docs/`` relative to the running app's basePath — works
+       for editable installs and direct source runs.
+    3. CWD ``docs/`` — legacy fallback.
+    """
+    # 1. Installed package data (revedaEditor/docs/)
+    try:
+        ref = importlib.resources.files("revedaEditor").joinpath("docs")
+        candidate = Path(str(ref))
+        if candidate.is_dir():
+            return candidate
+    except (TypeError, ModuleNotFoundError):
+        pass
+
+    # 2. Source-tree / editable install via app basePath
+    try:
+        app = QApplication.instance()
+        if app is not None and hasattr(app, "basePath"):
+            candidate = Path(app.basePath) / "docs"
+            if candidate.is_dir():
+                return candidate
+    except Exception:
+        pass
+
+    # 3. CWD fallback
+    return Path("docs")
 
 
 # from revedaEditor.gui.startThread import startThread
 
 class MarkdownViewer(QTextBrowser):
-    def __init__(self, basePath="docs"):
+    def __init__(self, basePath: Path = None):
         super().__init__()
-        self.basePath = Path(basePath)
+        self.basePath = basePath if basePath is not None else _resolve_docs_path()
         self.currentFile = None
 
         # Enable link clicking
@@ -283,7 +318,7 @@ class helpBrowser(QMainWindow):
         layout = QVBoxLayout(centralW)
 
         # Create markdown viewer
-        self.markdownViewer = MarkdownViewer("docs")
+        self.markdownViewer = MarkdownViewer()
         self.markdownViewer.anchorClicked.connect(self.handleNavigation)
         layout.addWidget(self.markdownViewer)
 
@@ -356,7 +391,7 @@ class aboutDialog(QDialog):
         # Add information about your application using rich text
         aboutLabel = QLabel(
             "<h2>Revolution EDA</h2>"
-            "<p><strong>Version:</strong> 0.8.9</p>"
+            "<p><strong>Version:</strong> 0.8.10</p>"
             "<p><strong>Copyright: Revolution Semiconductor</strong> © 2026</p>"
             "<p><strong>License:</strong> Mozilla Public License 2.0 amended with Commons Clause</p>"
             "<p><strong> Website:</strong> <a href='https://reveda.eu'>Revolution EDA</a></p>"
