@@ -34,7 +34,6 @@
 # nuitka-project: --include-package=polars
 # nuitka-project: --include-module=pydoc
 # nuitka-project: --include-package=xml
-# nuitka-project: --include-package=pyqtgraph
 # nuitka-project: --include-module=PySide6.QtWebEngineWidgets
 # nuitka-project: --include-module=PySide6.QtOpenGL
 # nuitka-project: --nofollow-import-to=unittest
