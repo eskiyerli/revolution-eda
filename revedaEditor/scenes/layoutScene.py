@@ -399,98 +399,32 @@ class layoutScene(editorScene):
                 self.removeItem(self._newCutLine)
         self._newCutLine = None
 
-    def _splitRect(self, item, line: QLineF):
-        rect = item.rect
-        points = [
-            rect.topLeft(),
-            rect.topRight(),
-            rect.bottomRight(),
-            rect.bottomLeft(),
-        ]
+    def _splitPolygonalShape(self, item, line: QLineF):
+        """Split a polygonal shape (rectangle or polygon) at intersections with the cut line."""
+        # Get points based on item type
+        if hasattr(item, 'rect'):  # Rectangle
+            rect = item.rect
+            points = [
+                rect.topLeft(),
+                rect.topRight(),
+                rect.bottomRight(),
+                rect.bottomLeft(),
+            ]
+            shape_name = "Rectangle"
+        else:  # Polygon
+            points = item.points
+            shape_name = "Polygon"
+        
         intersections = []
 
-        # Find all intersection points with rectangle edges
-        for i in range(4):
-            edge = QLineF(points[i], points[(i + 1) % 4])
-            result = line.intersects(edge)
-            if result[0] == QLineF.IntersectionType.BoundedIntersection:
-                intersections.append((i, result[1]))
-
-        # Split rectangle if we have exactly 2 intersections
-        if len(intersections) == 2:
-            idx1, p1 = intersections[0]
-            idx2, p2 = intersections[1]
-
-            # Create two new polygons
-            poly1_points = [p1]
-            for i in range(idx1 + 1, idx2 + 1):
-                poly1_points.append(points[i])
-            poly1_points.append(p2)
-
-            poly2_points = [p2]
-            for i in range(idx2 + 1, 4):
-                poly2_points.append(points[i])
-            for i in range(0, idx1 + 1):
-                poly2_points.append(points[i])
-            poly2_points.append(p1)
-
-            poly1 = lshp.layoutPolygon(poly1_points, item.layer)
-            poly2 = lshp.layoutPolygon(poly2_points, item.layer)
-
-            self.undoStack.beginMacro("Split Rectangle")
-            self.deleteUndoStack(item)
-            self.addUndoStack(poly1)
-            self.addUndoStack(poly2)
-            self.undoStack.endMacro()
-
-    def _splitPath(self, item, line):
-        """Split a path at the intersection with the cut line."""
-        pathLine = QLineF(*item.sceneEndPoints)
-        result = line.intersects(pathLine)
-
-        if result[0] == QLineF.IntersectionType.BoundedIntersection:
-            intersectPoint = result[1]
-
-            # Create two new paths
-            path1 = lshp.layoutPath(
-                QLineF(pathLine.p1(), intersectPoint),
-                item.layer,
-                item.width,
-                item.startExtend,
-                0,
-                item.mode,
-            )
-            path1.name = item.name
-
-            path2 = lshp.layoutPath(
-                QLineF(intersectPoint, pathLine.p2()),
-                item.layer,
-                item.width,
-                0,
-                item.endExtend,
-                item.mode,
-            )
-            path2.name = item.name
-
-            self.undoStack.beginMacro("Split Path")
-            self.deleteUndoStack(item)
-            self.addUndoStack(path1)
-            self.addUndoStack(path2)
-            self.undoStack.endMacro()
-
-    def _splitPolygon(self, item, line):
-        """Split a polygon at intersections with the cut line."""
-        points = item.points
-        intersections = []
-
-        # Find all intersection points with polygon edges
+        # Find all intersection points with shape edges
         for i in range(len(points)):
             edge = QLineF(points[i], points[(i + 1) % len(points)])
             result = line.intersects(edge)
             if result[0] == QLineF.IntersectionType.BoundedIntersection:
                 intersections.append((i, result[1]))
 
-        # Split polygon if we have exactly 2 intersections
+        # Split shape if we have exactly 2 intersections
         if len(intersections) == 2:
             idx1, p1 = intersections[0]
             idx2, p2 = intersections[1]
@@ -511,11 +445,19 @@ class layoutScene(editorScene):
             poly1 = lshp.layoutPolygon(poly1_points, item.layer)
             poly2 = lshp.layoutPolygon(poly2_points, item.layer)
 
-            self.undoStack.beginMacro("Split Polygon")
+            self.undoStack.beginMacro(f"Split {shape_name}")
             self.deleteUndoStack(item)
             self.addUndoStack(poly1)
             self.addUndoStack(poly2)
             self.undoStack.endMacro()
+
+    def _splitRect(self, item, line: QLineF):
+        """Split a rectangle - delegates to unified polygonal shape splitter."""
+        self._splitPolygonalShape(item, line)
+
+    def _splitPolygon(self, item, line):
+        """Split a polygon - delegates to unified polygonal shape splitter."""
+        self._splitPolygonalShape(item, line)
 
     def startCutLine(self):
         if self.selectedItemsSet:
@@ -790,10 +732,14 @@ class layoutScene(editorScene):
             self.logger.error(f"Unexpected error while saving layout: {str(e)}")
             raise
 
-    def exportCellGDS(
-            self, gdsExportDir: pathlib.Path, gdsUnit: float, gdsPrecision: float, dbu: int
+    def _exportCell(
+            self, export_dir: pathlib.Path, unit: float, precision: float, dbu: int, format_type: str = "GDS"
     ):
-        gdsExportPath: pathlib.Path = gdsExportDir / f"{self.cellName}.gds"
+        """Export cell in the specified format (GDS or OAS)."""
+        format_upper = format_type.upper()
+        file_extension = ".gds" if format_upper == "GDS" else ".oas"
+        export_path = export_dir / f"{self.cellName}{file_extension}"
+        
         try:
             # reprocess the layout to get the layout positions right.
             topLevelItems = [
@@ -809,27 +755,42 @@ class layoutScene(editorScene):
 
             layoutItems = [lj.layoutItems(self).create(item) for item in decodedData]
 
-            gdsExportObj = gdse.gdsExporter(self.cellName, layoutItems, gdsExportPath)
-            gdsExportObj.unit = gdsUnit
-            gdsExportObj.precision = gdsPrecision
-            gdsExportObj.dbu = dbu
+            exportObj = gdse.gdsExporter(self.cellName, layoutItems, export_path)
+            exportObj.unit = unit
+            exportObj.precision = precision
+            exportObj.dbu = dbu
 
-            self.logger.info("GDS Export started")
+            self.logger.info(f"{format_upper} Export started.")
             with self.measureDuration():
-                gdsExportObj.gdsExportThreaded(self.appMainW.threadPool)
-            self.logger.info("GDS Export finished")
+                if format_upper == "OAS":
+                    exportObj.oasExportThreaded(self.appMainW.threadPool)
+                else:
+                    exportObj.gdsExportThreaded(self.appMainW.threadPool)
+            self.logger.info(f"{format_upper} Export finished.")
 
         except ValueError as e:
             self.logger.error(f"Invalid layout data: {str(e)}")
             raise
 
         except (IOError, TypeError) as e:
-            self.logger.error(f"Failed to export layout to {gdsExportPath}: {str(e)}")
+            self.logger.error(f"Failed to export layout to {export_path}: {str(e)}")
             raise
 
         except Exception as e:
             self.logger.error(f"Unexpected error while exporting layout: {str(e)}")
             raise
+
+    def exportCellGDS(
+            self, gdsExportDir: pathlib.Path, gdsUnit: float, gdsPrecision: float, dbu: int
+    ):
+        """Export cell as GDS format."""
+        self._exportCell(gdsExportDir, gdsUnit, gdsPrecision, dbu, "GDS")
+
+    def exportCellOAS(
+            self, oasExportDir: pathlib.Path, gdsUnit: float, gdsPrecision: float, dbu: int
+    ):
+        """Export cell as OAS format."""
+        self._exportCell(oasExportDir, gdsUnit, gdsPrecision, dbu, "OAS")
 
     def loadDesign(self, filePathObj: pathlib.Path) -> bool:
         """Load the layout cell from the given JSON file."""

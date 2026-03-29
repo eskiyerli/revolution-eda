@@ -58,13 +58,12 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential pkg-config libgl1-mesa-dev libglu1-mesa-dev libxcb-xinerama0 libxkbcommon-x11-0 libssl-dev
+          sudo apt-get install -y build-essential pkg-config libgl1-mesa-dev libglu1-mesa-dev \
+            libxcb-xinerama0 libxkbcommon-x11-0 libssl-dev
 
       - name: Install Homebrew deps (macOS)
         if: matrix.os == 'macos-latest'
-        run: |
-          brew update || true
-          brew install pkg-config || true
+        run: brew install pkg-config || true
 
       - name: Cache pip
         uses: actions/cache@v4
@@ -73,45 +72,31 @@ jobs:
             ~/.cache/pip
             ~/AppData/Local/pip/Cache
           key: ${{ runner.os }}-pip-${{ hashFiles('**/poetry.lock') }}-${{ matrix.python_version }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
+          restore-keys: ${{ runner.os }}-pip-
 
-      - name: Install Poetry
-        run: python -m pip install poetry
-
-      - name: Install Python dependencies with Poetry (system env)
+      - name: Install dependencies
         run: |
-          # Install into the runner environment for simpler Nuitka behavior
+          python -m pip install poetry
           poetry config virtualenvs.create false --local || true
           poetry install --only main --no-interaction --no-ansi
-
-      - name: Install Nuitka and build tools
-        run: |
-          python -m pip install --upgrade pip
           python -m pip install "nuitka==4.0.0" wheel setuptools
 
-      - name: Read version from pyproject.toml
+      - name: Read version
         id: version
         run: |
           VERSION=$(grep '^version' pyproject.toml | head -1 | sed 's/version = "//;s/"//')
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Check for defaultPDK
-        run: |
-          if [ ! -d defaultPDK ]; then echo "Warning: defaultPDK/ not found in repo root"; fi
-
-      - name: Run Nuitka standalone build
-        env:
-          DIST_DIR: dist/${{ matrix.os_short }}
+      - name: Build with Nuitka
         run: |
           set -euo pipefail
-          mkdir -p "$DIST_DIR"
 
           FLAGS=(
             --standalone
             --deployment
             --assume-yes-for-downloads
             --enable-plugin=pyside6
+            --noinclude-qt-translations
             --include-module=PySide6.QtWebEngineWidgets
             --include-module=PySide6.QtOpenGL
             --include-package=revedaEditor
@@ -131,84 +116,44 @@ jobs:
             --product-version='${{ steps.version.outputs.version }}'
             --company-name='Revolution EDA'
             --file-description='Electronic Design Automation Software for Professional Custom IC Design Engineers'
-            --output-dir="$DIST_DIR"
+            --output-dir=build
           )
 
-          # macOS: create app bundle
-          if [ "${{ matrix.os_short }}" = "macos" ]; then
-            FLAGS+=(--macos-create-app-bundle)
-          fi
-
-          # Windows: embed icon
           if [ "${{ matrix.os_short }}" = "windows" ]; then
             FLAGS+=(--windows-icon-from-ico=revedaCoreLogo.ico)
             FLAGS+=(--include-windows-runtime-dlls=yes)
           fi
 
-          echo "Running nuitka with flags: ${FLAGS[*]}"
-          # Execute Nuitka; expand array to arguments correctly
           python -m nuitka "${FLAGS[@]}" reveda.py
 
-      - name: Package artifact zip
-        env:
-          ART_DIR: RevolutionEDA-${{ matrix.os_short }}-v${{ steps.version.outputs.version }}-python${{ matrix.python_version }}
-          DIST_DIR: dist/${{ matrix.os_short }}
+      - name: Package artifact
         run: |
           set -euo pipefail
 
-          # Locate reveda.dist (Nuitka standalone output); skip reveda.build
-          REVEDA_DIST=$(find "$DIST_DIR" -maxdepth 2 -name "reveda.dist" -type d | head -n 1 || true)
-          if [ -z "$REVEDA_DIST" ]; then
-            echo "ERROR: reveda.dist not found under $DIST_DIR" && exit 1
-          fi
-          echo "Packaging from: $REVEDA_DIST"
-
-          # Copy defaultPDK contents into reveda.dist/defaultPDK/
-          if [ -d defaultPDK ]; then
-            cp -a defaultPDK "$REVEDA_DIST/defaultPDK"
-          fi
-
-          # Zip the contents of reveda.dist directly (no wrapper directory)
-          (cd "$REVEDA_DIST" && zip -r "$OLDPWD/${ART_DIR}.zip" .)
-
-      - name: Headless smoke test (attempt to start the built executable)
-        env:
-          DIST_DIR: dist/${{ matrix.os_short }}
-        run: |
-          set +e
-          echo "Locating an executable inside $DIST_DIR to run for a short headless smoke test"
-          # Windows produces reveda.exe; Linux/macOS produce reveda (no extension)
-          if [ "${{ matrix.os_short }}" = "windows" ]; then
-            EXE_PATH=$(find "$DIST_DIR" -name "reveda.exe" -type f | head -n 1 || true)
+          # Locate reveda.dist or reveda.app
+          if [ -d "build/reveda.app" ]; then
+            # Copy defaultPDK into the app bundle where the executable lives
+            mkdir -p "build/reveda.app/Contents/MacOS/defaultPDK"
+            cp -a defaultPDK/. "build/reveda.app/Contents/MacOS/defaultPDK/"
           else
-            EXE_PATH=$(find "$DIST_DIR" -name "reveda" -type f -perm -u=x | head -n 1 || true)
-          fi
-          if [ -z "$EXE_PATH" ]; then
-            echo "No executable found for smoke test; skipping"
-            exit 0
-          fi
-          echo "Found candidate executable: $EXE_PATH"
-          QT_QPA_PLATFORM=offscreen "$EXE_PATH" &
-          PID=$!
-          sleep 2
-          if kill -0 $PID 2>/dev/null; then
-            echo "Executable started (PID: $PID), killing after short run"
-            kill $PID || true
-          else
-            echo "Executable did not remain running; it may have exited quickly but build may still be valid"
-          fi
-          # Print any reveda.log if present in the working dir
-          if [ -f reveda.log ]; then
-            echo "----- reveda.log -----"
-            tail -n +1 reveda.log | sed -n '1,200p'
-            echo "----------------------"
+            REVEDA_DIST=$(find build -maxdepth 2 -name "reveda.dist" -type d | head -n 1 || true)
+            if [ -n "$REVEDA_DIST" ]; then
+              # Copy defaultPDK source into reveda.dist/defaultPDK
+              mkdir -p "$REVEDA_DIST/defaultPDK"
+              cp -a defaultPDK/. "$REVEDA_DIST/defaultPDK/"
+            else
+              echo "ERROR: Neither reveda.app nor reveda.dist found"
+              exit 1
+            fi
           fi
 
-      - name: Upload packaged artifact
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: revolution-eda-${{ matrix.os_short }}-v${{ steps.version.outputs.version }}-python${{ matrix.python_version }}
-          path: RevolutionEDA-${{ matrix.os_short }}-v${{ steps.version.outputs.version }}-python${{ matrix.python_version }}.zip
+          name: RevolutionEDA-${{ matrix.os_short }}-v${{ steps.version.outputs.version }}-python${{ matrix.python_version }}
+          path: |
+            build/reveda.dist/
+            build/reveda.app/
           retention-days: 30
 
   release:
@@ -224,7 +169,17 @@ jobs:
         with:
           path: artifacts
 
-      - name: Create GitHub Release and upload binaries
+      - name: Zip artifacts for release
+        run: |
+          cd artifacts
+          for dir in */; do
+            if [ -d "$dir" ]; then
+              dirname_clean=$(basename "$dir")
+              (cd "$dir" && zip -r "../${dirname_clean}.zip" .)
+            fi
+          done
+
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
@@ -232,4 +187,4 @@ jobs:
           draft: false
           prerelease: false
           generate_release_notes: true
-          files: artifacts/**/*.zip
+          files: artifacts/*.zip

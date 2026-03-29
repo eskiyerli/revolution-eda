@@ -486,8 +486,8 @@ class schematicScene(editorScene):
     def findSnapPoint(self, eventLoc: QPoint,
                       ignoredSet: set[snet.schematicNet]) -> QPoint:
         snapRect = QRect(eventLoc.x() - self.snapTuple[0],
-                         eventLoc.y() - self.snapTuple[1], 2 * self.snapTuple[0],
-                         2 * self.snapTuple[1], )
+                         eventLoc.y() - self.snapTuple[1], 4 * self.snapTuple[0],
+                         4 * self.snapTuple[1], )
         snapPoints = self.findConnectPoints(snapRect, ignoredSet)
 
         if self._newNet:
@@ -1016,8 +1016,10 @@ class schematicScene(editorScene):
                 tempDoc = QTextDocument()
                 for i in range(dlg.instanceLabelsLayout.rowCount()):
                     # first create label name document with HTML annotations
-                    tempDoc.setHtml(dlg.instanceLabelsLayout.itemAtPosition(i,
-                                                                            0).widget().text())
+                    label_item = dlg.instanceLabelsLayout.itemAtPosition(i, 0)
+                    if label_item is None or label_item.widget() is None:
+                        continue
+                    tempDoc.setHtml(label_item.widget().text())
                     # now strip html annotations
                     tempLabelName = f"@{tempDoc.toPlainText().strip()}"
                     # check if label name is in label dictionary of item.

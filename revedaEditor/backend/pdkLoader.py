@@ -39,13 +39,22 @@ _module_cache = {}
 
 def _get_pdk_path() -> pathlib.Path:
     """Get and cache PDK path"""
-    pdkPath = os.environ.get("REVEDA_PDK_PATH", './defaultPDK')
-    pdkPathObj = pathlib.Path(pdkPath).resolve()
+    base_path = pathlib.Path(__file__).resolve().parent.parent.parent
+    pdkPath = os.environ.get("REVEDA_PDK_PATH")
+    
+    if pdkPath:
+        pdkPathObj = pathlib.Path(pdkPath)
+        if not pdkPathObj.is_absolute():
+            pdkPathObj = base_path / pdkPath
+    else:
+        pdkPathObj = base_path / 'defaultPDK'
+    
+    pdkPathObj = pdkPathObj.resolve()
 
     if not pdkPathObj.exists():
-        pdkPathObj = pathlib.Path('./defaultPDK').resolve()
+        pdkPathObj = (base_path / 'defaultPDK').resolve()
         if not pdkPathObj.exists():
-            raise FileNotFoundError(f"PDK path not found: {pdkPath}")
+            raise FileNotFoundError(f"PDK path not found: {pdkPathObj}")
 
     pdkPathParentStr = str(pdkPathObj.parent)
     if pdkPathParentStr not in sys.path:

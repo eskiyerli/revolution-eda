@@ -96,8 +96,9 @@ class layoutEditor(edw.editorWindow):
         self.cutAction.setToolTip("Cut selected objects")
         self.exportGDSAction = QAction("Export GDS", self)
         self.exportGDSAction.setToolTip("Export GDS from Layout")
-        # self.klayoutDRCAction = QAction("KLayout DRC...", self)
-        # self.klayoutDRCAction.setToolTip("DRC with KLayout")
+        self.exportOASAction = QAction("Export OAS", self)
+        self.exportGDSAction.setToolTip("Export OAS from Layout")
+
 
     def _addActions(self):
         super()._addActions()
@@ -121,6 +122,7 @@ class layoutEditor(edw.editorWindow):
         self.menuCreate.addAction(self.delRulerAction)
         self.menuTools.addAction(self.renumberInstanceAction)
         self.menuTools.addAction(self.exportGDSAction)
+        self.menuTools.addAction(self.exportOASAction)
 
         # hierarchy submenu
         self.hierMenu = self.menuEdit.addMenu("Hierarchy")
@@ -162,6 +164,7 @@ class layoutEditor(edw.editorWindow):
         self.createInstAction.triggered.connect(self.createInstClick)
         self.createRectAction.triggered.connect(self.createRectClick)
         self.exportGDSAction.triggered.connect(self.exportGDSClick)
+        self.exportOASAction.triggered.connect(self.exportOASClick)
         self.cutAction.triggered.connect(self.cutClick)
         self.createPathAction.triggered.connect(self.createPathClick)
         self.createPinAction.triggered.connect(self.createPinClick)
@@ -172,7 +175,6 @@ class layoutEditor(edw.editorWindow):
         self.delRulerAction.triggered.connect(self.delRulerClick)
         self.deleteAction.triggered.connect(self.deleteClick)
         self.objPropAction.triggered.connect(self.objPropClick)
-        # self.klayoutDRCAction.triggered.connect(self.klayoutDRCClick)
         self.goDownAction.triggered.connect(self.goDownClick)
         self.renumberInstanceAction.triggered.connect(self.renumberInstanceClick)
 
@@ -444,8 +446,16 @@ class layoutEditor(edw.editorWindow):
                                                                          cellItem,
                                                                          viewItem)
 
-    def exportGDSClick(self):
-        dlg = fd.gdsExportDialogue(self)
+    def _exportLayoutCell(self, export_format="GDS"):
+        """Export layout cell in the specified format (GDS or OAS)."""
+        # Use appropriate dialogue - both gdsExportDialogue and oasExportDialogue 
+        # now inherit from the same base class
+        if export_format.upper() == "OAS":
+            dlg = fd.oasExportDialogue(self)
+        else:
+            dlg = fd.gdsExportDialogue(self)
+            
+        dlg.setWindowTitle(f"Export {export_format.upper()} for {self.cellName}-{self.viewName}")
         dlg.unitEdit.setText(fabproc.gdsUnit.render())
         dlg.precisionEdit.setText(fabproc.gdsPrecision.render())
         dlg.exportPathEdit.setText(str(self.gdsExportDirObj))
@@ -455,8 +465,22 @@ class layoutEditor(edw.editorWindow):
             gdsUnit = Quantity(dlg.unitEdit.text().strip()).real
             gdsPrecision = Quantity(
                 dlg.precisionEdit.text().strip()).real
-            self.centralW.scene.exportCellGDS(self.gdsExportDir, gdsUnit,
-                                              gdsPrecision, fabproc.dbu)
+            
+            # Call the appropriate export method
+            if export_format.upper() == "OAS":
+                self.centralW.scene.exportCellOAS(self.gdsExportDir, gdsUnit,
+                                                  gdsPrecision, fabproc.dbu)
+            else:
+                self.centralW.scene.exportCellGDS(self.gdsExportDir, gdsUnit,
+                                                  gdsPrecision, fabproc.dbu)
+
+    def exportGDSClick(self):
+        """Export layout cell as GDS format."""
+        self._exportLayoutCell("GDS")
+
+    def exportOASClick(self):
+        """Export layout cell as OAS format."""
+        self._exportLayoutCell("OAS")
 
     def handlePolygonSelection(self, polygons):
         # Remove previous polygons
