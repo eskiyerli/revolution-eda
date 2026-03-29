@@ -109,6 +109,7 @@ jobs:
           FLAGS=(
             --standalone
             --deployment
+            --assume-yes-for-downloads
             --enable-plugin=pyside6
             --include-module=PySide6.QtWebEngineWidgets
             --include-module=PySide6.QtOpenGL
