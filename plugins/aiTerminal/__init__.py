@@ -19,7 +19,7 @@
 __author__ = "Revolution Semiconductor"
 __copyright__ = "Copyright 2026 Revolution Semiconductor"
 __license__ = "Proprietary"
-__version__ = "0.8.8"
+__version__ = "0.8.9"
 __status__ = "Development"
 __date__ = "2026-01-20"
 __all__ = []
