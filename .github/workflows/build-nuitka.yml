@@ -7,6 +7,12 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build:
     name: Build on ${{ matrix.os }} (python ${{ matrix.python_version }})
@@ -142,6 +148,7 @@ jobs:
           # Windows: embed icon
           if [ "${{ matrix.os_short }}" = "windows" ]; then
             FLAGS+=(--windows-icon-from-ico=revedaCoreLogo.ico)
+            FLAGS+=(--include-windows-runtime-dlls=yes)
           fi
 
           echo "Running nuitka with flags: ${FLAGS[*]}"
@@ -156,23 +163,27 @@ jobs:
           set -euo pipefail
           rm -rf "$ART_DIR"
           mkdir -p "$ART_DIR"
-          # Copy the full Nuitka dist output
-          cp -a "$DIST_DIR" "$ART_DIR/"
-          # Also include defaultPDK, plugins and .env next to the dist for runtime resolution if not already included
-          if [ -d defaultPDK ]; then cp -a defaultPDK "$ART_DIR/"; fi
-          if [ -d plugins ]; then cp -a plugins "$ART_DIR/"; fi
+
+          # Locate only the reveda.dist directory (Nuitka standalone output); skip reveda.build
+          REVEDA_DIST=$(find "$DIST_DIR" -maxdepth 2 -name "reveda.dist" -type d | head -n 1 || true)
+          if [ -z "$REVEDA_DIST" ]; then
+            echo "ERROR: reveda.dist not found under $DIST_DIR" && exit 1
+          fi
+          echo "Copying Nuitka dist from: $REVEDA_DIST"
+          cp -a "$REVEDA_DIST/." "$ART_DIR/"
+
+          # Copy defaultPDK into the distribution root so the app finds it at runtime
+          if [ -d defaultPDK ]; then
+            cp -a defaultPDK "$ART_DIR/defaultPDK"
+          fi
+
           if [ -f .env ]; then cp .env "$ART_DIR/"; fi
-          # Add a short README with run hints
-          echo "Running the packaged Revolution EDA" > "$ART_DIR/README_RUN.md"
-          echo "- Unzip and enter the folder. The dist directory contains the standalone bundle." >> "$ART_DIR/README_RUN.md"
-          echo "- On Linux: run the bundled executable found under dist/linux/ (first executable file) with QT_QPA_PLATFORM=offscreen for headless smoke tests." >> "$ART_DIR/README_RUN.md"
-          echo "- On macOS: open the .app bundle or execute its binary under Contents/MacOS/ with QT_QPA_PLATFORM=offscreen." >> "$ART_DIR/README_RUN.md"
-          echo "- On Windows: run reveda.exe found under dist/windows/reveda.dist/." >> "$ART_DIR/README_RUN.md"
+
           # On Windows, 7-Zip is always available; Unix zip is not guaranteed
           if [ "${{ matrix.os_short }}" = "windows" ]; then
-            7z a "${ART_DIR}.zip" "$ART_DIR"
+            7z a "${ART_DIR}.zip" "./$ART_DIR/*"
           else
-            zip -r "${ART_DIR}.zip" "$ART_DIR"
+            (cd "$ART_DIR" && zip -r "../${ART_DIR}.zip" .)
           fi
 
       - name: Headless smoke test (attempt to start the built executable)
