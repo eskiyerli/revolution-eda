@@ -116,7 +116,6 @@ jobs:
             --include-package=defaultPDK
             --include-package=markdown
             --include-package=polars
-            --include-package=pyqtgraph
             --include-module=pydoc
             --include-package=xml
             --include-package-data=defaultPDK
