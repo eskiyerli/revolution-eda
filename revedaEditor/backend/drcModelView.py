@@ -40,7 +40,7 @@ class DRCTableModel(QAbstractTableModel):
         self._data = violations
 
         self._categories = categories
-        self._headers = ['Category', 'Description', 'Cell', 'Visited',
+        self._headers = ['#', 'Category', 'Description', 'Cell', 'Visited',
                          'Multiplicity', 'Points']
 
     def rowCount(self, parent: QModelIndex | QPersistentModelIndex = QModelIndex()) -> int:
@@ -59,19 +59,21 @@ class DRCTableModel(QAbstractTableModel):
 
         # Handle case where row might be a string instead of dict
         if isinstance(row, str):
-            return row if col == 0 else ""
+            return str(index.row() + 1) if col == 0 else (row if col == 1 else "")
 
         if col == 0:
-            return row.get('category', '')
+            return str(index.row() + 1)
         elif col == 1:
-            return self._categories.get(row.get('category', ''))
+            return row.get('category', '')
         elif col == 2:
-            return row.get('cell', '')
+            return self._categories.get(row.get('category', ''))
         elif col == 3:
-            return str(row.get('visited', ''))
+            return row.get('cell', '')
         elif col == 4:
-            return str(row.get('multiplicity', ''))
+            return str(row.get('visited', ''))
         elif col == 5:
+            return str(row.get('multiplicity', ''))
+        elif col == 6:
             return str(row.get('points', ''))
 
         return None
@@ -93,7 +95,7 @@ class DRCTableModel(QAbstractTableModel):
     def markVisited(self, row):
         if 0 <= row < len(self._data):
             self._data[row]['visited'] = True
-            index = self.index(row, 3)  # Column 3 is 'Visited'
+            index = self.index(row, 4)  # Column 4 is 'Visited'
             self.dataChanged.emit(index, index)
 
 
@@ -107,10 +109,12 @@ class DRCTableView(QTableView):
         self.selectionModel().currentRowChanged.connect(self.onRowChanged)
         self.header = self.horizontalHeader()
         self.header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        self.header.setSectionResizeMode(1, QHeaderView.Stretch)
-        self.header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        self.header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        self.header.setSectionResizeMode(2, QHeaderView.Stretch)
         self.header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
         self.header.setSectionResizeMode(4, QHeaderView.ResizeToContents)
+        self.header.setSectionResizeMode(5, QHeaderView.ResizeToContents)
+        self.header.setSectionResizeMode(6, QHeaderView.ResizeToContents)
         self.header.setMaximumSectionSize(200)
         self.header.setStretchLastSection(False)
         self.setContextMenuPolicy(Qt.CustomContextMenu)
