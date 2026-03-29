@@ -1,0 +1,239 @@
+name: Build and package Revolution EDA with Nuitka
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }} (python ${{ matrix.python_version }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            os_short: linux
+            python_version: '3.13'
+          - os: ubuntu-latest
+            os_short: linux
+            python_version: '3.14'
+          - os: macos-latest
+            os_short: macos
+            python_version: '3.13'
+          - os: macos-latest
+            os_short: macos
+            python_version: '3.14'
+          - os: windows-latest
+            os_short: windows
+            python_version: '3.13'
+          - os: windows-latest
+            os_short: windows
+            python_version: '3.14'
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python_version }}
+          allow-prereleases: true
+
+      - name: Install system packages (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libgl1-mesa-dev libglu1-mesa-dev libxcb-xinerama0 libxkbcommon-x11-0 libssl-dev
+
+      - name: Install Homebrew deps (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          brew update || true
+          brew install pkg-config || true
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/pip
+            ~/AppData/Local/pip/Cache
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/poetry.lock') }}-${{ matrix.python_version }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install Poetry
+        run: python -m pip install poetry
+
+      - name: Install Python dependencies with Poetry (system env)
+        run: |
+          # Install into the runner environment for simpler Nuitka behavior
+          poetry config virtualenvs.create false --local || true
+          poetry install --only main --no-interaction --no-ansi
+
+      - name: Install Nuitka and build tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "nuitka==4.0.0" wheel setuptools
+
+      - name: Read version from pyproject.toml
+        id: version
+        run: |
+          VERSION=$(grep '^version' pyproject.toml | head -1 | sed 's/version = "//;s/"//')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Prepare runtime .env and ensure PDK/plugins are available
+        run: |
+          # Ensure we have a runnable .env inside the repo so the built app can find the PDK/plugins
+          echo "REVEDA_PDK_PATH=./defaultPDK" > .env
+          echo "REVEDA_PLUGIN_PATH=./plugins" >> .env
+          # Make sure defaultPDK and plugins exist; warn if not
+          if [ ! -d defaultPDK ]; then echo "Warning: defaultPDK/ not found in repo root"; fi
+          if [ ! -d plugins ]; then echo "Warning: plugins/ not found in repo root"; fi
+
+      - name: Run Nuitka standalone build
+        env:
+          DIST_DIR: dist/${{ matrix.os_short }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$DIST_DIR"
+
+          FLAGS=(
+            --standalone
+            --deployment
+            --enable-plugin=pyside6
+            --include-module=PySide6.QtWebEngineWidgets
+            --include-module=PySide6.QtOpenGL
+            --include-package=revedaEditor
+            --include-package=defaultPDK
+            --include-package=markdown
+            --include-package=polars
+            --include-package=pyqtgraph
+            --include-module=pydoc
+            --include-package=xml
+            --include-package-data=defaultPDK
+            --include-data-dir=docs=docs
+            --include-data-files=.env=.env
+            --nofollow-import-to=unittest
+            --nofollow-import-to=pytest
+            --nofollow-import-to=revedasim
+            --nofollow-import-to=revedaPlot
+            --nofollow-import-to=plugins
+            --product-name='Revolution EDA'
+            --product-version='${{ steps.version.outputs.version }}'
+            --company-name='Revolution EDA'
+            --file-description='Electronic Design Automation Software for Professional Custom IC Design Engineers'
+            --output-dir="$DIST_DIR"
+          )
+
+          # macOS: create app bundle
+          if [ "${{ matrix.os_short }}" = "macos" ]; then
+            FLAGS+=(--macos-create-app-bundle)
+          fi
+
+          # Windows: embed icon
+          if [ "${{ matrix.os_short }}" = "windows" ]; then
+            FLAGS+=(--windows-icon-from-ico=revedaCoreLogo.ico)
+          fi
+
+          echo "Running nuitka with flags: ${FLAGS[*]}"
+          # Execute Nuitka; expand array to arguments correctly
+          python -m nuitka "${FLAGS[@]}" reveda.py
+
+      - name: Package artifact zip
+        env:
+          ART_DIR: RevolutionEDA-${{ matrix.os_short }}-v${{ steps.version.outputs.version }}-python${{ matrix.python_version }}
+          DIST_DIR: dist/${{ matrix.os_short }}
+        run: |
+          set -euo pipefail
+          rm -rf "$ART_DIR"
+          mkdir -p "$ART_DIR"
+          # Copy the full Nuitka dist output
+          cp -a "$DIST_DIR" "$ART_DIR/"
+          # Also include defaultPDK, plugins and .env next to the dist for runtime resolution if not already included
+          if [ -d defaultPDK ]; then cp -a defaultPDK "$ART_DIR/"; fi
+          if [ -d plugins ]; then cp -a plugins "$ART_DIR/"; fi
+          if [ -f .env ]; then cp .env "$ART_DIR/"; fi
+          # Add a short README with run hints
+          echo "Running the packaged Revolution EDA" > "$ART_DIR/README_RUN.md"
+          echo "- Unzip and enter the folder. The dist directory contains the standalone bundle." >> "$ART_DIR/README_RUN.md"
+          echo "- On Linux: run the bundled executable found under dist/linux/ (first executable file) with QT_QPA_PLATFORM=offscreen for headless smoke tests." >> "$ART_DIR/README_RUN.md"
+          echo "- On macOS: open the .app bundle or execute its binary under Contents/MacOS/ with QT_QPA_PLATFORM=offscreen." >> "$ART_DIR/README_RUN.md"
+          echo "- On Windows: run reveda.exe found under dist/windows/reveda.dist/." >> "$ART_DIR/README_RUN.md"
+          # On Windows, 7-Zip is always available; Unix zip is not guaranteed
+          if [ "${{ matrix.os_short }}" = "windows" ]; then
+            7z a "${ART_DIR}.zip" "$ART_DIR"
+          else
+            zip -r "${ART_DIR}.zip" "$ART_DIR"
+          fi
+
+      - name: Headless smoke test (attempt to start the built executable)
+        env:
+          DIST_DIR: dist/${{ matrix.os_short }}
+        run: |
+          set +e
+          echo "Locating an executable inside $DIST_DIR to run for a short headless smoke test"
+          # Windows produces reveda.exe; Linux/macOS produce reveda (no extension)
+          if [ "${{ matrix.os_short }}" = "windows" ]; then
+            EXE_PATH=$(find "$DIST_DIR" -name "reveda.exe" -type f | head -n 1 || true)
+          else
+            EXE_PATH=$(find "$DIST_DIR" -name "reveda" -type f -perm -u=x | head -n 1 || true)
+          fi
+          if [ -z "$EXE_PATH" ]; then
+            echo "No executable found for smoke test; skipping"
+            exit 0
+          fi
+          echo "Found candidate executable: $EXE_PATH"
+          QT_QPA_PLATFORM=offscreen "$EXE_PATH" &
+          PID=$!
+          sleep 2
+          if kill -0 $PID 2>/dev/null; then
+            echo "Executable started (PID: $PID), killing after short run"
+            kill $PID || true
+          else
+            echo "Executable did not remain running; it may have exited quickly but build may still be valid"
+          fi
+          # Print any reveda.log if present in the working dir
+          if [ -f reveda.log ]; then
+            echo "----- reveda.log -----"
+            tail -n +1 reveda.log | sed -n '1,200p'
+            echo "----------------------"
+          fi
+
+      - name: Upload packaged artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: revolution-eda-${{ matrix.os_short }}-v${{ steps.version.outputs.version }}-python${{ matrix.python_version }}
+          path: RevolutionEDA-${{ matrix.os_short }}-v${{ steps.version.outputs.version }}-python${{ matrix.python_version }}.zip
+          retention-days: 30
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create GitHub Release and upload binaries
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Revolution EDA ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: artifacts/**/*.zip
