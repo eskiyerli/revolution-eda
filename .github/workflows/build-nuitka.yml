@@ -7,6 +7,12 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build:
     name: Build on ${{ matrix.os }} (python ${{ matrix.python_version }})
@@ -90,14 +96,9 @@ jobs:
           VERSION=$(grep '^version' pyproject.toml | head -1 | sed 's/version = "//;s/"//')
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Prepare runtime .env and ensure PDK/plugins are available
+      - name: Check for defaultPDK
         run: |
-          # Ensure we have a runnable .env inside the repo so the built app can find the PDK/plugins
-          echo "REVEDA_PDK_PATH=./defaultPDK" > .env
-          echo "REVEDA_PLUGIN_PATH=./plugins" >> .env
-          # Make sure defaultPDK and plugins exist; warn if not
           if [ ! -d defaultPDK ]; then echo "Warning: defaultPDK/ not found in repo root"; fi
-          if [ ! -d plugins ]; then echo "Warning: plugins/ not found in repo root"; fi
 
       - name: Run Nuitka standalone build
         env:
@@ -121,7 +122,6 @@ jobs:
             --include-package=xml
             --include-package-data=defaultPDK
             --include-data-dir=docs=docs
-            --include-data-files=.env=.env
             --nofollow-import-to=unittest
             --nofollow-import-to=pytest
             --nofollow-import-to=revedasim
@@ -142,6 +142,7 @@ jobs:
           # Windows: embed icon
           if [ "${{ matrix.os_short }}" = "windows" ]; then
             FLAGS+=(--windows-icon-from-ico=revedaCoreLogo.ico)
+            FLAGS+=(--include-windows-runtime-dlls=yes)
           fi
 
           echo "Running nuitka with flags: ${FLAGS[*]}"
@@ -154,26 +155,21 @@ jobs:
           DIST_DIR: dist/${{ matrix.os_short }}
         run: |
           set -euo pipefail
-          rm -rf "$ART_DIR"
-          mkdir -p "$ART_DIR"
-          # Copy the full Nuitka dist output
-          cp -a "$DIST_DIR" "$ART_DIR/"
-          # Also include defaultPDK, plugins and .env next to the dist for runtime resolution if not already included
-          if [ -d defaultPDK ]; then cp -a defaultPDK "$ART_DIR/"; fi
-          if [ -d plugins ]; then cp -a plugins "$ART_DIR/"; fi
-          if [ -f .env ]; then cp .env "$ART_DIR/"; fi
-          # Add a short README with run hints
-          echo "Running the packaged Revolution EDA" > "$ART_DIR/README_RUN.md"
-          echo "- Unzip and enter the folder. The dist directory contains the standalone bundle." >> "$ART_DIR/README_RUN.md"
-          echo "- On Linux: run the bundled executable found under dist/linux/ (first executable file) with QT_QPA_PLATFORM=offscreen for headless smoke tests." >> "$ART_DIR/README_RUN.md"
-          echo "- On macOS: open the .app bundle or execute its binary under Contents/MacOS/ with QT_QPA_PLATFORM=offscreen." >> "$ART_DIR/README_RUN.md"
-          echo "- On Windows: run reveda.exe found under dist/windows/reveda.dist/." >> "$ART_DIR/README_RUN.md"
-          # On Windows, 7-Zip is always available; Unix zip is not guaranteed
-          if [ "${{ matrix.os_short }}" = "windows" ]; then
-            7z a "${ART_DIR}.zip" "$ART_DIR"
-          else
-            zip -r "${ART_DIR}.zip" "$ART_DIR"
+
+          # Locate reveda.dist (Nuitka standalone output); skip reveda.build
+          REVEDA_DIST=$(find "$DIST_DIR" -maxdepth 2 -name "reveda.dist" -type d | head -n 1 || true)
+          if [ -z "$REVEDA_DIST" ]; then
+            echo "ERROR: reveda.dist not found under $DIST_DIR" && exit 1
           fi
+          echo "Packaging from: $REVEDA_DIST"
+
+          # Copy defaultPDK contents into reveda.dist/defaultPDK/
+          if [ -d defaultPDK ]; then
+            cp -a defaultPDK "$REVEDA_DIST/defaultPDK"
+          fi
+
+          # Zip the contents of reveda.dist directly (no wrapper directory)
+          (cd "$REVEDA_DIST" && zip -r "$OLDPWD/${ART_DIR}.zip" .)
 
       - name: Headless smoke test (attempt to start the built executable)
         env:
