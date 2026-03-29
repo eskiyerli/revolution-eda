@@ -27,11 +27,11 @@ from __future__ import annotations
 import pathlib
 
 # import numpy as np
-from PySide6.QtCore import (Qt, )
+from PySide6.QtCore import (Qt, QSortFilterProxyModel)
 from PySide6.QtGui import (QAction, QIcon, )
-from PySide6.QtWidgets import (QApplication, )
+from PySide6.QtWidgets import (QApplication,  )
 from PySide6.QtWidgets import (QDialog, QSplitter, QToolBar,
-                               QVBoxLayout, QWidget)
+                               QVBoxLayout, QWidget,)
 from quantiphy import Quantity
 
 import revedaEditor.backend.dataDefinitions as ddef
@@ -573,6 +573,20 @@ class layoutContainer(edw.editorContainer):
                 item.setVisible(layerVisible)
 
 
+class LayerFilterProxyModel(QSortFilterProxyModel):
+    """Proxy model that matches the search string against layer name OR purpose."""
+    def filterAcceptsRow(self, sourceRow, sourceParent):
+        pattern = self.filterRegularExpression()
+        if pattern.pattern() == "":
+            return True
+        model = self.sourceModel()
+        name_item = model.item(sourceRow, lsw.layerViewTable.columnName)
+        purp_item = model.item(sourceRow, lsw.layerViewTable.columnPurpose)
+        name = name_item.text() if name_item else ""
+        purpose = purp_item.text() if purp_item else ""
+        return pattern.match(name).hasMatch() or pattern.match(purpose).hasMatch()
+
+
 class lswWindow(QWidget):
     def __init__(self, lswTable: lsw.layerViewTable):
         super().__init__()
@@ -581,6 +595,7 @@ class lswWindow(QWidget):
         # ensure widget has an opaque background so the underlying scene
         # doesn't show through in the top-left corner
         from PySide6.QtGui import QPalette
+        from PySide6.QtWidgets import QLineEdit
         self.setAutoFillBackground(True)
         pal = self.palette()
         pal.setColor(QPalette.Window, pal.color(QPalette.Window))
@@ -590,25 +605,76 @@ class lswWindow(QWidget):
         toolBar = QToolBar()
         avIcon = QIcon(":/icons/eye.png")
         nvIcon = QIcon(":/icons/eye-close.png")
-        avAction = QAction(avIcon, "All Visible", self)
-        avAction.setToolTip("All layers visible")
-        avAction.triggered.connect(self.lswTable.allLayersVisible)
-        nvAction = QAction(nvIcon, "None Visible", self)
-        nvAction.setToolTip("No layer visible")
-        nvAction.triggered.connect(self.lswTable.noLayersVisible)
+        avAction = QAction(avIcon, "Set Layers Visible", self)
+        avAction.setToolTip("Set Layers visible")
+        avAction.triggered.connect(self._allLayersVisible)
+        nvAction = QAction(nvIcon, "Set Layers Invisible", self)
+        nvAction.setToolTip("Set Layers invisible")
+        nvAction.triggered.connect(self._noLayersVisible)
         asIcon = QIcon(":/icons/pencil.png")
         nsIcon = QIcon(":/icons/pencil-prohibition.png")
-        nsAction = QAction(nsIcon, "All Selectable", self)
-        nsAction.setToolTip("No layers selectable")
-        nsAction.triggered.connect(self.lswTable.noLayersSelectable)
-        asAction = QAction(asIcon, "None Selectable", self)
-        asAction.setToolTip("All layers selectable")
-        asAction.triggered.connect(self.lswTable.allLayersSelectable)
+        nsAction = QAction(nsIcon, "Set Layers Selectable", self)
+        nsAction.setToolTip("Set layers selectable")
+        nsAction.triggered.connect(self._noLayersSelectable)
+        asAction = QAction(asIcon, "Set Layers Unselectable", self)
+        asAction.setToolTip("Set layers unselectable")
+        asAction.triggered.connect(self._allLayersSelectable)
 
         toolBar.addAction(avAction)
         toolBar.addAction(nvAction)
         toolBar.addAction(asAction)
         toolBar.addAction(nsAction)
         layout.addWidget(toolBar)
+
+        # Search field
+        from PySide6.QtWidgets import QLabel, QHBoxLayout
+        searchLayout = QHBoxLayout()
+        searchLabel = QLabel("Search:")
+        self._searchEdit = QLineEdit()
+        self._searchEdit.setPlaceholderText("Filter layers by name...")
+        self._searchEdit.setToolTip("Type to filter layers by name")
+        self._searchEdit.setClearButtonEnabled(True)
+        self._searchEdit.setMinimumHeight(24)
+        self._searchEdit.setStyleSheet(
+            "QLineEdit { color: palette(text); background: palette(base); }"
+        )
+        searchLayout.addWidget(searchLabel)
+        searchLayout.addWidget(self._searchEdit)
+        layout.addLayout(searchLayout)
+
+        # Proxy model: filters layer name (col 1) OR purpose (col 2)
+        self._proxyModel = LayerFilterProxyModel(self)
+        self._proxyModel.setSourceModel(self.lswTable.model())
+        self._proxyModel.setFilterCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self.lswTable.setModel(self._proxyModel)
+        self._searchEdit.textChanged.connect(self._proxyModel.setFilterFixedString)
+
         layout.addWidget(self.lswTable)
         self.setLayout(layout)
+
+    def _updateFilteredLayers(self, visible=None, selectable=None):
+        """Apply visibility/selectability only to rows currently shown by the filter."""
+        sourceModel = self._proxyModel.sourceModel()
+        if visible is not None:
+            state = Qt.CheckState.Checked if visible else Qt.CheckState.Unchecked
+            col = lsw.layerViewTable.columnVisible
+        else:
+            state = Qt.CheckState.Checked if selectable else Qt.CheckState.Unchecked
+            col = lsw.layerViewTable.columnSelectable
+        for proxyRow in range(self._proxyModel.rowCount()):
+            sourceIndex = self._proxyModel.mapToSource(self._proxyModel.index(proxyRow, col))
+            item = sourceModel.item(sourceIndex.row(), col)
+            if item is not None:
+                item.setCheckState(state)
+
+    def _allLayersVisible(self):
+        self._updateFilteredLayers(visible=True)
+
+    def _noLayersVisible(self):
+        self._updateFilteredLayers(visible=False)
+
+    def _allLayersSelectable(self):
+        self._updateFilteredLayers(selectable=True)
+
+    def _noLayersSelectable(self):
+        self._updateFilteredLayers(selectable=False)
