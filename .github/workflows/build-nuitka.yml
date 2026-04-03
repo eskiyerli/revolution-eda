@@ -101,6 +101,7 @@ jobs:
             --include-module=PySide6.QtOpenGL
             --include-package=revedaEditor
             --include-package=defaultPDK
+            --include-package=cryptography
             --include-package=markdown
             --include-package=polars
             --include-module=pydoc
@@ -132,15 +133,19 @@ jobs:
 
           # Locate reveda.dist or reveda.app
           if [ -d "build/reveda.app" ]; then
-            # Copy defaultPDK into the app bundle where the executable lives
+            # Copy bundled resources into the app bundle where the executable lives
             mkdir -p "build/reveda.app/Contents/MacOS/defaultPDK"
             cp -a defaultPDK/. "build/reveda.app/Contents/MacOS/defaultPDK/"
+            mkdir -p "build/reveda.app/Contents/MacOS/plugins"
+            cp -a plugins/. "build/reveda.app/Contents/MacOS/plugins/"
           else
             REVEDA_DIST=$(find build -maxdepth 2 -name "reveda.dist" -type d | head -n 1 || true)
             if [ -n "$REVEDA_DIST" ]; then
-              # Copy defaultPDK source into reveda.dist/defaultPDK
+              # Copy bundled resources into reveda.dist
               mkdir -p "$REVEDA_DIST/defaultPDK"
               cp -a defaultPDK/. "$REVEDA_DIST/defaultPDK/"
+              mkdir -p "$REVEDA_DIST/plugins"
+              cp -a plugins/. "$REVEDA_DIST/plugins/"
             else
               echo "ERROR: Neither reveda.app nor reveda.dist found"
               exit 1
