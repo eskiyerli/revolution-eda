@@ -1819,6 +1819,11 @@ class layoutViaArray(layoutShape):
         self._selectedPen = QPen(QColor("yellow"), 4, Qt.DashLine)
         self._selectedPen.setCosmetic(True)
 
+    def __repr__(self):
+        return (f"layoutViaArray({self._xnum}, "
+                f"{self._ynum}, {self._xs}, "
+                f"{self._ys}, {self._start}, {self._via})")
+
     def _create_array(self):
         # Pre-calculate constants
         x_step = self._xs + self._prototype_via.width

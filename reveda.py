@@ -30,6 +30,7 @@
 # nuitka-project: --enable-plugin=pyside6
 # nuitka-project: --include-data-dir=docs=docs
 # nuitka-project: --include-package=revedaEditor
+# nuitka-project: --include-package=cryptography
 # nuitka-project: --include-package=markdown
 # nuitka-project: --include-package=polars
 # nuitka-project: --include-module=pydoc
@@ -123,9 +124,12 @@ class revedaApp(QApplication):
             self.revedaPluginPathObj = (
                 path_obj if path_obj.is_absolute() else self.basePath / pluginPath
             ).resolve()
-            if self.revedaPluginPathObj.exists():
-                sys.path.append(str(self.revedaPluginPathObj))
-                self.pluginsObj = pluginsLoader(self.revedaPluginPathObj)
+        else:
+            self.revedaPluginPathObj = (self.basePath / "plugins").resolve()
+
+        if self.revedaPluginPathObj.exists():
+            sys.path.append(str(self.revedaPluginPathObj))
+            self.pluginsObj = pluginsLoader(self.revedaPluginPathObj)
         else:
             self.pluginsObj = None
 

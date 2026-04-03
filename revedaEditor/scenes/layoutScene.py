@@ -350,8 +350,9 @@ class layoutScene(editorScene):
 
     def addLayoutViaArray(self):
         if self.arrayVia is not None:
-            self.arrayViaTuple = None
+            # self.arrayViaTuple = None
             self.arrayVia = None
+
 
         singleVia = lshp.layoutVia(
             QPoint(0, 0),
