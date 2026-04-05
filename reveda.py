@@ -86,7 +86,7 @@ class revedaApp(QApplication):
     def _setupLogger(self):
         """Initialize application logger."""
         self.logger = logging.getLogger("reveda")
-        logFilePath = self.basePath / "reveda.log"
+        logFilePath = Path.cwd() / "reveda.log"
         handler = logging.FileHandler(logFilePath)
         handler.setLevel(logging.INFO)
         handler.setFormatter(
