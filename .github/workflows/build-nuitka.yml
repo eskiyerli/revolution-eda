@@ -24,21 +24,12 @@ jobs:
           - os: ubuntu-latest
             os_short: linux
             python_version: '3.13'
-          - os: ubuntu-latest
-            os_short: linux
-            python_version: '3.14'
           - os: macos-latest
             os_short: macos
             python_version: '3.13'
-          - os: macos-latest
-            os_short: macos
-            python_version: '3.14'
           - os: windows-latest
             os_short: windows
             python_version: '3.13'
-          - os: windows-latest
-            os_short: windows
-            python_version: '3.14'
 
     defaults:
       run:
@@ -155,7 +146,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: RevolutionEDA-${{ matrix.os_short }}-v${{ steps.version.outputs.version }}-python${{ matrix.python_version }}
+          name: RevolutionEDA-${{ matrix.os_short }}-v${{ steps.version.outputs.version }}
           path: |
             build/reveda.dist/
             build/reveda.app/
