@@ -97,6 +97,8 @@ jobs:
             --include-package=polars
             --include-module=pydoc
             --include-package=xml
+            --include-package=cProfile
+            --include-package=profile
             --include-package-data=defaultPDK
             --include-data-dir=docs=docs
             --nofollow-import-to=unittest

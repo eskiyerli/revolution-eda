@@ -9,7 +9,7 @@ from PySide6.QtGui import (QDesktopServices, QAction, QIcon)
 from PySide6.QtPrintSupport import (QPrinter, QPrintDialog)
 from PySide6.QtWidgets import (QMainWindow, QVBoxLayout, QWidget,
                                QTextBrowser, QDialog, QPushButton, QLabel,
-                               QApplication)
+                               QApplication, QSizePolicy)
 
 
 def _resolve_docs_path() -> Path:
@@ -409,3 +409,55 @@ class aboutDialog(QDialog):
         layout.addWidget(closeButton)
 
         self.setLayout(layout)
+
+
+class licenseDialog(QDialog):
+    def __init__(self, parent):
+        super().__init__(parent)
+
+        self.setWindowTitle("Revolution EDA — License")
+        self.setMinimumSize(700, 500)
+        self.resize(760, 560)
+
+        layout = QVBoxLayout(self)
+
+        textBrowser = QTextBrowser()
+        textBrowser.setReadOnly(True)
+        textBrowser.setLineWrapMode(QTextBrowser.LineWrapMode.NoWrap)
+        textBrowser.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+
+        licenseText = self._loadLicenseText()
+        textBrowser.setPlainText(licenseText)
+        layout.addWidget(textBrowser)
+
+        closeButton = QPushButton("Close")
+        closeButton.clicked.connect(self.accept)
+        layout.addWidget(closeButton)
+
+    @staticmethod
+    def _loadLicenseText() -> str:
+        # 1. Try installed package data
+        try:
+            ref = importlib.resources.files("revedaEditor").joinpath("../LICENSE.txt")
+            candidate = Path(str(ref)).resolve()
+            if candidate.exists():
+                return candidate.read_text(encoding="utf-8")
+        except Exception:
+            pass
+
+        # 2. Locate via the running application's basePath
+        try:
+            app = QApplication.instance()
+            if app is not None and hasattr(app, "basePath"):
+                candidate = Path(app.basePath) / "LICENSE.txt"
+                if candidate.exists():
+                    return candidate.read_text(encoding="utf-8")
+        except Exception:
+            pass
+
+        # 3. CWD fallback
+        candidate = Path("LICENSE.txt")
+        if candidate.exists():
+            return candidate.read_text(encoding="utf-8")
+
+        return "License text not found. Please refer to LICENSE.txt in the installation directory."

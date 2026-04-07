@@ -34,6 +34,8 @@
 # nuitka-project: --include-package=markdown
 # nuitka-project: --include-package=polars
 # nuitka-project: --include-module=pydoc
+# nuitka-project: --include-package=cProfile
+# nuitka-project: --include-package=profile
 # nuitka-project: --include-package=xml
 # nuitka-project: --include-module=PySide6.QtWebEngineWidgets
 # nuitka-project: --include-module=PySide6.QtOpenGL

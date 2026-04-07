@@ -249,6 +249,7 @@ class MainWindow(QMainWindow):
         self.librariesMenu.addAction(self.setupLibrariesAction)
         self.menuOptions.addAction(self.optionsAction)
         self.menuHelp.addAction(self.helpAction)
+        self.menuHelp.addAction(self.licenseAction)
         self.menuHelp.addAction(self.aboutAction)
         self.menuOptions.addAction(self.optionsAction)
 
@@ -283,6 +284,8 @@ class MainWindow(QMainWindow):
         self.helpAction = QAction(helpIcon, "Help...", self)
         self.aboutIcon = QIcon(":/icons/information.png")
         self.aboutAction = QAction(self.aboutIcon, "About", self)
+        licenseIcon = QIcon(":/icons/document-text.png")
+        self.licenseAction = QAction(licenseIcon, "License...", self)
 
     def _createTriggers(self):
         self.exitAction.triggered.connect(self.exitApp)
@@ -299,6 +302,7 @@ class MainWindow(QMainWindow):
         self.setupLibrariesAction.triggered.connect(self.setupLibrariesClick)
         self.helpAction.triggered.connect(self.helpClick)
         self.aboutAction.triggered.connect(self.aboutClick)
+        self.licenseAction.triggered.connect(self.licenseClick)
 
     def readLibDefFile(self, libPath: Path):
         libraryDict = dict()
@@ -532,6 +536,10 @@ class MainWindow(QMainWindow):
     def aboutClick(self):
         abtDlg = hlp.aboutDialog(self)
         abtDlg.show()
+
+    def licenseClick(self):
+        licDlg = hlp.licenseDialog(self)
+        licDlg.exec()
 
     def loadAppState(self):
         if not self.confFilePath.exists():
