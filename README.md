@@ -52,7 +52,7 @@ declaration — no changes to the core codebase are required.
 
 There are already several plugins available, including *revedasim*, *revedaplot*, and
 *aiTerminal*. Proprietary plugins can be distributed as pre-compiled binaries alongside
-open-source source plugins.
+source-available plugins.
 
 ## Simulation and Plotting
 
@@ -170,6 +170,35 @@ Full documentation is available in the `docs/` directory and covers:
 - [Config Editor](docs/configEditor.md)
 - [AI Terminal](docs/AI_TERMINAL.md)
 - [Plugins](docs/plugins.md)
+
+## License
+
+Revolution EDA is **source-available** software, licensed under the
+[Mozilla Public License 2.0](https://mozilla.org/MPL/2.0/) as modified by the
+[Commons Clause](https://commonsclause.com/) condition.
+
+You may use, modify, and distribute the source code freely **except** that you may not
+sell a product or service whose value derives substantially from the functionality of
+this software. This prohibition covers, without limitation:
+
+- Paid hosting or cloud/internet-delivered services built around Revolution EDA
+- Resale of the software itself or a rebranded derivative
+
+The following activities are **explicitly permitted** and are **not** restricted:
+
+- Consulting, training, integration, or support engagements where the Software is
+  a tool used in delivering services, not the product being sold
+
+> **Note:** Revolution EDA is not "open source" as defined by the OSI or FSF because of
+> the Commons Clause restriction.
+
+### Commercial Licensing
+
+If your use case falls within the restrictions above and you require a commercial
+license, please contact **Revolution Semiconductor** at
+[info@reveda.eu](mailto:info@reveda.eu) to discuss terms.
+
+See [LICENSE.txt](LICENSE.txt) for the full license text.
 
 ## Attribution
 
