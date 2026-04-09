@@ -256,12 +256,15 @@ def createVaSymbol(
                     )
 
             symbolScene.attributeList = list()  # empty attribute list
+            # Because Xyce changes the netlist line,
+            # we need to define a separate attribute for Xyce
+            # TODO: What about NgSpice and/or VACASK
             if importedVaObj.modelParams:
                 for key, value in importedVaObj.modelParams.items():
                     symbolScene.attributeList.append(se.symbolAttribute(key, value))
                 symbolScene.attributeList.append(
                     se.symbolAttribute(
-                        "SpiceNetlistLine", importedVaObj.netlistLine
+                        "XyceVerilogaNetlistLine", importedVaObj.netlistLine
                     )
                 )
 
@@ -275,7 +278,7 @@ def createVaSymbol(
                 )
             )
             symbolScene.attributeList.append(
-                se.symbolAttribute("vaHDLLine", f"*.HDL {str(importedVaObjPath)}")
+                se.symbolAttribute("vaFileName", f"{str(importedVaObjPath.name)}")
             )
             symbolScene.attributeList.append(
                 se.symbolAttribute("pinOrder", importedVaObj.pinOrder)
