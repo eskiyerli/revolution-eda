@@ -22,7 +22,7 @@
 #    Licensor: Revolution Semiconductor (Registered in the Netherlands)
 #
 import pathlib
-
+import re
 
 class verilogaC:
     """

@@ -960,11 +960,22 @@ class xyceNetlist:
 
     def createVerilogaLine(self, elementSymbol) -> list[str]:
         try:
-            symbolLines = self._createNetlistLine(elementSymbol, "SpiceNetlistLine")
+            symbolLines = self._createNetlistLine(elementSymbol, "XyceVerilogaNetlistLine")
             self.vamodelLines.add(elementSymbol.symattrs.get("vaModelLine",
                                                              "* no model line is found for {item.cellName}").strip())
-            self.vahdlLines.add(elementSymbol.symattrs.get("vaHDLLine",
-                                                           "* no hdl line is found for {item.cellName}").strip())
+            vaFileName = elementSymbol.symattrs.get("vaFileName", "").strip()
+            print(vaFileName)
+            if vaFileName:
+                cellItem = self._getCellItem(elementSymbol.libraryName,
+                                             elementSymbol.cellName)
+                cellPath = cellItem.cellPath
+                vaFilePath = pathlib.Path(cellPath) / vaFileName
+                self.vahdlLines.add(f"*.HDL {vaFilePath}")
+            else:
+                self.vahdlLines.add(f"* no HDL file line found for {elementSymbol.cellName}")
+
+            # self.vahdlLines.add(elementSymbol.symattrs.get("vaHDLLine",
+            #                                                "* no hdl line is found for {item.cellName}").strip())
             return symbolLines
         except Exception as e:
             self._scene.logger.error(e)
