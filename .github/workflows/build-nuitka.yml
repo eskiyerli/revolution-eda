@@ -101,6 +101,8 @@ jobs:
             --include-package=profile
             --include-package-data=defaultPDK
             --include-data-dir=docs=docs
+            --include-package=certifi 
+            --include-data-dir="$(python -c 'import certifi; import os; print(os.path.dirname(certifi.where()))')=certifi" 
             --nofollow-import-to=unittest
             --nofollow-import-to=pytest
             --nofollow-import-to=revedasim
