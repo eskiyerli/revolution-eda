@@ -46,9 +46,10 @@ class PluginRegistryWindow(QMainWindow):
         self.resize(800, 400)
 
         self.registry_url = registry_url or self.DEFAULT_REGISTRY
+        plugin_path = os.environ.get("REVEDA_PLUGIN_PATH")
         self.pluginsDir = (
-            Path(os.environ.get("REVEDA_PLUGIN_PATH"))
-            if os.environ.get("REVEDA_PLUGIN_PATH")
+            Path(plugin_path)
+            if plugin_path
             else (plugins_dir or Path.cwd() / "plugins")
         )
         self.pluginsDir = self.pluginsDir.resolve()
@@ -241,14 +242,14 @@ class PluginRegistryWindow(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Error", str(e))
 
-    def _get_binary_url(self, entry: dict) -> str:
+    def _get_binary_url(self, entry: dict) -> str | None:
         binary_urls = entry.get("binary_urls", {})
         if not binary_urls:
             return entry.get("url")
 
         system = platform.system().lower()
         arch = platform.machine().lower()
-        py_ver = f"py{sys.version_info.major}{sys.version_info.minor}"
+        py_ver = f"py{sys.version_info.major}.{sys.version_info.minor}"
 
         # Try most specific first
         for key in [f"{system}-{arch}-{py_ver}", f"{system}-{arch}", system]:
