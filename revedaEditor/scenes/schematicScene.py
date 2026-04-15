@@ -717,7 +717,7 @@ class schematicScene(editorScene):
             return None
 
     def instSymbol(self, instanceTuple: ddef.viewNameTuple, pos: QPoint):
-        viewItem = libm.findViewItem(self.editorWindow.libraryView.libraryModel,
+        viewItem = libm.findViewItem(self.appMainW.libraryModel,
                                      instanceTuple.libraryName,
                                      instanceTuple.cellName,
                                      instanceTuple.viewName, )
@@ -1134,7 +1134,7 @@ class schematicScene(editorScene):
             if isinstance(selectedSymbol, shp.schematicSymbol):
                 dlg = fd.goDownHierDialogue(self.editorWindow)
                 libItem = libm.getLibItem(
-                    self.editorWindow.libraryView.libraryModel,
+                    self.appMainW.libraryModel,
                     selectedSymbol.libraryName, )
                 cellItem = libm.getCellItem(libItem, selectedSymbol.cellName)
                 viewNames = [cellItem.child(i).text() for i in
