@@ -25,7 +25,10 @@
 
 import logging
 import json
+<<<<<<< HEAD
 import pathlib
+=======
+>>>>>>> c62697a (Implement LVS netlisting functionality in schematic editor)
 from typing import Any, Optional
 
 from PySide6.QtCore import QPoint
@@ -34,8 +37,11 @@ from PySide6.QtCore import QPoint
 
 import revedaEditor.common.shapes as shp
 import revedaEditor.backend.dataDefinitions as ddef
+<<<<<<< HEAD
 import revedaEditor.backend.libBackEnd as libb
 import revedaEditor.backend.libraryMethods as libm
+=======
+>>>>>>> c62697a (Implement LVS netlisting functionality in schematic editor)
 import revedaEditor.common.net as snet
 
 
@@ -63,6 +69,7 @@ class klayoutSchematicGenerator:
         self.tempSchematicEditor = None
         self.schem_to_layout_pos = {}
         self._symbol_view_cache: dict[str, Optional[ddef.viewNameTuple]] = {}
+<<<<<<< HEAD
         self._generated_hierarchy_cells: set[tuple[str, str]] = set()
 
     @staticmethod
@@ -268,6 +275,8 @@ class klayoutSchematicGenerator:
         enrichedExtracted["primitive_device_ids"] = primitiveDeviceIds
         enrichedExtracted["instances"] = inferredInstances
         return enrichedExtracted
+=======
+>>>>>>> c62697a (Implement LVS netlisting functionality in schematic editor)
 
     def buildPositionMapping(self) -> dict:
         """Build mapping from schematic device IDs to layout positions."""
@@ -276,16 +285,24 @@ class klayoutSchematicGenerator:
         xref = self.parser.get_crossref(self.layoutEditor.cellName)
 
         if xref and layout_devices:
+<<<<<<< HEAD
             layout_pos_by_id = {
                 self._make_hashable(d["id"]): d.get("position") for d in layout_devices
             }
             for mapping in xref.get("mapping", {}).get("devices", []):
                 layout_dev = self._make_hashable(mapping.get("layout_dev"))
                 schem_dev = self._make_hashable(mapping.get("schem_dev"))
+=======
+            layout_pos_by_id = {d["id"]: d.get("position") for d in layout_devices}
+            for mapping in xref.get("mapping", {}).get("devices", []):
+                layout_dev = mapping.get("layout_dev")
+                schem_dev = mapping.get("schem_dev")
+>>>>>>> c62697a (Implement LVS netlisting functionality in schematic editor)
                 if layout_dev in layout_pos_by_id and schem_dev is not None:
                     self.schem_to_layout_pos[schem_dev] = layout_pos_by_id[layout_dev]
         return self.schem_to_layout_pos
 
+<<<<<<< HEAD
     def _findCellItem(self, cellName: str):
         libItem = libm.getLibItem(self.revedaMain.libraryModel, self.layoutEditor.libName)
         cellItem = libm.getCellItem(libItem, cellName)
@@ -333,12 +350,25 @@ class klayoutSchematicGenerator:
         tempViewItem = None
         for row in range(cellItem.rowCount()):
             childItem = cellItem.child(row)
+=======
+    def createTempSchematicEditor(self):
+        """Create and return a temporary schematic editor."""
+        import revedaEditor.backend.libBackEnd as libb
+
+        tempViewFilePath = self.layoutEditor.cellItem.cellPath.joinpath(
+            "lvs_schematic.json"
+        )
+        tempViewItem = None
+        for row in range(self.layoutEditor.cellItem.rowCount()):
+            childItem = self.layoutEditor.cellItem.child(row)
+>>>>>>> c62697a (Implement LVS netlisting functionality in schematic editor)
             if childItem and childItem.viewName == "lvs_schematic":
                 tempViewItem = childItem
                 break
 
         if tempViewItem is None:
             tempViewItem = libb.viewItem(tempViewFilePath)
+<<<<<<< HEAD
             cellItem.appendRow(tempViewItem)
 
         tempViewItemTuple = ddef.viewItemTuple(
@@ -346,6 +376,15 @@ class klayoutSchematicGenerator:
         )
         tempViewNameTuple = ddef.viewNameTuple(
             libItem.libraryName, cellItem.cellName, tempViewItem.viewName
+=======
+            self.layoutEditor.cellItem.appendRow(tempViewItem)
+
+        tempViewItemTuple = ddef.viewItemTuple(
+            self.layoutEditor.libItem, self.layoutEditor.cellItem, tempViewItem
+        )
+        tempViewNameTuple = ddef.viewNameTuple(
+            self.layoutEditor.libName, self.layoutEditor.cellName, tempViewItem.viewName
+>>>>>>> c62697a (Implement LVS netlisting functionality in schematic editor)
         )
         existingEditor = self.revedaMain.openViews.get(tempViewNameTuple)
         if existingEditor:
@@ -381,6 +420,7 @@ class klayoutSchematicGenerator:
             return None
         return self.tempSchematicEditor.centralW.scene
 
+<<<<<<< HEAD
     def _getMappedLayoutPosition(self, deviceId: Any):
         if deviceId is None:
             return None
@@ -418,6 +458,8 @@ class klayoutSchematicGenerator:
 
         return {"x": sum(xs) / len(xs), "y": sum(ys) / len(ys)}
 
+=======
+>>>>>>> c62697a (Implement LVS netlisting functionality in schematic editor)
     def _toScenePlacement(self, layout_pos, snapToGrid) -> Optional[QPoint]:
         """Convert parser position payload to schematic scene coordinates."""
         if layout_pos is None:
@@ -457,9 +499,13 @@ class klayoutSchematicGenerator:
             return None
 
         schem_dev_id = device.get("id")
+<<<<<<< HEAD
         layout_pos = self._getMappedLayoutPosition(schem_dev_id)
         if layout_pos is None:
             layout_pos = self._getAggregateLayoutPosition(device.get("source_device_ids", []))
+=======
+        layout_pos = self.schem_to_layout_pos.get(schem_dev_id)
+>>>>>>> c62697a (Implement LVS netlisting functionality in schematic editor)
         snapToGrid = scene.snapToGrid
         targetPos = self._toScenePlacement(layout_pos, snapToGrid)
 
@@ -482,6 +528,7 @@ class klayoutSchematicGenerator:
         scene.addItem(symbolItem)
         return symbolItem
 
+<<<<<<< HEAD
     def _generateChildHierarchicalViews(self, instances: list[dict]):
         for instance in instances:
             childExtracted = instance.get("extracted")
@@ -494,6 +541,8 @@ class klayoutSchematicGenerator:
                 self._generated_hierarchy_cells.add(cacheKey)
                 self.generateSchematic(childExtracted, _show=False)
 
+=======
+>>>>>>> c62697a (Implement LVS netlisting functionality in schematic editor)
     def createPinNet(
         self, pinItem, symbolItem: shp.schematicSymbol, device: dict
     ) -> "snet.schematicNet":
@@ -536,6 +585,7 @@ class klayoutSchematicGenerator:
             pinNetItem = self.createPinNet(pinItem, symbolItem, device)
             scene.addItem(pinNetItem)
 
+<<<<<<< HEAD
     def generateSchematic(
         self,
         extracted: dict,
@@ -567,10 +617,21 @@ class klayoutSchematicGenerator:
         self.tempSchematicEditor = currentEditor
 
         devices: Any = extracted.get("primitive_devices", extracted.get("devices", []))
+=======
+    def generateSchematic(self, extracted: dict):
+        """Generate the full schematic from extracted data."""
+        self.buildPositionMapping()
+        self.createTempSchematicEditor()
+        if self.tempSchematicEditor is None:
+            return None
+
+        devices: Any = extracted.get("devices", [])
+>>>>>>> c62697a (Implement LVS netlisting functionality in schematic editor)
         if not isinstance(devices, list):
             self.logger.error("Extracted data has invalid 'devices' format.")
             devices = []
 
+<<<<<<< HEAD
         for instance in hierarchicalInstances:
             if not isinstance(instance, dict):
                 continue
@@ -585,6 +646,8 @@ class klayoutSchematicGenerator:
             if symbolItem:
                 self.addDeviceNets(symbolItem, hierarchicalDevice)
 
+=======
+>>>>>>> c62697a (Implement LVS netlisting functionality in schematic editor)
         for device in devices:
             if not isinstance(device, dict):
                 self.logger.warning(f"Skipping malformed device entry: {device}")
@@ -593,6 +656,10 @@ class klayoutSchematicGenerator:
             if symbolItem:
                 self.addDeviceNets(symbolItem, device)
 
+<<<<<<< HEAD
         if _show:
             self.tempSchematicEditor.show()
+=======
+        self.tempSchematicEditor.show()
+>>>>>>> c62697a (Implement LVS netlisting functionality in schematic editor)
         return self.tempSchematicEditor
