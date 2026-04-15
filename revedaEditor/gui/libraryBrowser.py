@@ -339,24 +339,24 @@ class libraryBrowser(QMainWindow):
 class libraryBrowserContainer(QWidget):
     def __init__(self, parent) -> None:
         super().__init__(parent)
-        self.parent = parent
+        self.parentW = parent
         self.initUI()
         self.logger = logging.getLogger("reveda")
 
     def initUI(self):
-        self.layout = QVBoxLayout()
+        self.mainLayout = QVBoxLayout()
         self.designView = lmview.designLibrariesColumnView(self)
-        self.layout.addWidget(self.designView)
-        self.setLayout(self.layout)
+        self.mainLayout.addWidget(self.designView)
+        self.setLayout(self.mainLayout)
 
     def switchToTreeView(self):
         try:
             # Check if layout exists and has items
-            if not self.layout or self.layout.count() == 0:
+            if not self.layout or self.mainLayout.count() == 0:
                 return
 
             # Get the old widget safely
-            item = self.layout.itemAt(0)
+            item = self.mainLayout.itemAt(0)
             if not item:
                 return
 
@@ -372,11 +372,11 @@ class libraryBrowserContainer(QWidget):
             self.blockSignals(True)
 
             # Replace widget and ensure proper cleanup
-            if self.layout.replaceWidget(old_widget, self.designView):
+            if self.mainLayout.replaceWidget(old_widget, self.designView):
                 old_widget.hide()  # Hide before deletion to prevent visual artifacts
                 old_widget.setParent(None)  # Detach from parentW
                 old_widget.deleteLater()
-                self.parent.designView = self.designView
+                self.parentW.designView = self.designView
                 # Restore signal handling
                 self.blockSignals(False)
 
@@ -394,11 +394,11 @@ class libraryBrowserContainer(QWidget):
         """
         try:
             # Validate layout existence and content
-            if not self.layout or self.layout.count() == 0:
+            if not self.layout or self.mainLayout.count() == 0:
                 return False
 
             # Safely get the old widget
-            item = self.layout.itemAt(0)
+            item = self.mainLayout.itemAt(0)
             if not item:
                 return False
 
@@ -412,11 +412,11 @@ class libraryBrowserContainer(QWidget):
             old_widget.blockSignals(True)
             self.blockSignals(True)
 
-            if self.layout.replaceWidget(old_widget, self.designView):
+            if self.mainLayout.replaceWidget(old_widget, self.designView):
                 old_widget.hide()  # Prevent flickering
                 old_widget.setParent(None)  # Detach from parentW
                 old_widget.deleteLater()
-                self.parent.designView = self.designView
+                self.parentW.designView = self.designView
                 self.blockSignals(False)
 
             # Show new widget and ensure it's properly displayed

@@ -542,6 +542,7 @@ class schematicEditor(edw.editorWindow):
             symenc.symbolAttribute("SpiceNetlistLine", "X@instName %pinOrder @cellName"),
             symenc.symbolAttribute("SpectreNetlistLine",
                                    "X@instName  ( %pinOrder ) @cellName"),
+            symenc.symbolAttribute("lvsNetlistLine", "X@instName %pinOrder @cellName"),
             symenc.symbolAttribute("pinOrder", ", ".join(all_pin_names))]
 
         # Finalize and show
@@ -615,7 +616,7 @@ class xyceNetlist:
     _PARAM_RE = re.compile(r'\s+\w+\s*=(?=\s|$)')
 
     def __init__(self, schematic, filePathObj: pathlib.Path, useConfig: bool = False,
-                 topSubckt: bool = False):
+                 topSubckt: bool = False, lvsMode: bool = False):
         self.filePathObj = filePathObj
         self.schematic = schematic
         self._useConfig = useConfig
@@ -624,6 +625,7 @@ class xyceNetlist:
         self.libraryView = self.schematic.libraryView
         self._configDict = {}
         self.topSubckt = topSubckt
+        self._lvsMode = lvsMode
         self.libItem = libm.getLibItem(self.schematic.libraryView.libraryModel,
                                        self.schematic.libName, )
         self.cellItem = libm.getCellItem(self.libItem, self.schematic.cellName)
@@ -636,10 +638,10 @@ class xyceNetlist:
         self.vahdlLines = set()  # keeps track of *.HDL lines.
         # Caches to avoid repeated Qt model traversals for the same cells.
         self._viewNameCache: dict[tuple, str] = {}  # (libName, cellName) -> netlist view name
-        self._cellItemCache: dict[tuple, object] = {}  # (libName, cellName) -> cellItem
+        self._cellItemCache: dict[tuple, libb.cellItem | None] = {}  # (libName, cellName) -> cellItem
 
     def __repr__(self):
-        return f"xyceNetlist(filePathObj={self.filePathObj}, schematic={self.schematic}, useConfig={self._useConfig})"
+        return f"xyceNetlist(filePathObj={self.filePathObj}, schematic={self.schematic}, useConfig={self._useConfig}, lvsMode={self._lvsMode})"
 
     @property
     def switchViewList(self) -> List[str]:
@@ -770,20 +772,33 @@ class xyceNetlist:
                 self.processElementSymbol(elementSymbol, schematicEdObj, cirFile)
 
     def processElementSymbol(self, elementSymbol, schematic, cirFile):
-        if elementSymbol.symattrs.get("NetlistIgnore") != "1" and (
-                not elementSymbol.netlistIgnore):
+        # Check for ignore conditions based on mode
+        should_ignore = False
+        ignore_reason = ""
+        
+        if self._lvsMode:
+            # In LVS mode, check lvsIgnore attribute
+            if elementSymbol.symattrs.get("lvsIgnore") == "1":
+                should_ignore = True
+                ignore_reason = f"*{elementSymbol.instanceName} is excluded via lvsIgnore attribute\n"
+        else:
+            # In normal mode, check NetlistIgnore attribute and netlistIgnore flag
+            if elementSymbol.symattrs.get("NetlistIgnore") == "1" or elementSymbol.netlistIgnore:
+                should_ignore = True
+                if elementSymbol.netlistIgnore:
+                    ignore_reason = f"*{elementSymbol.instanceName} is marked to be ignored\n"
+                else:
+                    ignore_reason = f"*{elementSymbol.instanceName} is excluded via NetlistIgnore attribute\n"
+        
+        if should_ignore:
+            cirFile.write(ignore_reason)
+        else:
             cellItem = self._getCellItem(elementSymbol.libraryName,
                                          elementSymbol.cellName)
             netlistView = self.determineNetlistView(elementSymbol, cellItem)
 
             # Create the netlist line for the item.
             self.createItemLine(cirFile, elementSymbol, cellItem, netlistView)
-        elif elementSymbol.netlistIgnore:
-            cirFile.write(f"*{elementSymbol.instanceName} is marked to be ignored\n")
-        else:
-            # NetlistIgnore attribute == "1" but netlistIgnore flag is False
-            cirFile.write(
-                f"*{elementSymbol.instanceName} is excluded via NetlistIgnore attribute\n")
 
     def _getCellItem(self, libraryName: str, cellName: str) -> libb.cellItem | None:
         """Return the cellItem for (libraryName, cellName), cached to avoid repeated model traversals."""
@@ -940,7 +955,8 @@ class xyceNetlist:
                 f"*Netlist line is not defined for symbol of {elementSymbol.instanceName}\n"]
 
     def createXyceSymbolLine(self, elementSymbol: shp.schematicSymbol) -> list[str]:
-        return self._createNetlistLine(elementSymbol, "SpiceNetlistLine")
+        netlistLineKey = "lvsNetlistLine" if self._lvsMode else "SpiceNetlistLine"
+        return self._createNetlistLine(elementSymbol, netlistLineKey)
 
     def createSpiceLine(self, elementSymbol: shp.schematicSymbol) -> list[str]:
         try:

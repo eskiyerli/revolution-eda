@@ -612,8 +612,8 @@ class layoutScene(editorScene):
     ) -> Union[lshp.layoutInstance, lshp.layoutPcell]:
         """Read a layout file and create layoutShape objects from it."""
         try:
-            with layoutInstanceTuple.viewItem.viewPath.open("r") as temp:
-                decodedData = json.load(temp)
+            with layoutInstanceTuple.viewItem.viewPath.open("rb") as temp:
+                decodedData = orjson.loads(temp.read())
 
             # Common instance setup
             def setup_instance(instance):
@@ -646,9 +646,20 @@ class layoutScene(editorScene):
             ):
                 pcellInstance = eval(f"pcells.{decodedData[1]['reference']}()")
                 return setup_instance(pcellInstance)
+            else:
+                self.logger.error(
+                    f"Invalid file type for instance. Expected viewType '{viewType}' "
+                    f"but got {decodedData[0].get('viewType') if decodedData else 'empty file'} "
+                    f"from {layoutInstanceTuple.viewItem.viewPath}"
+                )
+                return None
 
-        except Exception:
-            pass
+        except orjson.JSONDecodeError:
+            self.logger.error(f"Invalid file format for instance: {layoutInstanceTuple.viewItem.viewPath}")
+            return None
+        except Exception as e:
+            self.logger.error(f"Unexpected error loading instance from {layoutInstanceTuple.viewItem.viewPath}: {e}")
+            return None
 
     def findScenelayoutCellSet(self) -> set[lshp.layoutInstance]:
         """

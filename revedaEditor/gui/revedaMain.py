@@ -195,6 +195,7 @@ class MainWindow(QMainWindow):
             # Library components
             self.libraryDict = self.readLibDefFile(self.libraryPathObj)
             self.libraryBrowser = libw.libraryBrowser(self)
+            self.libraryModel = self.libraryBrowser.designView.libraryModel
 
             # Thread pool setup
             self._setupThreadPool()

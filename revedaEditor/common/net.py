@@ -649,6 +649,7 @@ class schematicNet(QGraphicsItem):
     @highlighted.setter
     def highlighted(self, value: bool):
         self._highlighted = value
+        self.update()
 
     @property
     def sceneShapeRect(self) -> QRectF:

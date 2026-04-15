@@ -28,6 +28,7 @@
 # nuitka-project: --standalone
 # nuitka-project: --deployment
 # nuitka-project: --enable-plugin=pyside6
+# nuitka-project: --enable-plugin=data-files
 # nuitka-project: --include-data-dir=docs=docs
 # nuitka-project: --include-package=revedaEditor
 # nuitka-project: --include-package=cryptography
@@ -37,6 +38,7 @@
 # nuitka-project: --include-package=cProfile
 # nuitka-project: --include-package=profile
 # nuitka-project: --include-package=xml
+# nuitka-project: --include-package=certifi
 # nuitka-project: --include-module=PySide6.QtWebEngineWidgets
 # nuitka-project: --include-module=PySide6.QtOpenGL
 # nuitka-project: --nofollow-import-to=unittest

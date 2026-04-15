@@ -22,11 +22,11 @@
 #    Licensor: Revolution Semiconductor (Registered in the Netherlands)
 #
 import importlib
+import logging
 import os
 import pathlib
 import sys
 from types import ModuleType
-from typing import Union
 
 from PySide6.QtGui import (QAction, QIcon)
 from PySide6.QtWidgets import QApplication
@@ -34,7 +34,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-_module_cache = {}
+_module_cache: dict[tuple[str, str], ModuleType] = {}
+logger = logging.getLogger(__name__)
 
 
 def _get_pdk_path() -> pathlib.Path:
@@ -63,21 +64,38 @@ def _get_pdk_path() -> pathlib.Path:
     return pdkPathObj
 
 
-def importPDKModule(moduleName) -> Union[ModuleType, None]:
-    """Import a PDK submodule dynamically"""
-    if moduleName in _module_cache:
-        return _module_cache[moduleName]
-
+def importPDKModule(moduleName: str) -> ModuleType | None:
+    """Import a PDK submodule dynamically.
+    
+    Returns the module if found, None otherwise.
+    Does not cache failed imports to allow recovery after PDK fixes.
+    Cache key includes PDK path to handle PDK switching.
+    """
     pdkPathObj = _get_pdk_path()
+    cache_key = (str(pdkPathObj), moduleName)
+    
+    if cache_key in _module_cache:
+        return _module_cache[cache_key]
+
     fullModuleName = f"{pdkPathObj.name}.{moduleName}"
 
     try:
         module = importlib.import_module(fullModuleName)
-        _module_cache[moduleName] = module
+        _module_cache[cache_key] = module
+        logger.debug(f"Loaded PDK module: {fullModuleName}")
         return module
     except ModuleNotFoundError:
-        _module_cache[moduleName] = None
+        logger.warning(f"PDK module not found: {fullModuleName}")
         return None
+    except Exception as e:
+        logger.error(f"Failed to import PDK module {fullModuleName}: {e}")
+        return None
+
+
+def clearPDKModuleCache() -> None:
+    """Clear the PDK module cache. Call when switching PDKs at runtime."""
+    _module_cache.clear()
+    logger.debug("PDK module cache cleared")
 
 
 class pdkConfig:
