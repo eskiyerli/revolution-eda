@@ -4,7 +4,8 @@
 
 Revolution EDA is a new generation of schematic and symbol editor targeting custom
 integrated circuit design with integrated simulation and plotting capabilities.
-Current version is **0.8.8**.
+Current version is **0.8.10**.
+
 
 ## Core Features
 
@@ -96,8 +97,11 @@ source-available plugins.
 ### From PyPI
 
 ```bash
-pip install revolution-eda
+pipx install revolution-eda
 ```
+The current total of downloads in PyPi repository is:
+
+[![PyPI Downloads](https://static.pepy.tech/personalized-badge/revolution-eda?period=total&units=INTERNATIONAL_SYSTEM&left_color=GREY&right_color=ORANGE&left_text=downloads)](https://pepy.tech/projects/revolution-eda)
 
 After installation, start the program with:
 

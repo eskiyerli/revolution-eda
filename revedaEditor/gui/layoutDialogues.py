@@ -46,9 +46,11 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QTableWidget,
     QTableWidgetItem,
+    QTabWidget,
 )
 
 import revedaEditor.backend.drcModelView as drcmv
+import revedaEditor.backend.LVSModelView as lvsmv
 import revedaEditor.common.layoutShapes as lshp
 import revedaEditor.gui.editFunctions as edf
 from revedaEditor.backend.pdkLoader import importPDKModule
@@ -831,3 +833,61 @@ class drcErrorsDialogue(QDialog):
     #     # Emit signal or call parentW method to highlight polygons in scene
     #     if hasattr(self.parentW(), 'highlightDRCPolygons'):
     #         self.parentW().highlightDRCPolygons(polygons)
+
+
+class lvsResultsDialogue(QDialog):
+
+    def __init__(self, parent, nets: list, devices: list):
+        super().__init__(parent)
+        self.setWindowTitle("Revolution EDA LVS Results")
+        self.setMinimumSize(800, 600)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.Window)
+        print(f'nets: {nets}')
+        print(f'devices: {devices}')
+        layout = QVBoxLayout()
+
+        # Create tab widget
+        self.tabWidget = QTabWidget()
+
+        # Nets tab
+        self.netsTab = QWidget()
+        netsLayout = QVBoxLayout()
+        self.lvsTable = lvsmv.LVSNetsTableView(nets)
+        self.lvsTable.netSelected.connect(self.onNetSelected)
+        netsLayout.addWidget(self.lvsTable)
+        self.netsTab.setLayout(netsLayout)
+        self.tabWidget.addTab(self.netsTab, "Nets")
+
+        # devices tab (placeholder for future implementation)
+        self.devicesTab = QWidget()
+        devicesLayout = QVBoxLayout()
+        devicesLabel = QLabel("Devices table will be implemented here.")
+        devicesLayout.addWidget(devicesLabel)
+        self.devicesTab.setLayout(devicesLayout)
+        self.tabWidget.addTab(self.devicesTab, "Devices")
+
+        # Mismatches tab (placeholder for future implementation)
+        self.mismatchesTab = QWidget()
+        mismatchesLayout = QVBoxLayout()
+        mismatchesLabel = QLabel("Mismatches table will be implemented here.")
+        mismatchesLayout.addWidget(mismatchesLabel)
+        self.mismatchesTab.setLayout(mismatchesLayout)
+        self.tabWidget.addTab(self.mismatchesTab, "Mismatches")
+
+        layout.addWidget(self.tabWidget)
+
+        QBtn = (
+                QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+
+        self.buttonBox = QDialogButtonBox(QBtn)
+        self.buttonBox.accepted.connect(self.accept)
+        self.buttonBox.rejected.connect(self.reject)
+        layout.addWidget(self.buttonBox)
+
+        self.setLayout(layout)
+
+    def onNetSelected(self, shapes):
+        # Emit signal or call parent method to handle shape highlighting
+        print(f"Net selected with {len(shapes)} shapes")
+        # Future: emit signal for layout editor to highlight shapes
