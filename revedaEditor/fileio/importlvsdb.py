@@ -657,6 +657,58 @@ class LVSDBParser:
         """
         return self.crossrefs.get(cell_name)
 
+    def get_all_crossrefs_formatted(self) -> List[Dict]:
+        """
+        Return all cross-reference data formatted for table display.
+
+        Returns a list of dictionaries with cell equivalence and mismatch counts,
+        suitable for display in a table view.
+
+        Returns:
+            List of dictionaries with keys:
+            - 'layout_cell': Layout cell name
+            - 'schem_cell': Schematic cell name
+            - 'equivalent': Boolean equivalence status
+            - 'net_mismatches': Count of net mismatches
+            - 'pin_mismatches': Count of pin mismatches
+            - 'device_mismatches': Count of device mismatches
+            - 'crossref': Full crossref dictionary for internal use
+        """
+        result = []
+        for layout_cell_name, xref in self.crossrefs.items():
+            mapping = xref.get('mapping', {})
+            result.append({
+                'layout_cell': layout_cell_name,
+                'schem_cell': xref.get('schematic_name', ''),
+                'equivalent': xref.get('equivalent', False),
+                'net_mismatches': len(mapping.get('nets', [])),
+                'pin_mismatches': len(mapping.get('pins', [])),
+                'device_mismatches': len(mapping.get('devices', [])),
+                'crossref': xref
+            })
+        return result
+
+    def get_layout_cells_with_bbox(self) -> List[Dict]:
+        """
+        Return all layout cells with their bounding boxes.
+
+        Retrieves all layout cells along with their bounding box information
+        extracted from the J section of the LVSDB file.
+
+        Returns:
+            List of cell dictionaries with keys: 'name', 'bbox' (or None if not defined),
+            where bbox is in format [[xmin, ymin], [xmax, ymax]].
+        """
+        cells = []
+        for cell_name, cell_data in self.layout_cells.items():
+            cells.append({
+                'name': cell_name,
+                'bbox': cell_data.get('bbox'),
+                'net_count': len(cell_data.get('nets', [])),
+                'device_count': len(cell_data.get('devices', []))
+            })
+        return cells
+
     def get_connectivity(self, layout_cell_name: str) -> Optional[Dict]:
         """
         Return bidirectional connectivity information.

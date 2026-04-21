@@ -23,40 +23,33 @@
 #
 
 from pathlib import Path
-from collections import Counter, defaultdict
-from typing import Dict, TYPE_CHECKING
+from typing import Dict
 
-from PySide6.QtCore import Qt, QRect
-
+from PySide6.QtCore import Qt
 from PySide6.QtGui import (
-    QBrush,
-    QColor,
     QDoubleValidator,
     QFontDatabase,
-    QPen,
     QStandardItem,
 )
 from PySide6.QtWidgets import (
+    QButtonGroup,
+    QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QVBoxLayout,
     QRadioButton,
-    QButtonGroup,
-    QGroupBox,
-    QWidget,
-    QCheckBox,
     QTableWidget,
     QTableWidgetItem,
-    QTabWidget,
+    QVBoxLayout,
+    QWidget,
 )
 
 import revedaEditor.backend.drcModelView as drcmv
-import revedaEditor.backend.LVSModelView as lvsmv
 import revedaEditor.common.layoutShapes as lshp
 import revedaEditor.gui.editFunctions as edf
 from revedaEditor.backend.pdkLoader import importPDKModule
@@ -64,8 +57,6 @@ from revedaEditor.backend.pdkLoader import importPDKModule
 # from dotenv import load_dotenv
 
 process = importPDKModule("process")
-if TYPE_CHECKING:
-    pass
 
 
 class layoutInstanceDialogue(QDialog):
@@ -706,7 +697,6 @@ class layoutPolygonProperties(QDialog):
         self.tableWidget.cellChanged.connect(self.handleCellChange)
 
     def addRow(self, row, item):
-
         delete_checkbox = QCheckBox()
         self.tableWidget.setCellWidget(row, 0, delete_checkbox)
 
@@ -715,7 +705,6 @@ class layoutPolygonProperties(QDialog):
         delete_checkbox.stateChanged.connect(lambda state, r=row: self.deleteRow(r, state))
 
     def addEmptyRow(self, row):
-
         # self.table_widget.insertRow(row)
         delete_checkbox = QCheckBox()
         self.tableWidget.setCellWidget(row, 0, delete_checkbox)
@@ -804,215 +793,3 @@ class drcErrorsDialogue(QDialog):
     #     # Emit signal or call parentW method to highlight polygons in scene
     #     if hasattr(self.parentW(), 'highlightDRCPolygons'):
     #         self.parentW().highlightDRCPolygons(polygons)
-
-
-class lvsResultsDialogue(QDialog):
-    def __init__(self, parent, nets: list, devices: list):
-        super().__init__(parent)
-        self.layoutEditor = parent
-        self._lvs_transform: tuple[float, float, int] | None = None
-        self._highlight_colors = [
-            QColor("#e11d48"),
-            QColor("#0ea5e9"),
-            QColor("#10b981"),
-            QColor("#f59e0b"),
-            QColor("#8b5cf6"),
-            QColor("#ef4444"),
-        ]
-        self._highlight_color_index = 0
-        self._net_color_by_signature: dict[tuple, QColor] = {}
-        self.setWindowTitle("Revolution EDA LVS Results")
-        self.setMinimumSize(800, 600)
-        self.setWindowFlags(self.windowFlags() | Qt.WindowType.Window)
-        layout = QVBoxLayout()
-
-        # Create tab widget
-        self.tabWidget = QTabWidget()
-
-        # Nets tab
-        self.netsTab = QWidget()
-        netsLayout = QVBoxLayout()
-        self.lvsTable = lvsmv.LVSNetsTableView(nets)
-        self.lvsTable.netSelected.connect(self.onNetSelected)
-        netsLayout.addWidget(self.lvsTable)
-        self.netsTab.setLayout(netsLayout)
-        self.tabWidget.addTab(self.netsTab, "Nets")
-
-        # devices tab (placeholder for future implementation)
-        self.devicesTab = QWidget()
-        devicesLayout = QVBoxLayout()
-        devicesLabel = QLabel("Devices table will be implemented here.")
-        devicesLayout.addWidget(devicesLabel)
-        self.devicesTab.setLayout(devicesLayout)
-        self.tabWidget.addTab(self.devicesTab, "Devices")
-
-        # Mismatches tab (placeholder for future implementation)
-        self.mismatchesTab = QWidget()
-        mismatchesLayout = QVBoxLayout()
-        mismatchesLabel = QLabel("Mismatches table will be implemented here.")
-        mismatchesLayout.addWidget(mismatchesLabel)
-        self.mismatchesTab.setLayout(mismatchesLayout)
-        self.tabWidget.addTab(self.mismatchesTab, "Mismatches")
-
-        layout.addWidget(self.tabWidget)
-
-        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-
-        self.buttonBox = QDialogButtonBox(QBtn)
-        self.buttonBox.accepted.connect(self.accept)
-        self.buttonBox.rejected.connect(self.reject)
-        layout.addWidget(self.buttonBox)
-
-        self.setLayout(layout)
-
-    @staticmethod
-    def _shape_to_bbox(shape: dict) -> tuple[float, float, float, float] | None:
-        if shape.get("type") == "rect":
-            box = shape.get("bbox")
-            if isinstance(box, list) and len(box) == 2:
-                try:
-                    x1 = float(box[0][0])
-                    y1 = float(box[0][1])
-                    x2 = float(box[1][0])
-                    y2 = float(box[1][1])
-                    return min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2)
-                except (TypeError, ValueError, IndexError):
-                    return None
-        elif shape.get("type") == "polygon":
-            points = shape.get("points", [])
-            xs = [pt[0] for pt in points if isinstance(pt, (list, tuple)) and len(pt) >= 2]
-            ys = [pt[1] for pt in points if isinstance(pt, (list, tuple)) and len(pt) >= 2]
-            if xs and ys:
-                return float(min(xs)), float(min(ys)), float(max(xs)), float(max(ys))
-        return None
-
-    def _infer_lvs_transform(self, shapes: list[dict]) -> tuple[float, float, int]:
-        if self._lvs_transform is not None:
-            return self._lvs_transform
-
-        scene = self.layoutEditor.centralW.scene
-        lvs_rects = []
-        for shape in shapes:
-            bbox = self._shape_to_bbox(shape)
-            if bbox is None:
-                continue
-            x1, y1, x2, y2 = bbox
-            w = int(round(x2 - x1))
-            h = int(round(y2 - y1))
-            if w <= 0 or h <= 0:
-                continue
-            lvs_rects.append((int(round(x1)), int(round(y1)), w, h))
-
-        if not lvs_rects:
-            self._lvs_transform = (0.0, 0.0, 1)
-            return self._lvs_transform
-
-        scene_by_size: dict[tuple[int, int], list[tuple[int, int]]] = defaultdict(list)
-        scene_rect_set: set[tuple[int, int, int, int]] = set()
-        from revedaEditor.fileio.importlvsdb import LVSErrorRect
-
-        for item in scene.items():
-            if isinstance(item, LVSErrorRect):
-                continue
-            if not item.isVisible() or item.zValue() >= 100:
-                continue
-            rect = item.sceneBoundingRect().normalized()
-            w = int(round(rect.width()))
-            h = int(round(rect.height()))
-            if w <= 0 or h <= 0:
-                continue
-            x = int(round(rect.left()))
-            y = int(round(rect.top()))
-            key = (w, h)
-            if len(scene_by_size[key]) < 80:
-                scene_by_size[key].append((x, y))
-            scene_rect_set.add((x, y, w, h))
-
-        if not scene_rect_set:
-            self._lvs_transform = (0.0, 0.0, 1)
-            return self._lvs_transform
-
-        votes: Counter[tuple[int, int, int]] = Counter()
-        for x, y, w, h in lvs_rects[:700]:
-            candidates = scene_by_size.get((w, h), [])
-            if not candidates:
-                continue
-            for sign in (1, -1):
-                for X, Y in candidates:
-                    votes[(sign, X - x, Y - sign * y)] += 1
-
-        if not votes:
-            self._lvs_transform = (0.0, 0.0, 1)
-            return self._lvs_transform
-
-        best = None
-        best_matches = -1
-        for (sign, dx, dy), _score in votes.most_common(20):
-            matches = 0
-            for x, y, w, h in lvs_rects:
-                if (x + dx, sign * y + dy, w, h) in scene_rect_set:
-                    matches += 1
-            if matches > best_matches:
-                best_matches = matches
-                best = (float(dx), float(dy), int(sign))
-
-        self._lvs_transform = best if best is not None else (0.0, 0.0, 1)
-        return self._lvs_transform
-
-    def _next_highlight_color(self) -> QColor:
-        color = self._highlight_colors[
-            self._highlight_color_index % len(self._highlight_colors)
-        ]
-        self._highlight_color_index += 1
-        return color
-
-    def _color_for_shapes(self, shapes: list[dict]) -> QColor:
-        # Build a lightweight, stable signature from first few shape bounding boxes.
-        signature_parts = []
-        for shape in shapes[:8]:
-            bbox = self._shape_to_bbox(shape)
-            if bbox is None:
-                continue
-            x1, y1, x2, y2 = bbox
-            signature_parts.append(
-                (
-                    shape.get("type", ""),
-                    int(round(x1)),
-                    int(round(y1)),
-                    int(round(x2 - x1)),
-                    int(round(y2 - y1)),
-                )
-            )
-        signature = tuple(signature_parts)
-        if signature not in self._net_color_by_signature:
-            self._net_color_by_signature[signature] = self._next_highlight_color()
-        return self._net_color_by_signature[signature]
-
-    def onNetSelected(self, shapes):
-        from revedaEditor.fileio.importlvsdb import LVSErrorRect
-
-        dx, dy, y_sign = self._infer_lvs_transform(shapes)
-        color = self._color_for_shapes(shapes)
-        lvsShapes = []
-        for shape in shapes:
-            bbox = self._shape_to_bbox(shape)
-            if bbox is None:
-                continue
-            x1, y1, x2, y2 = bbox
-            tx1 = x1 + dx
-            tx2 = x2 + dx
-            ty1 = y_sign * y1 + dy
-            ty2 = y_sign * y2 + dy
-            left = int(round(min(tx1, tx2)))
-            top = int(round(min(ty1, ty2)))
-            width = max(1, int(round(abs(tx2 - tx1))))
-            height = max(1, int(round(abs(ty2 - ty1))))
-            rect_item = LVSErrorRect(QRect(left, top, width, height))
-            fill = QColor(color)
-            fill.setAlpha(150)
-            rect_item.setBrush(QBrush(fill))
-            rect_item.setPen(QPen(color, 4, Qt.PenStyle.SolidLine))
-            rect_item.setOpacity(0.9)
-            lvsShapes.append(rect_item)
-
-        self.layoutEditor.handleLVSRectSelection(lvsShapes)
