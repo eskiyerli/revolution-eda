@@ -23,13 +23,19 @@
 #
 
 from pathlib import Path
+from collections import Counter, defaultdict
 from typing import Dict, TYPE_CHECKING
 
-from PySide6.QtCore import (
-    Qt,
-)
+from PySide6.QtCore import Qt, QRect
 
-from PySide6.QtGui import (QWindow, QStandardItem, QFontDatabase, QDoubleValidator)
+from PySide6.QtGui import (
+    QBrush,
+    QColor,
+    QDoubleValidator,
+    QFontDatabase,
+    QPen,
+    QStandardItem,
+)
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -232,9 +238,7 @@ class createLayoutPinDialog(QDialog):
         fixedFamilies = [
             family for family in fontFamilies if QFontDatabase.isFixedPitch(family)
         ]
-        QBtn = (
-                QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
+        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
 
         self.mainLayout = QVBoxLayout()
         self.pinPropGroupBox = QGroupBox("Pin Properties")
@@ -305,8 +309,7 @@ class createLayoutPinDialog(QDialog):
         selectedFamily = self.familyCB.currentText()
         selectedStyle = self.fontStyleCB.currentText()
         self.fontSizes = [
-            str(size)
-            for size in QFontDatabase.pointSizes(selectedFamily, selectedStyle)
+            str(size) for size in QFontDatabase.pointSizes(selectedFamily, selectedStyle)
         ]
         self.labelHeightCB.addItems(self.fontSizes)
 
@@ -318,9 +321,7 @@ class layoutPinProperties(QDialog):
         self.setWindowTitle("Layout Pin Properties")
         self.setMinimumWidth(300)
 
-        QBtn = (
-                QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
+        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
 
         self.mainLayout = QVBoxLayout()
         pinPropGroupBox = QGroupBox("Pin Properties")
@@ -367,9 +368,7 @@ class createLayoutLabelDialog(QDialog):
         fixedFamilies = [
             family for family in fontFamilies if QFontDatabase.isFixedPitch(family)
         ]
-        QBtn = (
-                QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
+        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
 
         self.mainLayout = QVBoxLayout()
         labelPropBox = QGroupBox("Label Properties")
@@ -402,9 +401,7 @@ class createLayoutLabelDialog(QDialog):
         self.labelPropLayout.addRow(edf.boldLabel("Label Alignment"), self.labelAlignCB)
         self.labelOrientCB = QComboBox()
         self.labelOrientCB.addItems(lshp.layoutLabel.LABEL_ORIENTS)
-        self.labelPropLayout.addRow(
-            edf.boldLabel("Label Orientation"), self.labelOrientCB
-        )
+        self.labelPropLayout.addRow(edf.boldLabel("Label Orientation"), self.labelOrientCB)
         self.mainLayout.addWidget(labelPropBox)
         self.buttonBox = QDialogButtonBox(QBtn)
         self.buttonBox.accepted.connect(self.accept)
@@ -422,8 +419,7 @@ class createLayoutLabelDialog(QDialog):
         selectedFamily = self.familyCB.currentText()
         selectedStyle = self.fontStyleCB.currentText()
         self.fontSizes = [
-            str(size)
-            for size in QFontDatabase.pointSizes(selectedFamily, selectedStyle)
+            str(size) for size in QFontDatabase.pointSizes(selectedFamily, selectedStyle)
         ]
         self.labelHeightCB.clear()
         self.labelHeightCB.addItems(self.fontSizes)
@@ -434,13 +430,9 @@ class layoutLabelProperties(createLayoutLabelDialog):
         super().__init__(parent)
         self.setWindowTitle("Layout Label Properties")
         self.labelTopLeftX = edf.shortLineEdit()
-        self.labelPropLayout.addRow(
-            edf.boldLabel("Label Top Left X:"), self.labelTopLeftX
-        )
+        self.labelPropLayout.addRow(edf.boldLabel("Label Top Left X:"), self.labelTopLeftX)
         self.labelTopLeftY = edf.shortLineEdit()
-        self.labelPropLayout.addRow(
-            edf.boldLabel("Label Top Left Y:"), self.labelTopLeftY
-        )
+        self.labelPropLayout.addRow(edf.boldLabel("Label Top Left Y:"), self.labelTopLeftY)
 
 
 class createLayoutViaDialog(QDialog):
@@ -475,9 +467,7 @@ class createLayoutViaDialog(QDialog):
         self.singleViaHeightEdit = edf.shortLineEdit()
 
         self.singleViaHeightEdit.editingFinished.connect(self.singleViaHeightChanged)
-        singleViaPropsLayout.addRow(
-            edf.boldLabel("Via Height"), self.singleViaHeightEdit
-        )
+        singleViaPropsLayout.addRow(edf.boldLabel("Via Height"), self.singleViaHeightEdit)
         mainLayout.addWidget(self.singleViaPropsGroup)
         self.arrayViaPropsGroup = QGroupBox("Single Via Properties")
         arrayViaPropsLayout = QFormLayout()
@@ -498,9 +488,7 @@ class createLayoutViaDialog(QDialog):
         self.arrayXspacingEdit.editingFinished.connect(
             lambda: self.arrayViaSpacingChanged(self.arrayXspacingEdit)
         )
-        arrayViaPropsLayout.addRow(
-            edf.boldLabel("Column Spacing"), self.arrayXspacingEdit
-        )
+        arrayViaPropsLayout.addRow(edf.boldLabel("Column Spacing"), self.arrayXspacingEdit)
         self.arrayYspacingEdit = edf.shortLineEdit()
         self.arrayYspacingEdit.editingFinished.connect(
             lambda: self.arrayViaSpacingChanged(self.arrayYspacingEdit)
@@ -508,9 +496,7 @@ class createLayoutViaDialog(QDialog):
         arrayViaPropsLayout.addRow(edf.boldLabel("Row Spacing"), self.arrayYspacingEdit)
         self.arrayXNumEdit = edf.shortLineEdit()
         self.arrayXNumEdit.setText("1")
-        arrayViaPropsLayout.addRow(
-            edf.boldLabel("Number of Columns"), self.arrayXNumEdit
-        )
+        arrayViaPropsLayout.addRow(edf.boldLabel("Number of Columns"), self.arrayXNumEdit)
         self.arrayYNumEdit = edf.shortLineEdit()
         self.arrayYNumEdit.setText("1")
         arrayViaPropsLayout.addRow(edf.boldLabel("Number of Rows:"), self.arrayYNumEdit)
@@ -528,9 +514,7 @@ class createLayoutViaDialog(QDialog):
         mainLayout.addWidget(self.viaLocationGroup)
         self.viaLocationGroup.hide()
 
-        QBtn = (
-                QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
+        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
 
         self.buttonBox = QDialogButtonBox(QBtn)
         self.buttonBox.accepted.connect(self.accept)
@@ -617,9 +601,7 @@ class createLayoutViaDialog(QDialog):
             viaDefTuple.maxSpacing,
         )
 
-    def validateValue(
-            self, text: str, lineEdit: QLineEdit, min_val: float, max_val: float
-    ):
+    def validateValue(self, text: str, lineEdit: QLineEdit, min_val: float, max_val: float):
         if not text:
             lineEdit.setText(str(min_val))
             return
@@ -651,9 +633,7 @@ class layoutRectProperties(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Layout Rectangle Properties")
         self.setMinimumWidth(300)
-        QBtn = (
-                QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
+        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
 
         self.buttonBox = QDialogButtonBox(QBtn)
         self.buttonBox.accepted.connect(self.accept)
@@ -695,9 +675,7 @@ class layoutPolygonProperties(QDialog):
         self.setWindowTitle("Layout Polygon Properties")
         self.setMinimumWidth(300)
         self.setMinimumHeight(400)
-        QBtn = (
-                QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
+        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
 
         self.buttonBox = QDialogButtonBox(QBtn)
         self.buttonBox.accepted.connect(self.accept)
@@ -734,25 +712,21 @@ class layoutPolygonProperties(QDialog):
 
         self.tableWidget.setItem(row, 1, QTableWidgetItem(str(item[0])))
         self.tableWidget.setItem(row, 2, QTableWidgetItem(str(item[1])))
-        delete_checkbox.stateChanged.connect(
-            lambda state, r=row: self.deleteRow(r, state)
-        )
+        delete_checkbox.stateChanged.connect(lambda state, r=row: self.deleteRow(r, state))
 
     def addEmptyRow(self, row):
 
         # self.table_widget.insertRow(row)
         delete_checkbox = QCheckBox()
         self.tableWidget.setCellWidget(row, 0, delete_checkbox)
-        delete_checkbox.stateChanged.connect(
-            lambda state, r=row: self.deleteRow(r, state)
-        )
+        delete_checkbox.stateChanged.connect(lambda state, r=row: self.deleteRow(r, state))
 
         self.tableWidget.setItem(row, 1, QTableWidgetItem(""))
         self.tableWidget.setItem(row, 2, QTableWidgetItem(""))
 
     def handleCellChange(self, row, column):
         if (
-                row == self.tableWidget.rowCount() - 1
+            row == self.tableWidget.rowCount() - 1
         ):  # Check if last row and tuple text column
             item1 = self.tableWidget.item(row, 1)
             item2 = self.tableWidget.item(row, 2)
@@ -796,7 +770,6 @@ class formDictionary:
 
 
 class drcErrorsDialogue(QDialog):
-
     def __init__(self, parent, drcDataPathObj: Path):
         super().__init__(parent)
         self.setWindowTitle("DRC Errors Table")
@@ -815,9 +788,7 @@ class drcErrorsDialogue(QDialog):
         )
         layout.addWidget(self.drcTable)
 
-        QBtn = (
-                QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
+        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
 
         self.buttonBox = QDialogButtonBox(QBtn)
         self.buttonBox.accepted.connect(self.accept)
@@ -836,14 +807,23 @@ class drcErrorsDialogue(QDialog):
 
 
 class lvsResultsDialogue(QDialog):
-
     def __init__(self, parent, nets: list, devices: list):
         super().__init__(parent)
+        self.layoutEditor = parent
+        self._lvs_transform: tuple[float, float, int] | None = None
+        self._highlight_colors = [
+            QColor("#e11d48"),
+            QColor("#0ea5e9"),
+            QColor("#10b981"),
+            QColor("#f59e0b"),
+            QColor("#8b5cf6"),
+            QColor("#ef4444"),
+        ]
+        self._highlight_color_index = 0
+        self._net_color_by_signature: dict[tuple, QColor] = {}
         self.setWindowTitle("Revolution EDA LVS Results")
         self.setMinimumSize(800, 600)
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.Window)
-        print(f'nets: {nets}')
-        print(f'devices: {devices}')
         layout = QVBoxLayout()
 
         # Create tab widget
@@ -876,9 +856,7 @@ class lvsResultsDialogue(QDialog):
 
         layout.addWidget(self.tabWidget)
 
-        QBtn = (
-                QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
+        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
 
         self.buttonBox = QDialogButtonBox(QBtn)
         self.buttonBox.accepted.connect(self.accept)
@@ -887,7 +865,154 @@ class lvsResultsDialogue(QDialog):
 
         self.setLayout(layout)
 
+    @staticmethod
+    def _shape_to_bbox(shape: dict) -> tuple[float, float, float, float] | None:
+        if shape.get("type") == "rect":
+            box = shape.get("bbox")
+            if isinstance(box, list) and len(box) == 2:
+                try:
+                    x1 = float(box[0][0])
+                    y1 = float(box[0][1])
+                    x2 = float(box[1][0])
+                    y2 = float(box[1][1])
+                    return min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2)
+                except (TypeError, ValueError, IndexError):
+                    return None
+        elif shape.get("type") == "polygon":
+            points = shape.get("points", [])
+            xs = [pt[0] for pt in points if isinstance(pt, (list, tuple)) and len(pt) >= 2]
+            ys = [pt[1] for pt in points if isinstance(pt, (list, tuple)) and len(pt) >= 2]
+            if xs and ys:
+                return float(min(xs)), float(min(ys)), float(max(xs)), float(max(ys))
+        return None
+
+    def _infer_lvs_transform(self, shapes: list[dict]) -> tuple[float, float, int]:
+        if self._lvs_transform is not None:
+            return self._lvs_transform
+
+        scene = self.layoutEditor.centralW.scene
+        lvs_rects = []
+        for shape in shapes:
+            bbox = self._shape_to_bbox(shape)
+            if bbox is None:
+                continue
+            x1, y1, x2, y2 = bbox
+            w = int(round(x2 - x1))
+            h = int(round(y2 - y1))
+            if w <= 0 or h <= 0:
+                continue
+            lvs_rects.append((int(round(x1)), int(round(y1)), w, h))
+
+        if not lvs_rects:
+            self._lvs_transform = (0.0, 0.0, 1)
+            return self._lvs_transform
+
+        scene_by_size: dict[tuple[int, int], list[tuple[int, int]]] = defaultdict(list)
+        scene_rect_set: set[tuple[int, int, int, int]] = set()
+        from revedaEditor.fileio.importlvsdb import LVSErrorRect
+
+        for item in scene.items():
+            if isinstance(item, LVSErrorRect):
+                continue
+            if not item.isVisible() or item.zValue() >= 100:
+                continue
+            rect = item.sceneBoundingRect().normalized()
+            w = int(round(rect.width()))
+            h = int(round(rect.height()))
+            if w <= 0 or h <= 0:
+                continue
+            x = int(round(rect.left()))
+            y = int(round(rect.top()))
+            key = (w, h)
+            if len(scene_by_size[key]) < 80:
+                scene_by_size[key].append((x, y))
+            scene_rect_set.add((x, y, w, h))
+
+        if not scene_rect_set:
+            self._lvs_transform = (0.0, 0.0, 1)
+            return self._lvs_transform
+
+        votes: Counter[tuple[int, int, int]] = Counter()
+        for x, y, w, h in lvs_rects[:700]:
+            candidates = scene_by_size.get((w, h), [])
+            if not candidates:
+                continue
+            for sign in (1, -1):
+                for X, Y in candidates:
+                    votes[(sign, X - x, Y - sign * y)] += 1
+
+        if not votes:
+            self._lvs_transform = (0.0, 0.0, 1)
+            return self._lvs_transform
+
+        best = None
+        best_matches = -1
+        for (sign, dx, dy), _score in votes.most_common(20):
+            matches = 0
+            for x, y, w, h in lvs_rects:
+                if (x + dx, sign * y + dy, w, h) in scene_rect_set:
+                    matches += 1
+            if matches > best_matches:
+                best_matches = matches
+                best = (float(dx), float(dy), int(sign))
+
+        self._lvs_transform = best if best is not None else (0.0, 0.0, 1)
+        return self._lvs_transform
+
+    def _next_highlight_color(self) -> QColor:
+        color = self._highlight_colors[
+            self._highlight_color_index % len(self._highlight_colors)
+        ]
+        self._highlight_color_index += 1
+        return color
+
+    def _color_for_shapes(self, shapes: list[dict]) -> QColor:
+        # Build a lightweight, stable signature from first few shape bounding boxes.
+        signature_parts = []
+        for shape in shapes[:8]:
+            bbox = self._shape_to_bbox(shape)
+            if bbox is None:
+                continue
+            x1, y1, x2, y2 = bbox
+            signature_parts.append(
+                (
+                    shape.get("type", ""),
+                    int(round(x1)),
+                    int(round(y1)),
+                    int(round(x2 - x1)),
+                    int(round(y2 - y1)),
+                )
+            )
+        signature = tuple(signature_parts)
+        if signature not in self._net_color_by_signature:
+            self._net_color_by_signature[signature] = self._next_highlight_color()
+        return self._net_color_by_signature[signature]
+
     def onNetSelected(self, shapes):
-        # Emit signal or call parent method to handle shape highlighting
-        print(f"Net selected with {len(shapes)} shapes")
-        # Future: emit signal for layout editor to highlight shapes
+        from revedaEditor.fileio.importlvsdb import LVSErrorRect
+
+        dx, dy, y_sign = self._infer_lvs_transform(shapes)
+        color = self._color_for_shapes(shapes)
+        lvsShapes = []
+        for shape in shapes:
+            bbox = self._shape_to_bbox(shape)
+            if bbox is None:
+                continue
+            x1, y1, x2, y2 = bbox
+            tx1 = x1 + dx
+            tx2 = x2 + dx
+            ty1 = y_sign * y1 + dy
+            ty2 = y_sign * y2 + dy
+            left = int(round(min(tx1, tx2)))
+            top = int(round(min(ty1, ty2)))
+            width = max(1, int(round(abs(tx2 - tx1))))
+            height = max(1, int(round(abs(ty2 - ty1))))
+            rect_item = LVSErrorRect(QRect(left, top, width, height))
+            fill = QColor(color)
+            fill.setAlpha(150)
+            rect_item.setBrush(QBrush(fill))
+            rect_item.setPen(QPen(color, 4, Qt.PenStyle.SolidLine))
+            rect_item.setOpacity(0.9)
+            lvsShapes.append(rect_item)
+
+        self.layoutEditor.handleLVSRectSelection(lvsShapes)

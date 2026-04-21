@@ -12,9 +12,7 @@ from PySide6.QtCore import (
     Qt,
 )
 from PySide6.QtGui import QPolygonF, QPen, QColor
-from PySide6.QtWidgets import (
-    QApplication,
-)
+
 from PySide6.QtWidgets import (
     QGraphicsPolygonItem,
 )
@@ -30,7 +28,7 @@ class DRCErrorPolygon(QGraphicsPolygonItem):
         super().__init__(polygon)
         # self.setBrush(QBrush(QColor(255, 0, 0, 100)))
         self.setZValue(100)
-        self.setPen(QPen(QColor(255, 0, 0), 20, Qt.DashLine))
+        self.setPen(QPen(QColor(255, 0, 0), 20, Qt.PenStyle.DashLine))
         self._errorCategory = ""
         self._cell = ""
 
@@ -55,8 +53,7 @@ class DRCErrorPolygon(QGraphicsPolygonItem):
 
     @cell.setter
     def cell(self, value: str):
-        if isinstance(value, str):
-            self._cell = value
+        self._cell = value
 
 
 class DRCOutput:
@@ -90,6 +87,7 @@ class DRCOutput:
             elif tag == "items":
                 result["violations"] = self.parseViolations(child)
         self.result = result
+        return result
 
     def parseCategories(self, categoryElement: etree._Element) -> Dict[str, Dict]:
         """Parse nested categories structure."""
@@ -180,9 +178,7 @@ class DRCOutput:
                     if item.find("category") is not None
                     else None
                 ),
-                "cell": (
-                    item.find("cell").text if item.find("cell") is not None else None
-                ),
+                "cell": (item.find("cell").text if item.find("cell") is not None else None),
                 "visited": (
                     item.find("visited").text == "true"
                     if item.find("visited") is not None
@@ -208,7 +204,7 @@ class DRCOutput:
                         polygonItem.cell = violation["cell"]
                         polygonItem.errorCategory = errorType
                         polygonItem.setToolTip(
-                            f'{violation['cell']}, {violation['category']}, {violation["points"]}'
+                            f"{violation['cell']}, {violation['category']}, {violation['points']}"
                         )
                         violation["polygons"].append(polygonItem)
 
