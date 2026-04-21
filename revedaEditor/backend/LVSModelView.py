@@ -75,6 +75,11 @@ class LVSNetsTableModel(QAbstractTableModel):
     def getShapes(self, row):
         return self._data[row].get('shapes', [])
 
+    def getNet(self, row):
+        if 0 <= row < len(self._data):
+            return self._data[row]
+        return None
+
     def markVisited(self, row):
         if 0 <= row < len(self._data):
             self._data[row]['visited'] = True
@@ -84,6 +89,7 @@ class LVSNetsTableModel(QAbstractTableModel):
 
 class LVSNetsTableView(QTableView):
     netSelected = Signal(list)  # Signal to emit selected net's shapes
+    netDataSelected = Signal(dict)  # Signal to emit selected net row data
 
     def __init__(self, nets):
         super().__init__()
@@ -104,6 +110,9 @@ class LVSNetsTableView(QTableView):
             self.lvsNetsModel.markVisited(row)
             shapes = self.lvsNetsModel.getShapes(row)
             self.netSelected.emit(shapes)
+            net_data = self.lvsNetsModel.getNet(row)
+            if net_data:
+                self.netDataSelected.emit(net_data)
 
 
 class LVSDevicesTableModel(QAbstractTableModel):
@@ -293,8 +302,8 @@ class LVSCrossrefsTableModel(QAbstractTableModel):
     def __init__(self, crossrefs: List[Dict[str, Any]]):
         super().__init__()
         self._data = crossrefs
-        self._headers = ['Layout Cell', 'Schematic Cell', 'Equivalent', 'Net Mismatches',
-                        'Pin Mismatches', 'Device Mismatches', 'Visited']
+        self._headers = ['Layout Cell', 'Schematic Cell', 'Equivalent', 'Net Mism.',
+                        'Pin Mism.', 'Device Mism.', 'Total Items', 'Visited']
 
     def rowCount(self, parent: QModelIndex | QPersistentModelIndex = QModelIndex()) -> int:
         return len(self._data)
@@ -324,8 +333,10 @@ class LVSCrossrefsTableModel(QAbstractTableModel):
             elif col == 5:
                 return str(row.get('device_mismatches', 0))
             elif col == 6:
+                return str(row.get('total_mappings', 0))
+            elif col == 7:
                 return str(row.get('visited', False))
-        elif role == Qt.CheckStateRole and col == 6:
+        elif role == Qt.CheckStateRole and col == 7:
             return Qt.Checked if row.get('visited', False) else Qt.Unchecked
 
         return None
@@ -349,29 +360,50 @@ class LVSCrossrefsTableModel(QAbstractTableModel):
     def markVisited(self, row):
         if 0 <= row < len(self._data):
             self._data[row]['visited'] = True
-            index = self.index(row, 6)  # Column 6 is 'Visited'
+            index = self.index(row, 7)  # Column 7 is 'Visited'
             self.dataChanged.emit(index, index)
 
 
 class LVSCrossrefsTableView(QTableView):
-    crossrefSelected = Signal(dict)  # Signal to emit selected crossref dict
+    # Signal emits (crossref_dict, mismatch_type) where mismatch_type is 'nets', 'pins', 'devices', or 'all'
+    crossrefSelected = Signal(dict, str)
+
+    # Column indices for mismatch columns
+    NET_MISMATCH_COL = 3
+    PIN_MISMATCH_COL = 4
+    DEVICE_MISMATCH_COL = 5
 
     def __init__(self, crossrefs):
         super().__init__()
         self.lvsCrossrefsModel = LVSCrossrefsTableModel(crossrefs)
         self.setModel(self.lvsCrossrefsModel)
-        self.clicked.connect(self.onRowClicked)
+        self.clicked.connect(self.onCellClicked)
         self.header = self.horizontalHeader()
-        for i in range(7):
+        for i in range(8):
             self.header.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
         self.header.setMaximumSectionSize(200)
         self.header.setStretchLastSection(False)
 
-    def onRowClicked(self, index):
-        """Handle row click (fires even on repeated clicks)."""
-        if index.isValid():
-            row = index.row()
-            self.lvsCrossrefsModel.markVisited(row)
-            crossref = self.lvsCrossrefsModel.getCrossref(row)
-            if crossref:
-                self.crossrefSelected.emit(crossref)
+    def onCellClicked(self, index):
+        """Handle cell click - emits crossref with mismatch type based on column."""
+        if not index.isValid():
+            return
+
+        row = index.row()
+        col = index.column()
+        self.lvsCrossrefsModel.markVisited(row)
+        crossref = self.lvsCrossrefsModel.getCrossref(row)
+        if not crossref:
+            return
+
+        # Determine which type of mismatch was clicked based on column
+        if col == self.NET_MISMATCH_COL:
+            mismatch_type = 'nets'
+        elif col == self.PIN_MISMATCH_COL:
+            mismatch_type = 'pins'
+        elif col == self.DEVICE_MISMATCH_COL:
+            mismatch_type = 'devices'
+        else:
+            mismatch_type = 'all'
+
+        self.crossrefSelected.emit(crossref, mismatch_type)

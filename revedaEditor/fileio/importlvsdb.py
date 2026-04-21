@@ -657,33 +657,82 @@ class LVSDBParser:
         """
         return self.crossrefs.get(cell_name)
 
+    @staticmethod
+    def _is_mismatch(mapping_item: Dict) -> bool:
+        """
+        Determine if a mapping item represents an actual mismatch.
+
+        In KLayout LVSDB format, the status field indicates match quality:
+        - '1' indicates a successful match (both sides correspond correctly)
+        - '0', empty string, or None indicates no match/unmatched
+        - Other codes like 'X' indicate specific mismatch types
+        - Also checks if either layout or schematic reference is missing
+
+        Args:
+            mapping_item: Dict with 'layout_*', 'schem_*', and 'status' keys
+
+        Returns:
+            True if this item represents a mismatch, False otherwise
+        """
+        status = mapping_item.get('status', '')
+        layout_ref = mapping_item.get('layout_net') or mapping_item.get('layout_pin') or mapping_item.get('layout_dev')
+        schem_ref = mapping_item.get('schem_net') or mapping_item.get('schem_pin') or mapping_item.get('schem_dev')
+
+        # If either side is missing, it's a mismatch
+        if not layout_ref or not schem_ref:
+            return True
+
+        # Status '1' means successfully matched - NOT a mismatch
+        if status == '1':
+            return False
+
+        # Status '0', empty, or None means unmatched/mismatch
+        if not status or status in ('0', ''):
+            return True
+
+        # Any other status code indicates a specific mismatch type
+        return True
+
     def get_all_crossrefs_formatted(self) -> List[Dict]:
         """
         Return all cross-reference data formatted for table display.
 
         Returns a list of dictionaries with cell equivalence and mismatch counts,
-        suitable for display in a table view.
+        suitable for display in a table view. Only counts actual mismatches
+        based on status codes, not all cross-referenced items.
 
         Returns:
             List of dictionaries with keys:
             - 'layout_cell': Layout cell name
             - 'schem_cell': Schematic cell name
             - 'equivalent': Boolean equivalence status
-            - 'net_mismatches': Count of net mismatches
-            - 'pin_mismatches': Count of pin mismatches
-            - 'device_mismatches': Count of device mismatches
+            - 'net_mismatches': Count of actual net mismatches
+            - 'pin_mismatches': Count of actual pin mismatches
+            - 'device_mismatches': Count of actual device mismatches
+            - 'total_mappings': Total number of cross-referenced items
             - 'crossref': Full crossref dictionary for internal use
         """
         result = []
         for layout_cell_name, xref in self.crossrefs.items():
             mapping = xref.get('mapping', {})
+
+            # Count only actual mismatches, not all mappings
+            nets = mapping.get('nets', [])
+            pins = mapping.get('pins', [])
+            devices = mapping.get('devices', [])
+
+            net_mismatches = sum(1 for n in nets if self._is_mismatch(n))
+            pin_mismatches = sum(1 for p in pins if self._is_mismatch(p))
+            device_mismatches = sum(1 for d in devices if self._is_mismatch(d))
+
             result.append({
                 'layout_cell': layout_cell_name,
                 'schem_cell': xref.get('schematic_name', ''),
                 'equivalent': xref.get('equivalent', False),
-                'net_mismatches': len(mapping.get('nets', [])),
-                'pin_mismatches': len(mapping.get('pins', [])),
-                'device_mismatches': len(mapping.get('devices', [])),
+                'net_mismatches': net_mismatches,
+                'pin_mismatches': pin_mismatches,
+                'device_mismatches': device_mismatches,
+                'total_mappings': len(nets) + len(pins) + len(devices),
                 'crossref': xref
             })
         return result
