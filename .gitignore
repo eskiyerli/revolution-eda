@@ -1,0 +1,16 @@
+.VSCodeCounter/
+dist/
+*.pyc
+__pycache__/
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+*.egg-info/
+*.egg
+*.conf
+*.log
+library.json
+.env

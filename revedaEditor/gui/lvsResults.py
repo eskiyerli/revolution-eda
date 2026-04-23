@@ -56,11 +56,14 @@ process = importPDKModule("process")
 class lvsResultsDialogue(QDialog):
     def __init__(self, parent, nets: list, devices: list, cells: Optional[list] = None, parser=None,
                  crossrefs: Optional[list] = None, schem_nets: Optional[list] = None,
-                 schem_devices: Optional[list] = None, schematic_editor=None):
+                 schem_devices: Optional[list] = None, schematic_editor=None,
+                 extracted_netlist_path: Optional[str] = None, schematic_netlist_path: Optional[str] = None):
         super().__init__(parent)
         self.layoutEditor = parent
         self.parser = parser
         self.schematicEditor = schematic_editor
+        self.extracted_netlist_path = extracted_netlist_path
+        self.schematic_netlist_path = schematic_netlist_path
         self._lvs_transform: tuple[float, float, int] | None = None
         self._schematic_highlight_rects: list = []
         self._schematic_highlighted_nets: set = set()
@@ -228,6 +231,54 @@ class lvsResultsDialogue(QDialog):
             cellsLayout.addWidget(cellsLabel)
         self.cellsTab.setLayout(cellsLayout)
         self.tabWidget.addTab(self.cellsTab, "Cells")
+
+        # Extracted Layout Netlist tab
+        self.extractedNetlistTab = QWidget()
+        extractedNetlistLayout = QVBoxLayout()
+        if self.extracted_netlist_path:
+            try:
+                with open(self.extracted_netlist_path, 'r', encoding='utf-8') as f:
+                    netlist_content = f.read()
+                self.extractedNetlistEdit = QPlainTextEdit()
+                self.extractedNetlistEdit.setPlainText(netlist_content)
+                self.extractedNetlistEdit.setReadOnly(True)
+                self.extractedNetlistEdit.setFont(QFont("Courier New", 10))
+                extractedNetlistLayout.addWidget(self.extractedNetlistEdit)
+            except (FileNotFoundError, IOError) as e:
+                errorLabel = QLabel(f"Could not load extracted layout netlist:\n{str(e)}")
+                errorLabel.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                errorLabel.setStyleSheet("color: #e11d48; padding: 20px;")
+                extractedNetlistLayout.addWidget(errorLabel)
+        else:
+            noNetlistLabel = QLabel("No extracted layout netlist available.")
+            noNetlistLabel.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            extractedNetlistLayout.addWidget(noNetlistLabel)
+        self.extractedNetlistTab.setLayout(extractedNetlistLayout)
+        self.tabWidget.addTab(self.extractedNetlistTab, "Layout Netlist")
+
+        # Schematic Netlist tab
+        self.schematicNetlistTab = QWidget()
+        schematicNetlistLayout = QVBoxLayout()
+        if self.schematic_netlist_path:
+            try:
+                with open(self.schematic_netlist_path, 'r', encoding='utf-8') as f:
+                    netlist_content = f.read()
+                self.schematicNetlistEdit = QPlainTextEdit()
+                self.schematicNetlistEdit.setPlainText(netlist_content)
+                self.schematicNetlistEdit.setReadOnly(True)
+                self.schematicNetlistEdit.setFont(QFont("Courier New", 10))
+                schematicNetlistLayout.addWidget(self.schematicNetlistEdit)
+            except (FileNotFoundError, IOError) as e:
+                errorLabel = QLabel(f"Could not load schematic netlist:\n{str(e)}")
+                errorLabel.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                errorLabel.setStyleSheet("color: #e11d48; padding: 20px;")
+                schematicNetlistLayout.addWidget(errorLabel)
+        else:
+            noNetlistLabel = QLabel("No schematic netlist available.")
+            noNetlistLabel.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            schematicNetlistLayout.addWidget(noNetlistLabel)
+        self.schematicNetlistTab.setLayout(schematicNetlistLayout)
+        self.tabWidget.addTab(self.schematicNetlistTab, "Schematic Netlist")
 
         # Cross-Reference (Mismatches) tab
         self.mismatchesTab = QWidget()
