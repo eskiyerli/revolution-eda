@@ -1,0 +1,8 @@
+.VSCodeCounter/
+*.pyc
+__pycache__/
+*.log
+dist/
+build/
+library.json
+reveda.conf

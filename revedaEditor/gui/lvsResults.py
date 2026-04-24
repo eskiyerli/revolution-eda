@@ -47,6 +47,7 @@ import revedaEditor.backend.LVSModelView as lvsmv
 import revedaEditor.common.net as snet
 import revedaEditor.common.shapes as shp
 from revedaEditor.backend.pdkLoader import importPDKModule
+from revedaEditor.fileio.importlvsdb import LVSDBParser, LVSErrorRect
 
 # from dotenv import load_dotenv
 
@@ -54,6 +55,8 @@ process = importPDKModule("process")
 
 
 class lvsResultsDialogue(QDialog):
+    _DEVICE_HIGHLIGHT_SIZE = 600  # half-width/height in layout units for device highlight rect
+
     def __init__(self, parent, nets: list, devices: list, cells: Optional[list] = None, parser=None,
                  crossrefs: Optional[list] = None, schem_nets: Optional[list] = None,
                  schem_devices: Optional[list] = None, schematic_editor=None):
@@ -88,207 +91,25 @@ class lvsResultsDialogue(QDialog):
         ]
         self._highlight_color_index = 0
         self._net_color_by_signature: dict[tuple, QColor] = {}
+
         self.setWindowTitle("Revolution EDA LVS Results Dialogue")
         self.setMinimumSize(500, 400)
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.Window)
         layout = QVBoxLayout()
 
-        # Create tab widget
         self.tabWidget = QTabWidget()
-
-        # Summary tab (first tab)
-        self.summaryTab = QWidget()
-        summaryLayout = QVBoxLayout()
-        
-        # Determine LVS status
-        lvsStatus = self._determine_lvs_status(crossrefs)
-        
-        # Create summary label with ASCII art
-        summaryLabel = QLabel()
-        summaryLabel.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        summaryLabel.setFont(QFont("Courier New", 14))
-        summaryLabel.setStyleSheet("padding: 40px; line-height: 1.5;")
-        
-        if lvsStatus["passed"]:
-            # Happy face for passed LVS
-            asciiArt = r"""
-    ╔════════════════════╗
-    ║   LVS PASSED ✓     ║
-    ║                    ║
-    ║   Layout & Schem   ║
-    ║    are MATCHED!    ║
-    ║                    ║
-    ║      ^_^  ♫        ║
-    ║     (◕‿◕)~~        ║
-    ║      \ /           ║
-    ║      / \           ║
-    ╚════════════════════╝
-    
-    🎉 Congratulations! 🎉
-
-    All layout vs schematic checks passed.
-    Excellent work!
-            """
-            summaryLabel.setStyleSheet(summaryLabel.styleSheet() + "color: #10b981; background-color: #f0fdf4;")
-        else:
-            # Sad face for failed LVS
-            asciiArt = r"""
-    ╔════════════════════╗
-    ║   LVS FAILED ✗     ║
-    ║                    ║
-    ║   Mismatches       ║
-    ║    detected!       ║
-    ║                    ║
-    ║      ._. ≈         ║
-    ║     (•_•)~~        ║
-    ║      | |           ║
-    ║      | |           ║
-    ╚════════════════════╝
-    
-    Don't worry, you've got this! 💪
-    
-    Review the mismatches in detail tabs:
-    - Check Nets, Devices, and Cells tabs
-    - Compare with schematic in Mismatches tab
-    - Make corrections and re-run LVS
-            """
-            summaryLabel.setStyleSheet(summaryLabel.styleSheet() + "color: #e11d48; background-color: #fef2f2;")
-        
-        summaryLabel.setText(asciiArt)
-        summaryLayout.addWidget(summaryLabel)
-        summaryLayout.addStretch()
-        
-        # Add summary statistics
-        statsLabel = QLabel()
-        stats_text = f"Total Cells: {len(crossrefs) if crossrefs else 0}\n"
-        if crossrefs:
-            matched_cells = sum(1 for c in crossrefs if c.get('equivalent', False))
-            mismatched_cells = len(crossrefs) - matched_cells
-            stats_text += f"Matched: {matched_cells}\nMismatched: {mismatched_cells}"
-        statsLabel.setText(stats_text)
-        statsLabel.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        summaryLayout.addWidget(statsLabel)
-        
-        self.summaryTab.setLayout(summaryLayout)
-        self.tabWidget.addTab(self.summaryTab, "Summary")
-
-        # Nets tab
-        self.netsTab = QWidget()
-        netsLayout = QVBoxLayout()
-        self.lvsTable = lvsmv.LVSNetsTableView(nets)
-        self.lvsTable.netSelected.connect(self.onNetSelected)
-        netsLayout.addWidget(self.lvsTable)
-        self.netsTab.setLayout(netsLayout)
-        self.tabWidget.addTab(self.netsTab, "Nets")
-
-        # Devices tab
-        self.devicesTab = QWidget()
-        devicesLayout = QVBoxLayout()
-        self.devicesTable = lvsmv.LVSDevicesTableView(devices)
-        self.devicesTable.deviceSelected.connect(self.onDeviceSelected)
-        devicesLayout.addWidget(self.devicesTable)
-        self.devicesTab.setLayout(devicesLayout)
-        self.tabWidget.addTab(self.devicesTab, "Devices")
-
-        # Schematic Nets tab
-        self.schemNetsTab = QWidget()
-        schemNetsLayout = QVBoxLayout()
-        if schem_nets:
-            self.schemNetsTable = lvsmv.LVSNetsTableView(schem_nets)
-            self.schemNetsTable.netDataSelected.connect(self.onSchemNetSelected)
-            schemNetsLayout.addWidget(self.schemNetsTable)
-        else:
-            schemNetsLabel = QLabel("No schematic net data available.")
-            schemNetsLayout.addWidget(schemNetsLabel)
-        self.schemNetsTab.setLayout(schemNetsLayout)
-        self.tabWidget.addTab(self.schemNetsTab, "Schem Nets")
-
-        # Schematic Devices tab
-        self.schemDevicesTab = QWidget()
-        schemDevicesLayout = QVBoxLayout()
-        if schem_devices:
-            self.schemDevicesTable = lvsmv.LVSDevicesTableView(schem_devices)
-            self.schemDevicesTable.deviceSelected.connect(self.onSchemDeviceSelected)
-            schemDevicesLayout.addWidget(self.schemDevicesTable)
-        else:
-            schemDevicesLabel = QLabel("No schematic device data available.")
-            schemDevicesLayout.addWidget(schemDevicesLabel)
-        self.schemDevicesTab.setLayout(schemDevicesLayout)
-        self.tabWidget.addTab(self.schemDevicesTab, "Schem Devices")
-
-        # Cells tab
-        self.cellsTab = QWidget()
-        cellsLayout = QVBoxLayout()
-        if cells:
-            self.cellsTable = lvsmv.LVSCellsTableView(cells)
-            self.cellsTable.cellSelected.connect(self.onCellSelected)
-            cellsLayout.addWidget(self.cellsTable)
-        else:
-            cellsLabel = QLabel("No cell data available.")
-            cellsLayout.addWidget(cellsLabel)
-        self.cellsTab.setLayout(cellsLayout)
-        self.tabWidget.addTab(self.cellsTab, "Cells")
-
-        # Cross-Reference (Mismatches) tab
-        self.mismatchesTab = QWidget()
-        mismatchesLayout = QVBoxLayout()
-
-        # Calculate total actual mismatches
-        total_mismatches = 0
-        if crossrefs:
-            total_mismatches = sum(
-                c.get('net_mismatches', 0) + c.get('pin_mismatches', 0) + c.get('device_mismatches', 0)
-                for c in crossrefs
-            )
-
-        if crossrefs and total_mismatches > 0:
-            # Show mismatches table
-            self.crossrefsTable = lvsmv.LVSCrossrefsTableView(crossrefs)
-            self.crossrefsTable.crossrefSelected.connect(self.onCrossrefSelected)
-            mismatchesLayout.addWidget(self.crossrefsTable)
-
-            self.mismatchSummaryLabel = QLabel(
-                "Select a mismatch count cell to see details and highlight corresponding items."
-            )
-            self.mismatchSummaryLabel.setWordWrap(True)
-            self.mismatchSummaryLabel.setStyleSheet("font-weight: 600; color: #334155; padding-top: 8px;")
-            mismatchesLayout.addWidget(self.mismatchSummaryLabel)
-
-            self.mismatchDetailsBox = QPlainTextEdit()
-            self.mismatchDetailsBox.setReadOnly(True)
-            self.mismatchDetailsBox.setMinimumHeight(150)
-            self.mismatchDetailsBox.setPlainText("Mismatch details will appear here.")
-            mismatchesLayout.addWidget(self.mismatchDetailsBox)
-        elif crossrefs and total_mismatches == 0:
-            # LVS passed - no mismatches to show
-            noMismatchesLabel = QLabel(
-                "✓ No mismatches found!\n\n"
-                "All layout vs schematic cross-references match correctly.\n"
-                "The schematic and layout are fully equivalent."
-            )
-            noMismatchesLabel.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            noMismatchesLabel.setStyleSheet(
-                "color: #10b981; font-size: 14px; padding: 40px;"
-            )
-            mismatchesLayout.addStretch()
-            mismatchesLayout.addWidget(noMismatchesLabel)
-            mismatchesLayout.addStretch()
-        else:
-            noDataLabel = QLabel("No cross-reference data available.")
-            noDataLabel.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            mismatchesLayout.addWidget(noDataLabel)
-
-        self.mismatchesTab.setLayout(mismatchesLayout)
-
-        # Set tab label based on mismatch count
-        tab_label = f"Mismatches ({total_mismatches})" if total_mismatches > 0 else "Mismatches"
-        self.tabWidget.addTab(self.mismatchesTab, tab_label)
-
+        self.tabWidget.addTab(*self._build_summary_tab(crossrefs))
+        self.tabWidget.addTab(*self._build_nets_tab(nets))
+        self.tabWidget.addTab(*self._build_devices_tab(devices))
+        self.tabWidget.addTab(*self._build_schem_nets_tab(schem_nets))
+        self.tabWidget.addTab(*self._build_schem_devices_tab(schem_devices))
+        self.tabWidget.addTab(*self._build_cells_tab(cells))
+        self.tabWidget.addTab(*self._build_mismatches_tab(crossrefs))
         layout.addWidget(self.tabWidget)
 
-        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-
-        self.buttonBox = QDialogButtonBox(QBtn)
+        self.buttonBox = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
         self.buttonBox.accepted.connect(self.accept)
         self.buttonBox.rejected.connect(self.reject)
         layout.addWidget(self.buttonBox)
@@ -301,6 +122,173 @@ class lvsResultsDialogue(QDialog):
         self._clear_schematic_highlights()
 
         super().closeEvent(event)
+
+    # ------------------------------------------------------------------
+    # Tab builder helpers — each returns (QWidget, tab_label: str)
+    # ------------------------------------------------------------------
+
+    def _build_summary_tab(self, crossrefs: Optional[list]) -> tuple[QWidget, str]:
+        lvsStatus = self._determine_lvs_status(crossrefs)
+        tab = QWidget()
+        layout = QVBoxLayout()
+
+        summaryLabel = QLabel()
+        summaryLabel.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        summaryLabel.setFont(QFont("Courier New", 14))
+        summaryLabel.setStyleSheet("padding: 40px; line-height: 1.5;")
+
+        if lvsStatus["passed"]:
+            asciiArt = r"""
+    ╔════════════════════╗
+    ║   LVS PASSED ✓     ║
+    ║                    ║
+    ║   Layout & Schem   ║
+    ║    are MATCHED!    ║
+    ║                    ║
+    ║      ^_^  ♫        ║
+    ║     (◕‿◕)~~        ║
+    ║      \ /           ║
+    ║      / \           ║
+    ╚════════════════════╝
+
+    🎉 Congratulations! 🎉
+
+    All layout vs schematic checks passed.
+    Excellent work!
+            """
+            summaryLabel.setStyleSheet(summaryLabel.styleSheet() + "color: #10b981; background-color: #f0fdf4;")
+        else:
+            asciiArt = r"""
+    ╔════════════════════╗
+    ║   LVS FAILED ✗     ║
+    ║                    ║
+    ║   Mismatches       ║
+    ║    detected!       ║
+    ║                    ║
+    ║      ._. ≈         ║
+    ║     (•_•)~~        ║
+    ║      | |           ║
+    ║      | |           ║
+    ╚════════════════════╝
+
+    Don't worry, you've got this! 💪
+
+    Review the mismatches in detail tabs:
+    - Check Nets, Devices, and Cells tabs
+    - Compare with schematic in Mismatches tab
+    - Make corrections and re-run LVS
+            """
+            summaryLabel.setStyleSheet(summaryLabel.styleSheet() + "color: #e11d48; background-color: #fef2f2;")
+
+        summaryLabel.setText(asciiArt)
+        layout.addWidget(summaryLabel)
+        layout.addStretch()
+
+        statsLabel = QLabel()
+        total = len(crossrefs) if crossrefs else 0
+        stats_text = f"Total Cells: {total}\nMatched: {lvsStatus['matched']}\nMismatched: {lvsStatus['mismatched']}"
+        statsLabel.setText(stats_text)
+        statsLabel.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(statsLabel)
+
+        tab.setLayout(layout)
+        return tab, "Summary"
+
+    def _build_nets_tab(self, nets: list) -> tuple[QWidget, str]:
+        tab = QWidget()
+        layout = QVBoxLayout()
+        self.lvsTable = lvsmv.LVSNetsTableView(nets)
+        self.lvsTable.netSelected.connect(self.onNetSelected)
+        layout.addWidget(self.lvsTable)
+        tab.setLayout(layout)
+        return tab, "Nets"
+
+    def _build_devices_tab(self, devices: list) -> tuple[QWidget, str]:
+        tab = QWidget()
+        layout = QVBoxLayout()
+        self.devicesTable = lvsmv.LVSDevicesTableView(devices)
+        self.devicesTable.deviceSelected.connect(self.onDeviceSelected)
+        layout.addWidget(self.devicesTable)
+        tab.setLayout(layout)
+        return tab, "Devices"
+
+    def _build_schem_nets_tab(self, schem_nets: Optional[list]) -> tuple[QWidget, str]:
+        tab = QWidget()
+        layout = QVBoxLayout()
+        if schem_nets:
+            self.schemNetsTable = lvsmv.LVSNetsTableView(schem_nets)
+            self.schemNetsTable.netDataSelected.connect(self.onSchemNetSelected)
+            layout.addWidget(self.schemNetsTable)
+        else:
+            layout.addWidget(QLabel("No schematic net data available."))
+        tab.setLayout(layout)
+        return tab, "Schem Nets"
+
+    def _build_schem_devices_tab(self, schem_devices: Optional[list]) -> tuple[QWidget, str]:
+        tab = QWidget()
+        layout = QVBoxLayout()
+        if schem_devices:
+            self.schemDevicesTable = lvsmv.LVSDevicesTableView(schem_devices)
+            self.schemDevicesTable.deviceSelected.connect(self.onSchemDeviceSelected)
+            layout.addWidget(self.schemDevicesTable)
+        else:
+            layout.addWidget(QLabel("No schematic device data available."))
+        tab.setLayout(layout)
+        return tab, "Schem Devices"
+
+    def _build_cells_tab(self, cells: Optional[list]) -> tuple[QWidget, str]:
+        tab = QWidget()
+        layout = QVBoxLayout()
+        if cells:
+            self.cellsTable = lvsmv.LVSCellsTableView(cells)
+            self.cellsTable.cellSelected.connect(self.onCellSelected)
+            layout.addWidget(self.cellsTable)
+        else:
+            layout.addWidget(QLabel("No cell data available."))
+        tab.setLayout(layout)
+        return tab, "Cells"
+
+    def _build_mismatches_tab(self, crossrefs: Optional[list]) -> tuple[QWidget, str]:
+        tab = QWidget()
+        layout = QVBoxLayout()
+        total_mismatches = self._determine_lvs_status(crossrefs).get("total_mismatches", 0)
+
+        if crossrefs and total_mismatches > 0:
+            self.crossrefsTable = lvsmv.LVSCrossrefsTableView(crossrefs)
+            self.crossrefsTable.crossrefSelected.connect(self.onCrossrefSelected)
+            layout.addWidget(self.crossrefsTable)
+
+            self.mismatchSummaryLabel = QLabel(
+                "Select a mismatch count cell to see details and highlight corresponding items."
+            )
+            self.mismatchSummaryLabel.setWordWrap(True)
+            self.mismatchSummaryLabel.setStyleSheet("font-weight: 600; color: #334155; padding-top: 8px;")
+            layout.addWidget(self.mismatchSummaryLabel)
+
+            self.mismatchDetailsBox = QPlainTextEdit()
+            self.mismatchDetailsBox.setReadOnly(True)
+            self.mismatchDetailsBox.setMinimumHeight(150)
+            self.mismatchDetailsBox.setPlainText("Mismatch details will appear here.")
+            layout.addWidget(self.mismatchDetailsBox)
+        elif crossrefs:
+            noMismatchesLabel = QLabel(
+                "✓ No mismatches found!\n\n"
+                "All layout vs schematic cross-references match correctly.\n"
+                "The schematic and layout are fully equivalent."
+            )
+            noMismatchesLabel.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            noMismatchesLabel.setStyleSheet("color: #10b981; font-size: 14px; padding: 40px;")
+            layout.addStretch()
+            layout.addWidget(noMismatchesLabel)
+            layout.addStretch()
+        else:
+            noDataLabel = QLabel("No cross-reference data available.")
+            noDataLabel.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            layout.addWidget(noDataLabel)
+
+        tab.setLayout(layout)
+        label = f"Mismatches ({total_mismatches})" if total_mismatches > 0 else "Mismatches"
+        return tab, label
 
     def _clear_layout_highlights(self):
         if hasattr(self.layoutEditor, 'centralW') and hasattr(self.layoutEditor.centralW, 'scene'):
@@ -343,8 +331,6 @@ class lvsResultsDialogue(QDialog):
         scene.highlightNets = False
 
     def _highlight_schematic_device(self, device: dict):
-        from revedaEditor.fileio.importlvsdb import LVSErrorRect
-
         scene = self._schematic_scene()
         if scene is None:
             return
@@ -367,13 +353,11 @@ class lvsResultsDialogue(QDialog):
                     item, candidate_refs, candidate_tokens):
                 item.setSelected(True)
                 scene_rect = item.sceneBoundingRect().adjusted(-8, -8, 8, 8)
-                rect_item = LVSErrorRect(scene_rect.toRect())
-                fill = QColor(color)
-                fill.setAlpha(80)
-                rect_item.setBrush(QBrush(fill))
-                rect_item.setPen(QPen(color, 4, Qt.PenStyle.DashLine))
-                rect_item.setOpacity(0.9)
-                rect_item.setZValue(item.zValue() + 100)
+                rect_item = self._make_lvs_rect(
+                    scene_rect.toRect(), color, alpha=80,
+                    pen_style=Qt.PenStyle.DashLine,
+                    z_offset=item.zValue() + 100,
+                )
                 scene.addItem(rect_item)
                 self._schematic_highlight_rects.append(rect_item)
                 matched_items.append(item)
@@ -437,26 +421,28 @@ class lvsResultsDialogue(QDialog):
     def _determine_lvs_status(crossrefs: Optional[list]) -> dict:
         """
         Determine overall LVS pass/fail status from crossref data.
-        
-        Args:
-            crossrefs: List of crossref dictionaries from parser
-            
-        Returns:
-            Dictionary with keys:
-            - 'passed': Boolean indicating if all cells are equivalent
-            - 'matched': Count of equivalent cells
-            - 'mismatched': Count of non-equivalent cells
+
+        Returns a dict with keys:
+        - 'passed': bool — True when all cells are equivalent
+        - 'matched': int — count of equivalent cells
+        - 'mismatched': int — count of non-equivalent cells
+        - 'total_mismatches': int — sum of net/pin/device mismatches across all cells
         """
         if not crossrefs:
-            return {"passed": True, "matched": 0, "mismatched": 0}
-        
+            return {"passed": True, "matched": 0, "mismatched": 0, "total_mismatches": 0}
+
         matched = sum(1 for c in crossrefs if c.get('equivalent', False))
         mismatched = len(crossrefs) - matched
-        
+        total_mismatches = sum(
+            c.get('net_mismatches', 0) + c.get('pin_mismatches', 0) + c.get('device_mismatches', 0)
+            for c in crossrefs if not c.get('equivalent', False)
+        )
+
         return {
-            "passed": mismatched == 0,
+            "passed": mismatched == 0 and total_mismatches == 0,
             "matched": matched,
-            "mismatched": mismatched
+            "mismatched": mismatched,
+            "total_mismatches": total_mismatches,
         }
 
     def _infer_lvs_transform(self, shapes: list[dict]) -> tuple[float, float, int]:
@@ -482,7 +468,6 @@ class lvsResultsDialogue(QDialog):
 
         scene_by_size: dict[tuple[int, int], list[tuple[int, int]]] = defaultdict(list)
         scene_rect_set: set[tuple[int, int, int, int]] = set()
-        from revedaEditor.fileio.importlvsdb import LVSErrorRect
 
         for item in scene.items():
             if isinstance(item, LVSErrorRect):
@@ -538,6 +523,34 @@ class lvsResultsDialogue(QDialog):
         ]
         self._highlight_color_index += 1
         return color
+
+    @staticmethod
+    def _apply_transform(bbox: tuple[float, float, float, float], dx: float, dy: float,
+                         y_sign: int) -> QRect:
+        """Convert a (x1,y1,x2,y2) layout bbox to a scene QRect using dx/dy/y_sign transform."""
+        x1, y1, x2, y2 = bbox
+        tx1, tx2 = x1 + dx, x2 + dx
+        ty1, ty2 = y_sign * y1 + dy, y_sign * y2 + dy
+        left = int(round(min(tx1, tx2)))
+        top = int(round(min(ty1, ty2)))
+        width = max(1, int(round(abs(tx2 - tx1))))
+        height = max(1, int(round(abs(ty2 - ty1))))
+        return QRect(left, top, width, height)
+
+    @staticmethod
+    def _make_lvs_rect(rect: QRect, color: QColor, alpha: int = 150,
+                       pen_style: Qt.PenStyle = Qt.PenStyle.SolidLine,
+                       pen_width: int = 4, z_offset: float = 0.0) -> LVSErrorRect:
+        """Create a styled LVSErrorRect ready to add to a scene."""
+        fill = QColor(color)
+        fill.setAlpha(alpha)
+        rect_item = LVSErrorRect(rect)
+        rect_item.setBrush(QBrush(fill))
+        rect_item.setPen(QPen(color, pen_width, pen_style))
+        rect_item.setOpacity(0.9)
+        if z_offset:
+            rect_item.setZValue(z_offset)
+        return rect_item
 
     @staticmethod
     def _normalize_ref(value) -> str:
@@ -600,44 +613,21 @@ class lvsResultsDialogue(QDialog):
         return self._net_color_by_signature[signature]
 
     def onNetSelected(self, shapes):
-        from revedaEditor.fileio.importlvsdb import LVSErrorRect
-
         dx, dy, y_sign = self._infer_lvs_transform(shapes)
         color = self._color_for_shapes(shapes)
-        lvsShapes = []
-        for shape in shapes:
-            bbox = self._shape_to_bbox(shape)
-            if bbox is None:
-                continue
-            x1, y1, x2, y2 = bbox
-            tx1 = x1 + dx
-            tx2 = x2 + dx
-            ty1 = y_sign * y1 + dy
-            ty2 = y_sign * y2 + dy
-            left = int(round(min(tx1, tx2)))
-            top = int(round(min(ty1, ty2)))
-            width = max(1, int(round(abs(tx2 - tx1))))
-            height = max(1, int(round(abs(ty2 - ty1))))
-            rect_item = LVSErrorRect(QRect(left, top, width, height))
-            fill = QColor(color)
-            fill.setAlpha(150)
-            rect_item.setBrush(QBrush(fill))
-            rect_item.setPen(QPen(color, 4, Qt.PenStyle.SolidLine))
-            rect_item.setOpacity(0.9)
-            lvsShapes.append(rect_item)
-
+        lvsShapes = [
+            self._make_lvs_rect(self._apply_transform(bbox, dx, dy, y_sign), color)
+            for shape in shapes
+            if (bbox := self._shape_to_bbox(shape)) is not None
+        ]
         self.layoutEditor.handleLVSRectSelection(lvsShapes)
 
     def onDeviceSelected(self, device):
         """Handle device selection from devices table."""
-        from revedaEditor.fileio.importlvsdb import LVSErrorRect
-
-        # Extract position from device
         position = device.get("position")
         if not position:
             return
 
-        # Create a rectangle centered on the device position
         if isinstance(position, (list, tuple)) and len(position) >= 2:
             x, y = position[0], position[1]
         elif isinstance(position, dict):
@@ -649,101 +639,44 @@ class lvsResultsDialogue(QDialog):
             return
 
         try:
-            x = float(x)
-            y = float(y)
+            x, y = float(x), float(y)
         except (TypeError, ValueError):
             return
 
-        # Create a rectangle centered on the device position (twice as large)
-        device_size = 600
-        shape_bbox = [
-            [x - device_size / 2, y - device_size / 2],
-            [x + device_size / 2, y + device_size / 2],
-        ]
-
-        # Create a shape dict to reuse the transform inference logic
+        half = self._DEVICE_HIGHLIGHT_SIZE / 2
+        shape_bbox = [[x - half, y - half], [x + half, y + half]]
         shapes = [{"type": "rect", "bbox": shape_bbox}]
-
-        # Get transform and color for highlighting
         dx, dy, y_sign = self._infer_lvs_transform(shapes)
         color = self._next_highlight_color()
-
-        # Create highlight rectangle in transformed space
-        tx1 = x - device_size / 2 + dx
-        tx2 = x + device_size / 2 + dx
-        ty1 = y_sign * (y - device_size / 2) + dy
-        ty2 = y_sign * (y + device_size / 2) + dy
-
-        left = int(round(min(tx1, tx2)))
-        top = int(round(min(ty1, ty2)))
-        width = max(1, int(round(abs(tx2 - tx1))))
-        height = max(1, int(round(abs(ty2 - ty1))))
-
-        rect_item = LVSErrorRect(QRect(left, top, width, height))
-        fill = QColor(color)
-        fill.setAlpha(150)
-        rect_item.setBrush(QBrush(fill))
-        rect_item.setPen(QPen(color, 4, Qt.PenStyle.SolidLine))
-        rect_item.setOpacity(0.9)
-
-        # Add device info to rect for debugging
-        device_id = device.get("id", "?")
-        device_type = device.get("type", "?")
-        device_name = device.get("name", "?")
-        rect_item._cell = f"{device_type} ({device_id}) - {device_name}"
-
+        bbox = (x - half, y - half, x + half, y + half)
+        rect_item = self._make_lvs_rect(self._apply_transform(bbox, dx, dy, y_sign), color)
+        rect_item._cell = (
+            f"{device.get('type', '?')} ({device.get('id', '?')}) - {device.get('name', '?')}"
+        )
         self.layoutEditor.handleLVSRectSelection([rect_item])
 
     def onCellSelected(self, cell):
         """Handle cell selection from cells table."""
-        from revedaEditor.fileio.importlvsdb import LVSErrorRect
-
-        # Extract bounding box from cell
-        bbox = cell.get("bbox")
-        if not bbox:
-            return
-
-        # Bbox format is [[xmin, ymin], [xmax, ymax]]
-        if not (isinstance(bbox, list) and len(bbox) == 2):
+        raw_bbox = cell.get("bbox")
+        if not raw_bbox or not (isinstance(raw_bbox, list) and len(raw_bbox) == 2):
             return
 
         try:
-            x1, y1 = float(bbox[0][0]), float(bbox[0][1])
-            x2, y2 = float(bbox[1][0]), float(bbox[1][1])
+            x1, y1 = float(raw_bbox[0][0]), float(raw_bbox[0][1])
+            x2, y2 = float(raw_bbox[1][0]), float(raw_bbox[1][1])
         except (TypeError, ValueError, IndexError):
             return
 
-        # Create a shape dict for transform inference
-        shapes = [{"type": "rect", "bbox": bbox}]
-
-        # Get transform and color for highlighting
+        shapes = [{"type": "rect", "bbox": raw_bbox}]
         dx, dy, y_sign = self._infer_lvs_transform(shapes)
         color = self._next_highlight_color()
-
-        # Create highlight rectangle in transformed space
-        tx1 = x1 + dx
-        tx2 = x2 + dx
-        ty1 = y_sign * y1 + dy
-        ty2 = y_sign * y2 + dy
-
-        left = int(round(min(tx1, tx2)))
-        top = int(round(min(ty1, ty2)))
-        width = max(1, int(round(abs(tx2 - tx1))))
-        height = max(1, int(round(abs(ty2 - ty1))))
-
-        rect_item = LVSErrorRect(QRect(left, top, width, height))
-        fill = QColor(color)
-        fill.setAlpha(150)
-        rect_item.setBrush(QBrush(fill))
-        rect_item.setPen(QPen(color, 4, Qt.PenStyle.SolidLine))
-        rect_item.setOpacity(0.9)
-
-        # Add cell info to rect
-        cell_name = cell.get("name", "?")
-        net_count = cell.get("net_count", 0)
-        device_count = cell.get("device_count", 0)
-        rect_item._cell = f"Cell: {cell_name} ({net_count} nets, {device_count} devices)"
-
+        rect_item = self._make_lvs_rect(
+            self._apply_transform((x1, y1, x2, y2), dx, dy, y_sign), color
+        )
+        rect_item._cell = (
+            f"Cell: {cell.get('name', '?')}"
+            f" ({cell.get('net_count', 0)} nets, {cell.get('device_count', 0)} devices)"
+        )
         self.layoutEditor.handleLVSRectSelection([rect_item])
 
     def onCrossrefSelected(self, crossref, mismatch_type='all'):
@@ -753,8 +686,6 @@ class lvsResultsDialogue(QDialog):
             crossref: The crossref dictionary containing mismatch data
             mismatch_type: Type of mismatch clicked - 'nets', 'pins', 'devices', or 'all'
         """
-        from revedaEditor.fileio.importlvsdb import LVSDBParser
-
         # Extract crossref data
         layout_cell = crossref.get("layout_cell", "")
         schem_cell = crossref.get("schem_cell", "")
@@ -897,8 +828,6 @@ class lvsResultsDialogue(QDialog):
 
     def _highlight_layout_net_shapes(self, shapes: list):
         """Highlight net shapes on the layout view."""
-        from revedaEditor.fileio.importlvsdb import LVSErrorRect
-
         if not shapes or not hasattr(self.layoutEditor, 'centralW'):
             return
 
@@ -910,99 +839,38 @@ class lvsResultsDialogue(QDialog):
             bbox = self._shape_to_bbox(shape)
             if bbox is None:
                 continue
-            x1, y1, x2, y2 = bbox
-            tx1 = x1 + dx
-            tx2 = x2 + dx
-            ty1 = y_sign * y1 + dy
-            ty2 = y_sign * y2 + dy
-            left = int(round(min(tx1, tx2)))
-            top = int(round(min(ty1, ty2)))
-            width = max(1, int(round(abs(tx2 - tx1))))
-            height = max(1, int(round(abs(ty2 - ty1))))
-            rect_item = LVSErrorRect(QRect(left, top, width, height))
-            fill = QColor(color)
-            fill.setAlpha(150)
-            rect_item.setBrush(QBrush(fill))
-            rect_item.setPen(QPen(color, 4, Qt.PenStyle.SolidLine))
-            rect_item.setOpacity(0.9)
-            scene.addItem(rect_item)
+            scene.addItem(self._make_lvs_rect(self._apply_transform(bbox, dx, dy, y_sign), color))
 
     def _highlight_mismatched_pin(self, pin: dict):
-        """Highlight a mismatched pin on both schematic and layout views."""
-        # Similar to net highlighting but for pins
-        layout_pin_id = pin.get('layout_pin', '')
-        schem_pin_id = pin.get('schem_pin', '')
+        """Highlight a mismatched pin on both schematic and layout views.
 
-        # For now, pins are often part of nets, so we highlight similarly
-        # This can be enhanced with pin-specific highlighting if needed
-        if layout_pin_id:
-            # Look up pin by ID and highlight on layout
-            pass
-        if schem_pin_id and self.schematicEditor:
-            # Look up pin by ID and highlight on schematic
-            pass
+        TODO: Pin-specific highlighting is not yet implemented.
+              Pins typically share nets; add pin-shape lookup via parser when available.
+        """
 
     def _highlight_mismatched_device(self, device: dict):
         """Highlight a mismatched device on both schematic and layout views."""
-        from revedaEditor.fileio.importlvsdb import LVSErrorRect
-
         layout_dev_id = device.get('layout_dev', '')
         schem_dev_id = device.get('schem_dev', '')
 
-        # Highlight on schematic view using device name
+        # Schematic side — reuse _highlight_schematic_device with a minimal device dict
         if schem_dev_id and self.schematicEditor:
-            # Try to find device by name in schematic
-            scene = self._schematic_scene()
-            if scene:
-                color = self._next_highlight_color()
-                candidate_refs = {self._normalize_ref(schem_dev_id)}
-                if self.parser and self._current_schem_cell:
-                    for schem_dev in self.parser.get_schematic_devices(self._current_schem_cell):
-                        dev_id = self._normalize_ref(schem_dev.get('id'))
-                        dev_name = self._normalize_ref(schem_dev.get('name'))
-                        if self._normalize_ref(schem_dev_id) in {dev_id, dev_name}:
-                            if dev_id:
-                                candidate_refs.add(dev_id)
-                            if dev_name:
-                                candidate_refs.add(dev_name)
+            # Resolve additional candidate refs from parser if available
+            name = schem_dev_id
+            if self.parser and self._current_schem_cell:
+                for schem_dev in self.parser.get_schematic_devices(self._current_schem_cell):
+                    dev_id = self._normalize_ref(schem_dev.get('id'))
+                    dev_name = self._normalize_ref(schem_dev.get('name'))
+                    if self._normalize_ref(schem_dev_id) in {dev_id, dev_name}:
+                        name = schem_dev.get('name', schem_dev_id)
+                        break
+            self._highlight_schematic_device({"name": name, "id": schem_dev_id})
 
-                candidate_tokens = set().union(*(self._ref_tokens(ref) for ref in candidate_refs))
-                matched_items = []
-                for item in scene.items():
-                    if isinstance(item, shp.schematicSymbol):
-                        if self._symbol_matches_device_ref(item, candidate_refs, candidate_tokens):
-                            item.setSelected(True)
-                            scene_rect = item.sceneBoundingRect().adjusted(-8, -8, 8, 8)
-                            rect_item = LVSErrorRect(scene_rect.toRect())
-                            fill = QColor(color)
-                            fill.setAlpha(80)
-                            rect_item.setBrush(QBrush(fill))
-                            rect_item.setPen(QPen(color, 4, Qt.PenStyle.DashLine))
-                            rect_item.setOpacity(0.9)
-                            rect_item.setZValue(item.zValue() + 100)
-                            scene.addItem(rect_item)
-                            self._schematic_highlight_rects.append(rect_item)
-                            matched_items.append(item)
-
-                if matched_items and self.schematicEditor:
-                    bounds = matched_items[0].sceneBoundingRect()
-                    for matched_item in matched_items[1:]:
-                        bounds = bounds.united(matched_item.sceneBoundingRect())
-                    self.schematicEditor.centralW.view.fitInView(
-                        bounds.adjusted(-40, -40, 40, 40),
-                        Qt.AspectRatioMode.KeepAspectRatio,
-                    )
-
-        # Highlight on layout view - device positions are available from parser
+        # Layout side — look up device position via parser and delegate to onDeviceSelected
         if layout_dev_id and self.parser and hasattr(self.layoutEditor, 'centralW'):
-            layout_cell = None
-            for cell_name in self.parser.crossrefs.keys():
-                layout_cell = cell_name
-                break
-
+            layout_cell = next(iter(self.parser.crossrefs), None)
             if layout_cell:
-                devices = self.parser.get_layout_devices(layout_cell)
-                for dev in devices:
+                for dev in self.parser.get_layout_devices(layout_cell):
                     if dev.get('id') == layout_dev_id:
                         self.onDeviceSelected(dev)
                         break

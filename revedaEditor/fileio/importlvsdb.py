@@ -84,7 +84,7 @@ class LVSDBParser:
             Individual tokens as strings (e.g., '(', ')', 'cell_name', '"quoted string"').
         """
         # Handle both single and double quotes, including empty strings
-        token_pattern = r'\(|\)|"([^"]*)"|\'([^\']*)\'|[^\s()\'"]+'
+        token_pattern = r'\(|\)|"[^"]*"|\'[^\']*\'|[^\s()\'"]+'
         for match in re.finditer(token_pattern, text):
             yield match.group(0)
 
@@ -145,6 +145,13 @@ class LVSDBParser:
         self._process_crossrefs()
         return self.data
 
+    def _find_section(self, tag: str) -> Optional[List]:
+        """Return the content list immediately following the first occurrence of tag in self.data."""
+        for i in range(len(self.data) - 1):
+            if self.data[i] == tag and isinstance(self.data[i + 1], list):
+                return self.data[i + 1]
+        return None
+
     def _process_units(self):
         """
         Extract layout database unit scale from the J section.
@@ -154,20 +161,17 @@ class LVSDBParser:
         geometry is kept in raw LVSDB coordinates to match editor scene units.
         """
         self.unit_scale = 1.0
-        for i in range(len(self.data)):
-            if self.data[i] == 'J' and i + 1 < len(self.data):
-                section = self.data[i + 1]
-                if not isinstance(section, list):
-                    continue
-                for j in range(len(section)):
-                    if section[j] == 'U' and j + 1 < len(section):
-                        item = section[j + 1]
-                        if isinstance(item, list) and len(item) >= 1:
-                            try:
-                                self.unit_scale = float(item[0])
-                            except (ValueError, TypeError):
-                                self.unit_scale = 1.0
-                        return
+        section = self._find_section('J')
+        if section is not None:
+            for j in range(len(section)):
+                if section[j] == 'U' and j + 1 < len(section):
+                    item = section[j + 1]
+                    if isinstance(item, list) and len(item) >= 1:
+                        try:
+                            self.unit_scale = float(item[0])
+                        except (ValueError, TypeError):
+                            self.unit_scale = 1.0
+                    return
 
     def _process_crossrefs(self):
         """
@@ -180,29 +184,27 @@ class LVSDBParser:
         Cross-reference format: X(cell_name schematic_name equiv mapping...)
         where mapping contains net, pin, and device correspondences.
         """
-        for i in range(len(self.data)):
-            if self.data[i] == 'Z' and i + 1 < len(self.data):
-                section = self.data[i + 1]
-                if not isinstance(section, list):
-                    continue
-                # Z section has tag-pair format: X, (content), X, (content)...
-                for j in range(0, len(section), 2):
-                    tag = self._safe_get(section, j)
-                    if tag != 'X' or j + 1 >= len(section):
-                        continue
-                    item = section[j + 1]
-                    if not isinstance(item, list) or len(item) < 3:
-                        continue
-                    cell_name = self._safe_get(item, 0)
-                    schematic_name = self._safe_get(item, 1)
-                    equiv = self._safe_get(item, 2)
-                    # Remaining items are the mapping content (in tag-pair format)
-                    mapping = self._parse_crossref_mapping(item[3:])
-                    self.crossrefs[cell_name] = {
-                        'schematic_name': schematic_name,
-                        'equivalent': equiv == '1',
-                        'mapping': mapping
-                    }
+        section = self._find_section('Z')
+        if section is None:
+            return
+        # Z section has tag-pair format: X, (content), X, (content)...
+        for j in range(0, len(section), 2):
+            tag = self._safe_get(section, j)
+            if tag != 'X' or j + 1 >= len(section):
+                continue
+            item = section[j + 1]
+            if not isinstance(item, list) or len(item) < 3:
+                continue
+            cell_name = self._safe_get(item, 0)
+            schematic_name = self._safe_get(item, 1)
+            equiv = self._safe_get(item, 2)
+            # Remaining items are the mapping content (in tag-pair format)
+            mapping = self._parse_crossref_mapping(item[3:])
+            self.crossrefs[cell_name] = {
+                'schematic_name': schematic_name,
+                'equivalent': equiv == '1',
+                'mapping': mapping
+            }
 
     def _parse_crossref_mapping(self, mapping_items: List) -> Dict:
         """
@@ -274,17 +276,13 @@ class LVSDBParser:
             List of layout cell name strings.
         """
         cells = []
-        for i in range(len(self.data)):
-            if self.data[i] == 'J' and i + 1 < len(self.data):
-                section = self.data[i + 1]
-                if not isinstance(section, list):
-                    continue
-                # J section has alternating tag/content pairs
-                for j in range(len(section)):
-                    if section[j] == 'X' and j + 1 < len(section):
-                        item = section[j + 1]
-                        if isinstance(item, list) and len(item) >= 1:
-                            cells.append(item[0])
+        section = self._find_section('J')
+        if section is not None:
+            for j in range(len(section)):
+                if section[j] == 'X' and j + 1 < len(section):
+                    item = section[j + 1]
+                    if isinstance(item, list) and len(item) >= 1:
+                        cells.append(item[0])
         return cells
 
     def get_all_schematic_cells(self) -> List[str]:
@@ -298,17 +296,13 @@ class LVSDBParser:
             List of schematic cell name strings.
         """
         cells = []
-        for i in range(len(self.data)):
-            if self.data[i] == 'H' and i + 1 < len(self.data):
-                section = self.data[i + 1]
-                if not isinstance(section, list):
-                    continue
-                # H section has alternating tag/content pairs
-                for j in range(len(section)):
-                    if section[j] == 'X' and j + 1 < len(section):
-                        item = section[j + 1]
-                        if isinstance(item, list) and len(item) >= 1:
-                            cells.append(item[0])
+        section = self._find_section('H')
+        if section is not None:
+            for j in range(len(section)):
+                if section[j] == 'X' and j + 1 < len(section):
+                    item = section[j + 1]
+                    if isinstance(item, list) and len(item) >= 1:
+                        cells.append(item[0])
         return cells
 
     def _safe_get(self, lst: List, idx: int, default: Any = None) -> Any:
@@ -397,20 +391,18 @@ class LVSDBParser:
 
         Populates self.layer_map with lvsdb_id -> gds_string mappings.
         """
-        for i in range(len(self.data)):
-            if self.data[i] == 'J' and i + 1 < len(self.data):
-                section = self.data[i + 1]
-                if not isinstance(section, list):
-                    continue
-                # J section has alternating tag/content pairs: W, U, L, C, K, X, ...
-                for j in range(len(section)):
-                    if section[j] == 'L' and j + 1 < len(section):
-                        item = section[j + 1]
-                        if isinstance(item, list) and len(item) >= 1:
-                            layer_id = item[0]
-                            gds = item[1] if len(item) > 1 else None
-                            if layer_id:
-                                self.layer_map[layer_id] = gds
+        section = self._find_section('J')
+        if section is None:
+            return
+        # J section has alternating tag/content pairs: W, U, L, C, K, X, ...
+        for j in range(len(section)):
+            if section[j] == 'L' and j + 1 < len(section):
+                item = section[j + 1]
+                if isinstance(item, list) and len(item) >= 1:
+                    layer_id = item[0]
+                    gds = item[1] if len(item) > 1 else None
+                    if layer_id:
+                        self.layer_map[layer_id] = gds
 
     def get_nets(self, cell_name: str) -> List[Dict]:
         """
@@ -426,11 +418,10 @@ class LVSDBParser:
             List of net dictionaries, each containing 'net_id', 'name',
             and 'shapes' (list of geometry dictionaries).
         """
-        nets = []
         cell_data = self._get_layout_cell(cell_name)
         if cell_data and 'nets' in cell_data:
             return cell_data['nets']
-        return nets
+        return []
 
     def get_nets_with_schematic_names(self, cell_name: str) -> List[Dict]:
         """
@@ -617,17 +608,19 @@ class LVSDBParser:
                 resolved_dev['terminals'][term_name] = net_name
             devices.append(resolved_dev)
 
+        # Build reverse lookup: schematic net ID -> layout net ID
+        schem_to_layout_net = {
+            m['schem_net']: m['layout_net']
+            for m in xref.get('mapping', {}).get('nets', [])
+            if m.get('schem_net') and m.get('layout_net')
+        }
+
         # Process nets with their layout mapping
         nets = []
         for net in cell_data.get('nets', []):
             net_id = net['net_id']
             net_name = net.get('name', '')
-            # Find corresponding layout net
-            layout_net_id = None
-            for mapping in xref.get('mapping', {}).get('nets', []):
-                if mapping.get('schem_net') == net_id:
-                    layout_net_id = mapping.get('layout_net')
-                    break
+            layout_net_id = schem_to_layout_net.get(net_id)
             nets.append({
                 'id': net_id,
                 'name': net_name,
@@ -687,7 +680,7 @@ class LVSDBParser:
             return False
 
         # Status '0', empty, or None means unmatched/mismatch
-        if not status or status in ('0', ''):
+        if not status or status == '0':
             return True
 
         # Any other status code indicates a specific mismatch type
@@ -819,22 +812,20 @@ class LVSDBParser:
             Dictionary with parsed cell data ('name', 'bbox', 'nets', 'pins', 'devices'),
             or None if the cell is not found.
         """
+        if not isinstance(cell_name, str):
+            return None
         if cell_name in self.layout_cells:
             return self.layout_cells[cell_name]
 
-        for i in range(len(self.data)):
-            if self.data[i] == 'J' and i + 1 < len(self.data):
-                section = self.data[i + 1]
-                if not isinstance(section, list):
-                    continue
-                # J section has alternating tag/content pairs
-                for j in range(len(section)):
-                    if section[j] == 'X' and j + 1 < len(section):
-                        item = section[j + 1]
-                        if isinstance(item, list) and len(item) >= 1 and item[0] == cell_name:
-                            cell_data = self._parse_layout_cell(item)
-                            self.layout_cells[cell_name] = cell_data
-                            return cell_data
+        section = self._find_section('J')
+        if section is not None:
+            for j in range(len(section)):
+                if section[j] == 'X' and j + 1 < len(section):
+                    item = section[j + 1]
+                    if isinstance(item, list) and len(item) >= 1 and item[0] == cell_name:
+                        cell_data = self._parse_layout_cell(item)
+                        self.layout_cells[cell_name] = cell_data
+                        return cell_data
         return None
 
     def _get_schematic_cell(self, cell_name: str) -> Optional[Dict]:
@@ -852,22 +843,20 @@ class LVSDBParser:
             Dictionary with parsed cell data ('name', 'nets', 'pins', 'devices'),
             or None if the cell is not found.
         """
+        if not isinstance(cell_name, str):
+            return None
         if cell_name in self.schematic_cells:
             return self.schematic_cells[cell_name]
 
-        for i in range(len(self.data)):
-            if self.data[i] == 'H' and i + 1 < len(self.data):
-                section = self.data[i + 1]
-                if not isinstance(section, list):
-                    continue
-                # H section has alternating tag/content pairs
-                for j in range(len(section)):
-                    if section[j] == 'X' and j + 1 < len(section):
-                        item = section[j + 1]
-                        if isinstance(item, list) and len(item) >= 1 and item[0] == cell_name:
-                            cell_data = self._parse_schematic_cell(item)
-                            self.schematic_cells[cell_name] = cell_data
-                            return cell_data
+        section = self._find_section('H')
+        if section is not None:
+            for j in range(len(section)):
+                if section[j] == 'X' and j + 1 < len(section):
+                    item = section[j + 1]
+                    if isinstance(item, list) and len(item) >= 1 and item[0] == cell_name:
+                        cell_data = self._parse_schematic_cell(item)
+                        self.schematic_cells[cell_name] = cell_data
+                        return cell_data
         return None
 
     def _parse_layout_cell(self, cell_list: List) -> Dict:

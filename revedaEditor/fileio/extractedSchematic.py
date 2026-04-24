@@ -26,6 +26,7 @@
 import logging
 import json
 import pathlib
+import re
 from typing import Any, Optional
 
 from PySide6.QtCore import QPoint
@@ -475,12 +476,78 @@ class klayoutSchematicGenerator:
             return None
 
         symbolItem.instanceName = device.get("name", str(schem_dev_id or "I0"))
+        self._applyExtractedParamsToSymbol(symbolItem, device)
         if "@instName" in symbolItem.labels:
             symbolItem.labels["@instName"].labelDefs()
         if targetPos is not None:
             symbolItem.setPos(targetPos)
         scene.addItem(symbolItem)
         return symbolItem
+
+    @staticmethod
+    def _defaultLabelUnit(labelItem) -> str:
+        """Infer a unit suffix from an NLP label's default value, e.g. 0.13u -> u."""
+        definition = getattr(labelItem, "labelDefinition", "")
+        if not isinstance(definition, str) or not definition.startswith("[@"):
+            return ""
+
+        endIndex = definition.find("]")
+        if endIndex == -1:
+            return ""
+
+        parts = definition[1:endIndex].split(":")
+        if len(parts) < 3:
+            return ""
+
+        defaultValue = parts[2].split("=")[-1].strip()
+        match = re.fullmatch(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?([A-Za-z]+)", defaultValue)
+        return match.group(1) if match else ""
+
+    def _formatExtractedParamValue(self, labelItem, value: Any) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, str):
+            if re.fullmatch(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?", value.strip()):
+                unit = self._defaultLabelUnit(labelItem)
+                return f"{value.strip()}{unit}" if unit else value.strip()
+            return value
+        if isinstance(value, bool):
+            return str(value)
+        if isinstance(value, (int, float)):
+            unit = self._defaultLabelUnit(labelItem)
+            return f"{value:g}{unit}" if unit else f"{value:g}"
+        return str(value)
+
+    def _applyExtractedParamsToSymbol(self, symbolItem: shp.schematicSymbol, device: dict):
+        """Populate extracted device params onto matching symbol labels.
+
+        Extracted devices carry parameter dictionaries such as {"W": 4.0, "L": 0.13}.
+        Symbol callbacks read label values from symbolItem.labels, so we mirror the
+        extracted params onto matching labels and then refresh labels so both NLP and
+        PyLabels resolve from the extracted values.
+        """
+        rawParams = device.get("params")
+        if not isinstance(rawParams, dict):
+            rawParams = device.get("parameters")
+        if not isinstance(rawParams, dict) or not rawParams:
+            return
+
+        labelLookup = {
+            str(labelName).lstrip("@").casefold(): labelItem
+            for labelName, labelItem in symbolItem.labels.items()
+        }
+        applied = False
+        for paramName, paramValue in rawParams.items():
+            key = str(paramName).lstrip("@").casefold()
+            labelItem = labelLookup.get(key)
+            if labelItem is None:
+                continue
+            labelItem.labelValue = self._formatExtractedParamValue(labelItem, paramValue)
+            applied = True
+
+        if applied:
+            for labelItem in symbolItem.labels.values():
+                labelItem.labelDefs()
 
     def _generateChildHierarchicalViews(self, instances: list[dict]):
         for instance in instances:
