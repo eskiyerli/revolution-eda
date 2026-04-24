@@ -23,20 +23,28 @@
 #
 
 import inspect
+import logging
+import math
 from pathlib import Path
-from typing import List, Any
+from typing import List, Any, Tuple
 
 import gdstk
 
 import revedaEditor.common.layoutShapes as lshp
 from revedaEditor.backend.pdkLoader import importPDKModule
 
+logger = logging.getLogger("reveda")
 pcells = importPDKModule('pcells')
+
+# Module-level cache: maps a pcell class -> list of __init__ param names to extract.
+# Avoids repeated inspect.signature() calls for identical pcell types.
+_pcell_param_cache: dict = {}
 
 
 class gdsExporter:
     __slots__ = ('_cellname', '_items', '_outputFileObj', '_libraryName',
-                 '_unit', '_precision', '_dbu', '_topCell', '_itemCounter', '_cellCache')
+                 '_unit', '_precision', '_dbu', '_topCell', '_itemCounter',
+                 '_cellCache', '_instanceCache')
 
     DEFAULT_UNIT = 1e-9
     DEFAULT_PRECISION = 1e-9
@@ -53,82 +61,94 @@ class gdsExporter:
         self._topCell = None
         self._itemCounter = 0
         self._cellCache = {}
+        self._instanceCache: dict = {}  # (lib, cell, view) -> gdstk.Cell
 
-    def gdsExport(self):
-        self._outputFileObj.parent.mkdir(parents=True, exist_ok=True)
-        lib = gdstk.Library(unit=self._unit, precision=self._precision)
-        self._topCell = lib.new_cell(self._cellname)  # top Cell
-        for item in self._items:
-            self.createCells(lib, item, self._topCell)
-
-        lib.write_gds(self._outputFileObj)
-
-    def gdsExportThreaded(self, threadPool):
+    def _buildLibrary(self) -> gdstk.Library:
+        """Build and populate the gdstk.Library from self._items. Shared by all exporters."""
         self._outputFileObj.parent.mkdir(parents=True, exist_ok=True)
         lib = gdstk.Library(unit=self._unit, precision=self._precision)
         self._topCell = lib.new_cell(self._cellname)
         for item in self._items:
             self.createCells(lib, item, self._topCell)
+        return lib
 
-        # Run write in thread
+    def gdsExport(self):
+        lib = self._buildLibrary()
+        lib.write_gds(self._outputFileObj)
+
+    def gdsExportThreaded(self, threadPool):
+        lib = self._buildLibrary()
         from revedaEditor.backend.startThread import startThread
         writer = startThread(lib.write_gds, str(self._outputFileObj))
         threadPool.start(writer)
 
     def oasExportThreaded(self, threadPool):
-        self._outputFileObj.parent.mkdir(parents=True, exist_ok=True)
-        lib = gdstk.Library(unit=self._unit, precision=self._precision)
-        self._topCell = lib.new_cell(self._cellname)
-        for item in self._items:
-            self.createCells(lib, item, self._topCell)
-
-        # Run write in thread
+        lib = self._buildLibrary()
         from revedaEditor.backend.startThread import startThread
         writer = startThread(lib.write_oas, str(self._outputFileObj))
         threadPool.start(writer)
 
     def createCells(self, library: gdstk.Library, item: lshp.layoutShape,
-                    parentCell: gdstk.Cell):
+                    parentCell: gdstk.Cell, offset: Tuple[float, float] = (0.0, 0.0)):
         item_type = type(item)
         if item_type == lshp.layoutInstance:
             self._processInstance(library, item, parentCell)
         elif item_type in (lshp.layoutRect, lshp.layoutPin):
-            self._processRectPin(item, parentCell)
+            self._processRectPin(item, parentCell, offset)
         elif item_type == lshp.layoutPath:
-            self.processPath(item, parentCell)
+            self.processPath(item, parentCell, offset)
         elif item_type == lshp.layoutLabel:
-            self._processLabel(item, parentCell)
+            self._processLabel(item, parentCell, offset)
         elif item_type == lshp.layoutPolygon:
-            self._processPolygon(item, parentCell)
+            self._processPolygon(item, parentCell, offset)
         elif item_type == lshp.layoutViaArray:
-            self._processViaArray(library, item, parentCell)
+            self._processViaArray(library, item, parentCell, offset)
         else:
             self._process_custom_layout(library, item, parentCell)
 
     def _processInstance(self, library, item, parentCell):
-        cellGDSName = f"{item.libraryName}_{item.cellName}_{item.viewName}_{self._itemCounter}"
-        self._itemCounter += 1
-        cellGDS = library.new_cell(cellGDSName)
-        for shape in item.shapes:
-            self.createCells(library, shape, cellGDS)
+        cache_key = (item.libraryName, item.cellName, item.viewName)
+        if cache_key not in self._instanceCache:
+            # Name the GDS cell libraryName_cellName_viewName; the LVS script maps
+            # this back to the schematic subcircuit name via substring matching.
+            cellGDSName = f"{item.libraryName}_{item.cellName}_{item.viewName}"
+            cellGDS = library.new_cell(cellGDSName)
+            # Child shapes are in sub-cell local coordinates — no offset needed.
+            for shape in item.shapes:
+                self.createCells(library, shape, cellGDS)
+            self._instanceCache[cache_key] = cellGDS
+        else:
+            cellGDS = self._instanceCache[cache_key]
+
+        # Qt rotation is clockwise-positive; GDS is counter-clockwise-positive.
+        angle_rad = math.radians(-item.angle)
+        # flipTuple = (sx, sy); x_reflection in GDS means flip around X axis (negate Y).
+        x_reflection = (item.flipTuple[1] == -1)
+        pos = item.pos()
         ref = gdstk.Reference(
             cellGDS,
-            (0, 0)
+            origin=(pos.x(), pos.y()),
+            rotation=angle_rad,
+            x_reflection=x_reflection,
         )
         parentCell.add(ref)
 
-    def _processRectPin(self, item, parentCell):
+    def _processRectPin(self, item, parentCell, offset: Tuple[float, float] = (0.0, 0.0)):
+        ox, oy = offset
         rect = gdstk.rectangle(
-            corner1=item.mapToScene(item.start).toPoint().toTuple(),
-            corner2=item.mapToScene(item.end).toPoint().toTuple(),
+            corner1=(item.start.x() - ox, item.start.y() - oy),
+            corner2=(item.end.x() - ox, item.end.y() - oy),
             layer=item.layer.gdsLayer,
             datatype=item.layer.datatype,
         )
         parentCell.add(rect)
 
-    def processPath(self, item, parentCell):
+    def processPath(self, item, parentCell, offset: Tuple[float, float] = (0.0, 0.0)):
+        ox, oy = offset
+        p1 = item.draftLine.p1()
+        p2 = item.draftLine.p2()
         path = gdstk.FlexPath(
-            points=[item.sceneEndPoints[0].toTuple(), item.sceneEndPoints[1].toTuple()],
+            points=[(p1.x() - ox, p1.y() - oy), (p2.x() - ox, p2.y() - oy)],
             width=item.width,
             ends=(item.startExtend, item.endExtend),
             simple_path=True,
@@ -137,10 +157,11 @@ class gdsExporter:
         )
         parentCell.add(path)
 
-    def _processLabel(self, item, parentCell):
+    def _processLabel(self, item, parentCell, offset: Tuple[float, float] = (0.0, 0.0)):
+        ox, oy = offset
         label = gdstk.Label(
             text=item.labelText,
-            origin=item.mapToScene(item.start).toPoint().toTuple(),
+            origin=(item.start.x() - ox, item.start.y() - oy),
             magnification=float(item.fontHeight * self._dbu),
             rotation=item.angle,
             layer=item.layer.gdsLayer,
@@ -148,8 +169,9 @@ class gdsExporter:
         )
         parentCell.add(label)
 
-    def _processPolygon(self, item, parentCell):
-        points = [item.mapToScene(point).toPoint().toTuple() for point in item.points]
+    def _processPolygon(self, item, parentCell, offset: Tuple[float, float] = (0.0, 0.0)):
+        ox, oy = offset
+        points = [(pt.x() - ox, pt.y() - oy) for pt in item.points]
         polygon = gdstk.Polygon(
             points=points,
             layer=item.layer.gdsLayer,
@@ -157,7 +179,7 @@ class gdsExporter:
         )
         parentCell.add(polygon)
 
-    def _processViaArray(self, library, item, parentCell):
+    def _processViaArray(self, library, item, parentCell, offset: Tuple[float, float] = (0.0, 0.0)):
         via_key = (item.via.width, item.via.height, item.via.layer.name,
                    item.via.layer.purpose)
         if via_key not in self._cellCache:
@@ -176,9 +198,10 @@ class gdsExporter:
         else:
             viaCell = self._cellCache[via_key]
 
+        ox, oy = offset
         viaArray = gdstk.Reference(
             cell=viaCell,
-            origin=item.mapToScene(item.start).toTuple(),
+            origin=(item.start.x() - ox, item.start.y() - oy),
             columns=item.xnum,
             rows=item.ynum,
             spacing=(item.xs + item.width, item.ys + item.height),
@@ -195,23 +218,38 @@ class gdsExporter:
                          f"{pcellNameSuffix}_{self._itemCounter}")
             self._itemCounter += 1
             pcellGDS = library.new_cell(pcellName)
+            # Pcell shapes store coordinates in the pcell's local coordinate system
+            # (Qt child items; toSceneCoord only scales by dbu, no translation).
+            # Place them in the GDS cell without any offset, then put the Reference
+            # at the pcell's scene position.
             for shape in item.shapes:
                 self.createCells(library, shape, pcellGDS)
 
+            # Use pos() (local coords relative to Qt parent) not scenePos().
+            # The Reference lives inside the parent GDS cell whose own Reference
+            # already carries the parent's scene translation; using scenePos()
+            # would double-offset.  pos() == scenePos() when the pcell is at
+            # the top level, so this is correct in both cases.
+            pos = item.pos()
+            angle_rad = math.radians(-getattr(item, 'angle', 0.0))
+            x_reflection = (getattr(item, 'flipTuple', (1, 1))[1] == -1)
             ref = gdstk.Reference(
                 pcellGDS,
-                (0, 0),
+                origin=(pos.x(), pos.y()),
+                rotation=angle_rad,
+                x_reflection=x_reflection,
             )
             parentCell.add(ref)
 
     @staticmethod
     def extractPcellInstanceParameters(instance: lshp.layoutPcell) -> dict:
-        initArgs = inspect.signature(instance.__class__.__init__).parameters
-        argsUsed = [
-            param for param in initArgs if (param != "self" and param != "snapTuple")
-        ]
-        argDict = {arg: getattr(instance, arg) for arg in argsUsed}
-        return argDict
+        cls = instance.__class__
+        if cls not in _pcell_param_cache:
+            _pcell_param_cache[cls] = [
+                param for param in inspect.signature(cls.__init__).parameters
+                if param not in ("self", "snapTuple")
+            ]
+        return {arg: getattr(instance, arg) for arg in _pcell_param_cache[cls]}
 
     @property
     def unit(self):
