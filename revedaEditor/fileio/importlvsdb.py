@@ -1,8 +1,34 @@
+#     "Commons Clause" License Condition v1.0
+#
+#     The Software is provided to you by the Licensor under the License, as defined
+#     below, subject to the following condition.
+#
+#     Without limiting other conditions in the License, the grant of rights under the
+#     License will not include, and the License does not grant to you, the right to
+#     Sell the Software.
+#
+#     For purposes of the foregoing, "Sell" means practicing any or all of the rights
+#     granted to you under the License to provide to third parties, for a fee or other
+#     consideration (including without limitation fees for hosting) a product or service whose value
+#     derives, entirely or substantially, from the functionality of the Software. Any
+#     license notice or attribution required by the License must also include this
+#     Commons Clause License Condition notice.
+#
+#     Add-ons and extensions developed for this software may be distributed
+#     under their own separate licenses.
+#
+#     Software: Revolution EDA
+#     License: Mozilla Public License 2.0
+#     Licensor: Revolution Semiconductor (Registered in the Netherlands)
+
+from collections import Counter
+import re
+from typing import List, Dict, Any, Optional, Iterator, Tuple
+
 from PySide6.QtGui import (QBrush, QColor, QPen)
 from PySide6.QtCore import (QRect, Qt)
 from PySide6.QtWidgets import QGraphicsRectItem
-import re
-from typing import List, Dict, Any, Optional, Iterator, Tuple
+
 # from revedaEditor.backend.pdkLoader import importPDKModule
 
 class LVSErrorRect(QGraphicsRectItem):
@@ -181,8 +207,9 @@ class LVSDBParser:
         cells, including net, pin, and device mappings. Populates self.crossrefs
         with mappings for each cell.
 
-        Cross-reference format: X(cell_name schematic_name equiv mapping...)
-        where mapping contains net, pin, and device correspondences.
+        Cross-reference format: X(cell_name schematic_name equiv [L(...)] Z(...))
+        where L(...) carries optional diagnostics and Z(...) contains net, pin,
+        and device correspondences.
         """
         section = self._find_section('Z')
         if section is None:
@@ -198,12 +225,25 @@ class LVSDBParser:
             cell_name = self._safe_get(item, 0)
             schematic_name = self._safe_get(item, 1)
             equiv = self._safe_get(item, 2)
-            # Remaining items are the mapping content (in tag-pair format)
-            mapping = self._parse_crossref_mapping(item[3:])
+            diagnostics = {"messages": [], "net_mismatch_messages": []}
+            mapping_items = []
+
+            for idx in range(3, len(item), 2):
+                inner_tag = self._safe_get(item, idx)
+                if idx + 1 >= len(item):
+                    continue
+                inner_content = item[idx + 1]
+                if inner_tag == 'L' and isinstance(inner_content, list):
+                    diagnostics = self._parse_crossref_diagnostics(inner_content)
+                elif inner_tag == 'Z':
+                    mapping_items.extend([inner_tag, inner_content])
+
+            mapping = self._parse_crossref_mapping(mapping_items)
             self.crossrefs[cell_name] = {
                 'schematic_name': schematic_name,
                 'equivalent': equiv == '1',
-                'mapping': mapping
+                'mapping': mapping,
+                'diagnostics': diagnostics,
             }
 
     def _parse_crossref_mapping(self, mapping_items: List) -> Dict:
@@ -264,6 +304,177 @@ class LVSDBParser:
                         'status': self._safe_get(subcontent, 2)
                     })
         return mapping
+
+    def _parse_crossref_diagnostics(self, diagnostic_items: List) -> Dict:
+        """
+        Parse the optional L(...) diagnostics block from a cross-reference entry.
+
+        KLayout emits human-readable diagnostics here. For net mismatches, these
+        messages are a better source than raw N(...) fallout entries, which can
+        also appear when the root cause is a device/property mismatch.
+        """
+        messages = []
+        net_mismatch_messages = []
+
+        for i in range(0, len(diagnostic_items), 2):
+            tag = self._safe_get(diagnostic_items, i)
+            if tag != 'M' or i + 1 >= len(diagnostic_items):
+                continue
+            content = diagnostic_items[i + 1]
+            message = self._extract_diagnostic_message(content)
+            if not message:
+                continue
+            messages.append(message)
+            if 'not matching any net from reference netlist' in message.lower():
+                net_mismatch_messages.append(message)
+
+        return {
+            'messages': messages,
+            'net_mismatch_messages': net_mismatch_messages,
+        }
+
+    def _extract_diagnostic_message(self, content: Any) -> str:
+        """Flatten a diagnostic payload and return its message text when present."""
+        if not isinstance(content, list):
+            return ""
+
+        if len(content) >= 2 and content[0] == 'B':
+            payload = content[1]
+            if isinstance(payload, str):
+                return payload
+            if isinstance(payload, list) and len(payload) == 1 and isinstance(payload[0], str):
+                return payload[0]
+
+        if len(content) >= 3 and content[1] == 'B':
+            payload = content[2]
+            if isinstance(payload, str):
+                return payload
+            if isinstance(payload, list) and len(payload) == 1 and isinstance(payload[0], str):
+                return payload[0]
+
+        for item in content:
+            message = self._extract_diagnostic_message(item)
+            if message:
+                return message
+        return ""
+
+    @staticmethod
+    def _count_explicit_net_mismatches(diagnostics: Dict) -> int:
+        """Return the number of explicit net mismatch diagnostics in a crossref."""
+        if not diagnostics:
+            return 0
+        return len(diagnostics.get('net_mismatch_messages', []))
+
+    @staticmethod
+    def _is_internal_net_mismatch_message(message: str) -> bool:
+        """Return True for auto-generated internal net diagnostics like $I4 or $2."""
+        match = re.search(r"Net\s+([^\s]+)\s+is not matching any net", message)
+        if not match:
+            return False
+        return match.group(1).startswith('$')
+
+    @staticmethod
+    def _normalize_device_type(device_type: Any) -> str:
+        text = str(device_type or '')
+        return text[2:] if text.startswith('D$') else text
+
+    @staticmethod
+    def _normalize_param_value(value: Any) -> Any:
+        try:
+            return round(float(value), 12)
+        except (TypeError, ValueError):
+            return value
+
+    @classmethod
+    def _device_param_signature(cls, device: Dict) -> tuple:
+        params = device.get('params', {})
+        important_names = ('W', 'L', 'M', 'NF', 'NFIN')
+        normalized_params = []
+        for name in important_names:
+            value = params.get(name)
+            if value is None:
+                value = params.get(name.lower())
+            if value is not None:
+                normalized_params.append((name, cls._normalize_param_value(value)))
+        return cls._normalize_device_type(device.get('type')), tuple(normalized_params)
+
+    def _estimate_device_property_mismatches(self, layout_cell_name: str,
+                                             schematic_cell_name: str) -> tuple[int, list[str], list[Dict]]:
+        """
+        Estimate device-property mismatch count from layout/schematic device inventories.
+
+        This is used only when KLayout emits generic device fallout (status 0) rather than
+        a direct property code like W. The heuristic is intentionally narrow: it only kicks
+        in when both sides have the same device counts per normalized type and differ in
+        core parameters such as W/L.
+        """
+        layout_devices = self.get_layout_devices(layout_cell_name)
+        schematic_devices = self.get_schematic_devices(schematic_cell_name)
+        if not layout_devices or not schematic_devices:
+            return 0, []
+
+        layout_type_counts = Counter(
+            self._normalize_device_type(device.get('type')) for device in layout_devices
+        )
+        schematic_type_counts = Counter(
+            self._normalize_device_type(device.get('type')) for device in schematic_devices
+        )
+        if layout_type_counts != schematic_type_counts:
+            return 0, []
+
+        layout_signature_counts = Counter(
+            self._device_param_signature(device) for device in layout_devices
+        )
+        schematic_signature_counts = Counter(
+            self._device_param_signature(device) for device in schematic_devices
+        )
+        layout_devices_by_signature = {}
+        for device in layout_devices:
+            layout_devices_by_signature.setdefault(self._device_param_signature(device), []).append(device)
+        schematic_devices_by_signature = {}
+        for device in schematic_devices:
+            schematic_devices_by_signature.setdefault(self._device_param_signature(device), []).append(device)
+
+        summaries = []
+        details = []
+        estimated_count = 0
+        for signature, layout_count in sorted(layout_signature_counts.items()):
+            extra_layout = layout_count - schematic_signature_counts.get(signature, 0)
+            if extra_layout <= 0:
+                continue
+
+            device_type, params = signature
+            candidates = [
+                (other_signature, count)
+                for other_signature, count in schematic_signature_counts.items()
+                if other_signature[0] == device_type and count > layout_signature_counts.get(other_signature, 0)
+            ]
+            if not candidates:
+                return 0, [], []
+
+            other_signature, _count = candidates[0]
+            other_params = other_signature[1]
+            candidate_extra = schematic_signature_counts[other_signature] - layout_signature_counts.get(other_signature, 0)
+            match_count = min(extra_layout, candidate_extra)
+            if match_count <= 0:
+                return 0, [], []
+
+            estimated_count += match_count
+
+            layout_text = ', '.join(f"{name}={value}" for name, value in params) or 'no core params'
+            schem_text = ', '.join(f"{name}={value}" for name, value in other_params) or 'no core params'
+            summaries.append(
+                f"{device_type}: layout {layout_text} x{match_count} vs schematic {schem_text}"
+            )
+            details.append({
+                'device_type': device_type,
+                'layout_signature': list(params),
+                'schematic_signature': list(other_params),
+                'layout_devices': layout_devices_by_signature.get(signature, [])[:match_count],
+                'schematic_devices': schematic_devices_by_signature.get(other_signature, [])[:match_count],
+            })
+
+        return estimated_count, summaries, details
 
     def get_all_layout_cells(self) -> List[str]:
         """
@@ -695,6 +906,10 @@ class LVSDBParser:
         suitable for display in a table view. Only counts actual mismatches
         based on status codes, not all cross-referenced items.
 
+        Net mismatch counts come from explicit diagnostics in the optional L(...)
+        block when available. This avoids counting raw N(...) fallout entries that
+        KLayout may emit for non-net issues such as property mismatches.
+
         Returns:
             List of dictionaries with keys:
             - 'layout_cell': Layout cell name
@@ -709,15 +924,41 @@ class LVSDBParser:
         result = []
         for layout_cell_name, xref in self.crossrefs.items():
             mapping = xref.get('mapping', {})
+            diagnostics = xref.get('diagnostics', {})
+            schematic_cell_name = xref.get('schematic_name', '')
 
             # Count only actual mismatches, not all mappings
             nets = mapping.get('nets', [])
             pins = mapping.get('pins', [])
             devices = mapping.get('devices', [])
 
-            net_mismatches = sum(1 for n in nets if self._is_mismatch(n))
             pin_mismatches = sum(1 for p in pins if self._is_mismatch(p))
-            device_mismatches = sum(1 for d in devices if self._is_mismatch(d))
+            explicit_device_mismatches = [
+                device for device in devices
+                if self._is_mismatch(device) and device.get('status') not in {'', None, '0'}
+            ]
+            generic_device_mismatches = [
+                device for device in devices
+                if self._is_mismatch(device) and device.get('status') in {'', None, '0'}
+            ]
+            estimated_device_mismatches, device_mismatch_summaries, device_mismatch_details = (0, [], [])
+            if generic_device_mismatches and not explicit_device_mismatches:
+                estimated_device_mismatches, device_mismatch_summaries, device_mismatch_details = (
+                    self._estimate_device_property_mismatches(layout_cell_name, schematic_cell_name)
+                )
+            if explicit_device_mismatches:
+                device_mismatches = len(explicit_device_mismatches)
+            elif estimated_device_mismatches:
+                device_mismatches = estimated_device_mismatches
+            else:
+                device_mismatches = len(generic_device_mismatches)
+            net_messages = diagnostics.get('net_mismatch_messages', [])
+            if net_messages and device_mismatches > 0 and all(
+                self._is_internal_net_mismatch_message(message) for message in net_messages
+            ):
+                net_mismatches = 0
+            else:
+                net_mismatches = self._count_explicit_net_mismatches(diagnostics)
 
             result.append({
                 'layout_cell': layout_cell_name,
@@ -726,6 +967,8 @@ class LVSDBParser:
                 'net_mismatches': net_mismatches,
                 'pin_mismatches': pin_mismatches,
                 'device_mismatches': device_mismatches,
+                'device_mismatch_summaries': device_mismatch_summaries,
+                'device_mismatch_details': device_mismatch_details,
                 'total_mappings': len(nets) + len(pins) + len(devices),
                 'crossref': xref
             })
@@ -1333,7 +1576,7 @@ if __name__ == '__main__':
         for net in nets[:3]:
             print(f"  {net['net_id']}: {net['name']} ({len(net['shapes'])} shapes)")
 
-        devices = parser.get_devices(cell_name)
+        devices = parser.get_layout_devices(cell_name)
         print(f"\nDevices: {len(devices)}")
         for dev in devices[:3]:
             print(f"  {dev['id']}: {dev['type']} @ {dev['position']}")
@@ -1407,7 +1650,7 @@ if __name__ == '__main__':
             print(f"Rectangles: {len(rects)}")
             for i, rect in enumerate(rects[:500]):
                 bbox = rect['bbox']
-                layer = rect['layer'] or rect.get('layer')
+                layer = rect.get('layer', 'unknown')
                 print(f"  {i+1}. Layer {layer}: ({bbox[0][0]}, {bbox[0][1]}) - ({bbox[1][0]}, {bbox[1][1]})")
             if len(rects) > 500:
                 print(f"  ... and {len(rects) - 500} more rectangles")

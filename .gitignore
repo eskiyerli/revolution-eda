@@ -6,3 +6,4 @@ dist/
 build/
 library.json
 reveda.conf
+.env
