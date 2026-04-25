@@ -671,19 +671,20 @@ class LVSDBParser:
         layout_ref = mapping_item.get('layout_net') or mapping_item.get('layout_pin') or mapping_item.get('layout_dev')
         schem_ref = mapping_item.get('schem_net') or mapping_item.get('schem_pin') or mapping_item.get('schem_dev')
 
-        # If either side is missing, it's a mismatch
-        if not layout_ref or not schem_ref:
-            return True
-
-        # Status '1' means successfully matched - NOT a mismatch
+        # Status '1' means KLayout confirmed a successful match — trust this first,
+        # even when one side is () (an anonymous/unresolved reference).
         if status == '1':
             return False
+
+        # If either side is missing and not matched by status, it's a mismatch
+        if not layout_ref or not schem_ref:
+            return True
 
         # Status '0', empty, or None means unmatched/mismatch
         if not status or status == '0':
             return True
 
-        # Any other status code indicates a specific mismatch type
+        # Any other status code (e.g. 'W' for width, 'X') indicates a specific mismatch type
         return True
 
     def get_all_crossrefs_formatted(self) -> List[Dict]:
