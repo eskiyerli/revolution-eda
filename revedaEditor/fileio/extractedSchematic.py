@@ -55,12 +55,14 @@ class klayoutSchematicGenerator:
         revedaMain,
         findSymbolViewNameTuple,
         logger: logging.Logger,
+        highlight_callback=None,
     ):
         self.parser = parser
         self.layoutEditor = layoutEditor
         self.revedaMain = revedaMain
         self.findSymbolViewNameTuple = findSymbolViewNameTuple
         self.logger = logger
+        self.highlight_callback = highlight_callback
         self.tempSchematicEditor = None
         self.schem_to_layout_pos = {}
         self._symbol_view_cache: dict[str, Optional[ddef.viewNameTuple]] = {}
@@ -549,7 +551,11 @@ class klayoutSchematicGenerator:
             for labelItem in symbolItem.labels.values():
                 labelItem.labelDefs()
 
-    def _generateChildHierarchicalViews(self, instances: list[dict]):
+    def _generateChildHierarchicalViews(
+        self,
+        instances: list[dict],
+        parent_path: tuple[str, ...],
+    ):
         for instance in instances:
             childExtracted = instance.get("extracted")
             childCellName = instance.get("cell_name")
@@ -559,7 +565,12 @@ class klayoutSchematicGenerator:
             cacheKey = (self.layoutEditor.libName, childCellName)
             if cacheKey not in self._generated_hierarchy_cells:
                 self._generated_hierarchy_cells.add(cacheKey)
-                self.generateSchematic(childExtracted, _show=False)
+                child_path = parent_path + (str(instance.get("name", "")),)
+                self.generateSchematic(
+                    childExtracted,
+                    _show=False,
+                    hierarchy_path=child_path,
+                )
 
     def createPinNet(
         self, pinItem, symbolItem: shp.schematicSymbol, device: dict
@@ -608,6 +619,7 @@ class klayoutSchematicGenerator:
         extracted: dict,
         sourceNetlistPath: pathlib.Path | None = None,
         _show: bool = True,
+        hierarchy_path: tuple[str, ...] = (),
     ):
         """Generate the full schematic from extracted data."""
         extracted = self.infer_hierarchical_extraction(extracted, sourceNetlistPath)
@@ -628,7 +640,7 @@ class klayoutSchematicGenerator:
         if not isinstance(hierarchicalInstances, list):
             hierarchicalInstances = []
 
-        self._generateChildHierarchicalViews(hierarchicalInstances)
+        self._generateChildHierarchicalViews(hierarchicalInstances, hierarchy_path)
 
         # Restore this cell's editor after child views have been generated.
         self.tempSchematicEditor = currentEditor
@@ -659,6 +671,9 @@ class klayoutSchematicGenerator:
             symbolItem = self.addDeviceToSchematic(device)
             if symbolItem:
                 self.addDeviceNets(symbolItem, device)
+
+        if callable(self.highlight_callback):
+            self.highlight_callback(self.tempSchematicEditor, extracted, hierarchy_path)
 
         if _show:
             self.tempSchematicEditor.show()
