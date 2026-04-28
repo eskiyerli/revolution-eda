@@ -209,7 +209,7 @@ class gdsExporter:
         parentCell.add(viaArray)
 
     def _process_custom_layout(self, library, item, parentCell):
-        if isinstance(item, pcells.baseCell):
+        if pcells is not None and isinstance(item, pcells.baseCell):
             pcellParamDict = self.extractPcellInstanceParameters(item)
             pcellNameSuffix = "_".join(
                 f"{key}_{value}".replace(".", "p") for key, value in pcellParamDict.items()

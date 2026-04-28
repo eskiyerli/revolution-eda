@@ -28,7 +28,7 @@ import logging
 import re
 from typing import Optional, cast
 
-from PySide6.QtCore import QEvent, QRect, Qt
+from PySide6.QtCore import QEvent, QRect, QRectF, Qt
 from PySide6.QtGui import (
     QBrush,
     QColor,
@@ -46,6 +46,7 @@ from PySide6.QtWidgets import (
 )
 
 import revedaEditor.backend.LVSModelView as lvsmv
+import revedaEditor.common.layoutShapes as lshp
 import revedaEditor.common.net as snet
 import revedaEditor.common.shapes as shp
 from revedaEditor.backend.pdkLoader import importPDKModule
@@ -569,6 +570,27 @@ class lvsResultsDialogue(QDialog):
         height = max(1, int(round(abs(ty2 - ty1))))
         return QRect(left, top, width, height)
 
+    def _find_layout_instance_at(self, scene_x: float, scene_y: float) -> "lshp.layoutInstance | None":
+        """Return the smallest layout instance whose scene bounding rect contains the point.
+
+        Using the smallest (innermost) instance ensures we highlight the specific device
+        (e.g. a single PMOS transistor) rather than a large parent cell that contains it.
+        """
+        if not hasattr(self.layoutEditor, 'centralW'):
+            return None
+        scene = self.layoutEditor.centralW.scene
+        point_rect = QRectF(scene_x - 1, scene_y - 1, 2, 2)
+        best: "lshp.layoutInstance | None" = None
+        best_area: float = float('inf')
+        for item in scene.items(point_rect):
+            if isinstance(item, lshp.layoutInstance):
+                sbr = item.sceneBoundingRect()
+                area = sbr.width() * sbr.height()
+                if area < best_area:
+                    best_area = area
+                    best = item
+        return best
+
     @staticmethod
     def _make_lvs_rect(rect: QRect, color: QColor, alpha: int = 150,
                        pen_style: Qt.PenStyle = Qt.PenStyle.SolidLine,
@@ -699,8 +721,22 @@ class lvsResultsDialogue(QDialog):
         shapes = [{"type": "rect", "bbox": shape_bbox}]
         dx, dy, y_sign = self._infer_lvs_transform(shapes)
         color = self._next_highlight_color()
-        bbox = (x - half, y - half, x + half, y + half)
-        rect_item = self._make_lvs_rect(self._apply_transform(bbox, dx, dy, y_sign), color)
+        # Try to find the actual layout instance and use its bounding rect
+        sx = x + dx
+        sy = y_sign * y + dy
+        instance = self._find_layout_instance_at(sx, sy)
+        if instance is not None:
+            sbr = instance.sceneBoundingRect().normalized()
+            scene_rect = QRect(
+                int(round(sbr.left())),
+                int(round(sbr.top())),
+                max(1, int(round(sbr.width()))),
+                max(1, int(round(sbr.height()))),
+            )
+        else:
+            bbox = (x - half, y - half, x + half, y + half)
+            scene_rect = self._apply_transform(bbox, dx, dy, y_sign)
+        rect_item = self._make_lvs_rect(scene_rect, color)
         rect_item._cell = (
             f"{device.get('type', '?')} ({device.get('id', '?')}) - {device.get('name', '?')}"
         )
@@ -757,8 +793,17 @@ class lvsResultsDialogue(QDialog):
         mismatched_pins = [p for p in all_pins if LVSDBParser._is_mismatch(p)]
         mismatched_devices = [d for d in all_devices if LVSDBParser._is_mismatch(d)]
 
-        # Determine which mismatches to show and highlight based on the clicked column
-        show_nets = mismatch_type in ('nets', 'all') and mismatched_nets
+        # Use pre-computed mismatch counts from the crossref dict (consistent with table display).
+        # net_mismatches uses diagnostics-based counting which filters out device-property fallout.
+        net_mismatch_count = crossref.get('net_mismatches', len(mismatched_nets))
+        pin_mismatch_count = crossref.get('pin_mismatches', len(mismatched_pins))
+
+        # Prefer human-readable diagnostic messages over raw mapping IDs for net mismatches.
+        net_mismatch_messages = xref_data.get('diagnostics', {}).get('net_mismatch_messages', [])
+
+        # Determine which mismatches to show and highlight based on the clicked column.
+        # For nets, rely on the authoritative count (same source as the table column).
+        show_nets = mismatch_type in ('nets', 'all') and net_mismatch_count > 0
         show_pins = mismatch_type in ('pins', 'all') and mismatched_pins
         show_devices = mismatch_type in ('devices', 'all') and mismatched_devices
 
@@ -770,16 +815,22 @@ class lvsResultsDialogue(QDialog):
         details = f"Cell Equivalence: {'✓ Equivalent' if equivalent else '✗ Not Equivalent'}\n\n"
 
         if show_nets:
-            details += f"❌ Net Mismatches ({len(mismatched_nets)}):\n"
-            for net in mismatched_nets:
-                layout_net = net.get('layout_net', '?')
-                schem_net = net.get('schem_net', '?')
-                status = net.get('status', '?')
-                details += f"  Layout Net {layout_net} ↔ Schematic Net {schem_net} [status={status}]\n"
+            details += f"❌ Net Mismatches ({net_mismatch_count}):\n"
+            if net_mismatch_messages:
+                # Use human-readable diagnostic messages (contain actual net names)
+                for message in net_mismatch_messages:
+                    details += f"  {message}\n"
+            else:
+                # Fall back to raw mapping entries (may show internal IDs)
+                for net in mismatched_nets:
+                    layout_net = net.get('layout_net', '?')
+                    schem_net = net.get('schem_net', '?')
+                    status = net.get('status', '?')
+                    details += f"  Layout Net {layout_net} ↔ Schematic Net {schem_net} [status={status}]\n"
             details += "\n"
 
         if show_pins:
-            details += f"❌ Pin Mismatches ({len(mismatched_pins)}):\n"
+            details += f"❌ Pin Mismatches ({pin_mismatch_count}):\n"
             for pin in mismatched_pins:
                 layout_pin = pin.get('layout_pin', '?')
                 schem_pin = pin.get('schem_pin', '?')
@@ -877,6 +928,20 @@ class lvsResultsDialogue(QDialog):
         if not devices or not hasattr(self.layoutEditor, 'centralW'):
             return
 
+        # Pre-compute the transform using the first valid device position as a reference
+        _transform_shapes = []
+        for device in devices:
+            pos = device.get('position')
+            if isinstance(pos, (list, tuple)) and len(pos) >= 2:
+                try:
+                    x, y = float(pos[0]), float(pos[1])
+                    half = self._DEVICE_HIGHLIGHT_SIZE / 2
+                    _transform_shapes.append({"type": "rect", "bbox": [[x - half, y - half], [x + half, y + half]]})
+                    break
+                except (TypeError, ValueError):
+                    pass
+        dx, dy, y_sign = self._infer_lvs_transform(_transform_shapes) if _transform_shapes else (0.0, 0.0, 1)
+
         rects = []
         for device in devices:
             position = device.get('position')
@@ -887,14 +952,25 @@ class lvsResultsDialogue(QDialog):
             except (TypeError, ValueError):
                 continue
 
-            half = self._DEVICE_HIGHLIGHT_SIZE / 2
-            shapes = [{"type": "rect", "bbox": [[x - half, y - half], [x + half, y + half]]}]
-            dx, dy, y_sign = self._infer_lvs_transform(shapes)
             color = self._next_highlight_color()
-            rect_item = self._make_lvs_rect(
-                self._apply_transform((x - half, y - half, x + half, y + half), dx, dy, y_sign),
-                color,
-            )
+            # Convert LVS position to scene coordinates
+            sx = x + dx
+            sy = y_sign * y + dy
+            instance = self._find_layout_instance_at(sx, sy)
+            if instance is not None:
+                sbr = instance.sceneBoundingRect().normalized()
+                scene_rect = QRect(
+                    int(round(sbr.left())),
+                    int(round(sbr.top())),
+                    max(1, int(round(sbr.width()))),
+                    max(1, int(round(sbr.height()))),
+                )
+            else:
+                half = self._DEVICE_HIGHLIGHT_SIZE / 2
+                scene_rect = self._apply_transform(
+                    (x - half, y - half, x + half, y + half), dx, dy, y_sign
+                )
+            rect_item = self._make_lvs_rect(scene_rect, color)
             rect_item._cell = (
                 f"{device.get('type', '?')} ({device.get('id', '?')})"
             )

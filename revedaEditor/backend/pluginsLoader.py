@@ -26,15 +26,18 @@ import importlib
 import pkgutil
 from pathlib import Path
 
-from PySide6.QtGui import (QAction, QIcon)
-from PySide6.QtWidgets import (QApplication, )
+from PySide6.QtGui import QAction, QIcon
+from PySide6.QtWidgets import (
+    QApplication,
+)
+
 from revedaEditor.backend.dataDefinitions import viewItemTuple
-from revedaEditor.backend.libBackEnd import viewItem
+
 
 class pluginsLoader:
     def __init__(self, pluginsPath: Path):
         self.plugins = {}
-        self.pluginsPathObj = pluginsPath
+        self.pluginsPathObj: Path = pluginsPath
         self._app = QApplication.instance()
         self.pluginMenuConfig = {}
 
@@ -49,7 +52,7 @@ class pluginsLoader:
         self._loadPluginMenus()
 
     def __repr__(self):
-        return f'plugins({list(self.plugins.keys())})'
+        return f"plugins({list(self.plugins.keys())})"
 
     def _loadPluginMenus(self):
         """Load plugin menu configurations from JSON file"""
@@ -69,14 +72,16 @@ class pluginsLoader:
                         self.pluginMenuConfig[item.name] = config
                     except Exception as e:
                         self._app.logger.warning(
-                            f"Failed to load plugin config for {item.name}: {e}")
+                            f"Failed to load plugin config for {item.name}: {e}"
+                        )
 
         self._app.logger.info(
-            f"Loaded plugin menu config: {list(self.pluginMenuConfig.keys())}")
+            f"Loaded plugin menu config: {list(self.pluginMenuConfig.keys())}"
+        )
 
     def applyPluginMenus(self, editorWindow):
         """Apply plugin menus to an editor window"""
-        if not hasattr(self, 'pluginMenuConfig'):
+        if not hasattr(self, "pluginMenuConfig"):
             return
         editorClassName = editorWindow.__class__.__name__
 
@@ -96,9 +101,9 @@ class pluginsLoader:
                     continue
 
                 # Find target menu and add action
-                if hasattr(editorWindow, menuItem['location']):
+                if hasattr(editorWindow, menuItem["location"]):
                     for action in editorWindow.menuBar().actions():
-                        if action.text().replace('&', '') == menuItem["menu"]:
+                        if action.text().replace("&", "") == menuItem["menu"]:
                             new_action = QAction(menuItem["action"], editorWindow)
                             if "text" in menuItem:
                                 new_action.setText(menuItem["text"])
@@ -109,33 +114,35 @@ class pluginsLoader:
                             if "checked" in menuItem:
                                 new_action.setCheckable(True)
                                 new_action.setChecked(menuItem["checked"])
-                            new_action.triggered.connect(lambda c=False, cb=callback: cb(
-                                editorWindow))
+                            new_action.triggered.connect(
+                                lambda c=False, cb=callback: cb(editorWindow)
+                            )
                             action.menu().addAction(new_action)
                             break
 
     def createCellView(self, viewItemT: viewItemTuple):
 
         for pluginName, pluginModule in self.plugins.items():
-            if (hasattr(pluginModule, 'viewTypes') and
-                    viewItemT.viewItem.viewType in getattr(pluginModule, 'viewTypes')):
+            if hasattr(
+                pluginModule, "viewTypes"
+            ) and viewItemT.viewItem.viewType in getattr(pluginModule, "viewTypes"):
                 pluginModule.createCellView(viewItemT)
                 return True
         else:
             self._app.logger.warning(
-                f"No plugin found to open view type: "
-                f"{viewItemT.viewItem.viewType}")
+                f"No plugin found to open view type: {viewItemT.viewItem.viewType}"
+            )
             return False
 
-    def openCellView(self, viewItemT:viewItemTuple):
+    def openCellView(self, viewItemT: viewItemTuple):
         for pluginName, pluginModule in self.plugins.items():
-            if (hasattr(pluginModule, 'viewTypes') and
-                    viewItemT.viewItem.viewType in getattr(pluginModule,
-                                                       'viewTypes')):
+            if hasattr(
+                pluginModule, "viewTypes"
+            ) and viewItemT.viewItem.viewType in getattr(pluginModule, "viewTypes"):
                 pluginModule.openCellView(viewItemT)
                 return True
         else:
             self._app.logger.warning(
-                f"No plugin found to open view type: "
-                f"{viewItemT.viewItem.viewType}")
+                f"No plugin found to open view type: {viewItemT.viewItem.viewType}"
+            )
             return False

@@ -969,7 +969,7 @@ class LVSDBParser:
                 'device_mismatches': device_mismatches,
                 'device_mismatch_summaries': device_mismatch_summaries,
                 'device_mismatch_details': device_mismatch_details,
-                'total_mappings': len(nets) + len(pins) + len(devices),
+                'total_mappings': net_mismatches + pin_mismatches + device_mismatches,
                 'crossref': xref
             })
         return result
