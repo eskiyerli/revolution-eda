@@ -4,7 +4,7 @@
 
 Revolution EDA is a new generation of schematic and symbol editor targeting custom
 integrated circuit design with integrated simulation and plotting capabilities.
-Current version is **0.8.10**.
+Current version is **0.8.11**.
 
 
 ## Core Features
