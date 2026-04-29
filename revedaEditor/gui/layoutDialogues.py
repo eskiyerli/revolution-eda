@@ -785,9 +785,20 @@ class drcErrorsDialogue(QDialog):
         layout.addWidget(self.buttonBox)
 
         self.setLayout(layout)
+        self.finished.connect(self._clearDRCPolygons)
 
         # Connect signal for polygon highlighting
         # self.drcTable.polygonSelected.connect(self.highlightPolygons)
+
+    def _clearDRCPolygons(self, _result: int = 0):
+        parent = self.parent()
+        clearDRCPolygons = getattr(parent, "clearDRCPolygons", None)
+        if callable(clearDRCPolygons):
+            clearDRCPolygons()
+
+    def closeEvent(self, event):
+        self._clearDRCPolygons()
+        super().closeEvent(event)
 
     # def highlightPolygons(self, polygons):
     #     # Emit signal or call parentW method to highlight polygons in scene

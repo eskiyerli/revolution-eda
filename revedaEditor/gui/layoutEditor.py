@@ -515,6 +515,9 @@ class layoutEditor(edw.editorWindow):
         # Remember current polygons (store reference)
         self._drcPolygons = polygons
 
+    def clearDRCPolygons(self):
+        self.handlePolygonSelection([])
+
     def handleLVSRectSelection(self, rects: list[QGraphicsRectItem]):
         # Remove previous rectangles
         for rect in self._lvsRectangles:

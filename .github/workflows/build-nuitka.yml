@@ -24,9 +24,6 @@ jobs:
           - os: ubuntu-latest
             os_short: linux
             python_version: '3.13'
-          - os: macos-latest
-            os_short: macos
-            python_version: '3.13'
           - os: windows-latest
             os_short: windows
             python_version: '3.13'
@@ -51,10 +48,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential pkg-config libgl1-mesa-dev libglu1-mesa-dev \
             libxcb-xinerama0 libxkbcommon-x11-0 libssl-dev
-
-      - name: Install Homebrew deps (macOS)
-        if: matrix.os == 'macos-latest'
-        run: brew install pkg-config || true
 
       - name: Cache pip
         uses: actions/cache@v4
@@ -126,25 +119,16 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Locate reveda.dist or reveda.app
-          if [ -d "build/reveda.app" ]; then
-            # Copy bundled resources into the app bundle where the executable lives
-            mkdir -p "build/reveda.app/Contents/MacOS/defaultPDK"
-            cp -a defaultPDK/. "build/reveda.app/Contents/MacOS/defaultPDK/"
-            mkdir -p "build/reveda.app/Contents/MacOS/plugins"
-            cp -a plugins/. "build/reveda.app/Contents/MacOS/plugins/"
+          REVEDA_DIST=$(find build -maxdepth 2 -name "reveda.dist" -type d | head -n 1 || true)
+          if [ -n "$REVEDA_DIST" ]; then
+            # Copy bundled resources into reveda.dist
+            mkdir -p "$REVEDA_DIST/defaultPDK"
+            cp -a defaultPDK/. "$REVEDA_DIST/defaultPDK/"
+            mkdir -p "$REVEDA_DIST/plugins"
+            cp -a plugins/. "$REVEDA_DIST/plugins/"
           else
-            REVEDA_DIST=$(find build -maxdepth 2 -name "reveda.dist" -type d | head -n 1 || true)
-            if [ -n "$REVEDA_DIST" ]; then
-              # Copy bundled resources into reveda.dist
-              mkdir -p "$REVEDA_DIST/defaultPDK"
-              cp -a defaultPDK/. "$REVEDA_DIST/defaultPDK/"
-              mkdir -p "$REVEDA_DIST/plugins"
-              cp -a plugins/. "$REVEDA_DIST/plugins/"
-            else
-              echo "ERROR: Neither reveda.app nor reveda.dist found"
-              exit 1
-            fi
+            echo "ERROR: reveda.dist not found"
+            exit 1
           fi
 
       - name: Upload artifact
@@ -153,7 +137,6 @@ jobs:
           name: RevolutionEDA-${{ matrix.os_short }}-v${{ steps.version.outputs.version }}
           path: |
             build/reveda.dist/
-            build/reveda.app/
           retention-days: 30
 
   release:
