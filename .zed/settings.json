@@ -1,4 +1,9 @@
 {
   "soft_wrap": "prefer_line",
-  "project_name": "Revolution EDA"
+  "project_name": "Revolution EDA",
+  "languages": {
+    "Python": {
+      "language_servers": ["ty"],
+    },
+  },
 }

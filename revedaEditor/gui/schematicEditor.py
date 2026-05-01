@@ -53,7 +53,7 @@ import revedaEditor.gui.propertyDialogues as pdlg
 import revedaEditor.gui.toolsDialogues as tdlg
 import revedaEditor.scenes.schematicScene as schscn
 from revedaEditor.gui.editorFactory import EditorFactory
-from revedaEditor.netlisting import xyceNetlist
+from revedaEditor.netlisting import spectreNetlist, xyceNetlist
 
 if TYPE_CHECKING:
     pass
@@ -70,6 +70,8 @@ class schematicEditor(edw.editorWindow):
         MAJOR_GRID_DEFAULT: Default spacing for major grid dots/lines.
         SNAP_GRID_DEFAULT: Default grid snapping resolution.
     """
+    centralW: schematicContainer
+
     MAJOR_GRID_DEFAULT = 20
     SNAP_GRID_DEFAULT = 10
 
@@ -400,19 +402,23 @@ class schematicEditor(edw.editorWindow):
 
         netlistFilePath = subDirPath / f"{self.cellName}_{selectedViewName}.cir"
         topSubCkt = dlg.topAsSubcktCheckBox.isChecked()
+        netlistFormat = dlg.netlistFormatCombo.currentText()
 
-        netlistObj = self.createNetlistObject(self.viewItem, netlistFilePath, topSubCkt)
+        netlistObj = self.createNetlistObject(self.viewItem, netlistFilePath, topSubCkt, netlistFormat)
 
         if netlistObj:
             with self.measureDuration():
                 netlistObj.writeNetlist()
 
     def createNetlistObject(self, viewItem: libb.viewItem, filePath: pathlib.Path,
-                            topSubCkt: bool):
+                            topSubCkt: bool, netlistFormat: str = "Spice/Xyce"):
+        # Select the appropriate netlister class based on format
+        netlisterClass = xyceNetlist if netlistFormat == "Spice/Xyce" else spectreNetlist
+
         if viewItem.viewType == "schematic":
-            return xyceNetlist(self, filePath, False, topSubCkt)
+            return netlisterClass(self, filePath, False, topSubCkt)
         elif viewItem.viewType == "config":
-            netlistObj = xyceNetlist(self, filePath, True, topSubCkt)
+            netlistObj = netlisterClass(self, filePath, True, topSubCkt)
             configItem = libm.findViewItem(self.libraryView.libraryModel, self.libName,
                                            self.cellName, viewItem.viewName)
             if configItem:
@@ -620,6 +626,9 @@ class schematicEditor(edw.editorWindow):
 
 
 class schematicContainer(edw.editorContainer):
+    scene: schscn.schematicScene
+    view: edv.schematicView
+
     def __init__(self, parent: schematicEditor):
         super().__init__(parent=parent)
         self.editorWindow = parent

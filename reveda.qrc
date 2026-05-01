@@ -24,6 +24,7 @@
         <file>../icons/blue-document-import.png</file>
         <file>../icons/blue-document-node.png</file>
         <file>../icons/blue-document--pencil.png</file>
+        <file>../icons/blue-document--plus.png</file>
         <file>../icons/books-stack.png</file>
         <file>../icons/calculator-scientific.png</file>
         <file>../icons/chart-up.png</file>
@@ -121,6 +122,7 @@
         <file>../icons/ui-check-box.png</file>
         <file>../icons/ui-check-boxes-list.png</file>
         <file>../icons/ui-label.png</file>
+        <file>../icons/ui-tab--plus.png</file>
         <file>../icons/zone-resize-actual.png</file>
         <file>../icons/zone-resize.png</file>
         <file>../icons/zone-select.png</file>
