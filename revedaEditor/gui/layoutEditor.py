@@ -107,6 +107,8 @@ class layoutEditor(edw.editorWindow):
         self.exportGDSAction.setToolTip("Export GDS from Layout")
         self.exportOASAction = QAction("Export OAS", self)
         self.exportGDSAction.setToolTip("Export OAS from Layout")
+        self.sdlLoadAction = QAction("Load from Schematic...", self)
+        self.sdlLoadAction.setToolTip("Create layout instances from schematic")
 
     def _addActions(self):
         super()._addActions()
@@ -131,6 +133,8 @@ class layoutEditor(edw.editorWindow):
         self.menuTools.addAction(self.renumberInstanceAction)
         self.menuTools.addAction(self.exportGDSAction)
         self.menuTools.addAction(self.exportOASAction)
+        self.menuTools.addSeparator()
+        self.menuTools.addAction(self.sdlLoadAction)
 
         # hierarchy submenu
         self.hierMenu = self.menuEdit.addMenu("Hierarchy")
@@ -189,6 +193,7 @@ class layoutEditor(edw.editorWindow):
         self.objPropAction.triggered.connect(self.objPropClick)
         self.goDownAction.triggered.connect(self.goDownClick)
         self.renumberInstanceAction.triggered.connect(self.renumberInstanceClick)
+        self.sdlLoadAction.triggered.connect(self.sdlLoadClick)
 
     def _createShortcuts(self):
         super()._createShortcuts()
@@ -532,6 +537,21 @@ class layoutEditor(edw.editorWindow):
 
     def renumberInstanceClick(self, s):
         self.centralW.scene.renumberInstances()
+
+    def sdlLoadClick(self):
+        """Open dialog to select schematic and create layout instances from it."""
+        libraryModel = lmview.schematicViewsModel(self.libraryDict)
+        dialog = fd.selectCellViewDialog(self, libraryModel)
+
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            libItem = libm.getLibItem(libraryModel, dialog.libNamesCB.currentText())
+            cellItem = libm.getCellItem(libItem, dialog.cellCB.currentText())
+            viewItem = libm.getViewItem(cellItem, dialog.viewCB.currentText())
+
+            # Call scene to load schematic instances
+            self.centralW.scene.loadSchematicInstances(
+                ddef.viewItemTuple(libItem, cellItem, viewItem)
+            )
 
     def dispConfigEdit(self):
         import revedaEditor.gui.propertyDialogues as pdlg

@@ -125,49 +125,53 @@ class editorScene(QGraphicsScene):
         super().contextMenuEvent(event)
 
     def mousePressEvent(self, event):
-        super().mousePressEvent(event)
         modifiers = QGuiApplication.keyboardModifiers()
         if event.button() == Qt.MouseButton.LeftButton:
             self.mousePressLoc = event.scenePos().toPoint()
             if self.editModes.selectItem:
-                if (self.selectionRectItem is None and self.itemAt(self.mousePressLoc,
-                                                                   QTransform()) is None):
-                    self.selectionRectItem = QGraphicsRectItem(self.mousePressLoc.x(),
-                                                               self.mousePressLoc.y(), 0, 0)
-                    self.selectionRectItem.setPen(self._draftPen)  # Use property
-                    self.selectionRectItem.setZValue(100)
-                    self.addItem(self.selectionRectItem)
-                elif self.itemAt(self.mousePressLoc, QTransform()):
+                clickedItem = self.itemAt(self.mousePressLoc, QTransform())
+                if clickedItem:
+                    # Handle additive/toggle selection before calling super
                     self.itemsAtPressSet = {item for item in self.items(self.mousePressLoc)
                                             if item.parentItem() is None}
                     if self.itemsAtPressSet:
                         self.itemCycler = cycle(self.itemsAtPressSet)
                         item = next(self.itemCycler)
                         if modifiers == Qt.KeyboardModifier.ShiftModifier:
+                            # Add to selection - don't call super to avoid clearing
                             self.selectedItemsSet |= {item}
                             item.setSelected(True)
+                            event.accept()
+                            return
                         elif modifiers == Qt.KeyboardModifier.ControlModifier:
+                            # Toggle selection
                             if item in self.selectedItemsSet:
                                 self.selectedItemsSet.remove(item)
                                 item.setSelected(False)
                             else:
                                 self.selectedItemsSet.add(item)
                                 item.setSelected(True)
+                            event.accept()
+                            return
                         elif modifiers == Qt.KeyboardModifier.NoModifier:
+                            # Single selection - clear others
                             self.clearSelection()
                             self.selectedItemsSet = {item}
                             item.setSelected(True)
-        
+                elif self.selectionRectItem is None:
+                    # Starting rubber band selection
+                    self.selectionRectItem = QGraphicsRectItem(self.mousePressLoc.x(),
+                                                               self.mousePressLoc.y(), 0, 0)
+                    self.selectionRectItem.setPen(self._draftPen)
+                    self.selectionRectItem.setZValue(100)
+                    self.addItem(self.selectionRectItem)
 
+            # Handle other edit modes
             if self.editModes.moveItem:
                 self.selectedItemGroup = self.createItemGroup(self.selectedItems())
                 self._initialGroupPos = self.selectedItemGroup.pos().toPoint()
                 self._initialGroupPosList = []
                 for item in self.selectedItemGroup.childItems():
-                    # Disable individual item movement so Qt's drag-tracking (which
-                    # stored press offsets before the group existed) cannot apply
-                    # stale, wrong offsets that would cause the items to jump.
-                    # The scene moves the whole group manually in mouseMoveEvent.
                     item.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, False)
                     self._initialGroupPosList.append(item.scenePos().toPoint())
             elif self.editModes.panView:
@@ -176,10 +180,11 @@ class editorScene(QGraphicsScene):
                 if self.zoomRectItem is None:
                     self.zoomRectItem = QGraphicsRectItem(self.mousePressLoc.x(),
                                                           self.mousePressLoc.y(), 0, 0)
-                    self.zoomRectItem.setPen(self._zoomPen)  # Use property
+                    self.zoomRectItem.setPen(self._zoomPen)
                     self.zoomRectItem.setZValue(100)
                     self.addItem(self.zoomRectItem)
-            self.messageLine.setText(self.messages.get(self.editModes.mode(), ""))
+
+        super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
         super().mouseMoveEvent(event)

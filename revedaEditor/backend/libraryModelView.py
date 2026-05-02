@@ -1066,6 +1066,28 @@ class layoutViewsModel(designLibrariesModel):
                     self.addViewToModel(designPath.joinpath(cell, view), cellItem)
 
 
+class schematicViewsModel(designLibrariesModel):
+    """Model for selecting schematic views in Schematic-Driven Layout (SDL)."""
+    def __init__(self, libraryDict: dict):
+        self.schematicViews = ["schematic"]
+        super().__init__(libraryDict)
+
+    def populateLibrary(self, designPath):  # designPath: Path
+        """
+        Populate library with schematic views.
+        """
+        if designPath.joinpath("reveda.lib").exists():
+            libraryItem = self.addLibraryToModel(designPath)
+            cellList = [cell.name for cell in designPath.iterdir() if cell.is_dir()]
+            for cell in cellList:
+                cellItem = self.addCellToModel(designPath.joinpath(cell), libraryItem)
+                viewList = [view.name for view in designPath.joinpath(cell).iterdir() if
+                            view.suffix == ".json" and any(
+                                x in view.name for x in self.schematicViews)]
+                for view in viewList:
+                    self.addViewToModel(designPath.joinpath(cell, view), cellItem)
+
+
 class libraryCheckListView(QListView):
     def __init__(self, parent, model: designLibrariesModel):
         super().__init__(parent)

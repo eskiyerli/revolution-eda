@@ -667,6 +667,170 @@ class layoutScene(editorScene):
         """
         return {item for item in self.items() if isinstance(item, lshp.layoutInstance)}
 
+    def loadSchematicInstances(self, schematicTuple: ddef.viewItemTuple) -> None:
+        """Load schematic and create corresponding layout instances.
+
+        Args:
+            schematicTuple: Tuple containing library/cell/view for the schematic
+        """
+        from PySide6.QtWidgets import QMessageBox
+
+        # Check for existing layout instances
+        existingInstances = self.findScenelayoutCellSet()
+        if existingInstances:
+            reply = QMessageBox.question(
+                self.editorWindow,
+                "Existing Layout Instances",
+                f"There are {len(existingInstances)} layout instances on the scene.\n\n"
+                "Continuing will remove all existing instances and place new ones from the schematic.\n\n"
+                "Do you want to proceed?",
+                QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
+                QMessageBox.StandardButton.Cancel
+            )
+            if reply != QMessageBox.StandardButton.Ok:
+                self.logger.info("Schematic-driven layout cancelled by user")
+                return
+
+            # Remove existing instances
+            for inst in existingInstances:
+                self.deleteUndoStack(inst)
+
+        schematicPath = schematicTuple.viewItem.viewPath
+        try:
+            with schematicPath.open("rb") as f:
+                data = orjson.loads(f.read())
+        except Exception as e:
+            self.logger.error(f"Failed to load schematic: {e}")
+            return
+
+        # Parse schematic instances (type "sys")
+        schInstances = []
+        for item in data[2:] if len(data) > 2 else []:  # Skip header
+            if isinstance(item, dict) and item.get("type") == "sys":
+                schInstances.append({
+                    "lib": item.get("lib", ""),
+                    "cell": item.get("cell", ""),
+                    "view": item.get("view", ""),
+                    "name": item.get("nam", ""),
+                    "counter": item.get("ic", 0),
+                    "loc": item.get("loc", (0, 0)),
+                    "ang": item.get("ang", 0),
+                    "fl": item.get("fl", (1, 1)),
+                    "labels": item.get("ld", {}),
+                })
+
+        if not schInstances:
+            self.logger.info("No schematic instances found to place")
+            return
+
+        # Create layout instances for each schematic instance
+        createdCount = 0
+        for sch_inst in schInstances:
+            # Resolve layout view (try "layout" or "pcell" with same cell name)
+            layoutTuple = self._resolveLayoutView(sch_inst["lib"], sch_inst["cell"])
+            if layoutTuple:
+                if self._createLayoutInstanceFromSch(layoutTuple, sch_inst):
+                    createdCount += 1
+            else:
+                self.logger.warning(
+                    f"No layout/pcell view found for {sch_inst['lib']}/{sch_inst['cell']}"
+                )
+
+        self.logger.info(f"Created {createdCount} layout instances from schematic")
+
+    def _resolveLayoutView(self, lib_name: str, cell_name: str) -> Union[ddef.viewItemTuple, None]:
+        """Find layout or pcell view for a given schematic cell.
+
+        Args:
+            lib_name: Library name
+            cell_name: Cell name
+
+        Returns:
+            viewItemTuple if found, None otherwise
+        """
+        import revedaEditor.backend.libBackEnd as libb
+
+        lib_path = self.libraryDict.get(lib_name)
+        if not lib_path:
+            return None
+
+        cell_path = lib_path / cell_name
+        if not cell_path.exists():
+            return None
+
+        # Try layout view first, then pcell
+        for view_name in ["layout", "pcell"]:
+            view_path = cell_path / f"{view_name}.json"
+            if view_path.exists():
+                lib_item = libb.libraryItem(lib_path)
+                cell_item = libb.cellItem(cell_path)
+                view_item = libb.viewItem(view_path)
+                return ddef.viewItemTuple(lib_item, cell_item, view_item)
+
+        return None
+
+    def _createLayoutInstanceFromSch(self, viewTuple: ddef.viewItemTuple, sch_inst: dict) -> bool:
+        """Create a layout instance from schematic instance data.
+
+        Args:
+            viewTuple: Library/cell/view tuple for layout/pcell
+            sch_inst: Schematic instance data dict
+
+        Returns:
+            True if instance created successfully, False otherwise
+        """
+        # Store current tuple and set the new one
+        oldTuple = self.layoutInstanceTuple
+        self.layoutInstanceTuple = viewTuple
+
+        try:
+            new_inst = self.instLayout(viewTuple)
+            if new_inst is None:
+                return False
+
+            # For PCells, initialize with default parameters
+            if isinstance(new_inst, pcells.baseCell):
+                # Use default parameter values without showing dialog
+                lineEditDict = self.extractPcellInstanceParameters(new_inst)
+                if lineEditDict:
+                    # Extract default values from the parameter edit widgets
+                    instanceValuesDict = {}
+                    for key, value in lineEditDict.items():
+                        instanceValuesDict[key] = value.text()
+                    if instanceValuesDict:
+                        new_inst(*instanceValuesDict.values())
+
+            # Inherit properties from schematic
+            new_inst.instanceName = sch_inst["name"]
+            new_inst.counter = sch_inst["counter"]
+            new_inst.angle = sch_inst["ang"]
+            new_inst.flipTuple = tuple(sch_inst["fl"])
+
+            # Set position - use schematic location as starting point
+            # Convert grid units to scene coordinates
+            loc = sch_inst["loc"]
+            if isinstance(loc, (list, tuple)) and len(loc) >= 2:
+                new_inst.setPos(loc[0], loc[1])
+
+            # Store SDL metadata for tracking
+            new_inst._sdlSource = {
+                "schematicLib": sch_inst["lib"],
+                "schematicCell": sch_inst["cell"],
+                "schematicInstance": sch_inst["name"],
+                "labels": sch_inst.get("labels", {}),
+            }
+
+            # Add to scene via undo stack
+            self.addUndoStack(new_inst)
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Error creating layout instance from schematic: {e}")
+            return False
+        finally:
+            # Restore original tuple
+            self.layoutInstanceTuple = oldTuple
+
     def saveLayoutCell(self, filePathObj: pathlib.Path) -> None:
         """Save the layout cell to a JSON file.
 
