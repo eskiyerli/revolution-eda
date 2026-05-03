@@ -62,12 +62,13 @@ class editorScene(QGraphicsScene):
         # Use dictionary unpacking for edit modes
         self.editModes = ddef.editModes(
             **{"selectItem": True, "deleteItem": False, "moveItem": False,
-               "copyItem": False, "rotateItem": False, "changeOrigin": False,
-               "zoomView": False, "panView": False, "stretchItem": False,
-               "alignItems": False, })
+               "constrainedMoveItem": False, "copyItem": False, "rotateItem": False,
+               "changeOrigin": False, "zoomView": False, "panView": False,
+               "stretchItem": False, "alignItems": False, })
 
         self.messages = {"selectItem": "Select Item", "deleteItem": "Delete Item",
-                         "moveItem": "Move Item", "copyItem": "Copy Item",
+                         "moveItem": "Move Item", "constrainedMoveItem": "Constrained Move (Shift=Ortho+Diagonal, Ctrl=Ortho)",
+                         "copyItem": "Copy Item",
                          "rotateItem": "Rotate Item",
                          "changeOrigin": "Change Origin",
                          "panView": "Pan View at Mouse Press Position",
@@ -167,13 +168,23 @@ class editorScene(QGraphicsScene):
                     self.addItem(self.selectionRectItem)
 
             # Handle other edit modes
-            if self.editModes.moveItem:
-                self.selectedItemGroup = self.createItemGroup(self.selectedItems())
-                self._initialGroupPos = self.selectedItemGroup.pos().toPoint()
-                self._initialGroupPosList = []
-                for item in self.selectedItemGroup.childItems():
-                    item.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, False)
-                    self._initialGroupPosList.append(item.scenePos().toPoint())
+            if self.editModes.moveItem or self.editModes.constrainedMoveItem:
+                # If clicked on an item, add it to selection
+                clickedItem = self.itemAt(self.mousePressLoc, QTransform())
+                if clickedItem and not clickedItem.isSelected():
+                    self.clearSelection()
+                    self.selectedItemsSet = {clickedItem}
+                    clickedItem.setSelected(True)
+                # Create move group from selected items
+                if self.selectedItems():
+                    self.selectedItemGroup = self.createItemGroup(self.selectedItems())
+                    self._initialGroupPos = self.selectedItemGroup.pos().toPoint()
+                    self._initialGroupPosList = []
+                    for item in self.selectedItemGroup.childItems():
+                        item.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, False)
+                        self._initialGroupPosList.append(item.scenePos().toPoint())
+                    event.accept()
+                    return
             elif self.editModes.panView:
                 self.centerViewOnPoint(self.mousePressLoc)
             elif self.editModes.zoomView:
@@ -190,18 +201,22 @@ class editorScene(QGraphicsScene):
         super().mouseMoveEvent(event)
         self.mouseMoveLoc = event.scenePos().toPoint()
         if self.editModes.selectItem:
-            if self.selectionRectItem:
+            if self.selectionRectItem and self.mousePressLoc:
                 self.selectionRectItem.setRect(QRectF(self.mousePressLoc.toPointF(),
                                                       self.mouseMoveLoc.toPointF()).normalized())
         elif self.editModes.zoomView:
-            if self.zoomRectItem:
+            if self.zoomRectItem and self.mousePressLoc:
                 self.zoomRectItem.setRect(QRectF(self.mousePressLoc.toPointF(),
                                                  self.mouseMoveLoc.toPointF()).normalized())
 
-        elif self.editModes.moveItem and self.selectedItemGroup:
+        elif self.editModes.constrainedMoveItem and self.selectedItemGroup and self.mousePressLoc:
+            offset = self.mouseMoveLoc - self.mousePressLoc
+            constrainedOffset = self._applyMoveConstraint(offset)
+            self.selectedItemGroup.setPos(constrainedOffset)
+        elif self.editModes.moveItem and self.selectedItemGroup and self.mousePressLoc:
             offset = self.mouseMoveLoc - self.mousePressLoc
             self.selectedItemGroup.setPos(offset)
-        elif self.editModes.copyItem and self.selectedItemGroup:
+        elif self.editModes.copyItem and self.selectedItemGroup and self.mousePressLoc:
             offset = self.mouseMoveLoc - self.mousePressLoc
             self.selectedItemGroup.setPos(offset)
 
@@ -213,19 +228,19 @@ class editorScene(QGraphicsScene):
         modifiers = QGuiApplication.keyboardModifiers()
         self.mouseReleaseLoc = event.scenePos().toPoint()
 
-        if self.editModes.moveItem and self.selectedItemGroup:
+        if (self.editModes.moveItem or self.editModes.constrainedMoveItem) and self.selectedItemGroup:
             _groupItems = self.selectedItemGroup.childItems()
             # Calculate final scene positions before destroying group
             _finalGroupPosList = [item.scenePos().toPoint() for item in _groupItems]
             _posDiff = [finalPos - initPos for finalPos, initPos in zip(_finalGroupPosList, self._initialGroupPosList)]
-            
+
             self.destroyItemGroup(self.selectedItemGroup)
             self.selectedItemGroup = None
-            
+
             # Use the actual position difference for each item
             if _posDiff and _posDiff[0] != QPoint(0, 0):
                 self.undoGroupMoveStack(_groupItems, self._initialGroupPosList, _posDiff[0])
-            
+
             [item.setSelected(False) for item in _groupItems]
             self.editModes.setMode("selectItem")
         elif self.editModes.copyItem and self.selectedItemGroup:
@@ -534,6 +549,43 @@ class editorScene(QGraphicsScene):
     def deleteListUndoStack(self, itemList: List[QGraphicsItem]) -> None:
         undoCommand = us.deleteShapesUndo(self, itemList)
         self.undoStack.push(undoCommand)
+
+    def _applyMoveConstraint(self, offset: QPoint) -> QPoint:
+        """Apply movement constraint based on keyboard modifiers.
+
+        Shift = Orthogonal + Diagonal (8 directions)
+        Ctrl = Only Orthogonal (4 directions: horizontal/vertical)
+        None = Free movement (no constraint)
+
+        Args:
+            offset: Raw movement offset
+
+        Returns:
+            Constrained QPoint
+        """
+        import math
+
+        modifiers = QGuiApplication.keyboardModifiers()
+        dx, dy = offset.x(), offset.y()
+
+        if modifiers == Qt.KeyboardModifier.ControlModifier:
+            # Orthogonal only - snap to closest axis
+            if abs(dx) > abs(dy):
+                return QPoint(dx, 0)
+            else:
+                return QPoint(0, dy)
+        elif modifiers == Qt.KeyboardModifier.ShiftModifier:
+            # Orthogonal + Diagonal - snap to 8 directions
+            angle = math.atan2(dy, dx)
+            dist = math.sqrt(dx * dx + dy * dy)
+            # Snap to nearest 45 degrees
+            snapped_angle = round(angle / (math.pi / 4)) * (math.pi / 4)
+            new_dx = int(dist * math.cos(snapped_angle))
+            new_dy = int(dist * math.sin(snapped_angle))
+            return QPoint(new_dx, new_dy)
+        else:
+            # No constraint
+            return offset
 
     def undoGroupMoveStack(self, items: List[QGraphicsItem], startPos: List[QPoint],
                            endPos: QPoint) -> None:

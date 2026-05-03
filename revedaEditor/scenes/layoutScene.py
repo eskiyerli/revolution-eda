@@ -91,6 +91,7 @@ class layoutScene(editorScene):
             selectItem=False,
             deleteItem=False,
             moveItem=False,
+            constrainedMoveItem=False,
             copyItem=False,
             rotateItem=False,
             changeOrigin=False,
@@ -121,15 +122,8 @@ class layoutScene(editorScene):
             selectLabel=False,
             selectText=False,
         )
-        self.messages = {
-            "selectItem": "Select Item",
-            "deleteItem": "Delete Item",
-            "moveItem": "Move Item",
-            "copyItem": "Copy Item",
-            "rotateItem": "Rotate Item",
-            "changeOrigin": "Change Origin",
-            "panView": "Pan View at mouse Press Position",
-            'zoomView': 'Draw rectangle to zoom in',
+        # Merge with parent's messages
+        self.messages.update({
             "drawPath": "Draw Path",
             "drawPin": "Draw Pin",
             "drawArc": "Draw Arc",
@@ -142,9 +136,7 @@ class layoutScene(editorScene):
             "drawRuler": "Draw Ruler",
             "addInstance": "Add Instance",
             "cutShape": "Cut Shape",
-            "stretchItem": "Stretch Item",
-            "alignItems": "Select alignment option.",
-        }
+        })
         self.newInstance = None
         self.layoutInstanceTuple = None
         self._scale = fabproc.dbu if fabproc else 1000
@@ -309,7 +301,7 @@ class layoutScene(editorScene):
         self.statusLine.showMessage(
             f"Cursor Position: ({cursorPosition.x():.3f}u, {cursorPosition.y():.3f}u)"
         )
-        self.messageLine.setText(self.messages[self.editModes.mode()])
+        self.messageLine.setText(self.messages.get(self.editModes.mode(), self.editModes.mode()))
 
     # def mouseReleaseEvent(self, mouse_event: QGraphicsSceneMouseEvent) -> None:
     #     super().mouseReleaseEvent(mouse_event)

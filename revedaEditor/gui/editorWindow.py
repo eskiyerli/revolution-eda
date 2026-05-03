@@ -233,6 +233,10 @@ class editorWindow(QMainWindow):
         self.moveAction = QAction(moveIcon, "Move", self)
         self.moveAction.setToolTip("Move selected items")
 
+        constrainedMoveIcon = QIcon(":/icons/arrow-move.png")
+        self.constrainedMoveAction = QAction(constrainedMoveIcon, "Constrained Move", self)
+        self.constrainedMoveAction.setToolTip("Move with constraints (Shift+M: Shift=Ortho+Diagonal, Ctrl=Ortho)")
+
         moveByIcon = QIcon(":/icons/arrow-transition.png")
         self.moveByAction = QAction(moveByIcon, "Move By ...", self)
         self.moveAction.setToolTip("Move selected items by an offset")
@@ -453,6 +457,7 @@ class editorWindow(QMainWindow):
         self.menuEdit.addAction(self.deleteAction)
         self.menuEdit.addAction(self.copyAction)
         self.menuEdit.addAction(self.moveAction)
+        self.menuEdit.addAction(self.constrainedMoveAction)
         self.menuEdit.addAction(self.moveByAction)
         self.menuEdit.addAction(self.moveOriginAction)
         self.menuEdit.addAction(self.stretchAction)
@@ -505,6 +510,7 @@ class editorWindow(QMainWindow):
         self.undoAction.triggered.connect(self.undoClick)
         self.redoAction.triggered.connect(self.redoClick)
         self.moveAction.triggered.connect(self.moveClick)
+        self.constrainedMoveAction.triggered.connect(self.constrainedMoveClick)
         self.moveByAction.triggered.connect(self.moveByClick)
         self.rotateAction.triggered.connect(self.rotateItemClick)
         self.verticalFlipAction.triggered.connect(self.verticalFlipClick)
@@ -518,6 +524,7 @@ class editorWindow(QMainWindow):
         self.redoAction.setShortcut("Shift+U")
         self.undoAction.setShortcut(Qt.Key.Key_U)
         self.objPropAction.setShortcut(Qt.Key.Key_Q)
+        self.constrainedMoveAction.setShortcut("Shift+M")
         self.copyAction.setShortcut(Qt.Key.Key_C)
         self.rotateAction.setShortcut("Ctrl+R")
         self.createTextAction.setShortcut("Shift+L")
@@ -654,6 +661,11 @@ class editorWindow(QMainWindow):
 
     def moveClick(self):
         self.centralW.scene.editModes.setMode("moveItem")
+        self.messageLine.setText(self.centralW.scene.messages[
+                                     self.centralW.scene.editModes.mode()])
+
+    def constrainedMoveClick(self):
+        self.centralW.scene.editModes.setMode("constrainedMoveItem")
         self.messageLine.setText(self.centralW.scene.messages[
                                      self.centralW.scene.editModes.mode()])
 

@@ -73,6 +73,7 @@ class editModes:
     selectItem: bool
     deleteItem: bool
     moveItem: bool
+    constrainedMoveItem: bool
     copyItem: bool
     rotateItem: bool
     changeOrigin: bool

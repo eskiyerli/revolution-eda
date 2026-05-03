@@ -73,24 +73,20 @@ class schematicScene(editorScene):
 
         # Initialize modes with default values
         self.editModes = ddef.schematicModes(selectItem=True, deleteItem=False,
-                                             moveItem=False, copyItem=False,
+                                             moveItem=False, constrainedMoveItem=False,
+                                             copyItem=False,
                                              rotateItem=False, changeOrigin=False,
                                              panView=False, zoomView=False, drawPin=False,
                                              drawWire=False, drawBus=False,
                                              drawText=False, addInstance=False,
                                              stretchItem=False, nameNet=False,
                                              alignItems=False)
-        self.messages = {'selectItem': 'Select Item', 'deleteItem': 'Delete Item',
-                         'moveItem': 'Move Item', 'copyItem': 'Copy Item',
-                         'rotateItem': 'Rotate Item',
-                         'changeOrigin': 'Change Origin',
-                         'panView': 'Pan View at mouse Press Position',
-                         'zoomView': 'Draw rectangle to zoom in',
-                         'stretchItem': 'Stretch Item', 'drawPin': 'Draw Pin',
-                         'drawWire': 'Draw Wire', 'drawBus': 'Draw Bus',
-                         'drawText': 'Draw Text', 'addInstance': 'Add Instance',
-                         'nameNet': 'Name Net', 'drawSymbol': 'Draw Symbol',
-                         'alignItems': 'Select alignment option.'}
+        # Merge with parent's messages
+        self.messages.update({
+            'drawPin': 'Draw Pin', 'drawWire': 'Draw Wire', 'drawBus': 'Draw Bus',
+            'drawText': 'Draw Text', 'addInstance': 'Add Instance',
+            'nameNet': 'Name Net', 'drawSymbol': 'Draw Symbol',
+        })
 
         self.selectModes = ddef.schematicSelectModes(selectAll=True,
                                                      selectDevice=False,

@@ -78,6 +78,7 @@ class symbolScene(editorScene):
             selectItem=True,
             deleteItem=False,
             moveItem=False,
+            constrainedMoveItem=False,
             copyItem=False,
             rotateItem=False,
             changeOrigin=False,
@@ -94,15 +95,8 @@ class symbolScene(editorScene):
             alignItems=False,
         )
 
-        self.messages = {
-            "selectItem": "Select Item.",
-            "deleteItem": "Click on item to delete.",
-            "moveItem": "Click and drag to move item.",
-            "copyItem": "Click on item to copy.",
-            "rotateItem": "Click on item to rotate.",
-            "changeOrigin": "Click to set new origin.",
-            "panView": "Click and drag to pan view.",
-            'zoomView': 'Draw rectangle to zoom in',
+        # Merge with parent's messages
+        self.messages.update({
             "drawPin": "Add a pin.",
             "drawArc": "Click for the first point of Arc.",
             "drawRect": "Click for the first point of Rectangle.",
@@ -110,9 +104,7 @@ class symbolScene(editorScene):
             "addLabel": "Adding a label.",
             "drawCircle": "Click for the centre of Circle.",
             "drawPolygon": "Click for the first point of Polygon.",
-            "stretchItem": "Click and drag to stretch item.",
-            "alignItems": "Select Align Option."
-        }
+        })
 
         self.symbolShapes = ["line", "arc", "rect", "circle", "pin", "label", "polygon"]
         self.attributeList = []  # list of symbol attributes
