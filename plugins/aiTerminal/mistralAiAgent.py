@@ -4,7 +4,7 @@
 #    Licensor: Revolution Semiconductor (Registered in the Netherlands)
 #
 
-"""Gemini AI Agent interface for design modifications."""
+"""Mistral AI Agent interface for design modifications."""
 
 import json
 import logging
@@ -12,14 +12,12 @@ import pathlib
 from datetime import datetime
 from typing import Any, Dict, Optional, Tuple
 
-
 logger = logging.getLogger(__name__)
 
 
-class GeminiAIAgent:
-    """Base class for Gemini AI agent integration."""
+class MistralAIAgent:
+    """Base class for Mistral AI agent integration."""
 
-    # Revolution EDA JSON schema guidance for the AI
     REVEDA_SCHEMA_HINT = (
         "Revolution EDA design files are JSON arrays of shape/item objects. "
         "Each schematic item has a 'type' key (e.g. 'schInstance', 'schNet', 'schPin', "
@@ -35,7 +33,6 @@ class GeminiAIAgent:
         self.design_file = design_file
         self.library_paths = library_paths
         self.api_key = None
-        self.max_context_tokens = 1_000_000  # Gemini 2.5 Flash limit
 
     def set_api_key(self, key: str):
         self.api_key = key
@@ -72,7 +69,6 @@ class GeminiAIAgent:
 
     def validate_paths(self, data: Dict[str, Any]) -> bool:
         """Ensure all explicit file references are within allowed library paths."""
-
         allowed = [lp.resolve() for lp in self.library_paths]
 
         def _check(obj) -> bool:
@@ -80,7 +76,6 @@ class GeminiAIAgent:
                 for key, value in obj.items():
                     if key in ("lib", "library", "path", "file") and isinstance(value, str):
                         candidate = pathlib.Path(value)
-                        # Only validate paths that look absolute or contain separators
                         if candidate.is_absolute() or "/" in value or "\\" in value:
                             resolved = candidate.resolve()
                             if not any(
@@ -122,29 +117,31 @@ class GeminiAIAgent:
 
         return "\n".join(lines)
 
+    def process_request(self, user_request: str) -> Tuple[bool, str]:
+        """Process user request — must be implemented by subclasses."""
+        raise NotImplementedError("Subclasses must implement process_request")
 
-class GeminiAgent(GeminiAIAgent):
-    """Gemini AI agent implementation."""
 
-    # Characters reserved for prompt overhead and response
-    _DESIGN_CHAR_BUDGET = 900_000
+class MistralAgent(MistralAIAgent):
+    """Mistral Large AI agent implementation."""
+
+    # Mistral Large context window is 128K tokens ≈ ~500K chars
+    _DESIGN_CHAR_BUDGET = 400_000
 
     def __init__(self, design_file: pathlib.Path, library_paths: list[pathlib.Path]):
         super().__init__(design_file, library_paths)
-        self.model = "gemini-2.5-flash"
-        self.temperature = 0.1
+        self.model = "mistral-large-latest"
 
     def process_request(self, user_request: str) -> Tuple[bool, str]:
-        """Process request using Gemini API."""
+        """Process request using Mistral API with JSON mode enforced."""
         if not self.api_key:
-            return False, "Gemini API key not set. Use set_api_key() method."
+            return False, "Mistral API key not set. Use set_api_key() method."
 
         try:
-            from google import genai
-            from google.genai import types
-            from google.genai.types import FinishReason
+            from mistralai import Mistral
+            from mistralai.models import SDKError
 
-            client = genai.Client(api_key=self.api_key)
+            client = Mistral(api_key=self.api_key)
 
             design_data = self.read_design()
             design_json = json.dumps(design_data, indent=2)
@@ -156,7 +153,7 @@ class GeminiAgent(GeminiAIAgent):
                     "request. Consider breaking the modification into smaller steps.",
                 )
 
-            system_prompt = (
+            system_content = (
                 f"{self.get_context(design_data)}\n\n"
                 f"Current design JSON:\n{design_json}\n\n"
                 "Instructions:\n"
@@ -165,64 +162,43 @@ class GeminiAgent(GeminiAIAgent):
                 "3. Return the COMPLETE modified JSON array — no partial output.\n"
                 "4. Do NOT use markdown, code fences, or any formatting.\n"
                 "5. Preserve the exact structure of unchanged items.\n"
-                f"\nUser request: {user_request}"
+                "6. If no design change is needed, reply with plain text only."
             )
 
-            safety_settings = [
-                types.SafetySetting(
-                    category="HARM_CATEGORY_HARASSMENT",
-                    threshold="BLOCK_MEDIUM_AND_ABOVE",
-                ),
-                types.SafetySetting(
-                    category="HARM_CATEGORY_HATE_SPEECH",
-                    threshold="BLOCK_MEDIUM_AND_ABOVE",
-                ),
-                types.SafetySetting(
-                    category="HARM_CATEGORY_SEXUALLY_EXPLICIT",
-                    threshold="BLOCK_MEDIUM_AND_ABOVE",
-                ),
-                types.SafetySetting(
-                    category="HARM_CATEGORY_DANGEROUS_CONTENT",
-                    threshold="BLOCK_MEDIUM_AND_ABOVE",
-                ),
-            ]
+            # Use streaming to avoid timeout on large designs
+            response_chunks = []
+            finish_reason = None
 
-            response = client.models.generate_content(
+            with client.messages.stream(
                 model=self.model,
-                contents=system_prompt,
-                config=types.GenerateContentConfig(
-                    temperature=self.temperature,
-                    top_p=0.8,
-                    top_k=40,
-                    max_output_tokens=65_536,
-                    safety_settings=safety_settings,
-                ),
-            )
+                messages=[
+                    {"role": "system", "content": system_content},
+                    {"role": "user", "content": user_request},
+                ],
+                max_tokens=32_768,
+                temperature=0.1,
+                # Mistral JSON mode — forces valid JSON output when modifying designs
+                response_format={"type": "json_object"},
+            ) as stream:
+                for chunk in stream:
+                    delta = chunk.data.choices[0].delta
+                    if delta.content:
+                        response_chunks.append(delta.content)
+                    finish_reason = chunk.data.choices[0].finish_reason
 
-            if not response.candidates:
-                return False, "Gemini response was blocked or empty."
-
-            candidate = response.candidates[0]
-            if candidate.finish_reason == FinishReason.MAX_TOKENS:
-                return False, "Gemini response was truncated (max_output_tokens reached). The design was not modified."
-            elif candidate.finish_reason != FinishReason.STOP:
+            if finish_reason == "length":
                 return (
                     False,
-                    f"Gemini response incomplete. Finish reason: {candidate.finish_reason}",
+                    "Mistral response was truncated (max_tokens reached). "
+                    "The design was not modified.",
                 )
+            if finish_reason not in ("stop", "eos_token"):
+                return False, f"Mistral response incomplete. Finish reason: {finish_reason}"
 
-            if not candidate.content or not candidate.content.parts:
-                return False, "Gemini returned empty content."
+            response_text = "".join(response_chunks).strip()
 
-            response_text = candidate.content.parts[0].text.strip()
-
-            # Strip markdown code fences if the model ignored instructions
-            if response_text.startswith("```"):
-                lines = response_text.splitlines()
-                # Remove opening fence (```json or ```) and closing fence (```)
-                start = 1
-                end = len(lines) - 1 if lines[-1].strip() == "```" else len(lines)
-                response_text = "\n".join(lines[start:end]).strip()
+            if not response_text:
+                return False, "Mistral returned an empty response."
 
             # Attempt to parse as JSON (design modification)
             try:
@@ -241,10 +217,10 @@ class GeminiAgent(GeminiAIAgent):
         except ImportError:
             return (
                 False,
-                "google-genai package not installed. Install with: pip install google-genai",
+                "mistralai package not installed. Install with: poetry add mistralai",
             )
         except (FileNotFoundError, ValueError) as e:
             return False, f"Design file error: {e}"
         except Exception as e:
-            logger.exception("Unexpected error in GeminiAgent.process_request")
+            logger.exception("Unexpected error in MistralAgent.process_request")
             return False, f"Error processing request: {e}"

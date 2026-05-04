@@ -9,26 +9,24 @@ import os
 import pathlib
 import shutil
 
-from PySide6.QtCore import Signal, QThreadPool
+from PySide6.QtCore import Signal, Slot, QThreadPool, QMetaObject, Qt
 from PySide6.QtGui import (QTextCursor, QFont)
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QTextEdit, QLineEdit,
                                QPushButton, QHBoxLayout, QLabel, QInputDialog, QComboBox)
 from cryptography.fernet import Fernet
-
 import aiTerminal.claudeAiAgent as aia
 import aiTerminal.geminiAiAgent as gaia
+import aiTerminal.mistralAiAgent as maia
+from revedaEditor.backend.startThread import startThread
 
 
 def toggleAITerminal(editorWindow):
     """Toggle AI Terminal for the given editor window."""
     if not hasattr(editorWindow, 'aiTerminal'):
         editorWindow.aiTerminal = aiTerminal(editorWindow)
-        if hasattr(editorWindow, 'loadSchematic'):
-            editorWindow.aiTerminal.reloadRequested.connect(editorWindow.loadSchematic)
-        elif hasattr(editorWindow, 'loadLayout'):
-            editorWindow.aiTerminal.reloadRequested.connect(editorWindow.loadLayout)
-        elif hasattr(editorWindow, 'updateDesignScene'):
-            editorWindow.aiTerminal.reloadRequested.connect(editorWindow.updateDesignScene)
+        # Reload via the scene's reloadScene() which handles clear + loadDesign safely
+        if hasattr(editorWindow, 'scene') and hasattr(editorWindow.scene, 'reloadScene'):
+            editorWindow.aiTerminal.reloadRequested.connect(editorWindow.scene.reloadScene)
 
         # Inject into layout if possible
         if hasattr(editorWindow, 'centralW') and editorWindow.centralW.layout():
@@ -76,7 +74,7 @@ class aiTerminal(QWidget):
         titleLayout.addStretch()
         titleLayout.addWidget(QLabel("Model:"))
         self.modelCombo = QComboBox()
-        self.modelCombo.addItems(["Claude", "OpenAI", "Gemini"])
+        self.modelCombo.addItems(["Claude", "OpenAI", "Gemini", "Mistral"])
         self.modelCombo.currentTextChanged.connect(self.onModelChanged)
         titleLayout.addWidget(self.modelCombo)
         layout.addLayout(titleLayout)
@@ -213,6 +211,9 @@ class aiTerminal(QWidget):
         elif model_name == "Gemini":
             self.aiAgent = gaia.GeminiAgent(self.editorWindow.file, lib_paths)
             provider_key = "gemini"
+        elif model_name == "Mistral":
+            self.aiAgent = maia.MistralAgent(self.editorWindow.file, lib_paths)
+            provider_key = "mistral"
         else:
             self.appendOutput(f"Unknown model: {model_name}")
             return
@@ -269,7 +270,7 @@ Example:
     def setAPIKey(self):
         """Prompt user for API key."""
         current_model = self.modelCombo.currentText()
-        provider_map = {"Claude": "claude", "OpenAI": "openai", "Gemini": "gemini"}
+        provider_map = {"Claude": "claude", "OpenAI": "openai", "Gemini": "gemini", "Mistral": "mistral"}
         provider_key = provider_map.get(current_model, "claude")
 
         key, ok = QInputDialog.getText(self, "API Key",
@@ -313,12 +314,39 @@ Example:
 
         if success:
             self.appendOutput("Reloading design...")
-            self.reloadRequested.emit()
+            # Run reload in separate thread to prevent UI blocking
+            reload_worker = startThread(self._performReload, None)
+            reload_worker.signals.result.connect(self.onReloadComplete)
+            reload_worker.signals.error.connect(self.onReloadError)
+            self.threadpool.start(reload_worker)
 
     def onAIRequestError(self, error):
         """Handle AI request error."""
         error_type, error_args, error_str = error
         self.appendOutput(f"AI request failed: {error_str}")
+
+    def _performReload(self, _):
+        """Emit reloadRequested in the main thread after a short settle delay."""
+        import time
+        time.sleep(0.1)
+        QMetaObject.invokeMethod(self, "_emitReload", Qt.QueuedConnection)
+        return True, "Design reloaded successfully"
+
+    @Slot()
+    def _emitReload(self):
+        """Slot called on the main thread to trigger scene reload."""
+        self.reloadRequested.emit()
+
+    def onReloadComplete(self, result):
+        """Handle reload completion."""
+        success, message = result
+        if success:
+            self.appendOutput("Design reloaded successfully")
+
+    def onReloadError(self, error):
+        """Handle reload error."""
+        error_type, error_args, error_str = error
+        self.appendOutput(f"Reload failed: {error_str}")
 
     def readDesignFile(self):
         try:
