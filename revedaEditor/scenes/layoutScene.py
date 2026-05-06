@@ -62,8 +62,6 @@ from revedaEditor.backend.pdkLoader import importPDKModule
 from revedaEditor.gui.alignItems import alignItemsDialogue, alignToLine
 from revedaEditor.scenes.editorScene import editorScene
 
-# from contextlib import contextmanager
-
 fabproc = importPDKModule("process")
 laylyr = importPDKModule("layoutLayers")
 schlyr = importPDKModule("schLayers")
@@ -232,7 +230,7 @@ class layoutScene(editorScene):
         return point.toPoint() if isinstance(point, QPointF) else point
 
     def mousePressEvent(self, event: QGraphicsSceneMouseEvent) -> None:
-                        
+
         self.mousePressLoc = event.scenePos().toPoint()
         if self.editModes.cutShape:
             self.startCutLine()
@@ -407,7 +405,7 @@ class layoutScene(editorScene):
         else:  # Polygon
             points = item.points
             shape_name = "Polygon"
-        
+
         intersections = []
 
         # Find all intersection points with shape edges
@@ -907,7 +905,7 @@ class layoutScene(editorScene):
         format_upper = format_type.upper()
         file_extension = ".gds" if format_upper == "GDS" else ".oas"
         export_path = export_dir / f"{self.cellName}{file_extension}"
-        
+
         try:
             # reprocess the layout to get the layout positions right.
             topLevelItems = [

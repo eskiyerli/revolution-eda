@@ -33,7 +33,7 @@ from PySide6.QtWidgets import (
 
 
 class PluginRegistryWindow(QMainWindow):
-    DEFAULT_REGISTRY = "https://raw.githubusercontent.com/eskiyerli/revolutionEDA_plugins/main/plugins.json"
+    DEFAULT_REGISTRY = "https://plugins.reveda.eu/plugins.json"
 
     def __init__(
         self,
@@ -239,8 +239,41 @@ class PluginRegistryWindow(QMainWindow):
 
             os.remove(tmp_path)
             self.fetch_registry()
+            # Track successful download
+            self._track_download(entry, url)
         except Exception as e:
             QMessageBox.critical(self, "Error", str(e))
+
+    def _track_download(self, entry: dict, url: str):
+        """Emit analytics event for plugin download/install."""
+        try:
+            import urllib.request
+            import json
+
+            payload = json.dumps({
+                "api_key": "phc_YOUR_PROJECT_API_KEY",  # Replace with your PostHog project API key
+                "event": "plugin_downloaded",
+                "properties": {
+                    "plugin_name": entry.get("name"),
+                    "plugin_version": entry.get("version"),
+                    "plugin_license": entry.get("license"),
+                    "download_url": url,
+                    "platform": f"{platform.system()}-{platform.machine()}",
+                    "python_version": f"{sys.version_info.major}.{sys.version_info.minor}",
+                    "distinct_id": f"reveda_{platform.node()}",
+                }
+            }).encode()
+
+            req = urllib.request.Request(
+                "https://eu.i.posthog.com/capture/",
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=5):
+                pass
+        except Exception:
+            pass  # silently ignore analytics failures
 
     def _get_binary_url(self, entry: dict) -> str | None:
         binary_urls = entry.get("binary_urls", {})
