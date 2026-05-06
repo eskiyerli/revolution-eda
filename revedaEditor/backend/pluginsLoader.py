@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
     QApplication,
 )
 
+from revedaEditor.backend import licenseManager
 from revedaEditor.backend.dataDefinitions import viewItemTuple
 
 
@@ -53,6 +54,21 @@ class pluginsLoader:
 
     def __repr__(self):
         return f"plugins({list(self.plugins.keys())})"
+
+    @staticmethod
+    def _plugin_requires_license(plugin_name: str, plugin_config: dict) -> bool:
+        if plugin_config.get("license_required", False):
+            return True
+        license_type = plugin_config.get("license", "")
+        return license_type in ("Commercial", "Proprietary", "Paid")
+
+    def _wrap_callback_with_license(self, callback, plugin_name: str, payment_url: str | None):
+        def licensed_callback(editorWindow):
+            if licenseManager.check_and_prompt_license(
+                plugin_name, payment_url, editorWindow
+            ):
+                callback(editorWindow)
+        return licensed_callback
 
     def _loadPluginMenus(self):
         """Load plugin menu configurations from JSON file"""
@@ -100,6 +116,13 @@ class pluginsLoader:
                 if not callback:
                     continue
 
+                # Wrap with license gate if required
+                if self._plugin_requires_license(plugin_name, plugin_config):
+                    payment_url = plugin_config.get("payment_url")
+                    callback = self._wrap_callback_with_license(
+                        callback, plugin_name, payment_url
+                    )
+
                 # Find target menu and add action
                 if hasattr(editorWindow, menuItem["location"]):
                     for action in editorWindow.menuBar().actions():
@@ -120,12 +143,21 @@ class pluginsLoader:
                             action.menu().addAction(new_action)
                             break
 
-    def createCellView(self, viewItemT: viewItemTuple):
+    def _check_license_or_prompt(self, plugin_name: str, plugin_config: dict) -> bool:
+        if not self._plugin_requires_license(plugin_name, plugin_config):
+            return True
+        payment_url = plugin_config.get("payment_url")
+        parent = QApplication.activeWindow()
+        return licenseManager.check_and_prompt_license(plugin_name, payment_url, parent)
 
+    def createCellView(self, viewItemT: viewItemTuple):
         for pluginName, pluginModule in self.plugins.items():
             if hasattr(
                 pluginModule, "viewTypes"
             ) and viewItemT.viewItem.viewType in getattr(pluginModule, "viewTypes"):
+                plugin_config = self.pluginMenuConfig.get(pluginName, {})
+                if not self._check_license_or_prompt(pluginName, plugin_config):
+                    return False
                 pluginModule.createCellView(viewItemT)
                 return True
         else:
@@ -139,6 +171,9 @@ class pluginsLoader:
             if hasattr(
                 pluginModule, "viewTypes"
             ) and viewItemT.viewItem.viewType in getattr(pluginModule, "viewTypes"):
+                plugin_config = self.pluginMenuConfig.get(pluginName, {})
+                if not self._check_license_or_prompt(pluginName, plugin_config):
+                    return False
                 pluginModule.openCellView(viewItemT)
                 return True
         else:
