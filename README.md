@@ -177,30 +177,26 @@ Full documentation is available in the `docs/` directory and covers:
 
 ## License
 
-Revolution EDA is **source-available** software, licensed under the
-[Mozilla Public License 2.0](https://mozilla.org/MPL/2.0/) as modified by the
-[Commons Clause](https://commonsclause.com/) condition.
+Revolution EDA is licensed under the [Mozilla Public License 2.0](https://mozilla.org/MPL/2.0/).
 
-You may use, modify, and distribute the source code freely **except** that you may not
-sell a product or service whose value derives substantially from the functionality of
-this software. This prohibition covers, without limitation:
+This is a free and open-source software license that allows you to:
 
-- Paid hosting or cloud/internet-delivered services built around Revolution EDA
-- Resale of the software itself or a rebranded derivative
+- **Use** the software for any purpose
+- **Modify** the source code
+- **Distribute** the software and your modifications
+- **Sell** products and services that incorporate Revolution EDA
+- **Create commercial derivatives** and rebranded versions
 
-The following activities are **explicitly permitted** and are **not** restricted:
+The MPL 2.0 is a weak copyleft license that requires:
+- Making source code modifications available under the same license
+- Preserving license notices in distributed copies
+- Not using the Revolution Semiconductor trademarks without permission
 
-- Consulting, training, integration, or support engagements where the Software is
-  a tool used in delivering services, not the product being sold
+### Plugin and PDK Licensing
 
-> **Note:** Revolution EDA is not "open source" as defined by the OSI or FSF because of
-> the Commons Clause restriction.
-
-### Commercial Licensing
-
-If your use case falls within the restrictions above and you require a commercial
-license, please contact **Revolution Semiconductor** at
-[info@reveda.eu](mailto:info@reveda.eu) to discuss terms.
+While the main Revolution EDA application uses MPL 2.0, plugins, PDKs (Process Design Kits), and 
+libraries may have their own separate licensing terms. Please check the individual license 
+files for each component.
 
 See [LICENSE.txt](LICENSE.txt) for the full license text.
 

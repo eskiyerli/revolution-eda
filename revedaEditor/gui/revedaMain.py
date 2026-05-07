@@ -94,7 +94,7 @@ class mainwContainer(QWidget):
         )
         self.console.writeoutput("Revolution Semiconductor (C) 2026.")
         self.console.writeoutput(
-            "Mozilla Public License v2.0 modified with Commons Clause"
+            "Mozilla Public License v2.0"
         )
         # layout statements, using a grid layout
         gLayout = QVBoxLayout()
