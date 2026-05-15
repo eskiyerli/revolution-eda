@@ -8,3 +8,5 @@ library.json
 reveda.conf
 revedaLicense/
 *.zip
+.env*
+*.xml

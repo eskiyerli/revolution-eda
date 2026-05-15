@@ -22,7 +22,7 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QUrl
+from PySide6.QtCore import Qt, QUrl, QThread, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QApplication,
@@ -39,6 +39,43 @@ from PySide6.QtWidgets import (
     QWidget,
     QHeaderView,
 )
+
+
+class DownloadThread(QThread):
+    progress = Signal(int)
+    finished = Signal(bytes)
+    error = Signal(str)
+    
+    def __init__(self, url: str):
+        super().__init__()
+        self.url = url
+    
+    def run(self):
+        try:
+            with urllib.request.urlopen(self.url) as resp:
+                content_length = resp.headers.get('Content-Length')
+                total_size = int(content_length) if content_length else 0
+                downloaded = 0
+                chunks = []
+                
+                while True:
+                    chunk = resp.read(8192)
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+                    downloaded += len(chunk)
+                    
+                    if total_size > 0:
+                        progress = int((downloaded / total_size) * 100)
+                        self.progress.emit(min(progress, 100))
+                    else:
+                        # If no content length, show indeterminate progress
+                        self.progress.emit(0)
+                
+                content = b''.join(chunks)
+                self.finished.emit(content)
+        except Exception as e:
+            self.error.emit(str(e))
 
 
 class PluginRegistryWindow(QMainWindow):
@@ -258,12 +295,25 @@ class PluginRegistryWindow(QMainWindow):
                 return
             shutil.rmtree(target_subdir, ignore_errors=True)
 
+        # Reset and show progress bar
+        self.progress.setValue(0)
+        self.progress.setVisible(True)
+        self.download_btn.setEnabled(False)
+        
+        # Create download thread
+        self.download_thread = DownloadThread(url)
+        self.download_thread.progress.connect(self.progress.setValue)
+        self.download_thread.finished.connect(lambda content: self._on_download_complete(content, url, target_subdir))
+        self.download_thread.error.connect(self._on_download_error)
+        self.download_thread.start()
+    
+    def _on_download_complete(self, content: bytes, url: str, target_subdir: Path):
+        """Handle successful download completion."""
         try:
-            with urllib.request.urlopen(url) as resp:
-                tmp_fd, tmp_path = tempfile.mkstemp()
-                os.close(tmp_fd)
-                with open(tmp_path, "wb") as out:
-                    out.write(resp.read())
+            tmp_fd, tmp_path = tempfile.mkstemp()
+            os.close(tmp_fd)
+            with open(tmp_path, "wb") as out:
+                out.write(content)
 
             self.pluginsDir.mkdir(parents=True, exist_ok=True)
             if url.lower().endswith(".zip"):
@@ -276,11 +326,34 @@ class PluginRegistryWindow(QMainWindow):
                 )
 
             os.remove(tmp_path)
+            self.progress.setValue(100)
             self.fetch_registry()
             # Track successful download
-            self._track_download(entry, url)
+            entry = self._get_current_entry()
+            if entry:
+                self._track_download(entry, url)
         except Exception as e:
             QMessageBox.critical(self, "Error", str(e))
+        finally:
+            self.download_btn.setEnabled(True)
+            # Hide progress bar after a delay
+            QApplication.instance().processEvents()
+            
+    def _on_download_error(self, error_msg: str):
+        """Handle download error."""
+        QMessageBox.critical(self, "Download Error", f"Failed to download: {error_msg}")
+        self.download_btn.setEnabled(True)
+        self.progress.setValue(0)
+    
+    def _get_current_entry(self) -> dict | None:
+        """Get the currently selected registry entry."""
+        current_row = self.tableWidget.currentRow()
+        if current_row < 0:
+            return None
+        item = self.tableWidget.item(current_row, 0)
+        if not item:
+            return None
+        return item.data(Qt.ItemDataRole.UserRole)
 
     def _track_download(self, entry: dict, url: str):
         """Emit analytics event for plugin download/install."""
@@ -375,31 +448,25 @@ class PluginRegistryWindow(QMainWindow):
             )
             return False
 
-        try:
-            with urllib.request.urlopen(url) as resp:
-                content = resp.read()
-        except urllib.error.HTTPError as e:
-            if e.code == 404:
-                QMessageBox.warning(
-                    self,
-                    "License Module Not Found",
-                    f"The license module was not found on the server for your platform.\n"
-                    f"URL: {url}\n\n"
-                    f"Please contact support or install the module manually.",
-                )
-            else:
-                QMessageBox.critical(
-                    self,
-                    "Download Error",
-                    f"Failed to download revedaLicense ({e.code}): {e.reason}",
-                )
-            return False
-        except Exception as e:
-            QMessageBox.critical(
-                self, "Download Error", f"Failed to download revedaLicense:\n{e}"
-            )
-            return False
-
+        # Reset and show progress bar
+        self.progress.setValue(0)
+        self.progress.setVisible(True)
+        self.download_btn.setEnabled(False)
+        
+        # Create download thread
+        self.license_download_thread = DownloadThread(url)
+        self.license_download_thread.progress.connect(self.progress.setValue)
+        self.license_download_thread.finished.connect(self._on_license_download_complete)
+        self.license_download_thread.error.connect(self._on_license_download_error)
+        self.license_download_thread.start()
+        
+        # Wait for completion (blocking since we need to return result)
+        self.license_download_thread.wait()
+        return hasattr(self, '_license_download_success') and self._license_download_success
+    
+    def _on_license_download_complete(self, content: bytes):
+        """Handle successful license download completion."""
+        url = self._revedaLicense_url()
         app_root = self._app_root()
         filename = Path(url).name
         target = app_root / filename
@@ -411,12 +478,33 @@ class PluginRegistryWindow(QMainWindow):
                 target.chmod(target.stat().st_mode | 0o755)
             # Invalidate import caches so the new module can be found
             importlib.invalidate_caches()
-            return True
+            self._license_download_success = True
         except Exception as e:
             QMessageBox.critical(
                 self, "Install Error", f"Failed to write revedaLicense module:\n{e}"
             )
-            return False
+            self._license_download_success = False
+        finally:
+            self.download_btn.setEnabled(True)
+    
+    def _on_license_download_error(self, error_msg: str):
+        """Handle license download error."""
+        if "404" in error_msg:
+            url = self._revedaLicense_url()
+            QMessageBox.warning(
+                self,
+                "License Module Not Found",
+                f"The license module was not found on the server for your platform.\n"
+                f"URL: {url}\n\n"
+                f"Please contact support or install the module manually.",
+            )
+        else:
+            QMessageBox.critical(
+                self, "Download Error", f"Failed to download revedaLicense: {error_msg}"
+            )
+        self._license_download_success = False
+        self.download_btn.setEnabled(True)
+        self.progress.setValue(0)
 
     def _ensure_revedaLicense(self) -> bool:
         """Ensure the compiled revedaLicense module is available.

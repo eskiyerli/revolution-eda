@@ -3,7 +3,7 @@ name = "revolution-eda"
 version = "0.8.11"
 description = "Custom IC Design Environment for Professionals"
 authors = ["Revolution Semiconductor <48187772+eskiyerli@users.noreply.github.com>"]
-license = "Mozilla Public License v2 modified by Commons Clause"
+license = "Mozilla Public License v2"
 readme = "README.md"
 packages = [
     { include = "revedaEditor" },
@@ -17,7 +17,7 @@ documentation = "https://github.com/eskiyerli/revolution-eda/tree/master/docs"
 keywords = ["EDA", "IC Design", "Semiconductor", "Layout", "Schematic"]
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: Other/Proprietary License",
+    "License :: OSI Approved :: Mozilla Public License 2.0 (MPL 2.0)",
     "Operating System :: OS Independent",
     "Intended Audience :: Science/Research",
     "Topic :: Scientific/Engineering :: Electronic Design Automation (EDA)"
@@ -29,24 +29,25 @@ include = [
 exclude = [
     "tests",
     "examples",
-    "icons"
+    "icons",
+    "revedaLicense"
 ]
 
 [tool.poetry.dependencies]
 python = ">=3.12,<3.15"
-PySide6 = ">=6.10.0"
-quantiphy = "~2.20"
-python-dotenv = "~1.2.0"
-numpy = "~2.3.1"
-gdstk = "~0.9.62"
-markdown = "^3.9"
-lxml = "^6.0.0"
-polars = "~1.35.0"
-orjson = "^3.11.4"
+PySide6 = ">=6.11.1"
+quantiphy = "~2.21"
+python-dotenv = "~1.2.2"
+numpy = "~2.4.4"
+gdstk = "~1.0.0"
+markdown = "^3.10.2"
+lxml = "^6.1.0"
+polars = "~1.40.1"
+orjson = "^3.11.9"
 anthropic = "^0.75.0"
 google-genai = "^1.74.0"
-mistralai = "^1.0.0"
-httpx = "^0.28.0"
+mistralai = "^1.12.4"
+httpx = "^0.28.1"
 cryptography = "^46.0.3"
 
 
