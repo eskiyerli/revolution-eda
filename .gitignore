@@ -6,7 +6,5 @@ dist/
 build/
 library.json
 reveda.conf
-.env
-scripts/generate_keypair.py
-scripts/generate_license.py
-scripts/PRE_SHIP_CHECKLIST.md
+revedaLicense/
+*.zip

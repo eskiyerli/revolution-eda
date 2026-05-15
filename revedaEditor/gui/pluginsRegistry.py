@@ -1,9 +1,16 @@
-#    "Commons Clause" License Condition v1.0
+# 
+# Revolution EDA
+# 
+# Copyright (c) 2026 Revolution Semiconductor
 #
-#    Software: Revolution EDA
-#    License: Mozilla Public License 2.0
-#    Licensor: Revolution Semiconductor (Registered in the Netherlands)
+# This Source Code Form is subject to the terms of the
+# Mozilla Public License, v. 2.0.
+# If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+##
 
+
+import importlib
 import json
 import os
 import platform
@@ -15,8 +22,10 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QUrl
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
+    QApplication,
     QHBoxLayout,
     QLabel,
     QTableWidget,
@@ -54,6 +63,7 @@ class PluginRegistryWindow(QMainWindow):
         )
         self.pluginsDir = self.pluginsDir.resolve()
 
+        self._current_payment_url = None
         self._initUI()
         self._registry = []
         self.fetch_registry()
@@ -90,17 +100,21 @@ class PluginRegistryWindow(QMainWindow):
         self.desc.setReadOnly(True)
         right_l.addWidget(self.desc, 1)
         self.download_btn = QPushButton("Download / Install")
+        self.buy_btn = QPushButton("Buy License")
+        self.buy_btn.setVisible(False)
         self.uninstall_btn = QPushButton("Uninstall")
         self.progress = QProgressBar()
         self.progress.setRange(0, 100)
         right_l.addWidget(self.progress)
         right_l.addWidget(self.download_btn)
+        right_l.addWidget(self.buy_btn)
         right_l.addWidget(self.uninstall_btn)
         main_l.addWidget(right_w, 2)
 
         self.tableWidget.itemSelectionChanged.connect(self._onSelect)
         self.tableWidget.itemDoubleClicked.connect(self._on_item_activated)
         self.download_btn.clicked.connect(self._on_download)
+        self.buy_btn.clicked.connect(self._on_buy)
         self.uninstall_btn.clicked.connect(self._on_uninstall)
         self.refresh_btn.clicked.connect(self.fetch_registry)
 
@@ -161,8 +175,17 @@ class PluginRegistryWindow(QMainWindow):
             url_text = f"Binary URLs: {entry.get('binary_urls', {})}"
         else:
             url_text = f"URL: {entry.get('url', '')}"
+        payment_url = entry.get('payment_url', '')
+        if payment_url:
+            url_text += f"\nCheckout: {payment_url}"
         text = f"{entry.get('description', '')}\n\nType: {entry.get('type', 'source').title()}\nVersion: {entry.get('version', 'N/A')}\nLicense: {entry.get('license', 'Unknown')}\n{url_text}"
         self.desc.setPlainText(text)
+
+        # Show Buy button only for paid plugins with a payment URL
+        license_type = entry.get('license', '')
+        is_paid = license_type in ('Commercial', 'Proprietary', 'Paid') or entry.get('license_required', False)
+        self.buy_btn.setVisible(is_paid and bool(payment_url))
+        self._current_payment_url = payment_url if is_paid else None
 
     def _on_item_activated(self, item: QTableWidgetItem):
         entry = item.data(Qt.ItemDataRole.UserRole) or {}
@@ -196,7 +219,22 @@ class PluginRegistryWindow(QMainWindow):
             if ret == QMessageBox.StandardButton.Yes:
                 self._install_entry(entry)
 
+    def _on_buy(self):
+        if self._current_payment_url:
+            QDesktopServices.openUrl(QUrl(self._current_payment_url))
+            QMessageBox.information(
+                self,
+                "Payment Page Opened",
+                "A payment page has been opened in your browser. "
+                "After completing the purchase, your license key will be sent to you by email.",
+            )
+
     def _install_entry(self, entry: dict):
+        # Commercial plugins need the compiled revedaLicense module
+        if self._plugin_requires_license(entry):
+            if not self._ensure_revedaLicense():
+                return
+
         name = re.sub(r"[^A-Za-z0-9_.-]", "_", entry.get("name", "plugin"))
         url = (
             self._get_binary_url(entry)
@@ -251,7 +289,7 @@ class PluginRegistryWindow(QMainWindow):
             import json
 
             payload = json.dumps({
-                "api_key": "phc_YOUR_PROJECT_API_KEY",  # Replace with your PostHog project API key
+                "api_key": "phc_x4FKMrfv531eW4oLBuMExK6swzZ73yDHlLOIOmkVpUT",  # Replace with your PostHog project API key
                 "event": "plugin_downloaded",
                 "properties": {
                     "plugin_name": entry.get("name"),
@@ -290,6 +328,118 @@ class PluginRegistryWindow(QMainWindow):
                 return binary_urls[key]
 
         return entry.get("url")
+
+    @staticmethod
+    def _plugin_requires_license(entry: dict) -> bool:
+        """Return True if the plugin entry requires a commercial license."""
+        if entry.get("license_required", False):
+            return True
+        return entry.get("license", "") in ("Commercial", "Proprietary", "Paid")
+
+    def _app_root(self) -> Path:
+        """Return the Revolution EDA application root directory."""
+        app = QApplication.instance()
+        if app and hasattr(app, "basePath"):
+            return app.basePath
+        # Fallback: parent of revedaEditor package
+        return Path(__file__).resolve().parents[2]
+
+    def _revedaLicense_url(self) -> str | None:
+        """Construct the download URL for the compiled revedaLicense extension."""
+        system = platform.system().lower()
+        major = sys.version_info.major
+        minor = sys.version_info.minor
+        base = "https://plugins.reveda.eu/revedaLicense"
+
+        if system == "linux":
+            arch = platform.machine().lower()
+            return f"{base}/revedaLicense.cpython-{major}{minor}-{arch}-linux-gnu.so"
+        elif system == "windows":
+            return f"{base}/revedaLicense.cp{major}{minor}-win_amd64.pyd"
+        elif system == "darwin":
+            return f"{base}/revedaLicense.cpython-{major}{minor}-darwin.so"
+        return None
+
+    def _download_revedaLicense(self) -> bool:
+        """Download and install the compiled revedaLicense extension.
+
+        Returns True on success, False otherwise.
+        """
+        url = self._revedaLicense_url()
+        if not url:
+            QMessageBox.warning(
+                self,
+                "Unsupported Platform",
+                "Automatic download of the license module is not available for your platform.\n"
+                "Please install the revedaLicense module manually.",
+            )
+            return False
+
+        try:
+            with urllib.request.urlopen(url) as resp:
+                content = resp.read()
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                QMessageBox.warning(
+                    self,
+                    "License Module Not Found",
+                    f"The license module was not found on the server for your platform.\n"
+                    f"URL: {url}\n\n"
+                    f"Please contact support or install the module manually.",
+                )
+            else:
+                QMessageBox.critical(
+                    self,
+                    "Download Error",
+                    f"Failed to download revedaLicense ({e.code}): {e.reason}",
+                )
+            return False
+        except Exception as e:
+            QMessageBox.critical(
+                self, "Download Error", f"Failed to download revedaLicense:\n{e}"
+            )
+            return False
+
+        app_root = self._app_root()
+        filename = Path(url).name
+        target = app_root / filename
+
+        try:
+            target.write_bytes(content)
+            # Ensure the extension is executable on Unix
+            if platform.system() != "Windows":
+                target.chmod(target.stat().st_mode | 0o755)
+            # Invalidate import caches so the new module can be found
+            importlib.invalidate_caches()
+            return True
+        except Exception as e:
+            QMessageBox.critical(
+                self, "Install Error", f"Failed to write revedaLicense module:\n{e}"
+            )
+            return False
+
+    def _ensure_revedaLicense(self) -> bool:
+        """Ensure the compiled revedaLicense module is available.
+
+        Returns True if already present or successfully downloaded.
+        """
+        try:
+            import revedaLicense  # noqa: F401
+            return True
+        except ImportError:
+            pass
+
+        ret = QMessageBox.question(
+            self,
+            "License Module Required",
+            "The revedaLicense module is required for commercial plugins but is not installed.\n\n"
+            "Would you like to download and install it now?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if ret != QMessageBox.StandardButton.Yes:
+            return False
+
+        return self._download_revedaLicense()
 
     def _on_uninstall(self):
         current_row = self.tableWidget.currentRow()

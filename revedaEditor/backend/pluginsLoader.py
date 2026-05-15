@@ -38,9 +38,32 @@ class pluginsLoader:
                 self._app.logger.error(f"Failed to load plugin {name}: {e}")
         self._app.logger.info(f"Loaded plugins: {list(self.plugins.keys())}")
         self._loadPluginMenus()
+        self._validateStoredLicenses()
 
     def __repr__(self):
         return f"plugins({list(self.plugins.keys())})"
+
+    def _validateStoredLicenses(self):
+        """Silently validate stored Polar licenses at startup.
+
+        Logs a warning for any plugin whose stored license is no longer valid
+        (revoked, expired, or fingerprint mismatch) so the user is informed
+        before they try to use the plugin.
+        """
+        from revedaEditor.backend import polarLicenseManager
+        for plugin_name, plugin_config in self.pluginMenuConfig.items():
+            if not self._plugin_requires_license(plugin_name, plugin_config):
+                continue
+            lic_file = polarLicenseManager._polar_license_file(plugin_name)
+            if not lic_file.exists():
+                continue
+            valid = polarLicenseManager.has_valid_polar_license(plugin_name)
+            if not valid:
+                err = polarLicenseManager.get_last_error()
+                msg = f"License for '{plugin_name}' is no longer valid"
+                if err:
+                    msg += f": {err}"
+                self._app.logger.warning(msg)
 
     @staticmethod
     def _plugin_requires_license(plugin_name: str, plugin_config: dict) -> bool:
@@ -49,7 +72,9 @@ class pluginsLoader:
         license_type = plugin_config.get("license", "")
         return license_type in ("Commercial", "Proprietary", "Paid")
 
-    def _wrap_callback_with_license(self, callback, plugin_name: str, payment_url: str | None):
+    def _wrap_callback_with_license(
+        self, callback, plugin_name: str, payment_url: str | None
+    ):
         def licensed_callback(editorWindow):
             if licenseManager.check_and_prompt_license(
                 plugin_name, payment_url, editorWindow
@@ -99,8 +124,31 @@ class pluginsLoader:
                 if "apply" in menuItem and editorClassName not in menuItem["apply"]:
                     continue
                 # Get callback
-                callback = getattr(module, menuItem["callback"], None)
-                if not callback:
+                try:
+                    callback = getattr(module, menuItem["callback"], None)
+                except RuntimeError as e:
+                    # Compiled plugins may enforce licensing inside __getattr__.
+                    # Provide a stub that opens the activation dialog and retries.
+                    msg = str(e).lower()
+                    if "license" not in msg and "revedaLicense" not in msg:
+                        raise
+                    payment_url = plugin_config.get("payment_url")
+
+                    def _stub_callback(
+                        editorWindow,
+                        pn=plugin_name,
+                        pu=payment_url,
+                        mod=module,
+                        cb_name=menuItem["callback"],
+                    ):
+                        if licenseManager.check_and_prompt_license(
+                            pn, pu, editorWindow
+                        ):
+                            real_cb = getattr(mod, cb_name)
+                            real_cb(editorWindow)
+
+                    callback = _stub_callback
+                if callback is None:
                     continue
 
                 # Wrap with license gate if required
@@ -135,7 +183,9 @@ class pluginsLoader:
             return True
         payment_url = plugin_config.get("payment_url")
         parent = QApplication.activeWindow()
-        return licenseManager.check_and_prompt_license(plugin_name, payment_url, parent)
+        return licenseManager.check_and_prompt_license(
+            plugin_name, payment_url, parent
+        )
 
     def createCellView(self, viewItemT: viewItemTuple):
         for pluginName, pluginModule in self.plugins.items():
@@ -145,7 +195,16 @@ class pluginsLoader:
                 plugin_config = self.pluginMenuConfig.get(pluginName, {})
                 if not self._check_license_or_prompt(pluginName, plugin_config):
                     return False
-                pluginModule.createCellView(viewItemT)
+                try:
+                    pluginModule.createCellView(viewItemT)
+                except RuntimeError as e:
+                    msg = str(e).lower()
+                    if "license" not in msg and "revedaLicense" not in msg:
+                        raise
+                    if self._check_license_or_prompt(pluginName, plugin_config):
+                        pluginModule.createCellView(viewItemT)
+                    else:
+                        return False
                 return True
         else:
             self._app.logger.warning(
@@ -161,7 +220,16 @@ class pluginsLoader:
                 plugin_config = self.pluginMenuConfig.get(pluginName, {})
                 if not self._check_license_or_prompt(pluginName, plugin_config):
                     return False
-                pluginModule.openCellView(viewItemT)
+                try:
+                    pluginModule.openCellView(viewItemT)
+                except RuntimeError as e:
+                    msg = str(e).lower()
+                    if "license" not in msg and "revedaLicense" not in msg:
+                        raise
+                    if self._check_license_or_prompt(pluginName, plugin_config):
+                        pluginModule.openCellView(viewItemT)
+                    else:
+                        return False
                 return True
         else:
             self._app.logger.warning(
