@@ -38,32 +38,9 @@ class pluginsLoader:
                 self._app.logger.error(f"Failed to load plugin {name}: {e}")
         self._app.logger.info(f"Loaded plugins: {list(self.plugins.keys())}")
         self._loadPluginMenus()
-        self._validateStoredLicenses()
 
     def __repr__(self):
         return f"plugins({list(self.plugins.keys())})"
-
-    def _validateStoredLicenses(self):
-        """Silently validate stored Polar licenses at startup.
-
-        Logs a warning for any plugin whose stored license is no longer valid
-        (revoked, expired, or fingerprint mismatch) so the user is informed
-        before they try to use the plugin.
-        """
-        from revedaEditor.backend import polarLicenseManager
-        for plugin_name, plugin_config in self.pluginMenuConfig.items():
-            if not self._plugin_requires_license(plugin_name, plugin_config):
-                continue
-            lic_file = polarLicenseManager._polar_license_file(plugin_name)
-            if not lic_file.exists():
-                continue
-            valid = polarLicenseManager.has_valid_polar_license(plugin_name)
-            if not valid:
-                err = polarLicenseManager.get_last_error()
-                msg = f"License for '{plugin_name}' is no longer valid"
-                if err:
-                    msg += f": {err}"
-                self._app.logger.warning(msg)
 
     @staticmethod
     def _plugin_requires_license(plugin_name: str, plugin_config: dict) -> bool:

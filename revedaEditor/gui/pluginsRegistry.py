@@ -100,7 +100,6 @@ class PluginRegistryWindow(QMainWindow):
         )
         self.pluginsDir = self.pluginsDir.resolve()
 
-        self._current_payment_url = None
         self._initUI()
         self._registry = []
         self.fetch_registry()
@@ -137,21 +136,17 @@ class PluginRegistryWindow(QMainWindow):
         self.desc.setReadOnly(True)
         right_l.addWidget(self.desc, 1)
         self.download_btn = QPushButton("Download / Install")
-        self.buy_btn = QPushButton("Buy License")
-        self.buy_btn.setVisible(False)
         self.uninstall_btn = QPushButton("Uninstall")
         self.progress = QProgressBar()
         self.progress.setRange(0, 100)
         right_l.addWidget(self.progress)
         right_l.addWidget(self.download_btn)
-        right_l.addWidget(self.buy_btn)
         right_l.addWidget(self.uninstall_btn)
         main_l.addWidget(right_w, 2)
 
         self.tableWidget.itemSelectionChanged.connect(self._onSelect)
         self.tableWidget.itemDoubleClicked.connect(self._on_item_activated)
         self.download_btn.clicked.connect(self._on_download)
-        self.buy_btn.clicked.connect(self._on_buy)
         self.uninstall_btn.clicked.connect(self._on_uninstall)
         self.refresh_btn.clicked.connect(self.fetch_registry)
 
@@ -218,12 +213,6 @@ class PluginRegistryWindow(QMainWindow):
         text = f"{entry.get('description', '')}\n\nType: {entry.get('type', 'source').title()}\nVersion: {entry.get('version', 'N/A')}\nLicense: {entry.get('license', 'Unknown')}\n{url_text}"
         self.desc.setPlainText(text)
 
-        # Show Buy button only for paid plugins with a payment URL
-        license_type = entry.get('license', '')
-        is_paid = license_type in ('Commercial', 'Proprietary', 'Paid') or entry.get('license_required', False)
-        self.buy_btn.setVisible(is_paid and bool(payment_url))
-        self._current_payment_url = payment_url if is_paid else None
-
     def _on_item_activated(self, item: QTableWidgetItem):
         entry = item.data(Qt.ItemDataRole.UserRole) or {}
         name = entry.get("name", "plugin")
@@ -256,15 +245,6 @@ class PluginRegistryWindow(QMainWindow):
             if ret == QMessageBox.StandardButton.Yes:
                 self._install_entry(entry)
 
-    def _on_buy(self):
-        if self._current_payment_url:
-            QDesktopServices.openUrl(QUrl(self._current_payment_url))
-            QMessageBox.information(
-                self,
-                "Payment Page Opened",
-                "A payment page has been opened in your browser. "
-                "After completing the purchase, your license key will be sent to you by email.",
-            )
 
     def _install_entry(self, entry: dict):
         # Commercial plugins need the compiled revedaLicense module

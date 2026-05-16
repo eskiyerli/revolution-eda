@@ -83,15 +83,6 @@ class revedaApp(QApplication):
         self.basePath = Path(__file__).resolve().parent
         load_dotenv()
         self._setupLogger()
-
-        # Ensure Polar environment variables are loaded globally
-        # for use by polarLicenseManager. Plugin configs should NOT
-        # contain polar_org_id; it is infrastructure, not metadata.
-        for key in ("POLAR_ORG_ID", "POLAR_API_BASE"):
-            val = os.environ.get(key)
-            if val:
-                os.environ.setdefault(key, val)
-
         self._setupPaths()
         self.appMainW = rvm.MainWindow()
 
