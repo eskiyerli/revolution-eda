@@ -91,7 +91,7 @@ class revedaApp(QApplication):
         self.logger = logging.getLogger("reveda")
         logFilePath = Path.cwd() / "reveda.log"
         handler = logging.FileHandler(logFilePath)
-        handler.setLevel(logging.INFO)
+        handler.setLevel(logging.DEBUG)
         handler.setFormatter(
             logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
         )

@@ -469,10 +469,11 @@ class symbolLabelsDialogue(QDialog):
 
 
 class instanceProperties(QDialog):
-    def __init__(self, parent):
+    def __init__(self, parent, availableViews=None):
         # assert isinstance(instance, shp.symbolShape)
         super().__init__(parent)
         self.parent = parent
+        self.availableViews = availableViews if availableViews else []
         self.initUI()
 
     def initUI(self):
@@ -491,10 +492,15 @@ class instanceProperties(QDialog):
         self.cellNameEdit.setReadOnly(True)
         self.cellNameEdit.setToolTip("Cell Name (Read Only)")
         formLayout.addRow(edf.boldLabel("Cell Name", self), self.cellNameEdit)
-        self.viewNameEdit = edf.longLineEdit()
-        self.viewNameEdit.setReadOnly(True)
-        self.viewNameEdit.setToolTip("View Name (Read Only)")
+        
+        # Changed from read-only line edit to editable combo box
+        self.viewNameEdit = QComboBox()
+        self.viewNameEdit.setEditable(True)
+        if self.availableViews:
+            self.viewNameEdit.addItems(self.availableViews)
+        self.viewNameEdit.setToolTip("Select or enter the view name")
         formLayout.addRow(edf.boldLabel("View Name", self), self.viewNameEdit)
+        
         self.instNameEdit = edf.longLineEdit()
         self.instNameEdit.setToolTip("Instance Name")
         formLayout.addRow(edf.boldLabel("Instance Name", self), self.instNameEdit)

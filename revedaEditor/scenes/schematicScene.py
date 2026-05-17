@@ -19,7 +19,7 @@ from typing import Dict, List, Set, Tuple, Union
 
 from PySide6.QtCore import (QLineF, QPoint, QPointF, QRect, QRectF,
                             QRegularExpression, Qt, Signal, Slot)
-from PySide6.QtGui import (QFont, QFontDatabase, QPen, QTextDocument)
+from PySide6.QtGui import (QFont, QFontDatabase, QPen, QTextDocument, QUndoCommand)
 from PySide6.QtWidgets import (QComboBox, QDialog, QGraphicsItem,
                                QGraphicsRectItem, QGraphicsScene,
                                QGraphicsSceneMouseEvent)
@@ -943,12 +943,30 @@ class schematicScene(editorScene):
             self.logger.error(e)
 
     def setInstanceProperties(self, item: shp.schematicSymbol):
-        dlg = pdlg.instanceProperties(self.editorWindow)
+        # Get available views for the instance's cell
+        availableViews = []
+        try:
+            libItem = libm.getLibItem(self.editorWindow.libraryView.libraryModel, 
+                                      item.libraryName)
+            if libItem:
+                cellItem = libm.getCellItem(libItem, item.cellName)
+                if cellItem:
+                    availableViews = [cellItem.child(row).viewName 
+                                    for row in range(cellItem.rowCount())]
+        except Exception as e:
+            self.logger.warning(f"Failed to get available views for {item.cellName}: {e}")
+        
+        dlg = pdlg.instanceProperties(self.editorWindow, availableViews=availableViews)
         dlg.libNameEdit.setText(item.libraryName)
         dlg.cellNameEdit.setText(item.cellName)
         dlg.cellNameEdit.setEnabled(True)
 
-        dlg.viewNameEdit.setText(item.viewName)
+        # Set the current view name in the combo box
+        if item.viewName in availableViews:
+            dlg.viewNameEdit.setCurrentText(item.viewName)
+        else:
+            dlg.viewNameEdit.addItem(item.viewName)
+            dlg.viewNameEdit.setCurrentText(item.viewName)
         dlg.instNameEdit.setText(item.instanceName)
         location = (item.scenePos() - self.origin).toTuple()
         dlg.xLocationEdit.setText(str(location[0]))
@@ -985,13 +1003,19 @@ class schematicScene(editorScene):
         if dlg.exec() == QDialog.DialogCode.Accepted:
             libraryName = dlg.libNameEdit.text().strip()
             cellName = dlg.cellNameEdit.text().strip()
-            viewName = dlg.viewNameEdit.text().strip()
-            instanceTuple = ddef.viewNameTuple(libraryName, cellName, viewName)
+            netlistViewName = dlg.viewNameEdit.currentText().strip()
             location = QPoint(int(float(dlg.xLocationEdit.text().strip())),
                               int(float(dlg.yLocationEdit.text().strip())), )
-            newInstance = self.instSymbol(instanceTuple, location)
+            
+            # Create new instance with symbol view (for display)
+            # but store the netlist view separately
+            symbolViewTuple = ddef.viewNameTuple(libraryName, cellName, "symbol")
+            newInstance = self.instSymbol(symbolViewTuple, location)
 
             if newInstance:
+                # Set the netlisting view (this is what matters for netlisting)
+                newInstance.viewName = netlistViewName
+                
                 newInstance.instanceName = dlg.instNameEdit.text().strip()
                 newInstance.angle = float(dlg.angleEdit.text().strip())
                 newInstance.counter = item.counter

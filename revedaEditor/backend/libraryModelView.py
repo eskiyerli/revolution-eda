@@ -237,6 +237,8 @@ class BaseDesignLibrariesView(QWidget):
             editor = configEditor(viewItemT.viewItem, self.libraryDict,
                                   self)
             editor.loadConfig()
+            editor.show()
+            self.appMainW.openViews[viewNameT] = editor
         elif view_type == "spice":
             self._handle_spice_view(viewItemT)
         elif view_type == "veriloga":

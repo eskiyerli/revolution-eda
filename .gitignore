@@ -10,3 +10,5 @@ revedaLicense/
 *.zip
 .env*
 *.xml
+license_public_key.pem
+license_private_key.pem

@@ -391,19 +391,38 @@ class spectreNetlist:
         viewItems = [cellItem.child(row) for row in range(cellItem.rowCount())]
         viewNames = [view.viewName for view in viewItems]
 
-        if self._useConfig:
+        if self._useConfig and self.configDict:
             config_entry = self.configDict.get(elementSymbol.cellName)
-            result = config_entry[1] if config_entry else "symbol"
-        else:
-            for viewName in self._switchViewList:
-                if viewName in viewNames:
-                    result = viewName
-                    break
+            if config_entry:
+                # Verify library name matches
+                if config_entry[0] == elementSymbol.libraryName:
+                    result = config_entry[1]
+                else:
+                    # Library mismatch, fall back to switchViewList
+                    result = self._findViewFromSwitchList(viewNames)
             else:
-                result = "symbol"
+                # Cell not in config, fall back to switchViewList
+                result = self._findViewFromSwitchList(viewNames)
+        else:
+            # Not using config or config dict is empty
+            result = self._findViewFromSwitchList(viewNames)
 
         self._viewNameCache[cacheKey] = result
         return result
+
+    def _findViewFromSwitchList(self, viewNames: List[str]) -> str:
+        """Find the first matching view from switchViewList.
+        
+        Args:
+            viewNames: List of available view names for the cell.
+            
+        Returns:
+            The first matching view name from switchViewList, or "symbol" if none match.
+        """
+        for viewName in self._switchViewList:
+            if viewName in viewNames:
+                return viewName
+        return "symbol"
 
     def createItemLine(
         self,

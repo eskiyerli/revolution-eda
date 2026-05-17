@@ -290,7 +290,7 @@ class schematicEditor(edw.editorWindow):
             self.logger.error(f"Error during loading schematic for {self.cellName}: {e}")
 
     def createConfigView(self, configItem: libb.viewItem, newConfigDict: dict,
-                         processedCells: set):
+                         processedCells: set, savedSelections: dict = None):
         """Recursively build configuration view by traversing schematic hierarchy.
 
         Walks through all symbol instances in the schematic and determines
@@ -301,7 +301,11 @@ class schematicEditor(edw.editorWindow):
             configItem: The configuration view item being created.
             newConfigDict: Dictionary to populate with cell->view mappings.
             processedCells: Set tracking already-processed cells to avoid cycles.
+            savedSelections: Dict of cellName->viewName for preserving user selections.
         """
+        if savedSelections is None:
+            savedSelections = {}
+        
         sceneSymbolSet = self.centralW.scene.findSceneSymbolSet()
         for item in sceneSymbolSet:
             libItem = libm.getLibItem(self.libraryView.libraryModel, item.libraryName)
@@ -316,6 +320,13 @@ class schematicEditor(edw.editorWindow):
             if itemCellTuple not in processedCells:
                 if cellLine := newConfigDict.get(cellItem.cellName):
                     netlistableViews = [cellLine[1]]
+                
+                # Check if user had previously selected a view for this cell
+                if cellItem.cellName in savedSelections:
+                    savedView = savedSelections[cellItem.cellName]
+                    if savedView in viewNames:
+                        netlistableViews = [savedView]
+                
                 for viewName in netlistableViews:
                     match viewDict[viewName].viewType:
                         case "schematic":
@@ -327,12 +338,13 @@ class schematicEditor(edw.editorWindow):
                                                            self.libraryView, )
                             schematicObj.loadSchematic()
                             schematicObj.createConfigView(configItem, newConfigDict,
-                                                          processedCells)
+                                                          processedCells, savedSelections)
                             break
                         case _:
                             newConfigDict[cellItem.cellName] = [libItem.libraryName,
                                                                 viewName,
                                                                 itemSwitchViewList, ]
+                            # Don't traverse into non-schematic views
                             break
                 processedCells.add(itemCellTuple)
 
@@ -391,7 +403,14 @@ class schematicEditor(edw.editorWindow):
         topSubCkt = dlg.topAsSubcktCheckBox.isChecked()
         netlistFormat = dlg.netlistFormatCombo.currentText()
 
-        netlistObj = self.createNetlistObject(self.viewItem, netlistFilePath, topSubCkt, netlistFormat)
+        # Find the viewItem for the selected view name instead of using self.viewItem
+        selectedViewItem = libm.findViewItem(self.libraryView.libraryModel, self.libName,
+                                            self.cellName, selectedViewName)
+        if not selectedViewItem:
+            self._scene.logger.error(f"View {selectedViewName} not found for {self.libName}/{self.cellName}")
+            return
+
+        netlistObj = self.createNetlistObject(selectedViewItem, netlistFilePath, topSubCkt, netlistFormat)
 
         if netlistObj:
             with self.measureDuration():
@@ -405,12 +424,24 @@ class schematicEditor(edw.editorWindow):
         if viewItem.viewType == "schematic":
             return netlisterClass(self, filePath, False, topSubCkt)
         elif viewItem.viewType == "config":
+            print(f"DEBUG: Config view detected - viewType={viewItem.viewType}")
             netlistObj = netlisterClass(self, filePath, True, topSubCkt)
             configItem = libm.findViewItem(self.libraryView.libraryModel, self.libName,
                                            self.cellName, viewItem.viewName)
+            print(f"DEBUG: configItem={configItem}")
             if configItem:
-                with configItem.data(Qt.ItemDataRole.UserRole + 2).open(mode="r") as f:
-                    netlistObj.configDict = json.load(f)[2]
+                configPath = configItem.data(Qt.ItemDataRole.UserRole + 2)
+                print(f"DEBUG: configPath={configPath}")
+                if configPath:
+                    with configPath.open(mode="r") as f:
+                        jsonData = json.load(f)
+                        print(f"DEBUG: jsonData={jsonData}")
+                        netlistObj.configDict = jsonData[2]
+                        print(f"Loaded config dict for netlisting: {netlistObj.configDict}")
+                else:
+                    print(f"DEBUG: configPath is None")
+            else:
+                print(f"DEBUG: configItem not found")
             return netlistObj
         return None
 

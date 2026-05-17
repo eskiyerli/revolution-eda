@@ -184,8 +184,18 @@ class xyceNetlist:
         sceneSymbolSet = schematicScene.findSceneSymbolSet()
         schematicScene.generatePinNetMap(sceneSymbolSet)
         for elementSymbol in sceneSymbolSet:
-            if elementSymbol.symattrs.get("NetlistIgnore") != "1" and (
-                    not elementSymbol.netlistIgnore):
+            # Check for ignore conditions based on mode (consistent with processElementSymbol)
+            should_ignore = False
+            if self._lvsMode:
+                # In LVS mode, check lvsIgnore attribute
+                if elementSymbol.symattrs.get("lvsIgnore") == "1":
+                    should_ignore = True
+            else:
+                # In normal mode, check NetlistIgnore attribute and netlistIgnore flag
+                if elementSymbol.symattrs.get("NetlistIgnore") == "1" or elementSymbol.netlistIgnore:
+                    should_ignore = True
+            
+            if not should_ignore:
                 cellItem = self._getCellItem(elementSymbol.libraryName,
                                              elementSymbol.cellName)
                 netlistView = self.determineNetlistView(elementSymbol, cellItem)
@@ -239,9 +249,19 @@ class xyceNetlist:
             viewTuple = ddef.viewNameTuple(schematicEdObj.libName, schematicEdObj.cellName,
                                            schematicEdObj.viewName)
             self.netlistedViewsSet.add(viewTuple)
-            schematicPinsSet = schematicEdObj.centralW.scene.findSceneSchemPinsSet()
+
+            # Name nets and generate pin-net map first
+            schematicScene = schematicEdObj.centralW.scene
+            schematicScene.nameSceneNets()
+            sceneSymbolSet = schematicScene.findSceneSymbolSet()
+            schematicScene.generatePinNetMap(sceneSymbolSet)
+
+            # Then get schematic pins
+            schematicPinsSet = schematicScene.findSceneSchemPinsSet()
             pinNames = [pin.pinName for pin in schematicPinsSet]
+            self._scene.logger.info(f"Schematic pins found for {schematicEdObj.cellName}: {pinNames}")
             expandedPinsString = self.expandPinNames(pinNames)
+            self._scene.logger.info(f"Expanded pins string for {schematicEdObj.cellName}: {expandedPinsString}")
 
             subcktContent = []
             self.collectSubcircuitContent(schematicEdObj, subcktContent)
@@ -309,8 +329,9 @@ class xyceNetlist:
     def determineNetlistView(self, elementSymbol, cellItem) -> str:
         """Determine which view to use for netlisting a symbol instance.
 
-        Uses configDict in config mode, otherwise iterates through switchViewList
-        to find the first matching view.
+        Priority order:
+        1. configDict (in config mode)
+        2. switchViewList (fallback)
 
         Args:
             elementSymbol: The symbol instance being netlisted.
@@ -326,20 +347,51 @@ class xyceNetlist:
         viewItems = [cellItem.child(row) for row in range(cellItem.rowCount())]
         viewNames = [view.viewName for view in viewItems]
 
-        if self._useConfig:
+        # Priority 2: Use configDict if configured
+        if self._useConfig and self.configDict:
             config_entry = self.configDict.get(elementSymbol.cellName)
-            result = config_entry[1] if config_entry else "symbol"
-        else:
-            # Iterate over the switch view list to determine the appropriate netlist view.
-            for viewName in self._switchViewList:
-                if viewName in viewNames:
-                    result = viewName
-                    break
+            if config_entry:
+                # Verify library name matches
+                if config_entry[0] == elementSymbol.libraryName:
+                    result = config_entry[1]
+                else:
+                    # Library mismatch, fall back to switchViewList
+                    result = self._findViewFromSwitchList(viewNames)
             else:
-                result = "symbol"
+                # Cell not in config, fall back to switchViewList
+                result = self._findViewFromSwitchList(viewNames)
+        else:
+            # Not using config or config dict is empty
+            result = self._findViewFromSwitchList(viewNames)
 
         self._viewNameCache[cacheKey] = result
         return result
+
+    def _findViewFromSwitchList(self, viewNames: List[str]) -> str:
+        """Find the first matching view from switchViewList, respecting stopViewList.
+        
+        Iterates through switchViewList in order:
+        - If a view is in stopViewList, use it and stop
+        - Else if a view is in viewNames (available), use it and stop
+        - If no match found, default to "symbol"
+        
+        Args:
+            viewNames: List of available view names for the cell.
+            
+        Returns:
+            The selected view name from switchViewList, or "symbol" if none match.
+        """
+        
+        for viewName in self._switchViewList:
+            # If this view is in stopViewList, use it and stop searching
+            if viewName in self._stopViewList:
+                return viewName
+            # Otherwise, if it's available, use it and stop searching
+            if viewName in viewNames:
+                return viewName
+        
+        # If no match found in switchViewList, default to "symbol"
+        return "symbol"
 
     def createItemLine(self, cirFile, elementSymbol: shp.schematicSymbol,
                        cellItem: libb.cellItem, netlistView: str, ):
@@ -458,13 +510,11 @@ class xyceNetlist:
                             instanceNets.append(nets[j])  # 1-to-1 matching across array width
                         elif len(nets) == 1:
                             instanceNets.append(nets[0])  # Scalar broadcasted to all array nodes
+                        elif j < len(nets):
+                            instanceNets.append(nets[j])  # Partial connection: connect available nets
                         else:
-                            # Log a connection width mismatch warning if len is neither 1 nor arraySize
-                            self._scene.logger.warning(
-                                f"Net connection width mismatch for {elementSymbol.instanceName}: "
-                                f"expected 1 or {arraySize}, got {len(nets)}. Falling back to element 0."
-                            )
-                            instanceNets.append(nets[0])
+                            # Out of bounds for partial connection - use last available net
+                            instanceNets.append(nets[-1])
 
                     specificNetsList = " ".join(instanceNets)
                     symbolLines.append(
@@ -499,8 +549,11 @@ class xyceNetlist:
             if incFileName:
                 cellItem = self._getCellItem(elementSymbol.libraryName, elementSymbol.cellName)
                 cellPath = cellItem.data(Qt.ItemDataRole.UserRole + 2)
-                incFilePath = pathlib.Path(cellPath) / incFileName
-                self.includeLines.add(f'.INC "{incFilePath}"')
+                if cellPath:
+                    incFilePath = pathlib.Path(cellPath) / incFileName
+                    self.includeLines.add(f'.INC "{incFilePath}"')
+                else:
+                    self._scene.logger.warning(f"Cell path not found for {elementSymbol.cellName}, skipping include file")
             else:
                 self.includeLines.add(f"* no include line found for {elementSymbol.cellName}")
             return spiceLines
@@ -519,13 +572,15 @@ class xyceNetlist:
             self.vamodelLines.add(elementSymbol.symattrs.get("vaModelLine",
                                                              f"* no model line is found for {elementSymbol.cellName}").strip())
             vaFileName = elementSymbol.symattrs.get("vaFileName", "").strip()
-            self._scene.logger.debug(f"Verilog-A file for {elementSymbol.cellName}: {vaFileName}")
             if vaFileName:
                 cellItem = self._getCellItem(elementSymbol.libraryName,
                                              elementSymbol.cellName)
                 cellPath = cellItem.cellPath
-                vaFilePath = pathlib.Path(cellPath) / vaFileName
-                self.vahdlLines.add(f"*.HDL {vaFilePath}")
+                if cellPath:
+                    vaFilePath = pathlib.Path(cellPath) / vaFileName
+                    self.vahdlLines.add(f"*.HDL {vaFilePath}")
+                else:
+                    self._scene.logger.warning(f"Cell path not found for {elementSymbol.cellName}, skipping HDL file")
             else:
                 self.vahdlLines.add(f"* no HDL file line found for {elementSymbol.cellName}")
 
@@ -593,6 +648,6 @@ class xyceNetlist:
                 expandedPinNameList.append(pinBaseName)
             else:
                 pinStep = 1 if pinTuple[1] >= pinTuple[0] else -1
-                for i in range(pinTuple[0], pinTuple[1] + pinStep):
+                for i in range(pinTuple[0], pinTuple[1] + pinStep, pinStep):
                     expandedPinNameList.append(f'{pinBaseName}<{i}>')
         return ' '.join(expandedPinNameList)
