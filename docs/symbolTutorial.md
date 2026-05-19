@@ -408,13 +408,13 @@ Some of the important attributes for a symbol are summarized below:
 
 | Attribute Name          | Attribute Use                                           | Example                                                              |
 |-------------------------|---------------------------------------------------------|----------------------------------------------------------------------|
-| SpiceNetlistLine        | Netlist template used for symbol/spice/veriloga views   | `M@instName %pinOrder %modelName w=@w l=@l nf=@nf as=@as m=@m`      |
-| SpiceNetlistLine        | Veriloga-style template example                         | `Yres @instName %pinOrder resModel @R`                               |
-| SpiceNetlistLine        | Spice subckt template example                           | `X@instName %pinOrder newckt`                                        |
-| vaModelLine             | Used as a model line for Veriloga netlisting            | `.MODEL resModel res R = 1`                                          |
-| vaHDLLine               | Used to by Revolution EDA to create linkable modules    | *`.HDL /home/user/exampleLibraries/analogLib/resVa/res.va`           |
+| SpiceNetlistLine        | Netlist template for Xyce/Spice symbol/spice views      | `M@instName %pinOrder %modelName w=@w l=@l nf=@nf as=@as m=@m`      |
+| SpectreNetlistLine      | Netlist template for Spectre symbol views                | `M@instName (%pinOrder) %modelName w=@w l=@l nf=@nf as=@as m=@m`   |
+| VacaskNetlistLine       | Netlist template for VACASK symbol views                | `M@instName (%pinOrder) %modelName w=@w l=@l nf=@nf as=@as m=@m`   |
+| XyceVerilogaNetlistLine | Netlist template for Xyce Verilog-A views               | `Yres @instName %pinOrder resModel @R`                               |
+| VerilogaNetlistLine     | Netlist template for Spectre/VACASK Verilog-A views     | `R@instName %pinOrder res r=@R`                                      |
+| vaModelLine             | Model line for Xyce Verilog-A netlisting only            | `.MODEL resModel res R = 1`                                          |
 | pinOrder                | To sync pin order between netlists of various cellviews | `PLUS, MINUS`                                                        |
-| incLine                 | To include imported Spice subcircuit                    | `.INC /home/user/exampleLibraries/anotherLibrary/example1/newckt.sp` |
 
 Note that labels are referenced in symbol attributes by their names prefixed with `@`.
 If a symbol attribute is referenced within another symbol attribute, it must be prefixed
@@ -445,15 +445,14 @@ be added manually in the Symbol Editor.
 
 ### Required attributes for netlisting
 
-The current netlister implementation in `schematicEditor.xyceNetlist` uses
-`SpiceNetlistLine` as the netlist template key for symbol, spice, and veriloga views.
-In templates, use `%pinOrder` to emit the expanded connection list.
+Revolution EDA supports three netlist formats: Spice/Xyce, Spectre, and VACASK. The netlist format
+is selected in the netlist export dialog when exporting a schematic. Each format requires
+specific symbol attributes.
 
-#### Symbol
+#### Symbol (for Xyce/Spice)
 
-If a *symbol* cellview is to be used in the netlisting, these are the minimum attributes
-that should be defined for that
-symbol.
+If a *symbol* cellview is to be used for Xyce/Spice netlisting, these are the minimum attributes
+that should be defined for that symbol.
 
 | Attribute Name   | Example                                                        |
 |------------------|----------------------------------------------------------------|
@@ -463,34 +462,77 @@ symbol.
 Note that another attribute `modelName` needs to be defined for the example in the table.
 `pinOrder` controls the net order used by `%pinOrder` during netlisting.
 
-#### Veriloga
+#### Symbol (for Spectre)
 
-If the veriloga cell view is to be used in the circuit netlisting, these attributes should
-be added to the symbol. If the Verilog-A file was imported and used to create the symbol,
-they will be added automatically.
+If a *symbol* cellview is to be used for Spectre netlisting, these are the minimum attributes.
+
+| Attribute Name    | Example                                                          |
+|-------------------|------------------------------------------------------------------|
+| SpectreNetlistLine| `M@instName (%pinOrder) %modelName w=@w l=@l nf=@nf as=@as m=@m` |
+| pinOrder          | `D, G, B, S`                                                     |
+
+Note that Spectre uses parentheses around the pin list, unlike Xyce/Spice.
+
+#### Symbol (for VACASK)
+
+If a *symbol* cellview is to be used for VACASK netlisting, these are the minimum attributes.
+
+| Attribute Name   | Example                                                          |
+|------------------|------------------------------------------------------------------|
+| VacaskNetlistLine| `M@instName (%pinOrder) %modelName w=@w l=@l nf=@nf as=@as m=@m` |
+| pinOrder         | `D, G, B, S`                                                     |
+
+VACASK uses the same format as Spectre (parentheses around pin list).
+
+#### Verilog-A (Xyce)
+
+If the Verilog-A cell view is to be used in Xyce netlisting, these attributes should be added
+to the symbol. If the Verilog-A file was imported and used to create the symbol, they will be
+added automatically.
 
 | Attribute Name          | Example                                                    |
 |-------------------------|------------------------------------------------------------|
-| SpiceNetlistLine        | `Yres @instName %pinOrder resModel @R`                     |
+| XyceVerilogaNetlistLine | `Yres @instName %pinOrder resModel @R`                     |
 | vaModelLine             | `.MODEL resModel res R = 1`                                |
-| vaHDLLine               | *`.HDL /home/user/exampleLibraries/analogLib/resVa/res.va` |
 | pinOrder                | a, b, c                                                    |
 
-`vaModelLine` and `vaHDLLine` are collected and written to the netlist output.
+`vaModelLine` is collected and written to the netlist output. The Verilog-A file path is automatically constructed as `{cellPath}/{cellName}.va` and included using `*.HDL` directives. The `vaModelLine` attribute is specific to Xyce and is not used by Spectre or VACASK.
 
-#### Spice
+#### Verilog-A (Spectre/VACASK)
 
-Spice subcircuits can be used in the netlists when the symbol has the proper attributes. The
-required attributes for the
-netlist inclusion of a SPICE subcircuit are summarised in the table below:
+For Spectre and VACASK netlisting, Verilog-A devices use the `VerilogaNetlistLine` attribute. This provides flexibility to have different netlist line formats for Verilog-A views compared to symbol views.
+
+| Attribute Name      | Example                                                    |
+|---------------------|------------------------------------------------------------|
+| VerilogaNetlistLine | `R@instName %pinOrder res r=@R`                            |
+| pinOrder            | PLUS, MINUS                                                |
+
+The Verilog-A file path is automatically constructed as `{cellPath}/{cellName}.va`. Spectre uses `ahdl_include` for file inclusion, while VACASK uses the `load` directive for OSDI/Verilog-A files. The `vaModelLine` attribute is not used for Spectre or VACASK.
+
+#### Spice subcircuit
+
+Spice subcircuits can be used in Xyce/Spice netlists when the symbol has the proper attributes.
 
 | Attribute Name       | Example                                                              |
 |----------------------|----------------------------------------------------------------------|
 | SpiceNetlistLine     | `X@instName %pinOrder newckt`                                        |
-| incLine              | `.INC /home/user/exampleLibraries/anotherLibrary/example1/newckt.sp` |
 | pinOrder             | PLUS, MINUS                                                          |
 
-`incLine` is collected and emitted as an include directive in the generated netlist.
+The Spice subcircuit file path is automatically constructed as `{cellPath}/{cellName}.sp` and included using an include directive in the generated netlist.
+
+#### Vector notation
+
+Spectre and VACASK support vector notation for instances and nets when dimensions are compatible.
+For example, if an instance has name `I5<<0:3>` and all connected nets are also vectors of the
+same dimension (e.g., `OUT<<0:3>` and `INP<<0:3>`), the netlister will preserve the vector notation:
+
+```
+I5<<0:3> (OUT<<0:3> INP<<0:3>) resistor r=1k
+```
+
+This is more compact than expanding to individual instances. If dimensions don't match (e.g.,
+scalar nets connected to a vector instance), the netlister falls back to expansion. Xyce/Spice
+always expands vector notation.
 
 ## Other Editing Functions
 

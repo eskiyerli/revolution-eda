@@ -540,22 +540,23 @@ class xyceNetlist:
     def createSpiceLine(self, elementSymbol: shp.schematicSymbol) -> list[str]:
         """Create Spice subcircuit netlist lines with include file handling.
 
-        Generates the netlist line using createXyceSymbolLine and adds
-        an .INC directive if the symbol has an 'incLine' attribute.
+        Generates the netlist line using createXyceSymbolLine and adds an .INC directive.
+        The Spice subcircuit file path is automatically constructed as {cellPath}/{cellName}.sp.
         """
         try:
             spiceLines = self.createXyceSymbolLine(elementSymbol)
-            incFileName = elementSymbol.symattrs.get("incLine", "").strip()
-            if incFileName:
-                cellItem = self._getCellItem(elementSymbol.libraryName, elementSymbol.cellName)
+            # Automatically construct Spice subcircuit file path from cell directory and cell name
+            cellItem = self._getCellItem(elementSymbol.libraryName, elementSymbol.cellName)
+            if cellItem:
                 cellPath = cellItem.data(Qt.ItemDataRole.UserRole + 2)
                 if cellPath:
+                    incFileName = f"{elementSymbol.cellName}.sp"
                     incFilePath = pathlib.Path(cellPath) / incFileName
                     self.includeLines.add(f'.INC "{incFilePath}"')
                 else:
                     self._scene.logger.warning(f"Cell path not found for {elementSymbol.cellName}, skipping include file")
             else:
-                self.includeLines.add(f"* no include line found for {elementSymbol.cellName}")
+                self._scene.logger.warning(f"Cell item not found for {elementSymbol.cellName}, skipping include file")
             return spiceLines
         except Exception as e:
             self._scene.logger.error(f"Spice subckt netlist error for {elementSymbol.instanceName}: {e}")

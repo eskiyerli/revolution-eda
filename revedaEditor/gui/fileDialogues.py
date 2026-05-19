@@ -308,7 +308,7 @@ class deleteSymbolDialog(QDialog):
 class netlistExportDialogue(QDialog):
     def __init__(self, parent):
         super().__init__(parent)
-        self.parent = parent
+        self.editorWindow = parent
         self.setWindowTitle(f"Export Netlist for {parent.cellName}-{parent.viewName}")
         # self.setMinimumSize(500, 100)
         QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
@@ -334,10 +334,10 @@ class netlistExportDialogue(QDialog):
         switchBox = QGroupBox("Switch and Stop View Lists")
         self.formLayout = QFormLayout()
         self.switchViewEdit = edf.longLineEdit()
-        self.switchViewEdit.setText((", ").join(self.parent.switchViewList))
+        self.switchViewEdit.setText((", ").join(self.editorWindow.switchViewList))
         self.formLayout.addRow(edf.boldLabel("Switch View List:"), self.switchViewEdit)
         self.stopViewEdit = edf.longLineEdit()
-        self.stopViewEdit.setText((", ").join(self.parent.stopViewList))
+        self.stopViewEdit.setText((", ").join(self.editorWindow.stopViewList))
         self.formLayout.addRow((edf.boldLabel("Stop View: ")), self.stopViewEdit)
         switchBox.setLayout(self.formLayout)
         self.mainLayout.addWidget(switchBox)
@@ -347,7 +347,7 @@ class netlistExportDialogue(QDialog):
         self.topAsSubcktCheckBox.setChecked(False)
         netlistOptLayout.addWidget(self.topAsSubcktCheckBox)
         self.netlistFormatCombo = QComboBox()
-        self.netlistFormatCombo.addItems(["Spice/Xyce", "Spectre/Vacask"])
+        self.netlistFormatCombo.addItems(["Spice/Xyce", "Spectre", "VACASK"])
         netlistOptLayout.addWidget(edf.boldLabel("Netlist Format:"))
         netlistOptLayout.addWidget(self.netlistFormatCombo)
         netlistOptionBox.setLayout(netlistOptLayout)

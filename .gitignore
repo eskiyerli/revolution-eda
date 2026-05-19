@@ -12,3 +12,4 @@ revedaLicense/
 *.xml
 license_public_key.pem
 license_private_key.pem
+scripts/generate_license.py

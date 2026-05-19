@@ -40,7 +40,7 @@ import revedaEditor.gui.propertyDialogues as pdlg
 import revedaEditor.gui.toolsDialogues as tdlg
 import revedaEditor.scenes.schematicScene as schscn
 from revedaEditor.gui.editorFactory import EditorFactory
-from revedaEditor.netlisting import spectreNetlist, xyceNetlist
+from revedaEditor.netlisting import spectreNetlist, xyceNetlist, vacaskNetlist
 
 if TYPE_CHECKING:
     pass
@@ -419,7 +419,14 @@ class schematicEditor(edw.editorWindow):
     def createNetlistObject(self, viewItem: libb.viewItem, filePath: pathlib.Path,
                             topSubCkt: bool, netlistFormat: str = "Spice/Xyce"):
         # Select the appropriate netlister class based on format
-        netlisterClass = xyceNetlist if netlistFormat == "Spice/Xyce" else spectreNetlist
+        if netlistFormat == "Spice/Xyce":
+            netlisterClass = xyceNetlist
+        elif netlistFormat == "Spectre":
+            netlisterClass = spectreNetlist
+        elif netlistFormat == "VACASK":
+            netlisterClass = vacaskNetlist
+        else:
+            netlisterClass = xyceNetlist  # Default fallback
 
         if viewItem.viewType == "schematic":
             return netlisterClass(self, filePath, False, topSubCkt)

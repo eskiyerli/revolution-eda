@@ -22,23 +22,23 @@
 #    Licensor: Revolution Semiconductor (Registered in the Netherlands)
 #
 
-"""Spectre netlist generation for schematic editors.
+"""VACASK netlist generation for schematic editors.
 
-Untested code.
-
-This module provides the spectreNetlist class for generating Cadence Spectre-compatible
+This module provides the vacaskNetlist class for generating VACASK-compatible
 netlists from schematic designs. It supports hierarchical netlisting with config views,
-array notation for buses, and various netlist formats including Spectre, Verilog-A, and
+array notation for buses, and various netlist formats including VACASK, Verilog-A, and
 LVS modes.
 
-Spectre format differences from SPICE/Xyce:
-- Comments use ``//`` instead of ``*``
-- Global declarations use ``global gnd!`` instead of ``.GLOBAL gnd!``
-- Subcircuit blocks use ``subckt`` / ``ends`` instead of ``.SUBCKT`` / ``.ENDS``
-- Include directives use ``include "file"`` instead of ``.INC "file"``
-- Verilog-A includes use ``ahdl_include "file"`` instead of ``*.HDL``
-- Instance netlist lines are expected in Spectre syntax
-  (``instName (n1 n2) modelName param=value``)
+VACASK format differences from Spectre:
+- Uses ``ground`` directive instead of ``global`` for reference nodes
+- Uses ``load`` directive for OSDI/Verilog-A devices instead of ``ahdl_include``
+- Supports ``parameters`` block for parameter declarations
+- Supports ``control``/``endc`` block for simulation setup
+- Supports ``embed`` directive for embedded files
+- Supports section-based includes with ``include "file" section=name``
+- Subcircuit blocks use ``subckt`` / ``ends`` (same as Spectre)
+- Include directives use ``include "file"`` (same as Spectre)
+- Comments use ``//`` (same as Spectre)
 """
 
 from __future__ import annotations
@@ -61,16 +61,16 @@ if TYPE_CHECKING:
     from revedaEditor.gui.schematicEditor import schematicEditor
 
 
-class spectreNetlist:
-    """Generate Cadence Spectre-compatible netlists from schematic designs.
+class vacaskNetlist:
+    """Generate VACASK-compatible netlists from schematic designs.
 
     This class handles recursive netlisting of hierarchical designs, supports
     configuration views for view switching, and handles array notation for
     bussed signals.  It caches cell lookups to avoid repeated Qt model traversals.
 
-    Spectre-specific formatting is used throughout: ``//`` comments, ``subckt``/``ends``
-    blocks, ``global`` declarations, ``include`` directives, and ``ahdl_include`` for
-    Verilog-A files.
+    VACASK-specific formatting is used throughout: ``//`` comments, ``subckt``/``ends``
+    blocks, ``ground`` declarations, ``include`` directives, and ``load`` for
+    Verilog-A/OSDI files.
 
     Attributes:
         filePathObj: Path to write the netlist file.
@@ -93,7 +93,7 @@ class spectreNetlist:
         topSubckt: bool = False,
         lvsMode: bool = False,
     ):
-        """Initialize the Spectre netlister.
+        """Initialize the VACASK netlister.
 
         Args:
             schematic: The schematic editor to netlist.
@@ -122,13 +122,14 @@ class spectreNetlist:
         self.netlistedViewsSet: set = set()
         self.includeLines: set[str] = set()
         self.vahdlLines: set[str] = set()
+        self.loadLines: set[str] = set()
         # Caches to avoid repeated Qt model traversals for the same cells.
         self._viewNameCache: dict[tuple, str] = {}
         self._cellItemCache: dict[tuple, libb.cellItem | None] = {}
 
     def __repr__(self):
         return (
-            f"spectreNetlist(filePathObj={self.filePathObj}, "
+            f"vacaskNetlist(filePathObj={self.filePathObj}, "
             f"schematic={self.schematic}, "
             f"useConfig={self._useConfig}, lvsMode={self._lvsMode})"
         )
@@ -169,19 +170,19 @@ class spectreNetlist:
     # ------------------------------------------------------------------
 
     def writeNetlist(self):
-        """Write the complete Spectre netlist to *filePathObj*.
+        """Write the complete VACASK netlist to *filePathObj*.
 
         Writes the file header, performs recursive netlisting, and appends all
         subcircuit definitions at the end.
         """
         with self.filePathObj.open(mode="w") as cirFile:
-            # Spectre header – the first line *must* start with "// " for Spectre to
-            # recognise the file as Spectre format.
+            # VACASK header – the first line *must* start with "// " for VACASK to
+            # recognise the file as VACASK format.
             cirFile.write(
                 "// ".join([
                     "\n",
                     80 * "/" + "\n",
-                    "// Revolution EDA Spectre Netlist\n",
+                    "// Revolution EDA VACASK Netlist\n",
                     f"// Library: {self.schematic.libName}\n",
                     f"// Top Cell Name: {self.schematic.cellName}\n",
                     f"// View Name: {self.schematic.viewName}\n",
@@ -200,6 +201,8 @@ class spectreNetlist:
                 for subcktDef in self.subcircuitDefs:
                     cirFile.write(subcktDef)
 
+            for line in self.loadLines:
+                cirFile.write(f"{line}\n")
             for line in self.includeLines:
                 cirFile.write(f"{line}\n")
             for line in self.vahdlLines:
@@ -230,7 +233,7 @@ class spectreNetlist:
                 netlistView = self.determineNetlistView(elementSymbol, cellItem)
 
                 if "schematic" in netlistView:
-                    lines = self.createSpectreSymbolLine(elementSymbol)
+                    lines = self.createVacaskSymbolLine(elementSymbol)
                     content.extend(lines if isinstance(lines, list) else [lines])
                     if netlistView not in self._stopViewList:
                         viewTuple = ddef.viewNameTuple(
@@ -258,7 +261,7 @@ class spectreNetlist:
                             )
                             self.subcircuitDefs.append(subcktDef)
                 elif "symbol" in netlistView:
-                    lines = self.createSpectreSymbolLine(elementSymbol)
+                    lines = self.createVacaskSymbolLine(elementSymbol)
                     content.extend(lines if isinstance(lines, list) else [lines])
                 elif "spice" in netlistView:
                     lines = self.createSpiceLine(elementSymbol)
@@ -431,9 +434,9 @@ class spectreNetlist:
         cellItem: libb.cellItem,
         netlistView: str,
     ):
-        """Create the appropriate Spectre netlist line(s) for a symbol based on its view type."""
+        """Create the appropriate VACASK netlist line(s) for a symbol based on its view type."""
         if "schematic" in netlistView:
-            elementLines = self.createSpectreSymbolLine(elementSymbol)
+            elementLines = self.createVacaskSymbolLine(elementSymbol)
             for line in elementLines:
                 cirFile.write(f"{line}\n")
 
@@ -469,7 +472,7 @@ class spectreNetlist:
                     self.subcircuitDefs.append(subcktDef)
 
         elif "symbol" in netlistView:
-            symbolLines = self.createSpectreSymbolLine(elementSymbol)
+            symbolLines = self.createVacaskSymbolLine(elementSymbol)
             for line in symbolLines:
                 cirFile.write(f"{line}\n")
         elif "spice" in netlistView:
@@ -494,7 +497,7 @@ class spectreNetlist:
         Args:
             elementSymbol: The symbol instance to create netlist lines for.
             netlistLineKey: The attribute key for the netlist line template
-                (e.g. ``"SpectreNetlistLine"`` or ``"lvsNetlistLine"``).
+                (e.g. ``"VacaskNetlistLine"`` or ``"lvsNetlistLine"``).
 
         Returns:
             List of netlist line strings (one per array element if arrayed).
@@ -526,7 +529,7 @@ class spectreNetlist:
                 line = line.replace("%pinOrder", netsList)
                 for token, value in attr_replacements:
                     line = line.replace(token, value)
-                return spectreNetlist._PARAM_RE.sub('', line)
+                return vacaskNetlist._PARAM_RE.sub('', line)
 
             def createInstanceLine(instanceName: str) -> str:
                 line = baseNetlistLine.replace(instNameToken, instanceName)
@@ -631,26 +634,26 @@ class spectreNetlist:
                 f"// Netlist line is not defined for symbol of {elementSymbol.instanceName}"
             ]
 
-    def createSpectreSymbolLine(
+    def createVacaskSymbolLine(
         self, elementSymbol: shp.schematicSymbol
     ) -> list[str]:
-        """Create Spectre netlist lines for a symbol instance.
+        """Create VACASK netlist lines for a symbol instance.
 
         In LVS mode uses the ``lvsNetlistLine`` attribute, otherwise uses
-        ``SpectreNetlistLine``.
+        ``VacaskNetlistLine``.
         """
-        netlistLineKey = "lvsNetlistLine" if self._lvsMode else "SpectreNetlistLine"
+        netlistLineKey = "lvsNetlistLine" if self._lvsMode else "VacaskNetlistLine"
         return self._createNetlistLine(elementSymbol, netlistLineKey)
 
     def createSpiceLine(self, elementSymbol: shp.schematicSymbol) -> list[str]:
-        """Create Spectre-wrapped SPICE subcircuit netlist lines with include file handling.
+        """Create VACASK-wrapped SPICE subcircuit netlist lines with include file handling.
 
-        Generates the instance line using :meth:`createSpectreSymbolLine` and adds an
+        Generates the instance line using :meth:`createVacaskSymbolLine` and adds an
         ``include`` directive. The Spice subcircuit file path is automatically constructed as
         {cellPath}/{cellName}.sp.
         """
         try:
-            spiceLines = self.createSpectreSymbolLine(elementSymbol)
+            spiceLines = self.createVacaskSymbolLine(elementSymbol)
             # Automatically construct Spice subcircuit file path from cell directory and cell name
             cellItem = self._getCellItem(
                 elementSymbol.libraryName, elementSymbol.cellName
@@ -675,9 +678,9 @@ class spectreNetlist:
             ]
 
     def createVerilogaLine(self, elementSymbol) -> list[str]:
-        """Create Spectre Verilog-A netlist lines with HDL file handling.
+        """Create VACASK Verilog-A netlist lines with load file handling.
 
-        Generates the instance line and adds ``ahdl_include`` directive.
+        Generates the instance line and adds ``load`` directive.
         The Verilog-A file path is automatically constructed as {cellPath}/{cellName}.va.
         """
         try:
@@ -691,7 +694,8 @@ class spectreNetlist:
             cellPath = cellItem.cellPath
             vaFileName = f"{elementSymbol.cellName}.va"
             vaFilePath = pathlib.Path(cellPath) / vaFileName
-            self.vahdlLines.add(f'ahdl_include "{vaFilePath.as_posix()}"')
+            # VACASK uses 'load' directive for OSDI/Verilog-A files
+            self.loadLines.add(f'load "{vaFilePath.as_posix()}"')
             return symbolLines
         except Exception as e:
             self._scene.logger.error(
@@ -720,11 +724,11 @@ class spectreNetlist:
             For scalar names, returns *(name, (-1, -1))*.
 
         Examples:
-            >>> spectreNetlist.parseArrayNotation("net<0:3>")
+            >>> vacaskNetlist.parseArrayNotation("net<0:3>")
             ('net', (0, 3))
-            >>> spectreNetlist.parseArrayNotation("bus<5>")
+            >>> vacaskNetlist.parseArrayNotation("bus<5>")
             ('bus', (5, 5))
-            >>> spectreNetlist.parseArrayNotation("scalar")
+            >>> vacaskNetlist.parseArrayNotation("scalar")
             ('scalar', (-1, -1))
         """
         if '<' not in name or '>' not in name:
@@ -751,12 +755,12 @@ class spectreNetlist:
             Space-separated string of expanded pin names.
 
         Example:
-            >>> spectreNetlist.expandPinNames(["a<0:1>", "b"])
+            >>> vacaskNetlist.expandPinNames(["a<0:1>", "b"])
             'a<0> a<1> b'
         """
         expandedPinNameList: list[str] = []
         for pinName in pinNamesList:
-            pinBaseName, pinTuple = spectreNetlist.parseArrayNotation(pinName)
+            pinBaseName, pinTuple = vacaskNetlist.parseArrayNotation(pinName)
             if pinTuple[0] == pinTuple[1] == -1:
                 expandedPinNameList.append(pinBaseName)
             else:
