@@ -25,7 +25,7 @@ import pathlib
 import time
 from contextlib import contextmanager
 from itertools import cycle
-from typing import TYPE_CHECKING, List, Union
+from typing import TYPE_CHECKING, Any, List, Optional, Union
 
 from PySide6.QtCore import (QEvent, QPoint, QRectF, QSizeF, Qt, QRect)
 from PySide6.QtGui import QColor, QGuiApplication, QPainterPath, QPen, QTransform
@@ -120,12 +120,12 @@ class editorScene(QGraphicsScene):
         self.mouseReleaseLoc = QPoint(0, 0)
         self.newAlignLine = None
 
-    def contextMenuEvent(self, event):
+    def contextMenuEvent(self, event) -> None:
         if self.itemAt(event.scenePos(), QTransform()) is None:
             self.messageLine.setText("No item selected")
         super().contextMenuEvent(event)
 
-    def mousePressEvent(self, event):
+    def mousePressEvent(self, event) -> None:
         modifiers = QGuiApplication.keyboardModifiers()
         if event.button() == Qt.MouseButton.LeftButton:
             self.mousePressLoc = event.scenePos().toPoint()
@@ -197,7 +197,7 @@ class editorScene(QGraphicsScene):
 
         super().mousePressEvent(event)
 
-    def mouseMoveEvent(self, event):
+    def mouseMoveEvent(self, event) -> None:
         super().mouseMoveEvent(event)
         self.mouseMoveLoc = event.scenePos().toPoint()
         if self.editModes.selectItem:
@@ -220,7 +220,7 @@ class editorScene(QGraphicsScene):
             offset = self.mouseMoveLoc - self.mousePressLoc
             self.selectedItemGroup.setPos(offset)
 
-    def mouseReleaseEvent(self, event):
+    def mouseReleaseEvent(self, event) -> None:
         # if event.button() != Qt.MouseButton.LeftButton:
         #     super().mouseReleaseEvent(event)
         #     return
@@ -350,26 +350,26 @@ class editorScene(QGraphicsScene):
 
         return super().eventFilter(source, event)
 
-    def copySelectedItems(self):
+    def copySelectedItems(self) -> None:
         """
         Will be implemented in the subclasses.
         """
 
-    def flipHorizontal(self):
+    def flipHorizontal(self) -> None:
         for item in self.selectedItems():
             item.flipTuple = (-1, 1)
 
-    def flipVertical(self):
+    def flipVertical(self) -> None:
         for item in self.selectedItems():
             item.flipTuple = (1, -1)
 
-    def selectAll(self):
+    def selectAll(self) -> None:
         """
         Select all items in the scene.
         """
         [item.setSelected(True) for item in self.items()]
 
-    def deselectAll(self):
+    def deselectAll(self) -> None:
         """
         Deselect all items in the scene.
         """
@@ -391,7 +391,7 @@ class editorScene(QGraphicsScene):
         self.editModes.setMode("selectItem")
         self.messageLine.setText("All items deselected")
 
-    def deleteSelectedItems(self):
+    def deleteSelectedItems(self) -> None:
         if self.selectedItems() is not None:
             for item in self.selectedItems():
                 # self.removeItem(item)
@@ -399,12 +399,12 @@ class editorScene(QGraphicsScene):
                 self.undoStack.push(undoCommand)
             self.update()  # update the scene
 
-    def stretchSelectedItems(self):
+    def stretchSelectedItems(self) -> None:
         for item in self.selectedItems():
             if hasattr(item, "stretch"):
                 item.stretch = True
 
-    def reloadScene(self):
+    def reloadScene(self) -> None:
         """Reload scene with proper painter state management."""
         self._safeLoadDesign(self.editorWindow.file, reload=True)
 

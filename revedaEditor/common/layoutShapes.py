@@ -28,7 +28,7 @@
 import itertools
 import math
 from pathlib import Path
-from typing import Tuple, Union
+from typing import Any, List, Optional, Tuple, Union
 
 import numpy as np
 from PySide6.QtCore import (
@@ -392,10 +392,10 @@ class layoutRect(layoutShape):
             self.sides[3]: (lambda r: r.bottomLeft(), lambda r: r.bottomRight()),
         }
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"layoutRect({self._start}, {self._end}, {self._layer})"
 
-    def paint(self, painter, option, widget):
+    def paint(self, painter, option, widget) -> None:
         rect = self._rect
 
         # Get scale once and cache it
@@ -417,7 +417,7 @@ class layoutRect(layoutShape):
         painter.setBrush(self._transformedBrush)
         painter.drawRect(rect)
 
-    def boundingRect(self):
+    def boundingRect(self) -> QRectF:
         return self._rect.normalized().adjusted(-2, -2, 2, 2)
 
     @property
@@ -637,13 +637,13 @@ class layoutInstance(layoutShape):
             del item
         self._shapes = list()
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"{self.__class__.__name__}({self._libraryName}, {self._cellName}, {self._viewName}, {self._instanceName})"
 
-    def boundingRect(self):
+    def boundingRect(self) -> QRectF:
         return self.childrenBoundingRect().normalized().adjusted(-2, -2, 2, 2)
 
-    def paint(self, painter, option, widget):
+    def paint(self, painter, option, widget) -> None:
         painter.setRenderHint(QPainter.NonCosmeticBrushPatterns)
         if option.state & QStyle.State_Selected:
             # if self in self.scene().selectedItemsSet:
@@ -730,7 +730,7 @@ class layoutPcell(layoutInstance):
     def __init__(self, shapes: list):
         super().__init__(shapes)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"{self.__class__.__name__}({self._libraryName}, {self._cellName}, {self._viewName}, {self._instanceName})"
 
 
@@ -764,7 +764,7 @@ class layoutLine(layoutShape):
         self._determineAngle(self._draftLine.angle())
         self.setZValue(999)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"layoutLine({self._draftLine}, {self._width}, {self._mode})"
 
     def _determineAngle(self, angle: float):
@@ -818,7 +818,7 @@ class layoutLine(layoutShape):
             .adjusted(-half_w, -half_w, half_w, half_w)
         )
 
-    def paint(self, painter, option, widget=None):
+    def paint(self, painter, option, widget=None) -> None:
         if self.isSelected():
             painter.setPen(self._selectedPen)
             painter.drawRect(self.boundingRect())
@@ -906,7 +906,7 @@ class layoutPath(layoutShape):
         self._rectCorners(self._draftLine.angle())
         self.setZValue(self._layer.z)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return (
             f"layoutPath({self._draftLine}, {self._layer}"
             f"{self._width}, {self._startExtend}, {self._endExtend}, {self._mode})"
@@ -987,7 +987,7 @@ class layoutPath(layoutShape):
             rect = QRectF(point1, point2).normalized()
         return rect
 
-    def paint(self, painter, option, widget):
+    def paint(self, painter, option, widget) -> None:
         # Get scale once and cache it
         scale = self.scene().views()[0].transform().m11()
         if self.isSelected():
@@ -1173,7 +1173,7 @@ class layoutRuler(layoutShape):
         # self.update(self.boundingRect())
         self.setZValue(999)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return (
             f"layoutRuler({self._draftLine}, {self._width}, {self._tickGap}, "
             f"{self._tickLength}, {self._tickFont}, {self._mode})"
@@ -1270,7 +1270,7 @@ class layoutRuler(layoutShape):
             QRectF(self._rect).normalized().adjusted(-margin, -margin, margin, margin)
         )
 
-    def paint(self, painter, option, widget=None):
+    def paint(self, painter, option, widget=None) -> None:
         if self.isSelected():
             painter.setPen(self._selectedPen)
             painter.drawRect(self.childrenBoundingRect())
@@ -1367,7 +1367,7 @@ class layoutLabel(layoutShape):
         self.setOrient()
         self.setZValue(self._layer.z)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return (
             f"layoutLabel({self._start}, {self._labelText}, {self._fontFamily}, "
             f"{self._fontStyle}, {self._fontHeight}, {self._labelAlign}, "
@@ -1393,7 +1393,7 @@ class layoutLabel(layoutShape):
             self.flipTuple = (1, -1)
             self.setRotation(90)
 
-    def boundingRect(self):
+    def boundingRect(self) -> QRectF:
         return (
             QRect(
                 self._start.x(),
@@ -1410,7 +1410,7 @@ class layoutLabel(layoutShape):
         path.addRect(self.boundingRect())
         return path
 
-    def paint(self, painter, option, widget):
+    def paint(self, painter, option, widget) -> None:
         painter.setFont(self._labelFont)
         if self.isSelected():
             painter.setPen(self._selectedPen)
@@ -1540,13 +1540,13 @@ class layoutPin(layoutShape):
         self._stretchPen = QPen(QColor("red"), self._layer.pwidth, Qt.SolidLine)
         self.setZValue(self._layer.z)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return (
             f"layoutPin({self._start}, {self._end}, {self._pinName}, {self._pinDir}, "
             f"{self._pinType}, {self._layer})"
         )
 
-    def paint(self, painter, option, widget):
+    def paint(self, painter, option, widget) -> None:
         # Get scale once and cache it
         scale = self.scene().views()[0].transform().m11()
         if self.isSelected():
@@ -1558,7 +1558,7 @@ class layoutPin(layoutShape):
         painter.setBrush(self._brush)
         painter.drawRect(self._rect)
 
-    def boundingRect(self):
+    def boundingRect(self) -> QRectF:
         return self._rect.adjusted(-2, 2, 2, 2)
 
     @property
@@ -1712,10 +1712,10 @@ class layoutVia(layoutShape):
         self._definePensBrushes(self._layer)
         self.setZValue(self._layer.z)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"layoutVia({self._start}, {self._end}, {self._layer})"
 
-    def paint(self, painter, option, widget):
+    def paint(self, painter, option, widget) -> None:
         scale = self.scene().views()[0].transform().m11()
         if self.isSelected():
             painter.setPen(self._selectedPen)
@@ -1736,7 +1736,7 @@ class layoutVia(layoutShape):
             self.setFlag(QGraphicsItem.ItemIsMovable, False)
             self.setFlag(QGraphicsItem.ItemIsSelectable, False)
 
-    def boundingRect(self):
+    def boundingRect(self) -> QRectF:
         return self._rect.normalized().adjusted(-2, -2, 2, 2)
 
     def shape(self) -> QPainterPath:
@@ -1819,7 +1819,7 @@ class layoutViaArray(layoutShape):
         self._selectedPen = QPen(QColor("yellow"), 4, Qt.DashLine)
         self._selectedPen.setCosmetic(True)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return (f"layoutViaArray({self._xnum}, "
                 f"{self._ynum}, {self._xs}, "
                 f"{self._ys}, {self._start}, {self._via})")
@@ -1865,7 +1865,7 @@ class layoutViaArray(layoutShape):
         path.addRect(self.childrenBoundingRect())
         return path
 
-    def paint(self, painter, option, widget):
+    def paint(self, painter, option, widget) -> None:
         painter.setRenderHint(QPainter.NonCosmeticBrushPatterns)
         if option.state & QStyle.State_Selected:
             painter.setPen(self._selectedPen)
@@ -1930,10 +1930,10 @@ class layoutPolygon(layoutShape):
         self.setZValue(self._layer.z)
         self._flipTuple = (1, 1)  # Direct assignment instead of property
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"layoutPolygon({self._points}, {self._layer})"
 
-    def paint(self, painter, option, widget):
+    def paint(self, painter, option, widget) -> None:
         # Cache frequently accessed values
         selected = self.isSelected()
         scale = self.scene().views()[0].transform().m11()
@@ -2060,7 +2060,7 @@ class alignLine(layoutShape):
         self._determineAngle(self._draftLine.angle())
         self.setZValue(999)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"alignLine({self._draftLine}, {self._width}, {self._mode})"
 
     def _determineAngle(self, angle: float):
@@ -2093,7 +2093,7 @@ class alignLine(layoutShape):
             .adjusted(-half_w, -half_w, half_w, half_w)
         )
 
-    def paint(self, painter, option, widget=None):
+    def paint(self, painter, option, widget=None) -> None:
         if self.isSelected():
             painter.setPen(self._selectedPen)
             painter.drawRect(self.boundingRect())
