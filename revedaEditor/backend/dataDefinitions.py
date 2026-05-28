@@ -19,7 +19,7 @@
 #    Licensor: Revolution Semiconductor (Registered in the Netherlands)
 
 from dataclasses import dataclass
-from typing import NamedTuple, Union
+from typing import NamedTuple, Optional, Union
 
 from PySide6.QtCore import QPoint, QPointF, Qt
 from PySide6.QtGui import QColor
@@ -82,15 +82,16 @@ class editModes:
     stretchItem: bool
     alignItems: bool
 
-    def setMode(self, attribute):
+    def setMode(self, attribute: str) -> None:
         for key in self.__dict__.keys():
             self.__dict__[key] = False
         self.__dict__[attribute] = True
 
-    def mode(self):
+    def mode(self) -> Optional[str]:
         for key, value in self.__dict__.items():
             if value:
                 return key
+        return None
 
 
 @dataclass
@@ -134,7 +135,7 @@ class layoutModes(editModes):
 class selectModes:
     selectAll: bool
 
-    def setMode(self, attribute):
+    def setMode(self, attribute: str) -> None:
         for key in self.__dict__.keys():
             self.__dict__[key] = False
         self.__dict__[attribute] = True
