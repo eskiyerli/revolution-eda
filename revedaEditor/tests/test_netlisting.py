@@ -2,14 +2,14 @@ from unittest.mock import Mock
 
 import pytest
 
-from revedaEditor.gui.schematicEditor import schematicEditor, \
-    xyceNetlist  # adjust import path as needed
+from revedaEditor.gui.schematic_editor import SchematicEditor, \
+    XyceNetlist  # adjust import path as needed
 
 
 class TestRecursiveNetlisting:
     @pytest.fixture
     def mock_schematic(qtbot):
-        schematic = schematicEditor()
+        schematic = SchematicEditor()
         qtbot.addWidget(schematic)
         return schematic
 
@@ -19,7 +19,7 @@ class TestRecursiveNetlisting:
 
     def test_recursive_netlisting_basic_flow(self, mock_schematic, mock_cir_file):
         # Arrange
-        netlister = xyceNetlist()  # replace with your actual class
+        netlister = XyceNetlist()  # replace with your actual class
         mock_scene = mock_schematic.centralW.scene
 
         # Setup return values
@@ -40,7 +40,7 @@ class TestRecursiveNetlisting:
 
     def test_recursive_netlisting_empty_schematic(self, mock_schematic, mock_cir_file):
         # Arrange
-        netlister = xyceNetlist()
+        netlister = XyceNetlist()
         mock_scene = mock_schematic.centralW.scene
         mock_scene.findSceneSymbolSet.return_value = []
 
@@ -55,7 +55,7 @@ class TestRecursiveNetlisting:
 
     def test_recursive_netlisting_error_handling(self, mock_schematic, mock_cir_file):
         # Arrange
-        netlister = xyceNetlist()
+        netlister = XyceNetlist()
         mock_scene = mock_schematic.centralW.scene
         mock_scene.nameSceneNets.side_effect = Exception("Test error")
 
@@ -68,7 +68,7 @@ class TestRecursiveNetlisting:
     def test_recursive_netlisting_multiple_symbols(self, mock_schematic, mock_cir_file,
                                                    symbol_count):
         # Arrange
-        netlister = xyceNetlist()
+        netlister = XyceNetlist()
         mock_scene = mock_schematic.centralW.scene
         mock_symbols = [Mock() for _ in range(symbol_count)]
         mock_scene.findSceneSymbolSet.return_value = mock_symbols

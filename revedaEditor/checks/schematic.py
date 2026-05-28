@@ -24,10 +24,10 @@
 from itertools import combinations
 from typing import Set
 
-from revedaEditor.common.shapes import schematicSymbol
+from revedaEditor.common.shapes import SchematicSymbol
 
 
-def checkSymbolOverlaps(symbolSet: Set[schematicSymbol]):
+def checkSymbolOverlaps(symbolSet: Set[SchematicSymbol]):
     """
     Checks if any symbol overlaps with other symbols.
     """
@@ -48,7 +48,7 @@ def checkSymbolOverlaps(symbolSet: Set[schematicSymbol]):
     return True, collisionRectSet
 
 
-def checkUnconnectedNets(netSet: Set["schematicNet"]):
+def checkUnconnectedNets(netSet: Set["SchematicNet"]):
     """
     Checks if any net is unconnected.
     """

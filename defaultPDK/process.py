@@ -23,12 +23,12 @@
 #
 from quantiphy import Quantity
 
-import revedaEditor.backend.dataDefinitions as ddef
-from revedaEditor.backend.pdkLoader import importPDKModule
+import revedaEditor.backend.data_definitions as ddef
+from revedaEditor.backend.pdk_loader import importPDKModule
 
 fabproc = importPDKModule("process")
 
-laylyr = importPDKModule("layoutLayers")
+laylyr = importPDKModule("layout_layers")
 
 # common process parameters
 dbu = 1000  # distance between two points, 1um/1000=1n
@@ -40,10 +40,10 @@ gdsPrecision = Quantity("1 nm")
 
 # Some predefined rules
 # via defintions
-con = ddef.viaDefTuple(
+con = ddef.ViaDefTuple(
     "con", laylyr.contactLayer_drw, "", "0.1", "10", "0.1", "10", "0.1", "10"
 )
-v1 = ddef.viaDefTuple(
+v1 = ddef.ViaDefTuple(
     "v1", laylyr.via1Layer_drw, "", "0.2", "10", "0.2", "10", "0.1", "10"
 )
 processVias = [con, v1]

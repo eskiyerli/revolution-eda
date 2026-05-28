@@ -29,7 +29,7 @@ from PySide6.QtGui import (QBrush, QColor, QPen)
 from PySide6.QtCore import (QRect, Qt)
 from PySide6.QtWidgets import QGraphicsRectItem
 
-# from revedaEditor.backend.pdkLoader import importPDKModule
+# from revedaEditor.backend.pdk_loader import importPDKModule
 
 class LVSErrorRect(QGraphicsRectItem):
     def __init__(self, rect: QRect) -> None:
@@ -127,19 +127,19 @@ class LVSDBParser:
         Returns:
             Nested list representing the parsed S-expression tree.
         """
-        res = []
+        Res = []
         for token in tokens:
             if token == '(':
-                res.append(self.parse_expression(tokens))
+                Res.append(self.parse_expression(tokens))
             elif token == ')':
-                return res
+                return Res
             else:
                 # Remove quotes if present
                 if (token.startswith("'") and token.endswith("'")) or \
                    (token.startswith('"') and token.endswith('"')):
                     token = token[1:-1]
-                res.append(token)
-        return res
+                Res.append(token)
+        return Res
 
     def load(self):
         """
@@ -539,7 +539,7 @@ class LVSDBParser:
         """
         Build reverse lookup from (gdsLayer, datatype) to PDK layer name.
 
-        Scans the PDK module for layLayer objects (objects with gdsLayer and
+        Scans the PDK module for LayLayer objects (objects with gdsLayer and
         datatype attributes) and builds a lookup dictionary. This enables
         resolution of GDS layer numbers to human-readable PDK layer names.
 
@@ -547,10 +547,10 @@ class LVSDBParser:
         """
         if not self.pdk:
             return
-        # Scan PDK module for layLayer objects
+        # Scan PDK module for LayLayer objects
         for attr_name in dir(self.pdk):
             attr = getattr(self.pdk, attr_name)
-            # Check if it's a layLayer-like object with gdsLayer and datatype
+            # Check if it's a LayLayer-like object with gdsLayer and datatype
             if hasattr(attr, 'gdsLayer') and hasattr(attr, 'datatype'):
                 gds_layer = getattr(attr, 'gdsLayer')
                 datatype = getattr(attr, 'datatype')
@@ -1549,11 +1549,11 @@ if __name__ == '__main__':
     pdk_module = None
     try:
         # When run from within ihp_pdk package
-        from .. import layoutLayers as pdk_module
+        from .. import layout_layers as pdk_module
     except ImportError:
         try:
             # When ihp_pdk is in path
-            import layoutLayers as pdk_module
+            import layout_layers as pdk_module
         except ImportError:
             pass
             

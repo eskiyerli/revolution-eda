@@ -25,12 +25,12 @@
 from quantiphy import Quantity
 
 
-class baseInst():
+class BaseInst():
     def __init__(self, labels_dict: dict):
         self._labelsDict = labels_dict
 
 
-class res(baseInst):
+class Res(BaseInst):
     def __init__(self, labels_dict: dict):
         super().__init__(labels_dict)
 
@@ -41,7 +41,7 @@ class res(baseInst):
         return '?'
 
 
-class nmos(baseInst):
+class Nmos(BaseInst):
     def __init__(self, labels_dict: dict):
         super().__init__(labels_dict)
         self.w = Quantity(self._labelsDict['@w'].labelValue)
@@ -55,16 +55,16 @@ class nmos(baseInst):
         return self.sourceDiffs(self.nf) * (self.w / self.nf) * self.sd1p8v
 
 
-class dnwpw(baseInst):
+class Dnwpw(BaseInst):
     def __init__(self, labels_dict: dict):
         super().__init__(labels_dict)
 
 
-class npolyf_u(baseInst):
+class Npolyf_u(BaseInst):
     def __init__(self, labels_dict: dict):
         super().__init__(labels_dict)
 
 
-class ind(baseInst):
+class Ind(BaseInst):
     def __init__(self, labels_dict: dict):
         super().__init__(labels_dict)

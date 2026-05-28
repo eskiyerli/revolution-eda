@@ -1,5 +1,5 @@
 # Netlisting module for Revolution EDA
-from revedaEditor.netlisting.xyceNetlist import xyceNetlist
-from revedaEditor.netlisting.spectreNetlist import spectreNetlist
+from revedaEditor.netlisting.xyce_netlist import XyceNetlist
+from revedaEditor.netlisting.spectre_netlist import SpectreNetlist
 
-__all__ = ["xyceNetlist", "spectreNetlist"]
+__all__ = ["XyceNetlist", "SpectreNetlist"]

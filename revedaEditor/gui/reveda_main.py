@@ -1,0 +1,639 @@
+#    “Commons Clause” License Condition v1.0
+#   #
+#    The Software is provided to you by the Licensor under the License, as defined
+#    below, subject to the following condition.
+#
+#    Without limiting other conditions in the License, the grant of rights under the
+#    License will not include, and the License does not grant to you, the right to
+#    Sell the Software.
+#
+#    For purposes of the foregoing, “Sell” means practicing any or all of the rights
+#    granted to you under the License to provide to third parties, for a fee or other
+#    consideration (including without limitation fees for hosting) a product or service whose value
+#    derives, entirely or substantially, from the functionality of the Software. Any
+#    license notice or attribution required by the License must also include this
+#    Commons Clause License Condition notice.
+#
+
+#
+#    Software: Revolution EDA
+#    License: Mozilla Public License 2.0
+#    Licensor: Revolution Semiconductor (Registered in the Netherlands)
+#
+import json
+import logging
+from pathlib import Path
+import shutil
+from typing import List, Dict
+
+from PySide6.QtCore import QThreadPool, QThread, Slot, Signal, QTimer, QObject, QSize
+from PySide6.QtGui import (
+    QAction,
+    QIcon,
+)
+from PySide6.QtWidgets import (
+    QApplication,
+)
+from PySide6.QtWidgets import (
+    QGraphicsScene,
+    QDialog,
+    QMainWindow,
+    QMessageBox,
+    QVBoxLayout,
+    QWidget,
+    QFileDialog,
+)
+from dotenv import load_dotenv
+
+import revedaEditor.backend.data_definitions as ddef
+import revedaEditor.backend.library_methods as libm
+import revedaEditor.fileio.import_gds as igds
+import revedaEditor.fileio.import_layp as imlyp
+import revedaEditor.fileio.import_spice as impspice
+import revedaEditor.fileio.import_veriloga as impvlga
+import revedaEditor.fileio.import_xschem_sym as impxsym
+import revedaEditor.gui.file_dialogues as fd
+import revedaEditor.gui.help_browser as hlp
+import revedaEditor.gui.library_browser as libw
+import revedaEditor.gui.python_console as pcon
+import revedaEditor.gui.revinit as revinit
+import revedaEditor.gui.stipple_editor as stip
+from revedaEditor.backend.pdk_loader import importPDKModule
+
+from revedaEditor.resources import resources  # noqa: F401
+
+process = importPDKModule("process")
+
+
+class EventLoopMonitor(QObject):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.check_event_loop)
+        self.timer.start(1000)  # Check every second
+
+    def check_event_loop(self):
+        print("Event loop is responsive")
+
+
+class MainwContainer(QWidget):
+    """
+    Definition for the main app window layout.
+    """
+
+    def __init__(self, parent):
+        super().__init__(parent=parent)
+        self.parent = parent
+        self.console = pcon.PythonConsole(globals())
+        self.init_UI()
+
+    def init_UI(self):
+        # self.console.setfont(QFont("Fira Mono Regular", 12))
+        self.console.writeoutput(
+            f"Welcome to Revolution EDA version {revinit.__version__}"
+        )
+        self.console.writeoutput("Revolution Semiconductor (C) 2026.")
+        self.console.writeoutput(
+            "Mozilla Public License v2.0 modified with Commons Clause"
+        )
+        # layout statements, using a grid layout
+        gLayout = QVBoxLayout()
+        gLayout.setSpacing(10)
+        gLayout.addWidget(self.console)
+        self.setLayout(gLayout)
+
+
+class MainWindow(QMainWindow):
+    # Class-level constants
+    WINDOW_SIZE = QSize(900, 300)
+    VIEW_TYPES = {
+        "switch": ["schematic", "veriloga", "spice", "symbol"],
+        "stop": ["symbol"],
+    }
+    PATHS = {
+        "defaultPDK": "defaultPDK",
+        "testbenches": "testbenches",
+        "library": "library.json",
+        "config": "reveda.conf",
+    }
+    STATUS_READY = "Ready"
+
+    # Signal definitions
+    sceneSelectionChanged = Signal(QGraphicsScene)
+    keyPressedView = Signal(int)
+
+    def __init__(self) -> None:
+        """Initialize the main application window."""
+        super().__init__()
+
+        # Initialize core components
+        self._init_window()
+        self._initDataStructures()
+        self._initPaths()
+        self._initAppComponents()
+        self._loggerDef()
+
+    def _init_window(self) -> None:
+        """Initialize window properties and UI components."""
+        try:
+            # Set window size
+            self.resize(self.WINDOW_SIZE)
+
+            # Create UI elements
+            self._createActions()
+            self._createMenuBar()
+            self._createTriggers()
+
+            # Setup central widget
+            self.centralW = MainwContainer(self)
+            self.setCentralWidget(self.centralW)
+
+            # Setup status bar
+            self.mainW_statusbar = self.statusBar()
+            self.mainW_statusbar.showMessage(self.STATUS_READY)
+        except Exception as e:
+            self._handleInitError("Window initialization failed", e)
+
+    def _initDataStructures(self) -> None:
+        """Initialize data structures and views."""
+
+        self.switchViewList: List[str] = self.VIEW_TYPES["switch"]
+        self.stopViewList: List[str] = self.VIEW_TYPES["stop"]
+        self.openViews: Dict = {}
+
+    def _initPaths(self) -> None:
+        """Initialize application paths."""
+
+        try:
+            self._app = QApplication.instance()
+            revedaPathObj = getattr(self._app, "revedaPathObj", None)
+            if revedaPathObj is not None:
+                self.runPath = revedaPathObj.parent
+            else:
+                self.runPath = Path.cwd()
+            revedaPdkPathObj = getattr(self._app, "revedaPdkPathObj", None)
+            if revedaPdkPathObj is not None:
+                self.pdkPath = revedaPdkPathObj
+            self.outputPrefixPath = self.runPath.parent / self.PATHS["testbenches"]
+            self.libraryPathObj = self.runPath / self.PATHS["library"]
+            self.confFilePath = self.runPath / self.PATHS["config"]
+            revedaPluginPathObj = getattr(self._app, "revedaPluginPathObj", None)
+            self.pluginsPath: str = (
+                str(revedaPluginPathObj) if revedaPluginPathObj is not None else ""
+            )
+            # self.pluginsPath: str = str(self._app.revedaPluginPathObj) if hasattr(self._app,
+            #     "revedaPluginPathObj") else ""
+        except Exception as e:
+            self._handleInitError("Path initialization failed", e)
+
+    def _initAppComponents(self) -> None:
+        """Initialize application components and resources."""
+        try:
+            # Core application components
+            self.app = QApplication.instance()
+            self.logger = logging.getLogger("reveda")
+            # Library components
+            self.libraryDict = self.readLibDefFile(self.libraryPathObj)
+            self.LibraryBrowser = libw.LibraryBrowser(self)
+            self.libraryModel = self.LibraryBrowser.designView.libraryModel
+
+            # Thread pool setup
+            self._setupThreadPool()
+
+            # Final initialization
+
+            self.loadAppState()
+        except Exception as e:
+            self._handleInitError("Application component initialization failed", e)
+
+    def _setupThreadPool(self) -> None:
+        """Configure and initialize thread pool."""
+        self.threadPool = QThreadPool.globalInstance()
+        cpuCount = QThread.idealThreadCount()
+        self.threadPool.setMaxThreadCount(max(2, cpuCount))
+        self.threadPool.setExpiryTimeout(30000)
+
+    def _handleInitError(self, message: str, error: Exception) -> None:
+        """Handle initialization errors."""
+        self.logger.error(f"{message}: {str(error)}")
+
+    def _loggerDef(self):
+
+        c_handler = logging.StreamHandler(stream=self.centralW.console)
+        c_handler.setLevel(logging.DEBUG)
+        c_format = logging.Formatter("%(levelname)s - %(message)s")
+        c_handler.setFormatter(c_format)
+        self.logger.addHandler(c_handler)
+
+    def _createMenuBar(self):
+        self.mainW_menubar = self.menuBar()
+        self.mainW_menubar.setNativeMenuBar(False)
+        # Returns QMenu object.
+        self.menuFile = self.mainW_menubar.addMenu("&File")
+        self.menuTools = self.mainW_menubar.addMenu("&Tools")
+        self.menuOptions = self.mainW_menubar.addMenu("&Options")
+        self.menuHelp = self.mainW_menubar.addMenu("&Help")
+        self.menuFile.addAction(self.exitAction)
+        self.menuTools.addAction(self.libraryBrowserAction)
+        self.importTools = self.menuTools.addMenu("&Import")
+        self.pluginsMenu = self.menuTools.addMenu("Plugins")
+        self.librariesMenu = self.menuTools.addMenu("Libraries")
+        self.pdksMenu = self.menuTools.addMenu("PDKs")
+        self.menuTools.addAction(self.createStippleAction)
+        self.importTools.addAction(self.importVerilogaAction)
+        self.importTools.addAction(self.importSpiceAction)
+        self.importTools.addAction(self.importLaypFileAction)
+        self.importTools.addAction((self.importXschSymAction))
+        self.importTools.addAction(self.importGDSAction)
+        self.pluginsMenu.addAction(self.setupPluginsAction)
+        self.pdksMenu.addAction(self.setupPDKsAction)
+        self.librariesMenu.addAction(self.setupLibrariesAction)
+        self.menuOptions.addAction(self.optionsAction)
+        self.menuHelp.addAction(self.helpAction)
+        self.menuHelp.addAction(self.licenseAction)
+        self.menuHelp.addAction(self.aboutAction)
+        self.menuOptions.addAction(self.optionsAction)
+
+    def _createActions(self):
+        exitIcon = QIcon(":/icons/external.png")
+        self.exitAction = QAction(exitIcon, "Exit", self)
+        self.exitAction.setShortcut("Ctrl+Q")
+        importVerilogaIcon = QIcon(":/icons/document-import.png")
+        self.importVerilogaAction = QAction(
+            importVerilogaIcon, "Import Verilog-a file..."
+        )
+        self.importSpiceAction = QAction(
+            importVerilogaIcon, "Import Spice file...", self
+        )
+        self.importLaypFileAction = QAction(
+            importVerilogaIcon, "Import KLayout Layer Prop. " "File...", self
+        )
+        self.importXschSymAction = QAction(
+            importVerilogaIcon, "Import Xschem Symbols...", self
+        )
+        self.importGDSAction = QAction(importVerilogaIcon, "Import GDS...", self)
+        self.importGDSAction.setToolTip("Import GDS to Layout")
+        openLibIcon = QIcon(":/icons/database--pencil.png")
+        self.libraryBrowserAction = QAction(openLibIcon, "Library Browser", self)
+        optionsIcon = QIcon(":/icons/resource-monitor.png")
+        self.optionsAction = QAction(optionsIcon, "Options...", self)
+        self.createStippleAction = QAction("Create Stipple...", self)
+        self.setupPluginsAction = QAction("Setup Plugins...", self)
+        self.setupPDKsAction = QAction("Setup PDK...", self)
+        self.setupLibrariesAction = QAction("Setup Libraries", self)
+        helpIcon = QIcon(":/icons/document-arrow.png")
+        self.helpAction = QAction(helpIcon, "Help...", self)
+        self.aboutIcon = QIcon(":/icons/information.png")
+        self.aboutAction = QAction(self.aboutIcon, "About", self)
+        licenseIcon = QIcon(":/icons/document-text.png")
+        self.licenseAction = QAction(licenseIcon, "License...", self)
+
+    def _createTriggers(self):
+        self.exitAction.triggered.connect(self.exitApp)
+        self.libraryBrowserAction.triggered.connect(self.libraryBrowserClick)
+        self.importVerilogaAction.triggered.connect(self.importVerilogaClick)
+        self.importSpiceAction.triggered.connect(self.importSpiceClick)
+        self.importLaypFileAction.triggered.connect(self.importLaypClick)
+        self.importXschSymAction.triggered.connect(self.importXschSymClick)
+        self.optionsAction.triggered.connect(self.optionsClick)
+        self.importGDSAction.triggered.connect(self.importGDSClick)
+        self.createStippleAction.triggered.connect(self.createStippleClick)
+        self.setupPluginsAction.triggered.connect(self.setupPluginsClick)
+        self.setupPDKsAction.triggered.connect(self.setupPDKsClick)
+        self.setupLibrariesAction.triggered.connect(self.setupLibrariesClick)
+        self.helpAction.triggered.connect(self.helpClick)
+        self.aboutAction.triggered.connect(self.aboutClick)
+        self.licenseAction.triggered.connect(self.licenseClick)
+
+    def readLibDefFile(self, libPath: Path):
+        libraryDict = dict()
+        data = dict()
+        if libPath.exists():
+            with libPath.open(mode="r") as f:
+                data = json.load(f)
+            if data.get("libdefs") is not None:
+                for key, value in data["libdefs"].items():
+                    libraryDict[key] = Path(value)
+            elif data.get("include") is not None:
+                for item in data.get("include"):
+                    libraryDict.update(self.readLibDefFile(Path(item)))
+        return libraryDict
+
+    # open library browser window
+    def libraryBrowserClick(self):
+        self.LibraryBrowser.show()
+        self.LibraryBrowser.raise_()
+
+    def optionsClick(self):
+        dlg = fd.AppProperties(self)
+        load_dotenv()
+        import os
+
+        # Set initial values more efficiently using a dictionary
+        initial_values = {
+            "rootPathEdit": str(self.runPath),
+            "simInpPathEdit": str(self.pdkPath),
+            "simOutPathEdit": str(self.outputPrefixPath),
+            "pluginsPathEdit": self.pluginsPath,
+            "vaModulePathEdit": os.getenv("REVEDA_VA_MODULE_PATH", str(self.pdkPath)),
+            "switchViewsEdit": ", ".join(self.switchViewList),
+            "stopViewsEdit": ", ".join(self.stopViewList),
+            "threadPoolEdit": str(self.threadPool.maxThreadCount()),
+        }
+
+        # Set text values in one loop
+        for field, value in initial_values.items():
+            getattr(dlg, field).setText(value)
+
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            # Get and process all text values at once
+            text_values = {
+                "rootPathEdit": dlg.rootPathEdit.text(),
+                "simInpPathEdit": dlg.simInpPathEdit.text(),
+                "simOutPathEdit": dlg.simOutPathEdit.text(),
+                "pluginsPathEdit": dlg.pluginsPathEdit.text(),
+                "vaModulePathEdit": dlg.vaModulePathEdit.text(),
+                "switchViewsEdit": dlg.switchViewsEdit.text(),
+                "stopViewsEdit": dlg.stopViewsEdit.text(),
+                "threadPoolEdit": dlg.threadPoolEdit.text(),
+            }
+
+            # Update paths
+            self.runPath = Path(text_values["rootPathEdit"])
+            self.pdkPath = Path(text_values["simInpPathEdit"]) if Path(text_values[
+                        "simInpPathEdit"]).joinpath('config.json').exists() else self.pdkPath
+            self.outputPrefixPath = Path(text_values["simOutPathEdit"])
+
+            self.app.updatePDKPath(self.pdkPath)
+            self.app.updatePluginsPath(text_values["pluginsPathEdit"])
+            self.app.updateVaModulesPath(text_values["vaModulePathEdit"])
+
+            # Process lists in a more compact way
+            self.switchViewList = [
+                x.strip() for x in text_values["switchViewsEdit"].split(",")
+            ]
+            self.stopViewList = [
+                x.strip() for x in text_values["stopViewsEdit"].split(",")
+            ]
+
+            # Update thread pool setting
+            try:
+                threadCount = int(text_values["threadPoolEdit"])
+                self.threadPool.setMaxThreadCount(max(1, threadCount))
+            except ValueError:
+                pass
+
+            # Save state if needed
+            if dlg.optionSaveBox.isChecked():
+                self.saveAppState()
+
+    def importVerilogaClick(self):
+        """
+        Import a Verilog-A view and add it to a design library.
+        """
+        impvlga.importVerilogaModule(ddef.ViewNameTuple("", "", ""), "")
+
+    def importSpiceClick(self):
+        """
+        Import a Spice view and add it to a design library.
+
+        Args:
+            self: The instance of the class.
+
+        Returns:
+            None
+        """
+        impspice.importSpiceSubckt(ddef.ViewNameTuple("", "", ""), "")
+
+    def importLaypClick(self):
+        importDlg = fd.KlayoutLaypImportDialogue(self)
+        if importDlg.exec() == QDialog.DialogCode.Accepted:
+            lypFile = importDlg.laypFileEdit.text()
+            outputFile = importDlg.outputFileEdit.text()
+            imlyp.parseLyp(lypFile, outputFile)
+
+    def importXschSymClick(self):
+        importDlg = fd.XschemSymIimportDialogue(
+            self, self.LibraryBrowser.designView.libraryModel
+        )
+
+        if importDlg.exec() == QDialog.DialogCode.Accepted:
+            symbolFiles = importDlg.symFileEdit.text().split(",")
+            importLibraryName = importDlg.libNamesCB.currentText()
+            scaleFactor = float(importDlg.scaleEdit.text().strip())
+
+            for symbolFile in symbolFiles:
+                symbolFileObj = Path(symbolFile.strip())
+                importObj = impxsym.ImportXschemSym(
+                    self,
+                    symbolFileObj,
+                    self.LibraryBrowser.designView,
+                    importLibraryName,
+                )
+                importObj.scaleFactor = scaleFactor
+                importObj.importSymFile()
+
+    def importGDSClick(self):
+        dlg = fd.GdsImportDialogue(self)
+        dlg.unitEdit.setText(str(process.gdsUnit))
+        dlg.precisionEdit.setText(str(process.gdsPrecision))
+        dlg.libNameEdit.setText("importLib")
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            gdsImportLibName = dlg.libNameEdit.text().strip()
+            gdsImportFileObj = Path(dlg.inputFileEdit.text().strip())
+            gdsImportLibDirObj = self.libraryDict.get(gdsImportLibName)
+            if gdsImportLibDirObj:
+                if gdsImportLibDirObj.exists():
+                    shutil.rmtree(gdsImportLibDirObj, ignore_errors=True)
+
+                libItem = libm.getLibItem(
+                    self.LibraryBrowser.designView.libraryModel, gdsImportLibName
+                )
+                if libItem:
+                    self.LibraryBrowser.designView.libraryModel.removeLibraryFromModel(
+                        libItem
+                    )
+                gdsImportLibItem = (
+                    self.LibraryBrowser.designView.libraryModel.addLibraryToModel(
+                        gdsImportLibDirObj
+                    )
+                )
+                gdsImportLibDirObj.mkdir(parents=True, exist_ok=True)
+                gdsImportLibDirObj.joinpath("reveda.lib").touch(exist_ok=True)
+            else:
+                gdsImportLibDirObj, gdsImportLibItem = self.createNewLibrary(
+                    gdsImportLibName
+                )
+            try:
+                gdsImportObj = igds.GdsImporter(
+                    self, gdsImportFileObj, gdsImportLibItem
+                )
+                if gdsImportObj:
+                    gdsImportObj.import_gds()
+                    self.logger.info("GDS Import completed.")
+            except Exception as e:
+                self.logger.error(f"GDS Import failed: {e}")
+
+    def createNewLibrary(self, libraryName):
+        warning = QMessageBox()
+        warning.setIcon(QMessageBox.Warning)
+        warning.setWindowTitle("Warning")
+        warning.setText("The library does not exist.")
+        warning.setInformativeText(
+            f"Do you want to create a new library: {libraryName}?\n"
+            "Select the parentW directory of the library."
+        )
+        warning.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        warning.setDefaultButton(QMessageBox.Yes)
+        ret = warning.exec()
+        if ret == QMessageBox.Yes:
+
+            libDialog = QFileDialog(self, "Select Parent Directory", str(self.runPath))
+            libDialog.setFileMode(QFileDialog.Directory)
+            if libDialog.exec() == QDialog.DialogCode.Accepted:
+                selectedDir = libDialog.selectedFiles()[0]
+                libraryPath = Path(selectedDir).joinpath(libraryName)
+                libraryPath.mkdir(parents=True, exist_ok=True)
+                libraryPath.joinpath("reveda.lib").touch(exist_ok=True)
+                self.libraryDict[libraryName] = libraryPath
+                LibraryItem = (
+                    self.LibraryBrowser.designView.libraryModel.addLibraryToModel(
+                        libraryPath
+                    )
+                )
+                return libraryPath, LibraryItem
+        else:
+            return None, None
+
+    def createStippleClick(self):
+        stippleWindow = stip.StippleEditor(self)
+        stippleWindow.show()
+
+    def setupPluginsClick(self):
+        from revedaEditor.gui.plugins_registry import PluginRegistryWindow
+
+        pluginRegistry = PluginRegistryWindow(self)
+        pluginRegistry.show()
+
+    def setupPDKsClick(self):
+        from revedaEditor.gui.pdk_registry import PDKRegistryWindow
+        pdkRegistry = PDKRegistryWindow(self)
+        pdkRegistry.show()
+
+    def setupLibrariesClick(self):
+        from revedaEditor.gui.library_registry import LibraryRegistryWindow
+
+        # Open the library registry window
+        libRegistry = LibraryRegistryWindow(
+            parent=self,
+            libraries_dir=Path.cwd().parent  # or any default path
+        )
+        libRegistry.show()
+
+    def helpClick(self):
+        HelpBrowser = hlp.HelpBrowser(self)
+        HelpBrowser.show()
+
+    def aboutClick(self):
+        abtDlg = hlp.AboutDialog(self)
+        abtDlg.show()
+
+    def licenseClick(self):
+        licDlg = hlp.LicenseDialog(self)
+        licDlg.exec()
+
+    def loadAppState(self):
+        if not self.confFilePath.exists():
+            return
+
+        self.logger.info(f"Configuration file: {self.confFilePath} exists")
+
+        try:
+            with self.confFilePath.open(mode="r") as f:
+                items = json.load(f)
+
+            if not items:
+                return
+
+            # Define default values and paths in a dictionary
+            path_settings = {
+                "runPath": ("runPath", self.runPath),
+                "pdkPath": ("pdkPath", self.pdkPath),
+                "outputPrefixPath": ("outputPrefixPath", self.outputPrefixPath),
+            }
+
+            # Update paths
+            for attr, (key, default) in path_settings.items():
+                setattr(self, attr, Path(items.get(key, default)))
+
+            # Handle lists with single operation
+            for attr in ["switchViewList", "stopViewList"]:
+                value = items.get(attr, [""])
+                if value and value[0] != "":
+                    setattr(self, attr, value)
+
+            # Restore window geometry
+            if "windowGeometry" in items:
+                geom = items["windowGeometry"]
+                if len(geom) == 4:
+                    self.setGeometry(geom[0], geom[1], geom[2], geom[3])
+
+            # Restore thread pool settings
+            if "threadPoolMaxCount" in items:
+                self.threadPool.setMaxThreadCount(items["threadPoolMaxCount"])
+
+        except (json.JSONDecodeError, IOError) as e:
+            self.logger.error(f"Error loading configuration: {e}")
+
+    def saveAppState(self):
+        items = {
+            "runPath": str(self.runPath),
+            "pdkPath": str(self.pdkPath),
+            "outputPrefixPath": str(self.outputPrefixPath),
+            "switchViewList": self.switchViewList,
+            "stopViewList": self.stopViewList,
+            "windowGeometry": [self.x(), self.y(), self.width(), self.height()],
+            "threadPoolMaxCount": self.threadPool.maxThreadCount(),
+        }
+        with self.confFilePath.open(mode="w", encoding="utf") as f:
+            json.dump(items, f, indent=4)
+
+    def closeEvent(self, event):
+        reply = QMessageBox.question(
+            self,
+            "Confirm Exit",
+            "Are you sure you want to exit?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if reply == QMessageBox.Yes:
+            if not self.threadPool.waitForDone(5000):
+                self.threadPool.clear()
+            # Explicitly close all tracked editor/plugin windows
+            for window in list(self.openViews.values()):
+                window.close()
+            self.openViews.clear()
+            self.app.closeAllWindows()
+            event.accept()
+        else:
+            event.ignore()
+
+    def exitApp(self):
+        self.close()
+
+    # def exitApp(self):
+    #     reply = QMessageBox.question(self, "Confirm Exit", "Are you sure you want to exit?",
+    #         QMessageBox.Yes | QMessageBox.No, QMessageBox.No, )
+    #     if reply == QMessageBox.Yes:
+    #         if not self.threadPool.waitForDone(5000):
+    #             self.threadPool.clear()
+    #         for item in self.app.topLevelWidgets():
+    #             item.close()  # self.app.closeAllWindows()
+
+    @Slot()
+    def selectionChangedScene(self):
+        self.sceneSelectionChanged.emit(self.sender())
+
+    @Slot()
+    def viewKeyPressed(self, key: int):
+        self.keyPressedView.emit(key)

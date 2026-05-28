@@ -69,13 +69,13 @@ from pathlib import Path
 from dotenv import load_dotenv
 from PySide6.QtWidgets import QApplication
 
-import revedaEditor.gui.pythonConsole as pcon
-import revedaEditor.gui.revedaMain as rvm
-from revedaEditor.backend.pdkLoader import pdkConfig
-from revedaEditor.backend.pluginsLoader import pluginsLoader
+import revedaEditor.gui.python_console as pcon
+import revedaEditor.gui.reveda_main as rvm
+from revedaEditor.backend.pdk_loader import PdkConfig
+from revedaEditor.backend.plugins_loader import PluginsLoader
 
 
-class revedaApp(QApplication):
+class RevedaApp(QApplication):
     """Revolution EDA application with plugin support and path management."""
 
     def __init__(self, *args, **kwargs):
@@ -118,7 +118,7 @@ class revedaApp(QApplication):
             if self.revedaPdkPathObj.exists():
                 sys.path.append(str(self.revedaPdkPathObj))
         if self.revedaPdkPathObj.exists():
-            self.pdkConfigObj = pdkConfig(self.revedaPdkPathObj)
+            self.pdkConfigObj = PdkConfig(self.revedaPdkPathObj)
         else:
             self.pdkConfigObj = None
 
@@ -133,7 +133,7 @@ class revedaApp(QApplication):
 
         if self.revedaPluginPathObj.exists():
             sys.path.append(str(self.revedaPluginPathObj))
-            self.pluginsObj = pluginsLoader(self.revedaPluginPathObj)
+            self.pluginsObj = PluginsLoader(self.revedaPluginPathObj)
         else:
             self.pluginsObj = None
 
@@ -159,7 +159,7 @@ class revedaApp(QApplication):
             self.revedaPluginPathObj = Path(newPath).resolve()
             # Update environment variable
             os.environ["REVEDA_PLUGIN_PATH"] = str(self.revedaPluginPathObj)
-            self.pluginsObj = pluginsLoader(self.revedaPluginPathObj)
+            self.pluginsObj = PluginsLoader(self.revedaPluginPathObj)
             # Update sys.path
             if str(self.revedaPluginPathObj) not in sys.path:
                 sys.path.append(str(self.revedaPluginPathObj))
@@ -209,7 +209,7 @@ class revedaApp(QApplication):
 
 
 def main():
-    app = revedaApp(sys.argv)
+    app = RevedaApp(sys.argv)
     style_map = {"Windows": "Fusion", "Linux": "Fusion", "Darwin": "macOS"}
     style = style_map.get(platform.system())
     if style:

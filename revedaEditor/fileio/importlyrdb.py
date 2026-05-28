@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
 )
 from lxml import etree
 
-from revedaEditor.backend.pdkLoader import importPDKModule
+from revedaEditor.backend.pdk_loader import importPDKModule
 
 process = importPDKModule("process")
 

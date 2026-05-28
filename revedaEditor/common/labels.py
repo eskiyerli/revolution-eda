@@ -34,14 +34,14 @@ from quantiphy import Quantity
 
 load_dotenv()
 
-from revedaEditor.backend.pdkLoader import importPDKModule
+from revedaEditor.backend.pdk_loader import importPDKModule
 
-schlyr = importPDKModule("schLayers")
-symlyr = importPDKModule("symLayers")
+schlyr = importPDKModule("sch_layers")
+symlyr = importPDKModule("sym_layers")
 cb = importPDKModule("callbacks")
 
 
-class symbolLabel(QGraphicsSimpleTextItem):
+class SymbolLabel(QGraphicsSimpleTextItem):
     """
     label: text class definition for symbol drawing.
     labelText is what is shown on the symbol in a schematic
@@ -111,14 +111,14 @@ class symbolLabel(QGraphicsSimpleTextItem):
 
     def __repr__(self):
         return (
-            f"symbolLabel({self._start},{self._labelDefinition},"
+            f"SymbolLabel({self._start},{self._labelDefinition},"
             f" {self._labelType}, {self._labelHeight}, {self._labelAlign}, {self._labelOrient},"
             f" {self._labelUse})"
         )
 
     def mousePressEvent(self, event):
         super().mousePressEvent(event)
-        if self.scene() and self.scene().editModes.moveItem:
+        if self.scene() and self.scene().EditModes.moveItem:
             self.setFlag(QGraphicsItem.ItemIsMovable, True)
 
     def itemChange(self, change, value):
@@ -293,15 +293,15 @@ class symbolLabel(QGraphicsSimpleTextItem):
         """
         self.prepareGeometryChange()
 
-        if self._labelType == symbolLabel.labelTypes[0]:  # normal label
+        if self._labelType == SymbolLabel.labelTypes[0]:  # normal label
             # Set label name, value, and text to label definition
             self._labelName = f"@{self._labelDefinition}"
             self._labelValue = self._labelDefinition
             self._labelText = self._labelDefinition
-        elif self._labelType == symbolLabel.labelTypes[1]:  # NLPLabel
+        elif self._labelType == SymbolLabel.labelTypes[1]:  # NLPLabel
             (self._labelName, self._labelText, self._labelValue) = self.createNLPLabel(
                 self._labelDefinition, self._labelValue)
-        elif self._labelType == symbolLabel.labelTypes[2]:  # pyLabel
+        elif self._labelType == SymbolLabel.labelTypes[2]:  # pyLabel
             self.createPyLabel()
         self.setText(self._labelText)
 
@@ -336,7 +336,7 @@ class symbolLabel(QGraphicsSimpleTextItem):
                 return (labelName, labelDefinition, labelValue)
 
             # Predefined labels case
-            if labelDefinition in symbolLabel.predefinedLabels:
+            if labelDefinition in SymbolLabel.predefinedLabels:
                 return self._createPredefinedLabels(labelDefinition)
 
             # Handle different part counts

@@ -26,14 +26,14 @@ from PySide6.QtCore import (
     QPoint,
 )
 
-from revedaEditor.backend.pdkLoader import importPDKModule
+from revedaEditor.backend.pdk_loader import importPDKModule
 
-laylyr = importPDKModule('layoutLayers')
+laylyr = importPDKModule('layout_layers')
 fabproc = importPDKModule('process')
-import revedaEditor.common.layoutShapes as lshp
+import revedaEditor.common.layout_shapes as lshp
 
 
-class nmos(lshp.layoutPcell):
+class Nmos(lshp.LayoutPcell):
     cut = int(0.17 * fabproc.dbu)
     poly_to_cut = int(0.055 * fabproc.dbu)
     diff_ovlp_cut = int(0.06 * fabproc.dbu)
@@ -76,23 +76,23 @@ class nmos(lshp.layoutPcell):
         self._widthPerFinger = self._drawnWidth / self._nf
         self.shapes = self.createGeometry()
 
-    def createGeometry(self) -> list[lshp.layoutShape]:
-        activeRect = lshp.layoutRect(
+    def createGeometry(self) -> list[lshp.LayoutShape]:
+        activeRect = lshp.LayoutRect(
             QPoint(0, 0),
             QPoint(
                 self._widthPerFinger,
-                int(self._nf * self._drawnLength + 2 * nmos.sa + (self._nf - 1) * nmos.sd),
+                int(self._nf * self._drawnLength + 2 * Nmos.sa + (self._nf - 1) * Nmos.sd),
             ),
             laylyr.odLayer_drw,
         )
-        polyFingers = [lshp.layoutRect(
-            QPoint(-nmos.poly_ovlp_diff,
-                   nmos.sa + finger * (self._drawnLength + nmos.sd)),
-            QPoint(self._widthPerFinger + nmos.poly_ovlp_diff,
-                   nmos.sa + finger * (self._drawnLength + nmos.sd) + self._drawnLength),
+        polyFingers = [lshp.LayoutRect(
+            QPoint(-Nmos.poly_ovlp_diff,
+                   Nmos.sa + finger * (self._drawnLength + Nmos.sd)),
+            QPoint(self._widthPerFinger + Nmos.poly_ovlp_diff,
+                   Nmos.sa + finger * (self._drawnLength + Nmos.sd) + self._drawnLength),
             laylyr.poLayer_drw,
         ) for finger in range(self._nf)]
-        # contacts = [lshp.layoutRect(
+        # contacts = [lshp.LayoutRect(
 
         # )]
         return [activeRect, *polyFingers]
@@ -122,5 +122,5 @@ class nmos(lshp.layoutPcell):
         self._nf = value
 
 
-class pmos(lshp.layoutPcell):
+class Pmos(lshp.LayoutPcell):
     pass

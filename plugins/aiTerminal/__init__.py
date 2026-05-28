@@ -26,10 +26,10 @@ __all__ = []
 
 
 def __getattr__(name):
-    if name == "aiTerminal":
-        from . import aiTerminal
-        return aiTerminal
+    if name == "AiTerminal":
+        from . import ai_terminal
+        return AiTerminal
     elif name == "toggleAITerminal":
-        from .aiTerminal import toggleAITerminal
+        from .ai_terminal import toggleAITerminal
         return toggleAITerminal
     raise AttributeError(f"module '{__name__}' has no attribute '{name}'")

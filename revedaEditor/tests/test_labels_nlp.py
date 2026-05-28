@@ -1,6 +1,6 @@
 from PySide6.QtCore import QPoint
 
-from revedaEditor.common.labels import symbolLabel
+from revedaEditor.common.labels import SymbolLabel
 
 
 class DummyParent:
@@ -15,7 +15,7 @@ class DummyParent:
 
 
 def make_label():
-    label = symbolLabel(QPoint(0, 0), "[@testLabel:%]", "NLPLabel", 10, "Left",
+    label = SymbolLabel(QPoint(0, 0), "[@testLabel:%]", "NLPLabel", 10, "Left",
                         "R0", "Normal")
     label.parentItem = lambda: DummyParent()
     return label

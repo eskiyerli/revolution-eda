@@ -29,13 +29,13 @@ __status__ = "Development"
 # Import all modules to ensure they're available when used as a plugin
 try:
     from . import callbacks
-    from . import layoutLayers
+    from . import layout_layers
     from . import pcells
     from . import process
-    from . import schLayers
-    from . import symLayers
+    from . import sch_layers
+    from . import sym_layers
 
-    __all__ = ['callbacks', 'layoutLayers', 'pcells', 'process', 'schLayers', 'symLayers']
+    __all__ = ['callbacks', 'layout_layers', 'pcells', 'process', 'sch_layers', 'sym_layers']
 except ImportError as e:
     # Fallback for when modules can't be imported
     __all__ = []

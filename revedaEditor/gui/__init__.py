@@ -25,7 +25,7 @@
 # Revolution EDA GUI Module
 # Initialize editor factory and register all editor types
 
-from revedaEditor.gui.editorFactory import registerEditors
+from revedaEditor.gui.editor_factory import registerEditors
 
 # Register all editor types when module is imported
 registerEditors()

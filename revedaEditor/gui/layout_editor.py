@@ -1,0 +1,778 @@
+#    “Commons Clause” License Condition v1.0
+#   #
+#    The Software is provided to you by the Licensor under the License, as defined
+#    below, subject to the following condition.
+#
+#    Without limiting other conditions in the License, the grant of rights under the
+#    License will not include, and the License does not grant to you, the right to
+#    Sell the Software.
+#
+#    For purposes of the foregoing, “Sell” means practicing any or all of the rights
+#    granted to you under the License to provide to third parties, for a fee or other
+#    consideration (including without limitation fees for hosting) a product or service whose value
+#    derives, entirely or substantially, from the functionality of the Software. Any
+#    license notice or attribution required by the License must also include this
+#    Commons Clause License Condition notice.
+#
+#   Add-ons and extensions developed for this software may be distributed
+#   under their own separate licenses.
+#
+#    Software: Revolution EDA
+#    License: Mozilla Public License 2.0
+#    Licensor: Revolution Semiconductor (Registered in the Netherlands)
+#
+from __future__ import annotations
+
+# import json
+import pathlib
+
+# import numpy as np
+from PySide6.QtCore import Qt, QSortFilterProxyModel
+from PySide6.QtGui import (
+    QAction,
+    QIcon,
+)
+from PySide6.QtWidgets import (
+    QApplication,
+    QDialog,
+    QSplitter,
+    QToolBar,
+    QVBoxLayout,
+    QWidget,
+    QGraphicsRectItem,
+)
+from quantiphy import Quantity
+
+import revedaEditor.backend.data_definitions as ddef
+import revedaEditor.backend.lib_back_end as libb
+import revedaEditor.backend.library_methods as libm
+import revedaEditor.backend.library_model_view as lmview
+import revedaEditor.gui.editor_views as edv
+import revedaEditor.gui.editor_window as edw
+import revedaEditor.gui.file_dialogues as fd
+import revedaEditor.gui.layout_dialogues as ldlg
+import revedaEditor.gui.lsw as lsw
+from revedaEditor.backend.pdk_loader import importPDKModule
+from revedaEditor.scenes.layout_scene import LayoutScene
+
+fabproc = importPDKModule("process")
+laylyr = importPDKModule("layout_layers")
+
+
+class LayoutEditor(edw.EditorWindow):
+    def __init__(self, ViewItem: libb.ViewItem, libraryDict: dict, libraryView) -> None:
+        super().__init__(ViewItem, libraryDict, libraryView)
+        self.setWindowTitle(f"Layout Editor - {self.cellName} - {self.viewName}")
+        self.setWindowIcon(QIcon(":/icons/EdLayer-shape.png"))
+        self.layoutViews = ["layout", "pcell"]
+        self.dbu = fabproc.dbu
+        self.majorGrid = fabproc.majorGrid
+        self.snapGrid = fabproc.snapGrid
+        self.snapTuple = (self.snapGrid, self.snapGrid)
+        self.layoutChooser = None
+        self.gdsExportDirObj = (
+            self.appMainW.runPath / "gdsExport" / self.libName / self.cellName
+        )
+        self.gdsExportDirObj.mkdir(parents=True, exist_ok=True)
+        self._layoutContextMenu()
+        # drc error polygons
+        self._drcPolygons = []
+        # lvs error rectangles
+        self._lvsRectangles = []
+
+    def init_UI(self):
+        self.resize(1600, 800)
+        self._createActions()
+        self._createMenuBar()
+        self._createToolBars()
+        self._addActions()
+        self._createTriggers()
+        self._createShortcuts()
+        # create container to position all widgets
+        self.centralW = LayoutContainer(self)
+        self.setCentralWidget(self.centralW)
+
+    def _createMenuBar(self):
+        super()._createMenuBar()
+        self.propertyMenu = self.menuEdit.addMenu("Properties")
+
+    def _createActions(self):
+        super()._createActions()
+        self.renumberInstanceAction = QAction("Renumber Instances", self)
+        self.renumberInstanceAction.setToolTip("Renumber Instances")
+        cutIcon = QIcon(":/icons/cutter.png")
+        self.cutAction = QAction(cutIcon, "Cut Item", self)
+        self.cutAction.setToolTip("Cut selected objects")
+        self.exportGDSAction = QAction("Export GDS", self)
+        self.exportGDSAction.setToolTip("Export GDS from Layout")
+        self.exportOASAction = QAction("Export OAS", self)
+        self.exportGDSAction.setToolTip("Export OAS from Layout")
+        self.sdlLoadAction = QAction("Load from Schematic...", self)
+        self.sdlLoadAction.setToolTip("Create layout instances from schematic")
+
+    def _addActions(self):
+        super()._addActions()
+        self.selectMenu.addAction(self.selectDeviceAction)
+        self.selectMenu.addAction(self.selectWireAction)
+        self.selectMenu.addSeparator()
+        self.selectMenu.addAction(self.removeSelectFilterAction)
+
+        self.propertyMenu.addAction(self.objPropAction)
+        self.menuEdit.addAction(self.stretchAction)
+        self.menuEdit.addAction(self.cutAction)
+        self.menuCreate.addAction(self.createInstAction)
+        self.menuCreate.addAction(self.createRectAction)
+        self.menuCreate.addAction(self.createPathAction)
+        self.menuCreate.addAction(self.createPinAction)
+        self.menuCreate.addAction(self.createLabelAction)
+        self.menuCreate.addAction(self.createViaAction)
+        self.menuCreate.addAction(self.createPolygonAction)
+        self.menuCreate.addSeparator()
+        self.menuCreate.addAction(self.rulerAction)
+        self.menuCreate.addAction(self.delRulerAction)
+        self.menuTools.addAction(self.renumberInstanceAction)
+        self.menuTools.addAction(self.exportGDSAction)
+        self.menuTools.addAction(self.exportOASAction)
+        self.menuTools.addSeparator()
+        self.menuTools.addAction(self.sdlLoadAction)
+
+        # hierarchy submenu
+        self.hierMenu = self.menuEdit.addMenu("Hierarchy")
+        self.hierMenu.addAction(self.goUpAction)
+        self.hierMenu.addAction(self.goDownAction)
+
+        if hasattr(self._app, "pluginsObj") and hasattr(
+            self._app.pluginsObj, "applyPluginMenus"
+        ):
+            self._app.pluginsObj.applyPluginMenus(self)
+        if hasattr(self._app, "pdkConfigObj") and hasattr(
+            self._app.pdkConfigObj, "applyPDKMenus"
+        ):
+            self._app.pdkConfigObj.applyPDKMenus(self)
+
+    def _layoutContextMenu(self):
+        super()._editorContextMenu()
+        self.centralW.scene.itemContextMenu.addAction(self.goDownAction)
+
+    def _createToolBars(self):
+        super()._createToolBars()
+        self.layoutToolbar = QToolBar("Layout Toolbar", self)
+        self.addToolBar(self.layoutToolbar)
+        self.layoutToolbar.addAction(self.createInstAction)
+        self.layoutToolbar.addAction(self.createRectAction)
+        self.layoutToolbar.addAction(self.createPathAction)
+        self.layoutToolbar.addAction(self.createPinAction)
+        self.layoutToolbar.addAction(self.createLabelAction)
+        self.layoutToolbar.addAction(self.createViaAction)
+        self.layoutToolbar.addAction(self.createPolygonAction)
+        self.layoutToolbar.addSeparator()
+        self.layoutToolbar.addAction(self.rulerAction)
+        self.layoutToolbar.addAction(self.delRulerAction)
+        self.layoutToolbar.addSeparator()
+        self.layoutToolbar.addAction(self.goDownAction)
+        self.layoutToolbar.addSeparator()
+        self.layoutToolbar.addAction(self.removeSelectFilterAction)
+        self.layoutToolbar.addAction(self.selectWireAction)
+        self.layoutToolbar.addAction(self.selectDeviceAction)
+
+    def _createTriggers(self):
+        super()._createTriggers()
+        self.createInstAction.triggered.connect(self.createInstClick)
+        self.createRectAction.triggered.connect(self.createRectClick)
+        self.exportGDSAction.triggered.connect(self.exportGDSClick)
+        self.exportOASAction.triggered.connect(self.exportOASClick)
+        self.cutAction.triggered.connect(self.cutClick)
+        self.createPathAction.triggered.connect(self.createPathClick)
+        self.createPinAction.triggered.connect(self.createPinClick)
+        self.createLabelAction.triggered.connect(self.createLabelClick)
+        self.createViaAction.triggered.connect(self.createViaClick)
+        self.createPolygonAction.triggered.connect(self.createPolygonClick)
+        self.rulerAction.triggered.connect(self.createRulerClick)
+        self.delRulerAction.triggered.connect(self.delRulerClick)
+        self.deleteAction.triggered.connect(self.deleteClick)
+        self.objPropAction.triggered.connect(self.objPropClick)
+        self.goDownAction.triggered.connect(self.goDownClick)
+        self.renumberInstanceAction.triggered.connect(self.renumberInstanceClick)
+        self.sdlLoadAction.triggered.connect(self.sdlLoadClick)
+
+    def _createShortcuts(self):
+        super()._createShortcuts()
+        self.createRectAction.setShortcut(Qt.Key.Key_R)
+        self.createPathAction.setShortcut(Qt.Key.Key_W)
+        self.createInstAction.setShortcut(Qt.Key.Key_I)
+        self.createPinAction.setShortcut(Qt.Key.Key_P)
+        self.createLabelAction.setShortcut(Qt.Key.Key_L)
+        self.createViaAction.setShortcut(Qt.Key.Key_V)
+        self.createPolygonAction.setShortcut(Qt.Key.Key_G)
+        self.stretchAction.setShortcut(Qt.Key.Key_S)
+        self.rulerAction.setShortcut(Qt.Key.Key_K)
+        self.delRulerAction.setShortcut("Shift+K")
+        self.cutAction.setShortcut("Shift+C")
+
+    def cutClick(self):
+        self.centralW.scene.EditModes.setMode("cutShape")
+
+    def createRectClick(self, s):
+        self.centralW.scene.EditModes.setMode("drawRect")
+
+    def createRulerClick(self, s):
+        self.centralW.scene.EditModes.setMode("drawRuler")
+        self.messageLine.setText("Click on the first point of the ruler.")
+
+    def delRulerClick(self, s):
+        self.messageLine.setText("Deleting all rulers")
+        self.centralW.scene.deleteAllRulers()
+        self.centralW.scene.EditModes.setMode("selectItem")
+
+    def createPathClick(self, s):
+        if fabproc is None:
+            self.messageLine.setText("Error: PDK process module not loaded")
+            return
+
+        def pathLayerChanged(dlg):
+            pathTupleName = dlg.pathLayerCB.currentText()
+            pathDefTuple = [
+                item for item in fabproc.processPaths if item.name == pathTupleName
+            ][0]
+            dlg.pathWidth.setText(pathDefTuple.minWidth.__str__())
+            dlg.pathWidthValidator.setRange(pathDefTuple.minWidth, pathDefTuple.maxWidth)
+            dlg.startExtendEdit.setText(str(pathDefTuple.minWidth / 2))
+            dlg.endExtendEdit.setText(str(pathDefTuple.minWidth / 2))
+
+        dlg = ldlg.CreatePathDialogue(self)
+        # paths are created on path layers
+        processPathNames = [f"{pathTuple.name}" for pathTuple in fabproc.processPaths]
+        dlg.pathLayerCB.addItems(processPathNames)
+        dlg.pathLayerCB.setCurrentIndex(0)
+        defaultPathTuple = fabproc.processPaths[0]
+        dlg.pathLayerCB.currentIndexChanged.connect(lambda: pathLayerChanged(dlg))
+        dlg.pathWidth.setText(fabproc.processPaths[0].minWidth.__str__())
+        dlg.pathWidthValidator.setRange(
+            defaultPathTuple.minWidth, defaultPathTuple.maxWidth
+        )
+        dlg.startExtendEdit.setText(str(fabproc.processPaths[0].minWidth / 2))
+        dlg.endExtendEdit.setText(str(fabproc.processPaths[0].minWidth / 2))
+
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self.centralW.scene.EditModes.setMode("drawPath")
+            if dlg.manhattanButton.isChecked():
+                pathMode = 0
+            elif dlg.diagonalButton.isChecked():
+                pathMode = 1
+            elif dlg.anyButton.isChecked():
+                pathMode = 2
+            elif dlg.horizontalButton.isChecked():
+                pathMode = 3
+            elif dlg.verticalButton.isChecked():
+                pathMode = 4
+            else:
+                pathMode = 0
+            if dlg.pathWidth.text().strip():
+                pathWidth = fabproc.dbu * float(dlg.pathWidth.text().strip())
+            else:
+                pathWidth = fabproc.dbu * 1.0
+            pathName = dlg.pathNameEdit.text()
+            pathTupleName = dlg.pathLayerCB.currentText()
+            pathTuple = [
+                item for item in fabproc.processPaths if item.name == pathTupleName
+            ][0]
+            pathLayer = pathTuple.layer
+            startExtend = float(dlg.startExtendEdit.text().strip()) * fabproc.dbu
+            endExtend = float(dlg.endExtendEdit.text().strip()) * fabproc.dbu
+            self.centralW.scene.newPathTuple = ddef.LayoutPathTuple(
+                pathName, pathLayer, pathMode, pathWidth, startExtend, endExtend
+            )
+
+    def createPinClick(self):
+        dlg = ldlg.CreateLayoutPinDialog(self)
+        pinLayersNames = [f"{item.name} [{item.purpose}]" for item in laylyr.pdkPinLayers]
+        textLayersNames = [f"{item.name} [{item.purpose}]" for item in laylyr.pdkTextLayers]
+        dlg.pinLayerCB.addItems(pinLayersNames)
+        dlg.labelLayerCB.addItems(textLayersNames)
+
+        if self.centralW.scene.newPinTuple is not None:
+            dlg.pinLayerCB.setCurrentText(
+                f"{self.centralW.scene.newPinTuple.pinLayer.name} "
+                f"[{self.centralW.scene.newPinTuple.pinLayer.purpose}]"
+            )
+        if self.centralW.scene.newLabelTuple is not None:
+            dlg.labelLayerCB.setCurrentText(
+                f"{self.centralW.scene.newLabelTuple.labelLayer.name} ["
+                f"{self.centralW.scene.newLabelTuple.labelLayer.purpose}]"
+            )
+            dlg.familyCB.setCurrentText(self.centralW.scene.newLabelTuple.fontFamily)
+            dlg.fontStyleCB.setCurrentText(self.centralW.scene.newLabelTuple.fontStyle)
+            dlg.labelHeightCB.setCurrentText(
+                str(self.centralW.scene.newLabelTuple.fontHeight)
+            )
+            dlg.labelAlignCB.setCurrentText(self.centralW.scene.newLabelTuple.labelAlign)
+            dlg.labelOrientCB.setCurrentText(self.centralW.scene.newLabelTuple.labelOrient)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self.centralW.scene.EditModes.setMode("drawPin")
+            pinName = dlg.pinName.text()
+            pinDir = dlg.pinDir.currentText()
+            pinType = dlg.pinType.currentText()
+            pinLayerName = dlg.pinLayerCB.currentText().split()[0]
+            pinLayer = [item for item in laylyr.pdkPinLayers if item.name == pinLayerName][
+                0
+            ]
+            labelLayerName = dlg.labelLayerCB.currentText().split()[0]
+            labelLayer = [
+                item for item in laylyr.pdkTextLayers if item.name == labelLayerName
+            ][0]
+            fontFamily = dlg.familyCB.currentText()
+            fontStyle = dlg.fontStyleCB.currentText()
+            labelHeight = float(dlg.labelHeightCB.currentText())
+            labelAlign = dlg.labelAlignCB.currentText()
+            labelOrient = dlg.labelOrientCB.currentText()
+            self.centralW.scene.newPinTuple = ddef.LayoutPinTuple(
+                pinName, pinDir, pinType, pinLayer
+            )
+            self.centralW.scene.newLabelTuple = ddef.LayoutLabelTuple(
+                pinName,
+                fontFamily,
+                fontStyle,
+                labelHeight,
+                labelAlign,
+                labelOrient,
+                labelLayer,
+            )
+
+    def createLabelClick(self):
+        dlg = ldlg.CreateLayoutLabelDialog(self)
+        textLayersNames = [f"{item.name} [{item.purpose}]" for item in laylyr.pdkTextLayers]
+        dlg.labelLayerCB.addItems(textLayersNames)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self.centralW.scene.EditModes.setMode("addLabel")
+            labelName = dlg.labelName.text()
+            labelLayerName = dlg.labelLayerCB.currentText().split()[0]
+            labelLayer = [
+                item for item in laylyr.pdkTextLayers if item.name == labelLayerName
+            ][0]
+            fontFamily = dlg.familyCB.currentText()
+            fontStyle = dlg.fontStyleCB.currentText()
+            fontHeight = dlg.labelHeightCB.currentText()
+            labelAlign = dlg.labelAlignCB.currentText()
+            labelOrient = dlg.labelOrientCB.currentText()
+            self.centralW.scene.newLabelTuple = ddef.LayoutLabelTuple(
+                labelName,
+                fontFamily,
+                fontStyle,
+                fontHeight,
+                labelAlign,
+                labelOrient,
+                labelLayer,
+            )
+
+    def createViaClick(self):
+        dlg = ldlg.CreateLayoutViaDialog(self)
+        viaLayerNames = [item.name for item in fabproc.processVias]
+        dlg.singleViaNamesCB.addItems(viaLayerNames)
+        dlg.arrayViaNamesCB.addItems(viaLayerNames)
+        dlg.singleViaWidthEdit.setText(str(fabproc.processVias[0].minWidth))
+        dlg.singleViaHeightEdit.setText(str(fabproc.processVias[0].minHeight))
+        dlg.arrayViaWidthEdit.setText(str(fabproc.processVias[0].minWidth))
+        dlg.arrayViaHeightEdit.setText(str(fabproc.processVias[0].minHeight))
+        dlg.arrayXspacingEdit.setText(str(fabproc.processVias[0].minSpacing))
+        dlg.arrayYspacingEdit.setText(str(fabproc.processVias[0].minSpacing))
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self.centralW.scene.EditModes.setMode("addVia")
+            self.centralW.scene.addVia = True
+            if dlg.singleViaRB.isChecked():
+                selViaDefTuple = fabproc.processVias[
+                    fabproc.processViaNames.index(dlg.singleViaNamesCB.currentText())
+                ]
+
+                SingleViaTuple = ddef.SingleViaTuple(
+                    selViaDefTuple,
+                    fabproc.dbu * float(dlg.singleViaWidthEdit.text().strip()),
+                    fabproc.dbu * float(dlg.singleViaHeightEdit.text().strip()),
+                )
+                self.centralW.scene.ArrayViaTuple = ddef.ArrayViaTuple(
+                    SingleViaTuple,
+                    fabproc.dbu * selViaDefTuple.minSpacing,
+                    fabproc.dbu * selViaDefTuple.minSpacing,
+                    1,
+                    1,
+                )
+            else:
+                selViaDefTuple = [
+                    ViaDefTuple
+                    for ViaDefTuple in fabproc.processVias
+                    if ViaDefTuple.name == dlg.arrayViaNamesCB.currentText()
+                ][0]
+
+                SingleViaTuple = ddef.SingleViaTuple(
+                    selViaDefTuple,
+                    fabproc.dbu * float(dlg.arrayViaWidthEdit.text().strip()),
+                    fabproc.dbu * float(dlg.arrayViaHeightEdit.text().strip()),
+                )
+                self.centralW.scene.ArrayViaTuple = ddef.ArrayViaTuple(
+                    SingleViaTuple,
+                    fabproc.dbu * float(dlg.arrayXspacingEdit.text().strip()),
+                    fabproc.dbu * float(dlg.arrayYspacingEdit.text().strip()),
+                    int(float(dlg.arrayXNumEdit.text().strip())),
+                    int(float(dlg.arrayYNumEdit.text().strip())),
+                )
+        else:
+            self.centralW.scene.EditModes.setMode("selectItem")
+
+    def createPolygonClick(self):
+        self.centralW.scene.EditModes.setMode("drawPolygon")
+
+    def objPropClick(self, s):
+        self.centralW.scene.viewObjProperties()
+
+    def goDownClick(self):
+        self.centralW.scene.goDownHier()
+
+    def checkSaveCell(self):
+        # need to add checks
+        self.centralW.scene.saveLayoutCell(self.file)
+
+    def saveCell(self):
+        self.centralW.scene.saveLayoutCell(self.file)
+
+    def loadLayout(self):
+        self.logger.info(f"Loading layout from {self.cellName} - {self.viewName}")
+
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        QApplication.processEvents()
+        try:
+            self.centralW.scene.loadDesign(self.file)
+            ViewNameTuple = ddef.ViewNameTuple(
+                self.libItem.libraryName, self.CellItem.cellName, self.viewName
+            )
+            self.appMainW.openViews[ViewNameTuple] = self
+        except Exception as e:
+            self.logger.error(f"Error during loading layout for {self.cellName}: {e}")
+        finally:
+            QApplication.restoreOverrideCursor()
+
+    def createInstClick(self, s):
+        # create a designLibrariesView
+        libraryModel = lmview.LayoutViewsModel(self.libraryDict, self.layoutViews)
+        if self.layoutChooser is None:
+            self.layoutChooser = fd.SelectCellViewDialog(self, libraryModel)
+            self.layoutChooser.show()
+        else:
+            self.layoutChooser.raise_()
+        if self.layoutChooser.exec() == QDialog.DialogCode.Accepted:
+            self.centralW.scene.EditModes.setMode("addInstance")
+            libItem = libm.getLibItem(
+                libraryModel, self.layoutChooser.libNamesCB.currentText()
+            )
+            CellItem = libm.getCellItem(libItem, self.layoutChooser.cellCB.currentText())
+            ViewItem = libm.getViewItem(CellItem, self.layoutChooser.viewCB.currentText())
+            # libm.findViewItem(libraryModel, self.layoutChooser.libNamesCB.currentText())
+            self.centralW.scene.layoutInstanceTuple = ddef.ViewItemTuple(
+                libItem, CellItem, ViewItem
+            )
+
+    def _exportLayoutCell(self, export_format="GDS"):
+        """Export layout cell in the specified format (GDS or OAS)."""
+        # Use appropriate dialogue - both GdsExportDialogue and OasExportDialogue
+        # now inherit from the same base class
+        if export_format.upper() == "OAS":
+            dlg = fd.OasExportDialogue(self)
+        else:
+            dlg = fd.GdsExportDialogue(self)
+
+        dlg.setWindowTitle(
+            f"Export {export_format.upper()} for {self.cellName}-{self.viewName}"
+        )
+        dlg.unitEdit.setText(fabproc.gdsUnit.render())
+        dlg.precisionEdit.setText(fabproc.gdsPrecision.render())
+        dlg.exportPathEdit.setText(str(self.gdsExportDirObj))
+
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self.gdsExportDir = pathlib.Path(dlg.exportPathEdit.text().strip())
+            gdsUnit = Quantity(dlg.unitEdit.text().strip()).real
+            gdsPrecision = Quantity(dlg.precisionEdit.text().strip()).real
+
+            # Call the appropriate export method
+            if export_format.upper() == "OAS":
+                self.centralW.scene.exportCellOAS(
+                    self.gdsExportDir, gdsUnit, gdsPrecision, fabproc.dbu
+                )
+            else:
+                self.centralW.scene.exportCellGDS(
+                    self.gdsExportDir, gdsUnit, gdsPrecision, fabproc.dbu
+                )
+
+    def exportGDSClick(self):
+        """Export layout cell as GDS format."""
+        self._exportLayoutCell("GDS")
+
+    def exportOASClick(self):
+        """Export layout cell as OAS format."""
+        self._exportLayoutCell("OAS")
+
+    def handlePolygonSelection(self, polygons):
+        # Remove previous polygons
+        for polygon in self._drcPolygons:
+            self.centralW.scene.removeItem(polygon)
+
+        # Add new polygons
+        for polygon in polygons:
+            self.centralW.scene.addItem(polygon)
+
+        # Remember current polygons (store reference)
+        self._drcPolygons = polygons
+
+    def clearDRCPolygons(self):
+        self.handlePolygonSelection([])
+
+    def handleLVSRectSelection(self, rects: list[QGraphicsRectItem]):
+        # Remove previous rectangles
+        for rect in self._lvsRectangles:
+            self.centralW.scene.removeItem(rect)
+
+        # Add new rectangles
+        for rect in rects:
+            self.centralW.scene.addItem(rect)
+
+        # Remember current rectangles (store reference)
+        self._lvsRectangles = rects
+
+    def renumberInstanceClick(self, s):
+        self.centralW.scene.renumberInstances()
+
+    def sdlLoadClick(self):
+        """Open dialog to select schematic and create layout instances from it."""
+        libraryModel = lmview.SchematicViewsModel(self.libraryDict)
+        dialog = fd.SelectCellViewDialog(self, libraryModel)
+
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            libItem = libm.getLibItem(libraryModel, dialog.libNamesCB.currentText())
+            CellItem = libm.getCellItem(libItem, dialog.cellCB.currentText())
+            ViewItem = libm.getViewItem(CellItem, dialog.viewCB.currentText())
+
+            # Call scene to load schematic instances
+            self.centralW.scene.loadSchematicInstances(
+                ddef.ViewItemTuple(libItem, CellItem, ViewItem)
+            )
+
+    def dispConfigEdit(self):
+        import revedaEditor.gui.property_dialogues as pdlg
+
+        dcd = pdlg.LayoutDisplayConfigDialog(self)
+        dcd.dbuEntry.setText(str(self.dbu))
+        dcd.majorGridEntry.setText(str(self.majorGrid))
+        dcd.snapGridEdit.setText(str(self.snapGrid))
+        if dcd.exec() == QDialog.DialogCode.Accepted:
+            self.configureGridSettings(
+                (int(dcd.majorGridEntry.text()), int(dcd.snapGridEdit.text()))
+            )
+            if dcd.dotType.isChecked():
+                self.centralW.view.gridbackg = True
+                self.centralW.view.linebackg = False
+            elif dcd.lineType.isChecked():
+                self.centralW.view.gridbackg = False
+                self.centralW.view.linebackg = True
+            else:
+                self.centralW.view.gridbackg = False
+                self.centralW.view.linebackg = False
+
+    def closeEvent(self, event):
+        try:
+            self.centralW.scene.saveLayoutCell(self.file)
+            cellViewNameTuple = ddef.ViewNameTuple(
+                self.libName, self.cellName, self.viewName
+            )
+            self.appMainW.openViews.pop(cellViewNameTuple, None)
+        except Exception as e:
+            self.appMainW.logger.error(
+                f"Error in closing layout editor window:{self.cellName}-{self.viewName}:{e}"
+            )
+        finally:
+            event.accept()
+            super().closeEvent(event)
+
+    # def _createSignalConnections(self):
+    #     super()._createSignalConnections()
+    @property
+    def lvsRectangles(self):
+        return self._lvsRectangles
+    
+    @property
+    def drcPolygons(self):
+        return self._drcPolygons
+
+
+class LayoutContainer(edw.EditorContainer):
+    def __init__(self, parent: LayoutEditor):
+        super().__init__(parent=parent)
+        self.EditorWindow = parent
+        self.scene = LayoutScene(self)
+        self.view = edv.LayoutView(self.scene, self)
+        self.lswModel = lsw.LayerDataModel(laylyr.pdkAllLayers)
+        LayerViewTable = lsw.LayerViewTable(self, self.lswModel)
+        self.lswWidget = LswWindow(LayerViewTable)
+        self.lswWidget.setMinimumWidth(300)
+        self.lswWidget.setMaximumWidth(360)
+        self.lswWidget.lswTable.dataSelected.connect(self.selectLayer)
+        self.lswWidget.lswTable.layerSelectable.connect(self.layerSelectableChange)
+        self.lswWidget.lswTable.layerVisible.connect(self.layerVisibleChange)
+        self.init_UI()
+
+    def init_UI(self):
+        # there could be other widgets in the grid layout, such as EdLayer
+        # viewer/editor.
+        vLayout = QVBoxLayout(self)
+        vLayout.setContentsMargins(0, 0, 0, 0)
+        vLayout.setSpacing(0)
+        self.setContentsMargins(0, 0, 0, 0)
+        splitter = QSplitter()
+        splitter.setContentsMargins(0, 0, 0, 0)
+        splitter.setOrientation(Qt.Orientation.Horizontal)
+        splitter.insertWidget(0, self.lswWidget)
+        splitter.insertWidget(1, self.view)
+        # ratio of first column to second column is 5
+        splitter.setStretchFactor(0, 1)
+        splitter.setStretchFactor(1, 5)
+        vLayout.addWidget(splitter)
+        self.setLayout(vLayout)
+
+    def findSelectedLayer(self, layerName: str, layerPurpose: str) -> ddef.LayLayer:
+        for layer in laylyr.pdkAllLayers:
+            if layer.name == layerName and layer.purpose == layerPurpose:
+                return layer
+        return laylyr.pdkAllLayers[0]
+
+    def selectLayer(self, layerName: str, layerPurpose: str):
+        self.scene.selectEdLayer = self.findSelectedLayer(layerName, layerPurpose)
+
+    def layerSelectableChange(
+        self, layerName: str, layerPurpose: str, layerSelectable: bool
+    ):
+        selectedLayer = self.findSelectedLayer(layerName, layerPurpose)
+        selectedLayer.selectable = layerSelectable
+
+        for item in self.scene.items():
+            if (
+                hasattr(item, "layer")
+                and item.layer == selectedLayer
+                and item.parentItem() is None
+            ):
+                item.setEnabled(layerSelectable)
+
+    def layerVisibleChange(self, layerName: str, layerPurpose: str, layerVisible: bool):
+        selectedLayer = self.findSelectedLayer(layerName, layerPurpose)
+        selectedLayer.visible = layerVisible
+
+        for item in self.scene.items():
+            if hasattr(item, "layer") and item.layer == selectedLayer:
+                item.setVisible(layerVisible)
+
+
+class LayerFilterProxyModel(QSortFilterProxyModel):
+    """Proxy model that matches the search string against layer name OR purpose."""
+
+    def filterAcceptsRow(self, sourceRow, sourceParent):
+        pattern = self.filterRegularExpression()
+        if pattern.pattern() == "":
+            return True
+        model = self.sourceModel()
+        name_item = model.item(sourceRow, lsw.LayerViewTable.columnName)
+        purp_item = model.item(sourceRow, lsw.LayerViewTable.columnPurpose)
+        name = name_item.text() if name_item else ""
+        purpose = purp_item.text() if purp_item else ""
+        return pattern.match(name).hasMatch() or pattern.match(purpose).hasMatch()
+
+
+class LswWindow(QWidget):
+    def __init__(self, lswTable: lsw.LayerViewTable):
+        super().__init__()
+        self.lswTable = lswTable
+
+        # ensure widget has an opaque background so the underlying scene
+        # doesn't show through in the top-left corner
+        from PySide6.QtGui import QPalette
+        from PySide6.QtWidgets import QLineEdit
+
+        self.setAutoFillBackground(True)
+        pal = self.palette()
+        pal.setColor(QPalette.Window, pal.color(QPalette.Window))
+        self.setPalette(pal)
+
+        layout = QVBoxLayout()
+        toolBar = QToolBar()
+        avIcon = QIcon(":/icons/eye.png")
+        nvIcon = QIcon(":/icons/eye-close.png")
+        avAction = QAction(avIcon, "Set Layers Visible", self)
+        avAction.setToolTip("Set Layers visible")
+        avAction.triggered.connect(self._allLayersVisible)
+        nvAction = QAction(nvIcon, "Set Layers Invisible", self)
+        nvAction.setToolTip("Set Layers invisible")
+        nvAction.triggered.connect(self._noLayersVisible)
+        asIcon = QIcon(":/icons/pencil.png")
+        nsIcon = QIcon(":/icons/pencil-prohibition.png")
+        nsAction = QAction(nsIcon, "Set Layers Selectable", self)
+        nsAction.setToolTip("Set layers selectable")
+        nsAction.triggered.connect(self._noLayersSelectable)
+        asAction = QAction(asIcon, "Set Layers Unselectable", self)
+        asAction.setToolTip("Set layers unselectable")
+        asAction.triggered.connect(self._allLayersSelectable)
+
+        toolBar.addAction(avAction)
+        toolBar.addAction(nvAction)
+        toolBar.addAction(asAction)
+        toolBar.addAction(nsAction)
+        layout.addWidget(toolBar)
+
+        # Search field
+        from PySide6.QtWidgets import QLabel, QHBoxLayout
+
+        searchLayout = QHBoxLayout()
+        searchLabel = QLabel("Search:")
+        self._searchEdit = QLineEdit()
+        self._searchEdit.setPlaceholderText("Filter layers by name...")
+        self._searchEdit.setToolTip("Type to filter layers by name")
+        self._searchEdit.setClearButtonEnabled(True)
+        self._searchEdit.setMinimumHeight(24)
+        self._searchEdit.setStyleSheet(
+            "QLineEdit { color: palette(text); background: palette(base); }"
+        )
+        searchLayout.addWidget(searchLabel)
+        searchLayout.addWidget(self._searchEdit)
+        layout.addLayout(searchLayout)
+
+        # Proxy model: filters layer name (col 1) OR purpose (col 2)
+        self._proxyModel = LayerFilterProxyModel(self)
+        self._proxyModel.setSourceModel(self.lswTable.model())
+        self._proxyModel.setFilterCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self.lswTable.setModel(self._proxyModel)
+        self._searchEdit.textChanged.connect(self._proxyModel.setFilterFixedString)
+
+        layout.addWidget(self.lswTable)
+        self.setLayout(layout)
+
+    def _updateFilteredLayers(self, visible=None, selectable=None):
+        """Apply visibility/selectability only to rows currently shown by the filter."""
+        sourceModel = self._proxyModel.sourceModel()
+        if visible is not None:
+            state = Qt.CheckState.Checked if visible else Qt.CheckState.Unchecked
+            col = lsw.LayerViewTable.columnVisible
+        else:
+            state = Qt.CheckState.Checked if selectable else Qt.CheckState.Unchecked
+            col = lsw.LayerViewTable.columnSelectable
+        for proxyRow in range(self._proxyModel.rowCount()):
+            sourceIndex = self._proxyModel.mapToSource(
+                self._proxyModel.index(proxyRow, col)
+            )
+            item = sourceModel.item(sourceIndex.row(), col)
+            if item is not None:
+                item.setCheckState(state)
+
+    def _allLayersVisible(self):
+        self._updateFilteredLayers(visible=True)
+
+    def _noLayersVisible(self):
+        self._updateFilteredLayers(visible=False)
+
+    def _allLayersSelectable(self):
+        self._updateFilteredLayers(selectable=True)
+
+    def _noLayersSelectable(self):
+        self._updateFilteredLayers(selectable=False)

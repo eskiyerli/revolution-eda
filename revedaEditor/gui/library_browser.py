@@ -1,0 +1,486 @@
+#    “Commons Clause” License Condition v1.0
+#   #
+#    The Software is provided to you by the Licensor under the License, as defined
+#    below, subject to the following condition.
+#
+#    Without limiting other conditions in the License, the grant of rights under the
+#    License will not include, and the License does not grant to you, the right to
+#    Sell the Software.
+#
+#    For purposes of the foregoing, “Sell” means practicing any or all of the rights
+#    granted to you under the License to provide to third parties, for a fee or other
+#    consideration (including without limitation fees for hosting) a product or service whose value
+#    derives, entirely or substantially, from the functionality of the Software. Any
+#    license notice or attribution required by the License must also include this
+#    Commons Clause License Condition notice.
+#
+#   Add-ons and extensions developed for this software may be distributed
+#   under their own separate licenses.
+#
+#    Software: Revolution EDA
+#    License: Mozilla Public License 2.0
+#    Licensor: Revolution Semiconductor (Registered in the Netherlands)
+#
+
+import json
+import logging
+# from hashlib import new
+import pathlib
+from copy import deepcopy
+from typing import Union
+
+from PySide6.QtGui import QAction, QCloseEvent, QIcon, QActionGroup
+from PySide6.QtWidgets import (QApplication, QDialogButtonBox, QDialog, QFileDialog,
+                               QMainWindow, QToolBar, QVBoxLayout, QFormLayout, QWidget,
+                               QListView, QMenu, QGroupBox, QComboBox, )
+
+import revedaEditor.backend.lib_back_end as libb
+import revedaEditor.backend.library_methods as libm
+import revedaEditor.backend.library_model_view as lmview
+from revedaEditor.backend.data_definitions import ViewItemTuple
+import revedaEditor.gui.edit_functions as edf
+import revedaEditor.gui.file_dialogues as fd
+from revedaEditor.backend.start_thread import StartThread
+
+
+class LibraryBrowser(QMainWindow):
+    CELLVIEWS = ["schematic", "symbol", "layout", "veriloga", "config", "spice", "pcell",
+                 "revbench", ]
+
+    def __init__(self, appMainW: QMainWindow) -> None:
+        super().__init__()
+        self.resize(600, 600)
+        self.appMainW = appMainW
+        self._app = QApplication.instance()
+        self.libraryDict = appMainW.libraryDict
+        self.cellViews = self.CELLVIEWS
+        self.setWindowIcon(QIcon(":logo-color.png"))
+        self.setWindowTitle("Library Browser")
+
+        # Ensure attribute exists early so plugins or other code won't raise
+        # AttributeError if they check for or reference it before menu creation.
+        self.viewMenu = None
+
+        # Setup UI components
+        # Ensure actions are created before the menu bar that references them
+        self._createActions()
+        self._createMenuBar()
+        self._createToolBars()
+        self._createTriggers()
+
+        # Setup library components
+        self.logger = appMainW.logger
+        self.libFilePath = appMainW.libraryPathObj
+        self.libBrowserCont = LibraryBrowserContainer(self)
+        self.setCentralWidget(self.libBrowserCont)
+        self.designView = self.libBrowserCont.designView
+        self.editProcess = None
+
+    def _createMenuBar(self):
+        self.browserMenubar = self.menuBar()
+        self.browserMenubar.setNativeMenuBar(False)
+        self.libraryMenu = self.browserMenubar.addMenu("&Library")
+        self.libraryMenu.addAction(self.libraryEditorAction)
+        self.libraryMenu.addAction(self.openLibAction)
+        self.libraryMenu.addAction(self.closeLibAction)
+        self.libraryMenu.addSeparator()
+        self.libraryMenu.addAction(self.updateLibraryAction)
+        self.libraryMenu.addAction(self.updateLibRefAction)
+        self.cellMenu = self.browserMenubar.addMenu("&Cell")
+        self.cellMenu.addAction(self.newCellAction)
+        self.cellMenu.addAction(self.deleteCellAction)
+        self.cellViewMenu = self.browserMenubar.addMenu("Cell &View")
+        self.cellViewMenu.addAction(self.openCellViewAction)
+        self.cellViewMenu.addAction(self.newCellViewAction)
+        self.cellViewMenu.addAction(self.deleteCellViewAction)
+        # self.viewMenu: QMenu = self.browserMenubar.addMenu("&View")
+        # # If viewSelectGroup was prepared in _createActions, attach its actions now.
+        # try:
+        #     if hasattr(self, 'viewSelectGroup'):
+        #         self.viewMenu.addActions(self.viewSelectGroup.actions())
+        # except Exception:
+        #     pass
+        self.helpMenu = self.browserMenubar.addMenu("&Help")
+        # Call plugin hook after menus exist so plugins can augment menus
+        if hasattr(self._app, 'applyPluginMenus'):
+            try:
+                self._app.applyPluginMenus(self)
+            except Exception:
+                self.logger.exception('applyPluginMenus failed')
+
+    def _createActions(self):
+        openLibIcon = QIcon(":/icons/database--plus.png")
+        self.openLibAction = QAction(openLibIcon, "Create/Open Lib...", self)
+        self.openLibAction.setToolTip("Create/Open Lib...")
+
+        libraryEditIcon = QIcon(":/icons/application-dialog.png")
+        self.libraryEditorAction = QAction(libraryEditIcon, "Library Editor", self)
+        self.libraryEditorAction.setToolTip("Open Library Editor...")
+
+        closeLibIcon = QIcon(":/icons/database-delete.png")
+        self.closeLibAction = QAction(closeLibIcon, "Close Lib...", self)
+        self.closeLibAction.setToolTip("Close Lib")
+
+        updateLibraryIcon = QIcon(":/icons/arrow-circle.png")
+        self.updateLibraryAction = QAction(updateLibraryIcon, "Update Library...", self)
+        self.updateLibraryAction.setToolTip("Update Library")
+
+        updateLibRefIcon = QIcon(":/icons/arrow-continue.png")
+        self.updateLibRefAction = QAction(updateLibRefIcon, "Update Library Refs...", self)
+        self.updateLibRefAction.setToolTip("Update Library References")
+
+        newCellIcon = QIcon(":/icons/document--plus.png")
+        self.newCellAction = QAction(newCellIcon, "New Cell...", self)
+        self.newCellAction.setToolTip("Create New Cell")
+
+        deleteCellIcon = QIcon(":/icons/node-delete.png")
+        self.deleteCellAction = QAction(deleteCellIcon, "Delete Cell...", self)
+        self.deleteCellAction.setToolTip("Delete Cell")
+
+        newCellViewIcon = QIcon(":/icons/document--pencil.png")
+        self.newCellViewAction = QAction(newCellViewIcon, "Create New CellView...", self)
+        self.newCellViewAction.setToolTip("Create New Cellview")
+
+        openCellViewIcon = QIcon(":/icons/document--pencil.png")
+        self.openCellViewAction = QAction(openCellViewIcon, "Open CellView...", self)
+        self.openCellViewAction.setToolTip("Open CellView")
+
+        deleteCellViewIcon = QIcon(":/icons/node-delete.png")
+        self.deleteCellViewAction = QAction(deleteCellViewIcon, "Delete CellView...", self)
+        self.deleteCellViewAction.setToolTip("Delete Cellview")
+
+        # Prepare the view selection QActionGroup but don't attach to the menu yet
+        viewSelectGroup = QActionGroup(self)
+        viewSelectGroup.setExclusive(True)
+
+        self.selectColumnViewAction = QAction("Column View", self)
+        self.selectColumnViewAction.setCheckable(True)
+        viewSelectGroup.addAction(self.selectColumnViewAction)
+        self.selectColumnViewAction.setChecked(True)
+        self.selectTreeViewAction = QAction("Tree View", self)
+        self.selectTreeViewAction.setCheckable(True)
+        viewSelectGroup.addAction(self.selectTreeViewAction)
+        # store group for menu attachment during menu creation
+        self.viewSelectGroup = viewSelectGroup
+        # plugin menus will be applied after menus are built
+
+    def _createTriggers(self):
+        self.openLibAction.triggered.connect(self.openLibClick)
+        self.libraryEditorAction.triggered.connect(self.libraryEditorClick)
+        self.closeLibAction.triggered.connect(self.closeLibClick)
+        self.newCellAction.triggered.connect(self.newCellClick)
+        self.deleteCellAction.triggered.connect(self.deleteCellClick)
+        self.newCellViewAction.triggered.connect(self.newCellViewClick)
+        self.openCellViewAction.triggered.connect(self.openCellViewClick)
+        self.deleteCellViewAction.triggered.connect(self.deleteCellViewClick)
+        self.updateLibraryAction.triggered.connect(self.updateLibraryClick)
+        self.updateLibRefAction.triggered.connect(self.updateLibRefClick)
+        self.selectColumnViewAction.triggered.connect(self.selectColumnViewClick)
+        self.selectTreeViewAction.triggered.connect(self.selectTreeViewClick)
+
+    def _createToolBars(self):
+        # Create tools bar called "main toolbar"
+        toolbar = QToolBar("Main Toolbar", self)
+        # place toolbar at top
+        self.addToolBar(toolbar)
+        toolbar.addAction(self.openLibAction)
+        toolbar.addAction(self.closeLibAction)
+        toolbar.addSeparator()
+        toolbar.addAction(self.newCellAction)
+        toolbar.addAction(self.deleteCellAction)
+        toolbar.addSeparator()
+        toolbar.addAction(self.newCellViewAction)
+        toolbar.addAction(self.openCellViewAction)
+        toolbar.addAction(self.deleteCellViewAction)
+
+    def writeLibDefFile(self, libPathDict: dict, libFilePath: pathlib.Path) -> None:
+        libTempDict = dict(zip(libPathDict.keys(), map(str, libPathDict.values())))
+        try:
+            with libFilePath.open(mode="w") as f:
+                json.dump({"libdefs": libTempDict}, f, indent=4)
+            self.logger.info(f"Wrote library definition file in {libFilePath}")
+        except IOError:
+            self.logger.error(f"Cannot save library definitions in {libFilePath}")
+
+    def openLibClick(self):
+        """Open a directory and designate it as a library."""
+        libDialog = QFileDialog(self, "Create/Open Library", str(pathlib.Path.cwd()))
+        libDialog.setFileMode(QFileDialog.Directory)
+
+        if libDialog.exec() == QDialog.DialogCode.Accepted:
+            libPathObj = pathlib.Path(libDialog.selectedFiles()[0])
+            self.libraryDict[libPathObj.stem] = libPathObj
+            libPathObj.joinpath("reveda.lib").touch(exist_ok=True)
+            self.designView.libraryModel.populateLibrary(libPathObj)
+            self.writeLibDefFile(self.designView.libraryModel.libraryDict, self.libFilePath)
+            self.appMainW.libraryDict = self.designView.libraryModel.libraryDict
+            self.designView.reworkDesignLibrariesView(self.appMainW.libraryDict)
+
+    def closeLibClick(self):
+        libCloseDialog = fd.CloseLibDialog(self.libraryDict, self)
+        if libCloseDialog.exec() == QDialog.DialogCode.Accepted:
+            libName = libCloseDialog.libNamesCB.currentText()
+            libItem = libm.getLibItem(self.designView.libraryModel, libName)
+            self.libraryDict.pop(libName, None)
+            self.designView.libraryModel.invisibleRootItem().removeRow(libItem.row())
+
+    def libraryEditorClick(self, s):
+        """
+        Open library editor dialogue.
+        """
+        tempDict = deepcopy(self.libraryDict)
+        pathEditDlg = fd.LibraryPathEditorDialog(self, tempDict)
+        if pathEditDlg.exec() == QDialog.DialogCode.Accepted:
+            self.libraryDict.clear()
+            model = pathEditDlg.pathsModel
+            for row in range(model.rowCount()):
+                if model.itemFromIndex(model.index(row, 1)).text().strip():
+                    self.libraryDict[model.itemFromIndex(
+                        model.index(row, 0)).text().strip()] = pathlib.Path(
+                        model.itemFromIndex(model.index(row, 1)).text().strip())
+
+        self.writeLibDefFile(self.libraryDict, self.libFilePath)
+        self.appMainW.libraryDict = self.libraryDict
+        self.designView.reworkDesignLibrariesView(self.designView.libraryModel.libraryDict)
+
+    def updateLibraryClick(self):
+        self.designView.reworkDesignLibrariesView(self.designView.libraryModel.libraryDict)
+
+    def updateLibRefClick(self):
+        try:
+            dlg = LibraryListView(self, self.designView.libraryModel)
+            dlg.show()
+        except Exception as e:
+            self.logger.error(f"Error updating library references: {e}")
+
+    def newCellClick(self, s):
+        try:
+            self.libBrowserCont.designView.createCell(
+                self.libBrowserCont.designView.selectedLib)
+        except Exception as e:
+            self.logger.error(f"Error in creating new cell: {e}")
+
+    def deleteCellClick(self, s):
+        dlg = fd.DeleteCellDialog(self, self.designView.libraryModel)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            libItem = libm.getLibItem(self.designView.libraryModel,
+                                      dlg.libNamesCB.currentText())
+            if dlg.cellCB.currentText().strip() == "":
+                self.logger.error("Please enter a cell name.")
+            else:
+                CellItem = libm.getCellItem(libItem, dlg.cellCB.currentText())
+                self.designView.deleteCell(CellItem)
+
+    def newCellViewClick(self, s):
+        dlg = fd.NewCellViewDialog(self, self.designView.libraryModel)
+        dlg.viewType.addItems(self.cellViews)
+        dlg.viewName.setText(self.cellViews[0])
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        libItem = libm.getLibItem(self.designView.libraryModel,
+                                  dlg.libNamesCB.currentText())
+        CellItem = libm.getCellItem(libItem, dlg.cellCB.currentText())
+        self.designView.handleNewCellView(CellItem, dlg)
+
+    def selectCellView(self, libModel: lmview.DesignLibrariesModel) -> (
+            Union[libb.ViewItem, None]):
+        dlg = fd.SelectCellViewDialog(self, libModel)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            libItem = libm.getLibItem(libModel, dlg.libNamesCB.currentText())
+            if not libItem:
+                self.logger.error("Invalid library selected")
+                return None
+
+            try:
+                CellItem = libm.getCellItem(libItem, dlg.cellCB.currentText())
+                if not CellItem:
+                    self.logger.error("Invalid cell selected")
+                    return None
+            except IndexError:
+                self.logger.error("Cell not found")
+                return None
+
+            try:
+                ViewItem = libm.getViewItem(CellItem, dlg.viewCB.currentText())
+                if not ViewItem:
+                    self.logger.error("Invalid view selected")
+                    return None
+                return ViewItem
+            except IndexError:
+                self.logger.error("View not found")
+                return None
+
+        return None
+
+    def openCellViewClick(self):
+        ViewItem = self.selectCellView(self.designView.libraryModel)
+        CellItem = ViewItem.parent()
+        libItem = CellItem.parent()
+        self.designView.openCellView(ViewItemTuple(libItem, CellItem, ViewItem))
+
+    def deleteCellViewClick(self, s):
+        ViewItem = self.selectCellView(self.designView.libraryModel)
+        try:
+            self.designView.deleteView(ViewItem)
+        except Exception as e:
+            self.logger.warning(f"Error:{e}")
+
+    def selectColumnViewClick(self):
+        self.libBrowserCont.switchToColumnView()
+
+    def selectTreeViewClick(self):
+        self.libBrowserCont.switchToTreeView()
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        event.ignore()  # ignore the default close event
+        self.hide()  # hide the window instead
+
+
+class LibraryBrowserContainer(QWidget):
+    def __init__(self, parent) -> None:
+        super().__init__(parent)
+        self.parentW = parent
+        self.initUI()
+        self.logger = logging.getLogger("reveda")
+
+    def initUI(self):
+        self.mainLayout = QVBoxLayout()
+        self.designView = lmview.DesignLibrariesColumnView(self)
+        self.mainLayout.addWidget(self.designView)
+        self.setLayout(self.mainLayout)
+
+    def switchToTreeView(self):
+        try:
+            # Check if layout exists and has items
+            if not self.layout or self.mainLayout.count() == 0:
+                return
+
+            # Get the old widget safely
+            item = self.mainLayout.itemAt(0)
+            if not item:
+                return
+
+            old_widget = item.widget()
+            if not old_widget:
+                return
+
+            # Create new view before removing old one to prevent blank screen
+            self.designView = lmview.DesignLibrariesTreeView(self)
+
+            # Block signals temporarily during widget replacement to prevent unnecessary updates
+            old_widget.blockSignals(True)
+            self.blockSignals(True)
+
+            # Replace widget and ensure proper cleanup
+            if self.mainLayout.replaceWidget(old_widget, self.designView):
+                old_widget.hide()  # Hide before deletion to prevent visual artifacts
+                old_widget.setParent(None)  # Detach from parentW
+                old_widget.deleteLater()
+                self.parentW.designView = self.designView
+                # Restore signal handling
+                self.blockSignals(False)
+
+            # Use update() only if needed, or consider using more specific update methods
+            self.designView.show()
+
+        except Exception as e:
+            self.logger.error(
+                f"Error switching to tree view: {str(e)}")  # You might want to add proper error handling/logging here
+
+    def switchToColumnView(self):
+        """
+        Switches the current view to a column view.
+        Returns: bool indicating success/failure of the operation
+        """
+        try:
+            # Validate layout existence and content
+            if not self.layout or self.mainLayout.count() == 0:
+                return False
+
+            # Safely get the old widget
+            item = self.mainLayout.itemAt(0)
+            if not item:
+                return False
+
+            old_widget = item.widget()
+            if not old_widget:
+                return False
+
+            self.designView = lmview.DesignLibrariesColumnView(self)
+
+            # Block signals during widget replacement to prevent unnecessary updates
+            old_widget.blockSignals(True)
+            self.blockSignals(True)
+
+            if self.mainLayout.replaceWidget(old_widget, self.designView):
+                old_widget.hide()  # Prevent flickering
+                old_widget.setParent(None)  # Detach from parentW
+                old_widget.deleteLater()
+                self.parentW.designView = self.designView
+                self.blockSignals(False)
+
+            # Show new widget and ensure it's properly displayed
+            self.designView.show()
+
+            # Use a more specific update if possible instead of full update
+            self.designView.update()  # Or self.update() if needed
+
+            return True
+
+        except Exception as e:
+            logging.error(f"Error switching to column view: {str(e)}")
+            return False
+
+
+class LibraryListView(QDialog):
+    def __init__(self, parent, libraryModel: lmview.DesignLibrariesModel):
+        super().__init__(parent)
+        self.appMainW = QApplication.instance().appMainW
+        self.model = libraryModel
+        self.setWindowTitle("Library List View")
+        self.setGeometry(100, 100, 300, 400)
+        librariesGroupBox = QGroupBox("Libraries")
+        layout = QVBoxLayout()
+        self.LibraryListView = lmview.LibraryCheckListView(self, libraryModel)
+        self.LibraryListView.setSelectionMode(QListView.MultiSelection)
+        listViewLayout = QVBoxLayout()
+        listViewLayout.addWidget(self.LibraryListView)
+        librariesGroupBox.setLayout(listViewLayout)
+        layout.addWidget(librariesGroupBox)
+        librariesGroupBox = QGroupBox("Libraries")
+        librariesLayout = QFormLayout()
+        self.origLibNameLineEdit = edf.LongLineEdit()
+        librariesLayout.addRow("Original Library Name", self.origLibNameLineEdit)
+        self.newLibNameCB = QComboBox()
+        self.newLibNameCB.setModel(libraryModel)
+        self.newLibNameCB.setEditable(True)
+        self.newLibNameCB.setInsertPolicy(QComboBox.InsertAtTop)
+        self.newLibNameCB.setMinimumContentsLength(20)
+        librariesLayout.addRow("New Library Name", self.newLibNameCB)
+        librariesGroupBox.setLayout(librariesLayout)
+        layout.addWidget(librariesGroupBox)
+
+        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+
+        self.buttonBox = QDialogButtonBox(QBtn)
+        self.buttonBox.accepted.connect(self.accept)
+        self.buttonBox.rejected.connect(self.reject)
+        layout.addWidget(self.buttonBox)
+        self.setLayout(layout)
+
+    def accept(self):
+        changedLibraries = self.LibraryListView.getCheckedLibraries()
+        if changedLibraries:
+            for libName in changedLibraries:
+                updateLibraryRunner = StartThread(
+                    lmview.updateJSONFieldInLibrary(self.model, libName, "lib",
+                                                    self.origLibNameLineEdit.text().strip(),
+                                                    self.newLibNameCB.currentText(), ))
+                updateLibraryRunner.signals.finished.connect(
+                    lambda: self.appMainW.logger.info(
+                        f"Updated library {libName} successfully."))
+                updateLibraryRunner.signals.error.connect(
+                    lambda e: self.appMainW.logger.error(
+                        f"Error updating library {libName}: {e}"))
+                self.appMainW.threadPool.start(updateLibraryRunner)
+        return super().accept()

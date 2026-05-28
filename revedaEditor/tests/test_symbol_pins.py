@@ -2,17 +2,17 @@ import pytest
 from PySide6.QtCore import QPoint
 from PySide6.QtWidgets import (QGraphicsScene, QGraphicsView)
 
-from revedaEditor.common.shapes import schematicSymbol, symbolPin
+from revedaEditor.common.shapes import SchematicSymbol, SymbolPin
 
 
 @pytest.fixture
 def setup_shape(qtbot):
-    pin1 = symbolPin(QPoint(0, 0), "pin1", "Input", "Signal")
-    pin2 = symbolPin(QPoint(0, 10), "pin2", "Output", "Signal")
-    pin3 = symbolPin(QPoint(0, 20), "pin3", "Input", "Signal")
+    pin1 = SymbolPin(QPoint(0, 0), "pin1", "Input", "Signal")
+    pin2 = SymbolPin(QPoint(0, 10), "pin2", "Output", "Signal")
+    pin3 = SymbolPin(QPoint(0, 20), "pin3", "Input", "Signal")
     symattrs = {"pinOrder": "pin1, pin2, pin3"}
     shapes = [pin1, pin2, pin3]
-    shape = schematicSymbol(shapes, symattrs)
+    shape = SchematicSymbol(shapes, symattrs)
     view = QGraphicsView()
     qtbot.addWidget(view)
     scene = QGraphicsScene()

@@ -39,13 +39,13 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (QTableView, QStyledItemDelegate,
                                QStyle)
 
-from revedaEditor.backend.pdkLoader import importPDKModule
+from revedaEditor.backend.pdk_loader import importPDKModule
 
 fabproc = importPDKModule('process')
-laylyr = importPDKModule('layoutLayers')
+laylyr = importPDKModule('layout_layers')
 
 
-class layerDataModel(QStandardItemModel):
+class LayerDataModel(QStandardItemModel):
     _file_content_cache = {}
     _pixmap_cache = {}
 
@@ -168,7 +168,7 @@ class TextureDelegate(QStyledItemDelegate):
         super().paint(painter, option, index)
 
 
-class layerViewTable(QTableView):
+class LayerViewTable(QTableView):
     columnTexture = 0
     columnName = 1
     columnPurpose = 2
@@ -179,11 +179,11 @@ class layerViewTable(QTableView):
     layerSelectable = Signal(str, str, bool)
     layerVisible = Signal(str, str, bool)
 
-    def __init__(self, parent=None, model: layerDataModel = None):
+    def __init__(self, parent=None, model: LayerDataModel = None):
         super().__init__(parent)
         self._model = model
         self.parent = parent
-        self.layoutScene = self.parent.scene
+        self.LayoutScene = self.parent.scene
         self.setModel(self._model)
 
         self.setupUi()
@@ -244,7 +244,7 @@ class layerViewTable(QTableView):
             for layer in laylyr.pdkAllLayers:
                 layer.selectable = selectable
             # Update scene items selectability
-            for item in self.layoutScene.items():
+            for item in self.LayoutScene.items():
                 if item.parentItem() is None and hasattr(item, 'layer'):
                     item.setEnabled(selectable)
 
