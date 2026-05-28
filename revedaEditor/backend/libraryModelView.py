@@ -12,7 +12,7 @@ import json
 import logging
 import pathlib
 import shutil
-from typing import List
+from typing import Any, Dict, List, Optional
 
 from PySide6.QtCore import Qt, QPoint
 from PySide6.QtGui import (QAction, QStandardItemModel, QStandardItem, )
@@ -49,7 +49,7 @@ class BaseDesignLibrariesView(QWidget):
         # Initialize the model (to be implemented by child classes)
         self.libraryModel = designLibrariesModel(self.libraryDict)
 
-    def removeLibrary(self, selectedLib: libb.libraryItem):
+    def removeLibrary(self, selectedLib: libb.libraryItem) -> None:
         try:
             button = QMessageBox.question(self, "Library Deletion",
                                           "Are you sure to delete this library? This action cannot be undone.", )
@@ -61,7 +61,7 @@ class BaseDesignLibrariesView(QWidget):
         except Exception as e:
             self.logger.error(f"Error removing library: {e}")
 
-    def renameLib(self, selectedLib: libb.libraryItem):
+    def renameLib(self, selectedLib: libb.libraryItem) -> None:
         try:
             oldLibraryName = selectedLib.libraryName
             dlg = fd.renameLibDialog(self, oldLibraryName)
@@ -79,7 +79,7 @@ class BaseDesignLibrariesView(QWidget):
         except Exception as e:
             self.logger.error(f"Error renaming library: {e}")
 
-    def openView(self, selectedViewItem: libb.viewItem):
+    def openView(self, selectedViewItem: libb.viewItem) -> None:
         try:
             cellItem = selectedViewItem.parent()
             libItem = cellItem.parent()
@@ -88,7 +88,7 @@ class BaseDesignLibrariesView(QWidget):
         except Exception as e:
             self.logger.error(f"Error opening view: {e}")
 
-    def createNewCellView(self, itemTuple: ddef.viewItemTuple):
+    def createNewCellView(self, itemTuple: ddef.viewItemTuple) -> None:
         """
             this method is used to open the editor after a viewitem is created.
         """
@@ -144,7 +144,7 @@ class BaseDesignLibrariesView(QWidget):
             if hasattr(self._app, 'pluginsObj') and self._app.pluginsObj is not None:
                 self._app.pluginsObj.createCellView(itemTuple)
 
-    def reworkDesignLibrariesView(self, libraryDict: dict):
+    def reworkDesignLibrariesView(self, libraryDict: dict) -> None:
         """
         To be implemented by child classes.
         """

@@ -15,7 +15,7 @@
 import functools
 import json
 import pathlib
-from typing import Any, List
+from typing import Any, Dict, List, Optional, Union
 
 import orjson
 from PySide6.QtCore import QPoint, QLineF, QRect
@@ -49,7 +49,7 @@ class symbolItems:
         self.scene = scene
         self.snapTuple = scene.snapTuple
 
-    def create(self, item: dict):
+    def create(self, item: dict) -> Optional[shp.symbolShape]:
         """
         Create symbol items from json file.
         """
@@ -73,7 +73,7 @@ class symbolItems:
                     return self.createPolygonItem(item)
 
     @staticmethod
-    def createRectItem(item: dict):
+    def createRectItem(item: dict) -> shp.symbolRectangle:
         """
         Create symbol items from json file.
         """
@@ -88,7 +88,7 @@ class symbolItems:
         return rect
 
     @staticmethod
-    def createCircleItem(item: dict):
+    def createCircleItem(item: dict) -> shp.symbolCircle:
         centre = QPoint(item["cen"][0], item["cen"][1])
         end = QPoint(item["end"][0], item["end"][1])
         circle = shp.symbolCircle(centre, end)  # note that we are using grid
@@ -102,7 +102,7 @@ class symbolItems:
         return circle
 
     @staticmethod
-    def createArcItem(item: dict):
+    def createArcItem(item: dict) -> shp.symbolArc:
         start = QPoint(item["st"][0], item["st"][1])
         end = QPoint(item["end"][0], item["end"][1])
 
@@ -115,7 +115,7 @@ class symbolItems:
         return arc
 
     @staticmethod
-    def createLineItem(item: dict):
+    def createLineItem(item: dict) -> shp.symbolLine:
         start = QPoint(item["st"][0], item["st"][1])
         end = QPoint(item["end"][0], item["end"][1])
 
@@ -126,7 +126,7 @@ class symbolItems:
         return line
 
     @staticmethod
-    def createPinItem(item: dict):
+    def createPinItem(item: dict) -> shp.symbolPin:
         start = QPoint(item["st"][0], item["st"][1])
         pin = shp.symbolPin(start, item["nam"], item["pd"], item["pt"])
         pin.setPos(QPoint(item["loc"][0], item["loc"][1]))
@@ -135,7 +135,7 @@ class symbolItems:
         return pin
 
     @staticmethod
-    def createLabelItem(item: dict):
+    def createLabelItem(item: dict) -> lbl.symbolLabel:
         start = QPoint(item["st"][0], item["st"][1])
         label = lbl.symbolLabel(
             start,
@@ -154,7 +154,7 @@ class symbolItems:
         return label
 
     @staticmethod
-    def createTextItem(item: dict):
+    def createTextItem(item: dict) -> shp.text:
         start = QPoint(item["st"][0], item["st"][1])
         text = shp.text(
             start,
@@ -169,7 +169,7 @@ class symbolItems:
         return text
 
     @staticmethod
-    def createPolygonItem(item: dict):
+    def createPolygonItem(item: dict) -> shp.symbolPolygon:
         pointsList = [QPoint(point[0], point[1]) for point in item["ps"]]
         polygon = shp.symbolPolygon(pointsList)
         polygon.flipTuple = item.get('fl', (1, 1))
@@ -189,7 +189,7 @@ class symbolItems:
         rect.setPos(QPoint(item["pos"][0], item["pos"][1]))
         return rect
 
-    def unknownItem(self):
+    def unknownItem(self) -> QGraphicsRectItem:
         rectItem = QGraphicsRectItem(QRect(0, 0, *self.snapTuple))
         rectItem.setVisible(False)
         return rectItem
