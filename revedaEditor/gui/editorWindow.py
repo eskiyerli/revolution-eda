@@ -591,7 +591,7 @@ class editorWindow(QMainWindow):
                         obj.snapTuple = (self.snapGrid, self.snapGrid)
                 self.centralW.scene.invalidate(self.centralW.scene.sceneRect(),
                                                QGraphicsScene.SceneLayer.BackgroundLayer)
-        except Exception as e:
+        except (AttributeError, TypeError, ValueError) as e:
             self.logger.info(f'Problem with grid settings: {e}')
 
     def selectConfigEdit(self):

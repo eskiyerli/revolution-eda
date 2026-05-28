@@ -127,7 +127,7 @@ class configEditor(QMainWindow):
                 self.editorWindow.show()
             self._refreshConfigTable()
 
-        except Exception as e:
+        except (FileNotFoundError, KeyError, AttributeError, OSError) as e:
             self.appMainW.logger.error(f'Error loading config: {e}')
             self._configDict = {}
 
@@ -204,7 +204,7 @@ class configEditor(QMainWindow):
             cellViewNameTuple = ddef.viewNameTuple(self.libraryName, self.cellName,
                                                    self.viewItem.viewName)
             self.appMainW.openViews.pop(cellViewNameTuple, None)
-        except Exception as e:
+        except (AttributeError, KeyError, TypeError) as e:
             self.appMainW.logger.error(f"Unexpected error: {e}")
         finally:
             event.accept()

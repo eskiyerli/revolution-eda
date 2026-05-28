@@ -442,7 +442,7 @@ class licenseDialog(QDialog):
             candidate = Path(str(ref)).resolve()
             if candidate.exists():
                 return candidate.read_text(encoding="utf-8")
-        except Exception:
+        except (FileNotFoundError, AttributeError, OSError):
             pass
 
         # 2. Locate via the running application's basePath
@@ -452,7 +452,7 @@ class licenseDialog(QDialog):
                 candidate = Path(app.basePath) / "LICENSE.txt"
                 if candidate.exists():
                     return candidate.read_text(encoding="utf-8")
-        except Exception:
+        except (FileNotFoundError, OSError):
             pass
 
         # 3. CWD fallback

@@ -183,7 +183,7 @@ class symbolEditor(edw.editorWindow):
             viewNameTuple = ddef.viewNameTuple(self.libItem.libraryName, self.cellItem.cellName,
                                                self.viewName)
             self.appMainW.openViews[viewNameTuple] = self
-        except Exception as e:
+        except (FileNotFoundError, OSError, KeyError) as e:
             self.logger.error(f"Error during loading symbol for {self.cellName}: {e}")
 
     def createLabelClick(self):
@@ -224,7 +224,7 @@ class symbolEditor(edw.editorWindow):
             cellViewNameTuple = ddef.viewNameTuple(self.libName, self.cellName,
                                                    self.viewName)
             self.appMainW.openViews.pop(cellViewNameTuple, None)
-        except Exception as e:
+        except (OSError, TypeError) as e:
             self.appMainW.logger.error(
                 f"Error in closing symbol window for {self.cellName}: {e}")
         finally:
