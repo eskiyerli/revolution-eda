@@ -365,7 +365,7 @@ class schematicItems:
                     symbolInstance.angle = item.get("ang", 0)
                     symbolInstance.flipTuple = item.get('fl', (1, 1))
                     return symbolInstance
-                except Exception as e:
+                except (KeyError, AttributeError, TypeError) as e:
                     self.scene.logger.error(
                         f"Error creating symbol instance: {e}"
                     )
@@ -517,7 +517,7 @@ class layoutItems:
             instance.setPos(QPoint(*item["loc"]))
             self._set_common_attrs(instance, item)
             return instance
-        except Exception as e:
+        except (KeyError, TypeError, ValueError) as e:
             self.scene.logger.error(f"Error creating PCell instance: {e}")
             return None
 
@@ -548,7 +548,7 @@ class layoutItems:
                     shape)  # Reuse self instead of creating new instance
                 if created_shape:
                     item_shapes_append(created_shape)
-            except Exception:
+            except (KeyError, AttributeError, TypeError):
                 pass  # Skip logging for performance
 
         instance = lshp.layoutInstance(item_shapes)

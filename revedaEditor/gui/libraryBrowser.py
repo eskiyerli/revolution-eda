@@ -105,7 +105,7 @@ class libraryBrowser(QMainWindow):
         if hasattr(self._app, 'applyPluginMenus'):
             try:
                 self._app.applyPluginMenus(self)
-            except Exception:
+            except (AttributeError, TypeError):
                 self.logger.exception('applyPluginMenus failed')
 
     def _createActions(self):
@@ -250,14 +250,14 @@ class libraryBrowser(QMainWindow):
         try:
             dlg = libraryListView(self, self.designView.libraryModel)
             dlg.show()
-        except Exception as e:
+        except (AttributeError, RuntimeError) as e:
             self.logger.error(f"Error updating library references: {e}")
 
     def newCellClick(self, s):
         try:
             self.libBrowserCont.designView.createCell(
                 self.libBrowserCont.designView.selectedLib)
-        except Exception as e:
+        except (AttributeError, TypeError) as e:
             self.logger.error(f"Error in creating new cell: {e}")
 
     def deleteCellClick(self, s):
@@ -322,7 +322,7 @@ class libraryBrowser(QMainWindow):
         viewItem = self.selectCellView(self.designView.libraryModel)
         try:
             self.designView.deleteView(viewItem)
-        except Exception as e:
+        except (FileNotFoundError, PermissionError, OSError) as e:
             self.logger.warning(f"Error:{e}")
 
     def selectColumnViewClick(self):
@@ -383,7 +383,7 @@ class libraryBrowserContainer(QWidget):
             # Use update() only if needed, or consider using more specific update methods
             self.designView.show()
 
-        except Exception as e:
+        except (AttributeError, RuntimeError) as e:
             self.logger.error(
                 f"Error switching to tree view: {str(e)}")  # You might want to add proper error handling/logging here
 
@@ -427,7 +427,7 @@ class libraryBrowserContainer(QWidget):
 
             return True
 
-        except Exception as e:
+        except (AttributeError, RuntimeError) as e:
             logging.error(f"Error switching to column view: {str(e)}")
             return False
 

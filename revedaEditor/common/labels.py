@@ -357,7 +357,7 @@ class symbolLabel(QGraphicsSimpleTextItem):
 
             return (labelName, labelText, finalValue)
 
-        except Exception as e:
+        except (ValueError, AttributeError, TypeError) as e:
             if self.scene():
                 self.scene().logger.error(
                     f"Error parsing label definition: {labelDefinition}, {e}")
@@ -420,6 +420,6 @@ class symbolLabel(QGraphicsSimpleTextItem):
             self._labelText = f"{labelName}={self._labelValue}"
 
 
-        except Exception as e:
+        except (ValueError, AttributeError, TypeError) as e:
             if self.scene():
                 self.scene().logger.error(f"PyLabel Error: {e}")

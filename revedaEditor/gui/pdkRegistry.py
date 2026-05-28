@@ -11,6 +11,7 @@ import re
 import shutil
 import sys
 import tempfile
+import urllib.error
 import urllib.request
 import zipfile
 import logging
@@ -140,7 +141,7 @@ class PDKRegistryWindow(QMainWindow):
                 if isinstance(index, dict) and "pdks" in index:
                     index = index["pdks"]
                 self._registry = index if isinstance(index, list) else []
-        except Exception as exc:
+        except (urllib.error.URLError, json.JSONDecodeError, OSError) as exc:
             QMessageBox.warning(
                 self, "Registry Error", f"Failed to fetch registry:\n{exc}"
             )
@@ -162,7 +163,7 @@ class PDKRegistryWindow(QMainWindow):
                     with open(config_path) as f:
                         config = json.load(f)
                         local_version = config.get("pdk_version", "0.0.0")
-                except Exception:
+                except (json.JSONDecodeError, OSError, KeyError):
                     local_version = "0.0.0"
             
             # Compare versions
@@ -214,7 +215,7 @@ class PDKRegistryWindow(QMainWindow):
             elif len(parts1) > len(parts2):
                 return 1
             return 0
-        except Exception:
+        except (ValueError, TypeError):
             return 0
 
     def _on_checkbox_changed(self, item: QTableWidgetItem):
@@ -247,7 +248,7 @@ class PDKRegistryWindow(QMainWindow):
             
             self.logger.info(f"PDK '{name}' and related files uninstalled.")
             self.fetch_registry()
-        except Exception as e:
+        except (OSError, PermissionError) as e:
             QMessageBox.critical(self, "Error", str(e))
             self.fetch_registry()
 
@@ -276,7 +277,7 @@ class PDKRegistryWindow(QMainWindow):
                     version_info += f"\nInstalled Version: {local_version}"
                     if self._compare_versions(local_version, entry.get('version', '0.0.0')) < 0:
                         version_info += " (Update available)"
-            except Exception:
+            except (json.JSONDecodeError, OSError, KeyError):
                 pass
         
         text = f"{entry.get('description', '')}\n\nProcess: {entry.get('process', 'N/A')}\n{version_info}\nLicense: {entry.get('license', 'Unknown')}\n{urlText}"
@@ -355,7 +356,7 @@ class PDKRegistryWindow(QMainWindow):
 
             os.remove(tmp_path)
             self.fetch_registry()
-        except Exception as e:
+        except (zipfile.BadZipFile, OSError) as e:
             QMessageBox.critical(self, "Error", str(e))
 
     def _get_binary_url(self, entry: dict) -> str:

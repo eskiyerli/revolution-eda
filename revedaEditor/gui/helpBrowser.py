@@ -38,7 +38,7 @@ def _resolve_docs_path() -> Path:
             candidate = Path(app.basePath) / "docs"
             if candidate.is_dir():
                 return candidate
-    except Exception:
+    except (FileNotFoundError, AttributeError, OSError):
         pass
 
     # 3. CWD fallback
@@ -93,7 +93,7 @@ class MarkdownViewer(QTextBrowser):
             # Update current file reference
             self.currentFile = filePath
 
-        except Exception as e:
+        except (FileNotFoundError, OSError) as e:
             self.setHtml(f"<h1>Error</h1><p>Could not load file: {str(e)}</p>")
 
     def processImages(self, html, baseDir):
