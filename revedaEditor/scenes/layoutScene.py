@@ -337,7 +337,7 @@ class layoutScene(editorScene):
                 self.editorWindow.messageLine.setText("Rotate item")
                 if self.selectedItems():
                     self.rotateSelectedItems(mousePos)
-        except Exception as e:
+        except (AttributeError, TypeError) as e:
             self.logger.error(f"mouse release error: {e}")
 
     def addLayoutViaArray(self):
@@ -649,7 +649,7 @@ class layoutScene(editorScene):
         except orjson.JSONDecodeError:
             self.logger.error(f"Invalid file format for instance: {layoutInstanceTuple.viewItem.viewPath}")
             return None
-        except Exception as e:
+        except (KeyError, AttributeError, TypeError) as e:
             self.logger.error(f"Unexpected error loading instance from {layoutInstanceTuple.viewItem.viewPath}: {e}")
             return None
 
@@ -691,7 +691,7 @@ class layoutScene(editorScene):
         try:
             with schematicPath.open("rb") as f:
                 data = orjson.loads(f.read())
-        except Exception as e:
+        except (OSError, orjson.JSONDecodeError, ValueError) as e:
             self.logger.error(f"Failed to load schematic: {e}")
             return
 
@@ -816,7 +816,7 @@ class layoutScene(editorScene):
             self.addUndoStack(new_inst)
             return True
 
-        except Exception as e:
+        except (KeyError, AttributeError, TypeError, ValueError) as e:
             self.logger.error(f"Error creating layout instance from schematic: {e}")
             return False
         finally:
@@ -896,7 +896,7 @@ class layoutScene(editorScene):
             self.logger.error(f"Failed to save layout to {filePathObj}: {str(e)}")
             raise
 
-        except Exception as e:
+        except (OSError, AttributeError, KeyError) as e:
             self.logger.error(f"Unexpected error while saving layout: {str(e)}")
             raise
 
@@ -944,7 +944,7 @@ class layoutScene(editorScene):
             self.logger.error(f"Failed to export layout to {export_path}: {str(e)}")
             raise
 
-        except Exception as e:
+        except (OSError, AttributeError, KeyError) as e:
             self.logger.error(f"Unexpected error while exporting layout: {str(e)}")
             raise
 
@@ -979,7 +979,7 @@ class layoutScene(editorScene):
         except orjson.JSONDecodeError:
             self.logger.error("Invalid file format.")
             return False
-        except Exception as e:
+        except (KeyError, AttributeError, TypeError) as e:
             self.logger.error(f"Unexpected error loading layout: {e}")
             return False
 
@@ -992,7 +992,7 @@ class layoutScene(editorScene):
             if isinstance(item, dict):
                 try:
                     self.addItem(factory_create(item))
-                except Exception:
+                except (KeyError, AttributeError, TypeError):
                     pass
 
     def deleteSelectedItems(self):
@@ -1035,7 +1035,7 @@ class layoutScene(editorScene):
                             if isinstance(item, pcells.baseCell):
                                 self.layoutInstanceProperties(item, True)
 
-        except Exception as e:
+        except (AttributeError, TypeError, ValueError) as e:
             self.logger.error(f"{type(item)} property editor error: {e}")
 
     def layoutPolygonProperties(self, item):
