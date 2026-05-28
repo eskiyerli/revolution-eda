@@ -152,7 +152,7 @@ class aiTerminal(QWidget):
                         encrypted_data = f.read()
                     decrypted_data = cipher.decrypt(encrypted_data)
                     keys = json.loads(decrypted_data.decode())
-                except Exception:
+                except (ValueError, json.JSONDecodeError):
                     pass  # Start fresh if corrupted
 
             # Add new key
@@ -165,7 +165,7 @@ class aiTerminal(QWidget):
                 f.write(encrypted_data)
             os.chmod(keys_file, 0o600)  # Restrict permissions
 
-        except Exception as e:
+        except OSError as e:
             self.appendOutput(f"Failed to save API key: {e}")
 
     def _load_api_key(self, provider):
@@ -187,7 +187,7 @@ class aiTerminal(QWidget):
             keys = json.loads(decrypted_data.decode())
             return keys.get(provider)
 
-        except Exception:
+        except (ValueError, KeyError):
             return None  # Return None if decryption fails
 
     def appendOutput(self, text):
@@ -325,7 +325,7 @@ Example:
             with open(self.editorWindow.file, 'r') as f:
                 data = json.load(f)
             self.appendOutput(json.dumps(data, indent=2))
-        except Exception as e:
+        except (json.JSONDecodeError, OSError) as e:
             self.appendOutput(f"Error reading file: {e}")
 
     def backupDesign(self):
@@ -335,7 +335,7 @@ Example:
             shutil.copy2(self.editorWindow.file, self.backupFile)
             self.undoBtn.setEnabled(True)
             return True
-        except Exception as e:
+        except OSError as e:
             self.appendOutput(f"Backup failed: {e}")
             return False
 
@@ -353,5 +353,5 @@ Example:
                 self.backupFile.unlink()
             self.backupFile = None
             self.undoBtn.setEnabled(False)
-        except Exception as e:
+        except OSError as e:
             self.appendOutput(f"Undo failed: {e}")
