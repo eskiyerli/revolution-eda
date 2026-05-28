@@ -12,7 +12,7 @@
 import math
 from collections import OrderedDict
 from functools import cached_property
-from typing import Dict, NamedTuple, Tuple, Union
+from typing import Any, Dict, List, NamedTuple, Optional, Tuple, Union
 
 from PySide6.QtCore import (QLine, QLineF, QPoint, QRect, QRectF, Qt, )
 from PySide6.QtGui import (QBrush, QFont, QFontDatabase, QFontMetrics,
@@ -51,11 +51,11 @@ class symbolShape(QGraphicsItem):
         return "symbolShape()"
 
     @property
-    def pen(self):
+    def pen(self) -> QPen:
         return self._pen
 
     @property
-    def brush(self):
+    def brush(self) -> QBrush:
         return self._brush
 
     @brush.setter
@@ -64,17 +64,17 @@ class symbolShape(QGraphicsItem):
             self._brush = value
 
     @property
-    def angle(self):
+    def angle(self) -> float:
         return self._angle
 
     @angle.setter
-    def angle(self, value):
+    def angle(self, value: float) -> None:
         self._angle = value
         self.prepareGeometryChange()
         self.setRotation(value)
 
     @property
-    def stretch(self):
+    def stretch(self) -> bool:
         return self._stretch
 
     @stretch.setter
@@ -102,7 +102,7 @@ class symbolShape(QGraphicsItem):
 
         super().mousePressEvent(event)
 
-    def sceneEvent(self, event):
+    def sceneEvent(self, event) -> bool:
         """
         Do not propagate event if shape needs to keep still.
         """
@@ -113,7 +113,7 @@ class symbolShape(QGraphicsItem):
             super().sceneEvent(event)
             return True
 
-    def itemChange(self, change, value):
+    def itemChange(self, change, value) -> Any:
         if change == QGraphicsItem.ItemSelectedHasChanged and self.scene():
             # Direct z-value calculation without conditional
             self.setZValue(self.zValue() + (20 * value - 10))
@@ -144,7 +144,7 @@ class symbolShape(QGraphicsItem):
         self.scene().itemContextMenu.exec_(event.screenPos())
 
     @property
-    def flipTuple(self):
+    def flipTuple(self) -> Tuple[int, int]:
         return self._flipTuple
 
     @flipTuple.setter
@@ -176,10 +176,10 @@ class symbolRectangle(symbolShape):
         self._stretchSide = None
         self._pen = symlyr.symbolPen
 
-    def boundingRect(self):
+    def boundingRect(self) -> QRectF:
         return self._rect.normalized().adjusted(-2, -2, 2, 2)
 
-    def paint(self, painter, option, widget=None):
+    def paint(self, painter, option, widget=None) -> None:
         if self.draft:
             painter.setPen(symlyr.draftPen)
             self.setZValue(symlyr.draftLayer.z)
@@ -204,7 +204,7 @@ class symbolRectangle(symbolShape):
             self.setZValue(symlyr.symbolLayer.z)
         painter.drawRect(self._rect)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"symbolRectangle({self._start},{self._end})"
 
     @property
@@ -387,7 +387,7 @@ class symbolCircle(symbolShape):
             self.setZValue(symlyr.symbolLayer.z)
         painter.drawEllipse(self._centre, self._radius, self._radius)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"symbolCircle({self._centre},{self._end})"
 
     @property
@@ -442,7 +442,7 @@ class symbolCircle(symbolShape):
         if isinstance(value, QPoint):
             self._topLeft = value
 
-    def boundingRect(self):
+    def boundingRect(self) -> QRectF:
         return (
             QRectF(self._topLeft, self._rightBottom).normalized().adjusted(-2, -2,
                                                                            2, 2))
@@ -571,7 +571,7 @@ class symbolArc(symbolShape):
         startAngle = ARC_ANGLES.get(self._arcType, 0) * 16
         painter.drawArc(self._rect, startAngle, 180 * 16)
 
-    def boundingRect(self):
+    def boundingRect(self) -> QRectF:
         return self.bRect
 
     @property
@@ -760,25 +760,25 @@ class symbolLine(symbolShape):
         self._updateGeometry()
         self._horizontal = True
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"symbolLine({self._start}, {self._end})"
 
     def _updateGeometry(self):
         self._line = QLine(self._start, self._end)
         self._rect = QRect(self._start, self._end).normalized()
 
-    def boundingRect(self):
+    def boundingRect(self) -> QRectF:
         return self._rect.adjusted(-self._BOUNDING_OFFSET, -self._BOUNDING_OFFSET,
                                    self._BOUNDING_OFFSET, self._BOUNDING_OFFSET, )
 
-    def shape(self):
+    def shape(self) -> QPainterPath:
         path = QPainterPath()
         path.addRect(self._rect.adjusted(-self._SHAPE_OFFSET, -self._SHAPE_OFFSET,
                                          self._SHAPE_OFFSET,
                                          self._SHAPE_OFFSET, ))
         return path
 
-    def paint(self, painter, option, widget):
+    def paint(self, painter, option, widget) -> None:
         is_selected = self.isSelected()
         if is_selected:
             painter.setPen(symlyr.selectedSymbolPen)
@@ -871,10 +871,10 @@ class symbolPolygon(symbolShape):
         self._selectedCornerIndex = self._NO_SELECTION
         self.setZValue(symlyr.symbolLayer.z)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"symbolPolygon({self._points})"
 
-    def paint(self, painter, option, widget):
+    def paint(self, painter, option, widget) -> None:
         is_selected = self.isSelected()
         if is_selected:
             painter.setPen(symlyr.selectedSymbolPen)
@@ -1021,13 +1021,13 @@ class symbolPin(symbolShape):
     def __str__(self):
         return f"symbolPin: {self._pinName} {self.mapToScene(self._start)}"
 
-    def boundingRect(self):
+    def boundingRect(self) -> QRectF:
         return self.childrenBoundingRect()
 
-    def paint(self, painter, option, widget=None):
+    def paint(self, painter, option, widget=None) -> None:
         pass
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"pin({self._start},{self._pinName}, {self._pinDir}, {self._pinType})"
 
     # def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent) -> None:
@@ -1046,7 +1046,7 @@ class symbolPin(symbolShape):
                 self.scene().selectedSymbolPin = None
         return super().itemChange(change, value)
 
-    def shape(self):
+    def shape(self) -> QPainterPath:
         path = QPainterPath()
         path.addRect(self._pinRect)
         return path
@@ -1119,7 +1119,7 @@ class symbolPin(symbolShape):
         return schematicPin(start, self.pinName, self.pinDir, self.pinType)
 
     @property
-    def flipTuple(self):
+    def flipTuple(self) -> Tuple[int, int]:
         return self._flipTuple
 
     @flipTuple.setter
@@ -1173,7 +1173,7 @@ class text(symbolShape):
                                            Qt.AlignmentFlag.AlignCenter,
                                            self._textContent)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return (
             f"text({self._start},{self._textContent}, {self._textFont.family()},"
             f" {self._textFont.style()}, {self._textHeight}, {self._textAlign},"
@@ -1206,7 +1206,7 @@ class text(symbolShape):
             currentTransform = newTransform.scale(1, -1) * currentTransform
         self.setTransform(currentTransform)
 
-    def boundingRect(self):
+    def boundingRect(self) -> QRectF:
         if self._textAlign == text.textAlignments[0]:
             self._rect = self._fm.boundingRect(QRect(0, 0, 400, 400),
                                                Qt.AlignmentFlag.AlignLeft,
@@ -1223,7 +1223,7 @@ class text(symbolShape):
                       self._rect.width(),
                       self._rect.height(), ).normalized().adjusted(-2, -2, 2, 2))
 
-    def paint(self, painter, option, widget):
+    def paint(self, painter, option, widget) -> None:
         painter.setFont(self._textFont)
         if option.state & QStyle.State_Selected:
             painter.setPen(schlyr.selectedTextPen)
@@ -1370,10 +1370,10 @@ class schematicSymbol(symbolShape):
             elif isinstance(item, symbolLabel):
                 self._labels[item.labelName] = item
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"schematicSymbol({self._instanceName})"
 
-    def shape(self):
+    def shape(self) -> QPainterPath:
         path = QPainterPath()
         validTypes = (symbolRectangle, symbolLine, symbolArc, symbolCircle,
                       symbolPolygon)
@@ -1475,7 +1475,7 @@ class schematicSymbol(symbolShape):
                 # Log error but continue processing other guidelines
                 scene.logger.error(f"Error processing snap lines: {e}")
 
-    def paint(self, painter, option, widget):
+    def paint(self, painter, option, widget) -> None:
         # The shape() method is expensive. It's better to use boundingRect()
         # which is cached by Qt's graphics framework.
         shapeBoundingRect = self.boundingRect().adjusted(5, 5, -5, -5)
@@ -1496,7 +1496,7 @@ class schematicSymbol(symbolShape):
             painter.drawLine(shapeBoundingRect.bottomLeft(),
                              shapeBoundingRect.topRight())
 
-    def boundingRect(self):
+    def boundingRect(self) -> QRectF:
         return self.childrenBoundingRect()
 
     def mousePressEvent(self, event: QGraphicsSceneMouseEvent) -> None:
@@ -1621,7 +1621,7 @@ class schematicSymbol(symbolShape):
         self._netlistIgnore = value
 
     @property
-    def flipTuple(self):
+    def flipTuple(self) -> Tuple[int, int]:
         return self._flipTuple
 
     @flipTuple.setter
@@ -1714,7 +1714,7 @@ class schematicPin(symbolShape):
         return (f"schematicPin({self._start}, {self._pinName}, {self._pinDir}, "
                 f"{self._pinType})")
 
-    def paint(self, painter, option, widget):
+    def paint(self, painter, option, widget) -> None:
         if self.isSelected():
             painter.setPen(schlyr.selectedSchematicPinPen)
             painter.drawRect(self.childrenBoundingRect())
@@ -1746,10 +1746,10 @@ class schematicPin(symbolShape):
             self._snapLines = set()
         return super().itemChange(change, value)
 
-    def boundingRect(self):
+    def boundingRect(self) -> QRectF:
         return self.childrenBoundingRect()
 
-    def shape(self):
+    def shape(self) -> QPainterPath:
         path = QPainterPath()
         # Add a shape for the pin
         pin_rect = (QRect(self._start.x() - self.PIN_WIDTH / 2,
@@ -1930,7 +1930,7 @@ class schematicPin(symbolShape):
             self._pinType = pintype
 
     @property
-    def flipTuple(self):
+    def flipTuple(self) -> Tuple[int, int]:
         return self._flipTuple
 
     @flipTuple.setter
@@ -1983,7 +1983,7 @@ class alignLine(symbolShape):
         self._determineAngle(self._draftLine.angle())
         self.setZValue(999)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return (
             f"alignLine({self._draftLine}, {self._width}, {self._mode})"
         )
@@ -2016,7 +2016,7 @@ class alignLine(symbolShape):
                       self._draftLine.p2()).normalized().adjusted(
             -half_w, -half_w, half_w, half_w)
 
-    def paint(self, painter, option, widget=None):
+    def paint(self, painter, option, widget=None) -> None:
 
         if self.isSelected():
             painter.setPen(self._selectedPen)
