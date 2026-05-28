@@ -70,7 +70,7 @@ class pluginsLoader:
                         with open(configPath) as f:
                             config = json.load(f)
                         self.pluginMenuConfig[item.name] = config
-                    except Exception as e:
+                    except (json.JSONDecodeError, OSError) as e:
                         self._app.logger.warning(
                             f"Failed to load plugin config for {item.name}: {e}"
                         )

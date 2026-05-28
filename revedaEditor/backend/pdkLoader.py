@@ -87,7 +87,7 @@ def importPDKModule(moduleName: str) -> ModuleType | None:
     except ModuleNotFoundError:
         logger.warning(f"PDK module not found: {fullModuleName}")
         return None
-    except Exception as e:
+    except (ModuleNotFoundError, ImportError) as e:
         logger.error(f"Failed to import PDK module {fullModuleName}: {e}")
         return None
 
@@ -114,7 +114,7 @@ class pdkConfig:
             with open(self.pdkPathObj / "config.json") as f:
                 config = json.load(f)
                 return config
-        except Exception as e:
+        except (json.JSONDecodeError, OSError, AttributeError) as e:
             self._app.logger.warning(
                 f"Failed to load plugin config for {item.name}: {e}")
             return {}

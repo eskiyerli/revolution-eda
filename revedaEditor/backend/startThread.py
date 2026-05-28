@@ -50,7 +50,7 @@ class startThread(QRunnable):
             result = self.fn(*self.args, **self.kwargs)
             if result:
                 self.signals.result.emit(result)
-        except Exception as e:
+        except Exception as e:  # Intentional broad catch for thread worker safety
             self.signals.error.emit((type(e), e.args, str(e)))
         finally:
             self.signals.finished.emit()
