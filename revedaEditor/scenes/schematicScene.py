@@ -46,6 +46,7 @@ import revedaEditor.common.labels as lbl
 import revedaEditor.common.net as snet
 import revedaEditor.common.shapes as shp  # import the shapes
 import revedaEditor.fileio.loadJSON as lj
+import revedaEditor.fileio.schemaValidation as sv
 import revedaEditor.fileio.schematicEncoder as schenc
 import revedaEditor.gui.alignItems as alg
 import revedaEditor.gui.fileDialogues as fd
@@ -811,7 +812,8 @@ class schematicScene(editorScene):
                     # Start array
                     f.write("[\n")
 
-                    header_items = [{"viewType": "schematic"}, {
+                    header_items = [{"viewType": "schematic",
+                                     "schemaVersion": "1.0"}, {
                         "snapGrid": (self.majorGrid, self.snapGrid)}, ]
                     json.dump(header_items[0], f)
                     f.write(",\n")
@@ -888,17 +890,19 @@ class schematicScene(editorScene):
         try:
             with filePathObj.open("rb") as file:
                 decodedData = orjson.loads(file.read())
+            # Validate file structure before processing
+            is_valid, errors = sv.validate_design_file(
+                decodedData, "schematic", str(filePathObj)
+            )
+            if not is_valid:
+                for err in errors:
+                    self.logger.error(
+                        f"Schematic validation error in "
+                        f"'{filePathObj.name}': {err}"
+                    )
+                return
             with self.measureDuration():
-                if len(decodedData) < 2:
-                    viewDict = decodedData[0] if decodedData else {}
-                    gridSettings = None
-                    itemData = []
-                else:
-                    viewDict, gridSettings, *itemData = decodedData
-
-                if viewDict.get("viewType") != "schematic":
-                    self.logger.error("Not a schematic file!")
-                    return
+                viewDict, gridSettings, *itemData = decodedData
 
                 if gridSettings and gridSettings.get("snapGrid"):
                     self.editorWindow.configureGridSettings(

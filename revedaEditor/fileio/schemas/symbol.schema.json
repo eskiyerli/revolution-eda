@@ -1,0 +1,182 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/eskiyerli/revolution-eda/master/revedaEditor/fileio/schemas/symbol.schema.json",
+  "title": "Revolution EDA Symbol File",
+  "description": "Schema for symbol design files",
+  "type": "array",
+  "minItems": 2,
+  "items": [
+    { "$ref": "#/$defs/viewHeader" },
+    { "$ref": "#/$defs/gridSettings" }
+  ],
+  "additionalItems": { "$ref": "#/$defs/symbolItem" },
+  "$defs": {
+    "point": {
+      "type": "array",
+      "items": { "type": "number" },
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "flipTuple": {
+      "type": "array",
+      "items": { "type": ["number", "integer"] },
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "rectCoords": {
+      "type": "array",
+      "items": { "type": "number" },
+      "minItems": 4,
+      "maxItems": 4
+    },
+    "viewHeader": {
+      "type": "object",
+      "required": ["viewType"],
+      "properties": {
+        "viewType": { "type": "string", "enum": ["symbol", "schematic", "layout"] },
+        "schemaVersion": { "type": "string" }
+      }
+    },
+    "gridSettings": {
+      "type": "object",
+      "properties": {
+        "snapGrid": {
+          "type": "array",
+          "items": { "type": ["number", "integer"] },
+          "minItems": 2,
+          "maxItems": 2
+        }
+      }
+    },
+    "symbolItem": {
+      "oneOf": [
+        { "$ref": "#/$defs/symbolRect" },
+        { "$ref": "#/$defs/symbolLine" },
+        { "$ref": "#/$defs/symbolCircle" },
+        { "$ref": "#/$defs/symbolArc" },
+        { "$ref": "#/$defs/symbolPolygon" },
+        { "$ref": "#/$defs/symbolPin" },
+        { "$ref": "#/$defs/symbolText" },
+        { "$ref": "#/$defs/symbolLabel" },
+        { "$ref": "#/$defs/symbolAttr" }
+      ]
+    },
+    "symbolRect": {
+      "type": "object",
+      "required": ["type", "rect", "loc"],
+      "properties": {
+        "type": { "const": "rect" },
+        "rect": { "$ref": "#/$defs/rectCoords" },
+        "loc": { "$ref": "#/$defs/point" },
+        "ang": { "type": "number" },
+        "fl": { "$ref": "#/$defs/flipTuple" }
+      }
+    },
+    "symbolLine": {
+      "type": "object",
+      "required": ["type", "st", "end", "loc"],
+      "properties": {
+        "type": { "const": "line" },
+        "st": { "$ref": "#/$defs/point" },
+        "end": { "$ref": "#/$defs/point" },
+        "loc": { "$ref": "#/$defs/point" },
+        "ang": { "type": "number" },
+        "fl": { "$ref": "#/$defs/flipTuple" }
+      }
+    },
+    "symbolCircle": {
+      "type": "object",
+      "required": ["type", "cen", "end", "loc"],
+      "properties": {
+        "type": { "const": "circle" },
+        "cen": { "$ref": "#/$defs/point" },
+        "end": { "$ref": "#/$defs/point" },
+        "loc": { "$ref": "#/$defs/point" },
+        "ang": { "type": "number" },
+        "fl": { "$ref": "#/$defs/flipTuple" }
+      }
+    },
+    "symbolArc": {
+      "type": "object",
+      "required": ["type", "st", "end", "loc", "at"],
+      "properties": {
+        "type": { "const": "arc" },
+        "st": { "$ref": "#/$defs/point" },
+        "end": { "$ref": "#/$defs/point" },
+        "loc": { "$ref": "#/$defs/point" },
+        "ang": { "type": "number" },
+        "fl": { "$ref": "#/$defs/flipTuple" },
+        "at": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "symbolPolygon": {
+      "type": "object",
+      "required": ["type", "ps"],
+      "properties": {
+        "type": { "const": "polygon" },
+        "ps": { "type": "array", "items": { "$ref": "#/$defs/point" }, "minItems": 2 },
+        "fl": { "$ref": "#/$defs/flipTuple" }
+      }
+    },
+    "symbolPin": {
+      "type": "object",
+      "required": ["type", "st", "nam", "pd", "pt", "loc", "ang"],
+      "properties": {
+        "type": { "const": "pin" },
+        "st": { "$ref": "#/$defs/point" },
+        "nam": { "type": "string" },
+        "pd": { "type": "string" },
+        "pt": { "type": "string" },
+        "loc": { "$ref": "#/$defs/point" },
+        "ang": { "type": "number" },
+        "fl": { "$ref": "#/$defs/flipTuple" }
+      }
+    },
+    "symbolText": {
+      "type": "object",
+      "required": ["type", "st", "tc", "ff", "fs", "th", "ta", "to", "loc"],
+      "properties": {
+        "type": { "const": "text" },
+        "st": { "$ref": "#/$defs/point" },
+        "tc": { "type": "string" },
+        "ff": { "type": "string" },
+        "fs": { "type": "string" },
+        "th": { "type": ["number", "integer"] },
+        "ta": { "type": "string" },
+        "to": { "type": "string" },
+        "loc": { "$ref": "#/$defs/point" },
+        "ang": { "type": "number" },
+        "fl": { "$ref": "#/$defs/flipTuple" }
+      }
+    },
+    "symbolLabel": {
+      "type": "object",
+      "required": ["type", "st", "nam", "def", "txt", "val", "vis", "lt", "ht", "al", "or", "use", "loc"],
+      "properties": {
+        "type": { "const": "label" },
+        "st": { "$ref": "#/$defs/point" },
+        "nam": { "type": "string" },
+        "def": { "type": "string" },
+        "txt": { "type": "string" },
+        "val": { "type": "string" },
+        "vis": { "type": "boolean" },
+        "lt": { "type": "string" },
+        "ht": { "type": ["number", "integer"] },
+        "al": { "type": "string" },
+        "or": { "type": "string" },
+        "use": { "type": "string" },
+        "loc": { "$ref": "#/$defs/point" },
+        "fl": { "$ref": "#/$defs/flipTuple" }
+      }
+    },
+    "symbolAttr": {
+      "type": "object",
+      "required": ["type", "nam", "def"],
+      "properties": {
+        "type": { "const": "attr" },
+        "nam": { "type": "string" },
+        "def": { "type": "string" }
+      }
+    }
+  }
+}

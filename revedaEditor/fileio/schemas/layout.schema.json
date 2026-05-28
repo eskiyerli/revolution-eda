@@ -1,0 +1,192 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/eskiyerli/revolution-eda/master/revedaEditor/fileio/schemas/layout.schema.json",
+  "title": "Revolution EDA Layout File",
+  "description": "Schema for layout design files",
+  "type": "array",
+  "minItems": 2,
+  "items": [
+    { "$ref": "#/$defs/viewHeader" },
+    { "$ref": "#/$defs/gridSettings" }
+  ],
+  "additionalItems": { "$ref": "#/$defs/layoutItem" },
+  "$defs": {
+    "point": {
+      "type": "array",
+      "items": { "type": "number" },
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "flipTuple": {
+      "type": "array",
+      "items": { "type": ["number", "integer"] },
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "rectCoords": {
+      "type": "array",
+      "items": { "type": "number" },
+      "minItems": 4,
+      "maxItems": 4
+    },
+    "viewHeader": {
+      "type": "object",
+      "required": ["viewType"],
+      "properties": {
+        "viewType": { "type": "string", "enum": ["symbol", "schematic", "layout"] },
+        "schemaVersion": { "type": "string" }
+      }
+    },
+    "gridSettings": {
+      "type": "object",
+      "properties": {
+        "snapGrid": {
+          "type": "array",
+          "items": { "type": ["number", "integer"] },
+          "minItems": 2,
+          "maxItems": 2
+        }
+      }
+    },
+    "layoutItem": {
+      "oneOf": [
+        { "$ref": "#/$defs/layoutInstance" },
+        { "$ref": "#/$defs/layoutPcell" },
+        { "$ref": "#/$defs/layoutRect" },
+        { "$ref": "#/$defs/layoutPath" },
+        { "$ref": "#/$defs/layoutVia" },
+        { "$ref": "#/$defs/layoutPin" },
+        { "$ref": "#/$defs/layoutLabel" },
+        { "$ref": "#/$defs/layoutPolygon" },
+        { "$ref": "#/$defs/layoutRuler" }
+      ]
+    },
+    "layoutInstance": {
+      "type": "object",
+      "required": ["type", "lib", "cell", "view", "loc"],
+      "properties": {
+        "type": { "const": "Inst" },
+        "lib": { "type": "string" },
+        "cell": { "type": "string" },
+        "view": { "type": "string" },
+        "nam": { "type": "string" },
+        "ic": { "type": ["integer", "null"] },
+        "loc": { "$ref": "#/$defs/point" },
+        "ang": { "type": "number" },
+        "fl": { "$ref": "#/$defs/flipTuple" }
+      }
+    },
+    "layoutPcell": {
+      "type": "object",
+      "required": ["type", "lib", "cell", "view", "loc"],
+      "properties": {
+        "type": { "const": "Pcell" },
+        "lib": { "type": "string" },
+        "cell": { "type": "string" },
+        "view": { "type": "string" },
+        "nam": { "type": "string" },
+        "ic": { "type": ["integer", "null"] },
+        "loc": { "$ref": "#/$defs/point" },
+        "ang": { "type": "number" },
+        "fl": { "$ref": "#/$defs/flipTuple" },
+        "params": { "type": "object" }
+      }
+    },
+    "layoutRect": {
+      "type": "object",
+      "required": ["type", "tl", "br", "ln"],
+      "properties": {
+        "type": { "const": "Rect" },
+        "tl": { "$ref": "#/$defs/point" },
+        "br": { "$ref": "#/$defs/point" },
+        "ln": { "type": "integer", "minimum": 0 },
+        "ang": { "type": "number" },
+        "fl": { "$ref": "#/$defs/flipTuple" }
+      }
+    },
+    "layoutPath": {
+      "type": "object",
+      "required": ["type", "dfl1", "dfl2", "ln", "w", "se", "ee", "md"],
+      "properties": {
+        "type": { "const": "Path" },
+        "dfl1": { "$ref": "#/$defs/point" },
+        "dfl2": { "$ref": "#/$defs/point" },
+        "ln": { "type": "integer", "minimum": 0 },
+        "w": { "type": "number" },
+        "se": { "type": "number" },
+        "ee": { "type": "number" },
+        "md": { "type": "string" },
+        "nam": { "type": "string" },
+        "ang": { "type": "number" },
+        "fl": { "$ref": "#/$defs/flipTuple" }
+      }
+    },
+    "layoutVia": {
+      "type": "object",
+      "required": ["type", "st", "via", "xs", "ys", "xn", "yn"],
+      "properties": {
+        "type": { "const": "Via" },
+        "st": { "$ref": "#/$defs/point" },
+        "via": { "type": "object" },
+        "xs": { "type": "number" },
+        "ys": { "type": "number" },
+        "xn": { "type": "integer" },
+        "yn": { "type": "integer" }
+      }
+    },
+    "layoutPin": {
+      "type": "object",
+      "required": ["type", "tl", "br", "pn", "pd", "pt", "ln"],
+      "properties": {
+        "type": { "const": "Pin" },
+        "tl": { "$ref": "#/$defs/point" },
+        "br": { "$ref": "#/$defs/point" },
+        "pn": { "type": "string" },
+        "pd": { "type": "string" },
+        "pt": { "type": "string" },
+        "ln": { "type": "integer", "minimum": 0 },
+        "ang": { "type": "number" },
+        "fl": { "$ref": "#/$defs/flipTuple" }
+      }
+    },
+    "layoutLabel": {
+      "type": "object",
+      "required": ["type", "st", "lt", "ff", "fs", "fh", "la", "lo", "ln"],
+      "properties": {
+        "type": { "const": "Label" },
+        "st": { "$ref": "#/$defs/point" },
+        "lt": { "type": "string" },
+        "ff": { "type": "string" },
+        "fs": { "type": "string" },
+        "fh": { "type": ["number", "integer"] },
+        "la": { "type": "string" },
+        "lo": { "type": "string" },
+        "ln": { "type": "integer", "minimum": 0 },
+        "ang": { "type": "number" },
+        "fl": { "$ref": "#/$defs/flipTuple" }
+      }
+    },
+    "layoutPolygon": {
+      "type": "object",
+      "required": ["type", "ps", "ln"],
+      "properties": {
+        "type": { "const": "Polygon" },
+        "ps": { "type": "array", "items": { "$ref": "#/$defs/point" }, "minItems": 3 },
+        "ln": { "type": "integer", "minimum": 0 },
+        "ang": { "type": "number" },
+        "fl": { "$ref": "#/$defs/flipTuple" }
+      }
+    },
+    "layoutRuler": {
+      "type": "object",
+      "required": ["type", "dfl1", "dfl2", "md"],
+      "properties": {
+        "type": { "const": "Ruler" },
+        "dfl1": { "$ref": "#/$defs/point" },
+        "dfl2": { "$ref": "#/$defs/point" },
+        "md": { "type": "string" },
+        "ang": { "type": "number" }
+      }
+    }
+  }
+}

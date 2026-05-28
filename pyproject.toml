@@ -24,10 +24,10 @@ classifiers = [
 ]
 
 include = [
-    { path = "pyqtgraph/**" }
+    { path = "pyqtgraph/**" },
+    { path = "revedaEditor/fileio/schemas/*.json" }
 ]
 exclude = [
-    "tests",
     "examples",
     "icons"
 ]
@@ -43,6 +43,7 @@ markdown = "^3.9"
 lxml = "^6.0.0"
 polars = "~1.35.0"
 orjson = "^3.11.4"
+jsonschema = "^4.23.0"
 anthropic = "^0.75.0"
 google-generativeai = "^0.8.5"
 cryptography = "^46.0.3"
