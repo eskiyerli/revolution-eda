@@ -621,7 +621,17 @@ class layoutScene(editorScene):
                     and len(decodedData) > 1
                     and decodedData[0].get("cellView") == "pcell"
             ):
-                pcellInstance = eval(f"pcells.{decodedData[1]['reference']}()")
+                ref_name = decodedData[1]['reference']
+                if not isinstance(ref_name, str) or not ref_name.isidentifier():
+                    self.logger.error(f"Invalid pcell reference name: {ref_name!r}")
+                    return None
+                pcell_cls = getattr(pcells, ref_name, None)
+                if pcell_cls is None or not (
+                    isinstance(pcell_cls, type) and issubclass(pcell_cls, pcells.baseCell)
+                ):
+                    self.logger.error(f"Unknown or invalid pcell reference: {ref_name!r}")
+                    return None
+                pcellInstance = pcell_cls()
                 return setup_instance(pcellInstance)
             else:
                 self.logger.error(
