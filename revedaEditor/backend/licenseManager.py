@@ -25,9 +25,13 @@ runs normally but plugin license gates will deny access until it is installed.
 try:
     from revedaLicense.licenseManager import (  # noqa: F401
         LicenseDialog,
+        LicenseStatusDialog,
+        activate_license_with_server,
         check_and_prompt_license,
+        get_license_info,
         get_machine_fingerprint,
         has_valid_license,
+        request_checkout_url,
         store_license,
         validate_license_key,
     )
@@ -51,6 +55,15 @@ except ImportError:
     def store_license(plugin_name: str, key: str) -> bool:
         return False
 
+    def request_checkout_url(plugin_name: str) -> str | None:
+        return None
+
+    def activate_license_with_server(plugin_name: str, key: str) -> bool:
+        return False
+
+    def get_license_info(plugin_name: str) -> dict | None:
+        return None
+
     def check_and_prompt_license(
         plugin_name: str, payment_url=None, parent=None
     ) -> bool:
@@ -68,6 +81,9 @@ except ImportError:
     class LicenseDialog:  # noqa: N801
         """Stub — revedaLicense not installed."""
 
+    class LicenseStatusDialog:  # noqa: N801
+        """Stub — revedaLicense not installed."""
+
 __all__ = [
     "validate_license_key",
     "has_valid_license",
@@ -75,4 +91,8 @@ __all__ = [
     "check_and_prompt_license",
     "get_machine_fingerprint",
     "LicenseDialog",
+    "LicenseStatusDialog",
+    "get_license_info",
+    "request_checkout_url",
+    "activate_license_with_server",
 ]

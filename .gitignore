@@ -6,10 +6,39 @@ dist/
 build/
 library.json
 reveda.conf
-revedaLicense/
 *.zip
-.env*
 *.xml
-license_public_key.pem
-license_private_key.pem
+
+# Secrets and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+
+# License module (proprietary, compiled separately)
+revedaLicense/
+
+# License files
+*.lic
+licenses/
+
+# Server-side license tooling (must not be public)
 scripts/generate_license.py
+scripts/obfuscate_key.py
+
+# Build artifacts
+*.pyd
+*.so
+*.dll
+*.exe
+*.spec
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
