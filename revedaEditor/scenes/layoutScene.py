@@ -407,18 +407,9 @@ class layoutScene(editorScene):
             idx1, p1 = intersections[0]
             idx2, p2 = intersections[1]
 
-            # Create two new polygons
-            poly1_points = [p1]
-            for i in range(idx1 + 1, idx2 + 1):
-                poly1_points.append(points[i])
-            poly1_points.append(p2)
-
-            poly2_points = [p2]
-            for i in range(idx2 + 1, len(points)):
-                poly2_points.append(points[i])
-            for i in range(0, idx1 + 1):
-                poly2_points.append(points[i])
-            poly2_points.append(p1)
+            # Create two new polygons using list slicing
+            poly1_points = [p1] + points[idx1 + 1:idx2 + 1] + [p2]
+            poly2_points = [p2] + points[idx2 + 1:] + points[:idx1 + 1] + [p1]
 
             poly1 = lshp.layoutPolygon(poly1_points, item.layer)
             poly2 = lshp.layoutPolygon(poly2_points, item.layer)
@@ -691,20 +682,21 @@ class layoutScene(editorScene):
             return
 
         # Parse schematic instances (type "sys")
-        schInstances = []
-        for item in data[2:] if len(data) > 2 else []:  # Skip header
-            if isinstance(item, dict) and item.get("type") == "sys":
-                schInstances.append({
-                    "lib": item.get("lib", ""),
-                    "cell": item.get("cell", ""),
-                    "view": item.get("view", ""),
-                    "name": item.get("nam", ""),
-                    "counter": item.get("ic", 0),
-                    "loc": item.get("loc", (0, 0)),
-                    "ang": item.get("ang", 0),
-                    "fl": item.get("fl", (1, 1)),
-                    "labels": item.get("ld", {}),
-                })
+        schInstances = [
+            {
+                "lib": item.get("lib", ""),
+                "cell": item.get("cell", ""),
+                "view": item.get("view", ""),
+                "name": item.get("nam", ""),
+                "counter": item.get("ic", 0),
+                "loc": item.get("loc", (0, 0)),
+                "ang": item.get("ang", 0),
+                "fl": item.get("fl", (1, 1)),
+                "labels": item.get("ld", {}),
+            }
+            for item in (data[2:] if len(data) > 2 else [])
+            if isinstance(item, dict) and item.get("type") == "sys"
+        ]
 
         if not schInstances:
             self.logger.info("No schematic instances found to place")
