@@ -33,7 +33,7 @@ class GeminiAIAgent:
             with open(self.design_file, "w") as f:
                 json.dump(data, f, indent=2)
             return True
-        except Exception as e:
+        except (OSError, TypeError) as e:
             print(f"Error writing design: {e}")
             return False
 
@@ -125,5 +125,5 @@ User request: {user_request}
 
         except ImportError:
             return False, "google-generativeai package not installed. Install with: pip install google-generativeai"
-        except Exception as e:
+        except (AttributeError, TypeError, ValueError, OSError) as e:
             return False, f"Error processing request: {e}"

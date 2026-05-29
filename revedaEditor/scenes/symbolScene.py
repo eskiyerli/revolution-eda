@@ -254,14 +254,14 @@ class symbolScene(editorScene):
             elif self.editModes.alignItems:
                 self._handleAlignItemLine(mousePos)
             self.messageLine.setText(self.messages.get(self.editModes.mode(), ""))
-        except Exception as e:
+        except (AttributeError, TypeError) as e:
             self.logger.error(f"Error in Mouse Release Event: {e} ")
 
     def mouseDoubleClickEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         super().mouseDoubleClickEvent(event)
         try:
             self.finishPolygon(event)
-        except Exception as e:
+        except (AttributeError, TypeError) as e:
             self.logger.error(f"Error in mouse Double Click Event: {e}")
 
     def lineDraw(self, start: QPoint, current: QPoint):
@@ -620,7 +620,7 @@ class symbolScene(editorScene):
             self.attributeList = []
             self.clear()
             return
-        except Exception as e:
+        except (AttributeError, TypeError, ValueError) as e:
             self.logger.error(f"Unexpected error loading symbol: {e}")
             self.attributeList = []
             self.clear()
@@ -678,7 +678,7 @@ class symbolScene(editorScene):
             self.undoStack.clear()
             return True
 
-        except Exception as e:
+        except (OSError, TypeError) as e:
             self.logger.error(f"Symbol save error: {e}")
             return False
 

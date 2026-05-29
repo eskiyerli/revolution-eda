@@ -1484,7 +1484,7 @@ class schematicSymbol(symbolShape):
                             scene.addListUndoStack(newNets)
                         scene.removeItem(snapLine)
                 self._snapLines = dict()
-            except Exception as e:
+            except (AttributeError, IndexError, TypeError) as e:
                 # Log error but continue processing other guidelines
                 scene.logger.error(f"Error processing snap lines: {e}")
 
@@ -1833,7 +1833,7 @@ class schematicPin(symbolShape):
                         scene.addListUndoStack(newNets)
                     scene.removeItem(snapLine)
                 self._snapLines = set()
-            except Exception as e:
+            except (AttributeError, IndexError, TypeError) as e:
                 # Log error but continue processing other guidelines
                 scene.logger.error(f"Error processing snap lines: {e}")
 

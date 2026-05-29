@@ -444,7 +444,7 @@ class layoutEditor(edw.editorWindow):
                 self.libItem.libraryName, self.cellItem.cellName, self.viewName
             )
             self.appMainW.openViews[viewNameTuple] = self
-        except Exception as e:
+        except (FileNotFoundError, OSError, KeyError) as e:
             self.logger.error(f"Error during loading layout for {self.cellName}: {e}")
         finally:
             QApplication.restoreOverrideCursor()
@@ -581,7 +581,7 @@ class layoutEditor(edw.editorWindow):
                 self.libName, self.cellName, self.viewName
             )
             self.appMainW.openViews.pop(cellViewNameTuple, None)
-        except Exception as e:
+        except (OSError, TypeError) as e:
             self.appMainW.logger.error(
                 f"Error in closing layout editor window:{self.cellName}-{self.viewName}:{e}"
             )

@@ -11,6 +11,7 @@ import re
 import shutil
 import sys
 import tempfile
+import urllib.error
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -115,7 +116,7 @@ class PluginRegistryWindow(QMainWindow):
                 if isinstance(index, dict) and "plugins" in index:
                     index = index["plugins"]
                 self._registry = index if isinstance(index, list) else []
-        except Exception as exc:
+        except (urllib.error.URLError, json.JSONDecodeError, OSError) as exc:
             QMessageBox.warning(
                 self, "Registry Error", f"Failed to fetch registry:\n{exc}"
             )
@@ -239,7 +240,7 @@ class PluginRegistryWindow(QMainWindow):
 
             os.remove(tmp_path)
             self.fetch_registry()
-        except Exception as e:
+        except (zipfile.BadZipFile, OSError) as e:
             QMessageBox.critical(self, "Error", str(e))
 
     def _get_binary_url(self, entry: dict) -> str | None:
@@ -288,5 +289,5 @@ class PluginRegistryWindow(QMainWindow):
             try:
                 shutil.rmtree(plugin_dir)
                 self.fetch_registry()
-            except Exception as e:
+            except (OSError, PermissionError) as e:
                 QMessageBox.critical(self, "Error", str(e))

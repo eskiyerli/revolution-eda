@@ -115,7 +115,7 @@ class layerDataModel(QStandardItemModel):
             except FileNotFoundError:
                 print(f"Error: Stipple not found: {filePath}")
                 return ""
-            except Exception as e:
+            except (AttributeError, KeyError, TypeError) as e:
                 print(f"Error reading Stipple file {filePath}: {e}")
                 return ""
         return cls._file_content_cache[filePath]

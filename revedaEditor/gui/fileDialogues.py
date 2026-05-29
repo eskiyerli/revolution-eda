@@ -577,7 +577,7 @@ class importCellDialogue(QDialog):
                         self._model.item(0).child(i).cellName
                         for i in range(self._model.item(0).rowCount())
                     ]
-                except Exception as e:
+                except (AttributeError, IndexError) as e:
                     initialCellNames = []
                     print(f'No libraries could be found.')
             else:  # Spice

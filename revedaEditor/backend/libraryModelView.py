@@ -73,7 +73,7 @@ class BaseDesignLibrariesView(QWidget):
                 self.libraryDict.pop(selectedLib.libraryName, None)
                 self.reworkDesignLibrariesView(self.libraryDict)
                 self.libBrowsW.writeLibDefFile(self.libraryDict, self.libBrowsW.libFilePath)
-        except Exception as e:
+        except (KeyError, OSError) as e:
             self.logger.error(f"Error removing library: {e}")
 
     def renameLib(self, selectedLib: libb.libraryItem):
@@ -91,7 +91,7 @@ class BaseDesignLibrariesView(QWidget):
                 self.libraryDict[newLibraryName] = pathlib.Path(newLibraryPath)
                 self.reworkDesignLibrariesView(self.libraryDict)
                 self.libBrowsW.writeLibDefFile(self.libraryDict, self.libBrowsW.libFilePath)
-        except Exception as e:
+        except (OSError, KeyError) as e:
             self.logger.error(f"Error renaming library: {e}")
 
     def openView(self, selectedViewItem: libb.viewItem):
@@ -100,7 +100,7 @@ class BaseDesignLibrariesView(QWidget):
             libItem = cellItem.parent()
             viewItemT = ddef.viewItemTuple(libItem, cellItem, selectedViewItem)
             self.openCellView(viewItemT)
-        except Exception as e:
+        except (AttributeError, TypeError) as e:
             self.logger.error(f"Error opening view: {e}")
 
     def createNewCellView(self, itemTuple: ddef.viewItemTuple):
@@ -400,7 +400,7 @@ class designLibrariesColumnView(BaseDesignLibrariesView):
         # Disconnect existing selection signals
         try:
             self.libsListView.selectionModel().selectionChanged.disconnect()
-        except:
+        except RuntimeError:
             pass
 
         # Create new model and set it
@@ -599,7 +599,7 @@ class designLibrariesColumnView(BaseDesignLibrariesView):
             viewsModel = self.createViewsListModel(cellItem)
             self.viewsListView.setModel(viewsModel)
             self.logger.info(f"View {newViewName} copied successfully.")
-        except Exception as e:
+        except (OSError, IOError) as e:
             self.logger.error(f"Failed to copy view: {e}")
 
     def createCellView(self, selectedCloneCellItem: libb.cellItem):
@@ -684,7 +684,7 @@ class designLibrariesColumnView(BaseDesignLibrariesView):
         except PermissionError:
             self.logger.warning("Permission denied while deleting view.")
 
-        except Exception as e:
+        except OSError as e:
             self.logger.warning(f"Error:{e}")
 
     def showClonedItemFileInfo(self, selectedCloneItem: libb.viewItem):
@@ -1145,7 +1145,7 @@ def updateJSONFieldInLibrary(model: "designLibrariesModel", libraryName: str, ke
                         if updated:
                             with open(viewItem.viewPath, "w") as f:
                                 json.dump(data, f, indent=4)
-                    except Exception as e:
+                    except (json.JSONDecodeError, OSError, KeyError, TypeError) as e:
                         print(f"Error updating {viewItem.viewPath}: {str(e)}")
 
 
@@ -1181,5 +1181,5 @@ def updateJSONFieldInCell(model: "designLibrariesModel", libraryName: str, cellN
                 if updated:
                     with open(viewItem.viewPath, "w") as f:
                         json.dump(data, f, indent=4)
-            except Exception as e:
+            except (json.JSONDecodeError, OSError, KeyError, TypeError) as e:
                 print(f"Error updating {viewItem.viewPath}: {str(e)}")

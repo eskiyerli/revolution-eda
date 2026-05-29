@@ -115,7 +115,7 @@ def safe_get_color(color_text: str, default_color: QColor = QColor(Qt.black)) ->
     try:
         if color_text and color_text.strip():
             return QColor.fromString(color_text.upper())
-    except Exception as e:
+    except (ValueError, AttributeError, TypeError) as e:
         logger.warning(f"Failed to parse color '{color_text}': {e}")
     return default_color
 
@@ -265,7 +265,7 @@ def parseLyp(lypFile: str, outputFileDir: str) -> bool:
                         f"ddef.{layoutLayerItem}\n"
                     )
 
-                except Exception as e:
+                except (KeyError, AttributeError, IndexError, ValueError) as e:
                     logger.error(f"Error processing layer {i}: {e}")
                     skipped_layers += 1
                     continue
@@ -296,7 +296,7 @@ def parseLyp(lypFile: str, outputFileDir: str) -> bool:
 
         return True
 
-    except Exception as e:
+    except (ET.ParseError, FileNotFoundError, OSError) as e:
         logger.error(f"Fatal error processing LYP file '{lypFile}': {e}")
         return False
 
@@ -323,8 +323,8 @@ def process_dither_patterns(root, lypFileObj: Path) -> None:
                     stippleEditW = stippleEditor(None)
                     stippleEditW.loadPatternFromFile(str(fileObj))
                     stippleEditW.imageExportToFile(str(imageFileObj))
-                except Exception as e:
+                except (OSError, ValueError, AttributeError) as e:
                     logger.warning(f"Failed to generate PNG for pattern {fileName}: {e}")
 
-    except Exception as e:
+    except (OSError, KeyError, AttributeError) as e:
         logger.error(f"Error processing dither patterns: {e}")

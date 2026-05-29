@@ -111,7 +111,7 @@ class addShapesUndo(QUndoCommand):
             try:
                 self._scene.removeItem(item)
                 self._scene.itemsRefSet -= set(self._shapes)
-            except Exception as e:
+            except (AttributeError, RuntimeError) as e:
                 self._scene.logger.warning(f'Error in undo: {e}')
 
     def redo(self):

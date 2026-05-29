@@ -564,7 +564,7 @@ class spectreNetlist:
 
             return symbolLines
 
-        except Exception as e:
+        except (AttributeError, KeyError, TypeError) as e:
             self._scene.logger.error(
                 f"Error creating netlist line for {elementSymbol.instanceName}: {e}"
             )
@@ -604,7 +604,7 @@ class spectreNetlist:
                     f"// no include line found for {elementSymbol.cellName}"
                 )
             return spiceLines
-        except Exception as e:
+        except (AttributeError, KeyError, TypeError) as e:
             self._scene.logger.error(
                 f"Spice subckt netlist error for {elementSymbol.instanceName}: {e}"
             )
@@ -644,7 +644,7 @@ class spectreNetlist:
                     f"// no Verilog-A file found for {elementSymbol.cellName}"
                 )
             return symbolLines
-        except Exception as e:
+        except (AttributeError, KeyError, TypeError) as e:
             self._scene.logger.error(
                 f"Verilog-A netlist error for {elementSymbol.instanceName}: {e}"
             )

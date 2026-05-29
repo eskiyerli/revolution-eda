@@ -9,6 +9,7 @@ import os
 import re
 import shutil
 import tempfile
+import urllib.error
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -147,7 +148,7 @@ class LibraryRegistryWindow(QMainWindow):
                 if isinstance(index, dict) and "libraries" in index:
                     index = index["libraries"]
                 self._registry = index if isinstance(index, list) else []
-        except Exception as exc:
+        except (urllib.error.URLError, json.JSONDecodeError, OSError) as exc:
             QMessageBox.warning(
                 self, "Registry Error", f"Failed to fetch registry:\n{exc}"
             )
@@ -252,7 +253,7 @@ class LibraryRegistryWindow(QMainWindow):
                 shutil.rmtree(library_dir, ignore_errors=True)
                 QMessageBox.information(self, "Success", f"'{name}' uninstalled.")
                 self.fetch_registry()
-            except Exception as e:
+            except (OSError, PermissionError) as e:
                 QMessageBox.critical(self, "Error", f"Failed to uninstall:\n{e}")
 
     def _install_entry(self, entry: dict):
@@ -303,6 +304,6 @@ class LibraryRegistryWindow(QMainWindow):
                                                          self.appMainW.libraryBrowser.libFilePath)
             self.appMainW.libraryBrowser.designView.reworkDesignLibrariesView(
                 self.appMainW.libraryDict)
-        except Exception as e:
+        except (zipfile.BadZipFile, OSError) as e:
             self.progress.setValue(0)
             QMessageBox.critical(self, "Error", f"Installation failed:\n{e}")

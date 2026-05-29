@@ -38,7 +38,7 @@ def _resolve_docs_path() -> Path:
             candidate = Path(app.basePath) / "docs"
             if candidate.is_dir():
                 return candidate
-    except Exception:
+    except (FileNotFoundError, AttributeError, OSError):
         pass
 
     # 3. CWD fallback
@@ -93,7 +93,7 @@ class MarkdownViewer(QTextBrowser):
             # Update current file reference
             self.currentFile = filePath
 
-        except Exception as e:
+        except (FileNotFoundError, OSError) as e:
             self.setHtml(f"<h1>Error</h1><p>Could not load file: {str(e)}</p>")
 
     def processImages(self, html, baseDir):
@@ -442,7 +442,7 @@ class licenseDialog(QDialog):
             candidate = Path(str(ref)).resolve()
             if candidate.exists():
                 return candidate.read_text(encoding="utf-8")
-        except Exception:
+        except (FileNotFoundError, AttributeError, OSError):
             pass
 
         # 2. Locate via the running application's basePath
@@ -452,7 +452,7 @@ class licenseDialog(QDialog):
                 candidate = Path(app.basePath) / "LICENSE.txt"
                 if candidate.exists():
                     return candidate.read_text(encoding="utf-8")
-        except Exception:
+        except (FileNotFoundError, OSError):
             pass
 
         # 3. CWD fallback

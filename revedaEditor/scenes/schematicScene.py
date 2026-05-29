@@ -680,7 +680,7 @@ class schematicScene(editorScene):
 
             return lines
 
-        except Exception as e:
+        except (AttributeError, TypeError, ValueError) as e:
             self.logger.error(f"Error in addStretchWires: {e}", exc_info=True)
             return []
 
@@ -689,7 +689,7 @@ class schematicScene(editorScene):
             pin = shp.schematicPin(pos, self.pinName, self.pinDir, self.pinType)
             self.addUndoStack(pin)
             return pin
-        except Exception as e:
+        except (AttributeError, TypeError) as e:
             self.logger.error(f"Pin add error: {e}")
 
     def addNote(self, pos: QPoint, textTuple: Tuple) -> shp.text:
@@ -761,7 +761,7 @@ class schematicScene(editorScene):
         except json.JSONDecodeError:
             self.logger.error(f"Invalid JSON in symbol file: {viewPath}")
             return None
-        except Exception as e:
+        except (KeyError, AttributeError, TypeError) as e:
             self.logger.warning(f"instantiation error: {e}")
             return None
 
@@ -824,7 +824,7 @@ class schematicScene(editorScene):
                         f.write(",\n")
                         try:
                             json.dump(item, f, cls=schenc.schematicEncoder)
-                        except Exception as json_err:
+                        except (TypeError, ValueError) as json_err:
                             self.logger.error(
                                 f"Failed to serialize item: {str(json_err)}")
                             return
@@ -847,7 +847,7 @@ class schematicScene(editorScene):
         except IOError as io_err:
             self.logger.error(f"IO Error while saving schematic: {str(io_err)}")
             return False
-        except Exception as e:
+        except (OSError, TypeError, ValueError) as e:
             self.logger.error(
                 f"Unexpected error while saving schematic: {str(e)}")
             # Clean up temporary file if it exists
@@ -917,7 +917,7 @@ class schematicScene(editorScene):
         except KeyError as e:
             self.logger.error(f"Invalid schematic format - missing key: {e}")
             return
-        except Exception as e:
+        except (AttributeError, TypeError, ValueError) as e:
             self.logger.error(f"Unexpected error loading schematic: {e}")
             return
 
@@ -952,7 +952,7 @@ class schematicScene(editorScene):
                         self.setSchematicPinProperties(item)
                     elif isinstance(item, snet.netName):
                         self.setNetProperties(item.parentItem())
-        except Exception as e:
+        except (AttributeError, TypeError, ValueError) as e:
             self.logger.error(e)
 
     def setInstanceProperties(self, item: shp.schematicSymbol):
@@ -1116,7 +1116,7 @@ class schematicScene(editorScene):
         try:
             self.highlightNets = bool(
                 self.editorWindow.hilightNetAction.isChecked())
-        except Exception as e:
+        except (AttributeError, TypeError) as e:
             self.logger.error(e)
 
     def goDownHier(self):

@@ -32,7 +32,7 @@ class ClaudeAIAgent:
             with open(self.design_file, "w") as f:
                 json.dump(data, f, indent=2)
             return True
-        except Exception as e:
+        except (OSError, TypeError) as e:
             print(f"Error writing design: {e}")
             return False
 
@@ -52,7 +52,7 @@ class ClaudeAIAgent:
         # Read current design
         try:
             design_data = self.read_design()
-        except Exception as e:
+        except (OSError, json.JSONDecodeError) as e:
             return False, f"Failed to read design: {e}"
 
         # Here you would call the AI API (Claude, etc.)
@@ -71,7 +71,7 @@ class ClaudeAIAgent:
                     try:
                         with open(json_file, 'r') as f:
                             library_files[str(json_file)] = json.load(f)
-                    except Exception:
+                    except (json.JSONDecodeError, OSError):
                         continue  # Skip invalid files
         return library_files
 
@@ -159,5 +159,5 @@ Instructions:
                 False,
                 "anthropic package not installed. Install with: pip install anthropic",
             )
-        except Exception as e:
+        except (AttributeError, TypeError, ValueError, OSError) as e:
             return False, f"Error processing request: {e}"

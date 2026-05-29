@@ -151,7 +151,7 @@ class MainWindow(QMainWindow):
             # Setup status bar
             self.mainW_statusbar = self.statusBar()
             self.mainW_statusbar.showMessage(self.STATUS_READY)
-        except Exception as e:
+        except (AttributeError, TypeError, OSError) as e:
             self._handleInitError("Window initialization failed", e)
 
     def _initDataStructures(self) -> None:
@@ -183,7 +183,7 @@ class MainWindow(QMainWindow):
             )
             # self.pluginsPath: str = str(self._app.revedaPluginPathObj) if hasattr(self._app,
             #     "revedaPluginPathObj") else ""
-        except Exception as e:
+        except (AttributeError, TypeError, OSError) as e:
             self._handleInitError("Path initialization failed", e)
 
     def _initAppComponents(self) -> None:
@@ -203,7 +203,7 @@ class MainWindow(QMainWindow):
             # Final initialization
 
             self.loadAppState()
-        except Exception as e:
+        except (AttributeError, TypeError, OSError) as e:
             self._handleInitError("Application component initialization failed", e)
 
     def _setupThreadPool(self) -> None:
@@ -471,7 +471,7 @@ class MainWindow(QMainWindow):
                 if gdsImportObj:
                     gdsImportObj.importGDS()
                     self.logger.info("GDS Import completed.")
-            except Exception as e:
+            except (FileNotFoundError, OSError, ValueError) as e:
                 self.logger.error(f"GDS Import failed: {e}")
 
     def createNewLibrary(self, libraryName):

@@ -473,7 +473,7 @@ class xyceNetlist:
             return symbolLines
 
 
-        except Exception as e:
+        except (AttributeError, KeyError, TypeError) as e:
             self._scene.logger.error(
                 f"Error creating netlist line for {elementSymbol.instanceName}: {e}")
             return [
@@ -504,7 +504,7 @@ class xyceNetlist:
             else:
                 self.includeLines.add(f"* no include line found for {elementSymbol.cellName}")
             return spiceLines
-        except Exception as e:
+        except (AttributeError, KeyError, TypeError) as e:
             self._scene.logger.error(f"Spice subckt netlist error for {elementSymbol.instanceName}: {e}")
             return [f"*Netlist line is not defined for symbol of {elementSymbol.instanceName}\n"]
 
@@ -530,7 +530,7 @@ class xyceNetlist:
                 self.vahdlLines.add(f"* no HDL file line found for {elementSymbol.cellName}")
 
             return symbolLines
-        except Exception as e:
+        except (AttributeError, KeyError, TypeError) as e:
             self._scene.logger.error(f"Verilog-A netlist error for {elementSymbol.instanceName}: {e}")
             return [f"*Netlist line is not defined for symbol of {elementSymbol.instanceName}\n"]
 
