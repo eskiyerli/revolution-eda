@@ -38,6 +38,7 @@ import revedaEditor.gui.alignItems as alg
 import revedaEditor.gui.fileDialogues as fd
 import revedaEditor.gui.propertyDialogues as pdlg
 from revedaEditor.backend.pdkLoader import importPDKModule
+from revedaEditor.common.fileCache import FileCache
 from revedaEditor.scenes.editorScene import editorScene
 
 schlyr = importPDKModule('schLayers')
@@ -122,7 +123,7 @@ class schematicScene(editorScene):
         self.alignLineFinished.connect(alg.alignToLine)
 
         # Initialize cache
-        self._symbolCache = {}
+        self._symbolCache = FileCache()
 
     def _initializeFont(self):
         """Initialize fixed-width font settings."""
@@ -476,9 +477,8 @@ class schematicScene(editorScene):
         if self._newNet:
             snapPoints.update(self.findNetInterSect(self._newNet, snapRect))
         if snapPoints:
-            lengths = [(snapPoint - eventLoc).manhattanLength() for snapPoint in
-                       snapPoints]
-            closestPoint = list(snapPoints)[lengths.index(min(lengths))]
+            closestPoint = min(snapPoints,
+                               key=lambda p: (p - eventLoc).manhattanLength())
             return closestPoint
         else:
             return eventLoc
@@ -488,10 +488,11 @@ class schematicScene(editorScene):
         snapPoints = set()
         rectItems = set(self.items(sceneRect)) - ignoredSet
         for item in rectItems:
-            if isinstance(item, snet.schematicNet) and any(
-                    list(map(sceneRect.contains, item.sceneEndPoints))):
-                snapPoints.add(item.sceneEndPoints[list(
-                    map(sceneRect.contains, item.sceneEndPoints)).index(True)])
+            if isinstance(item, snet.schematicNet):
+                for ep in item.sceneEndPoints:
+                    if sceneRect.contains(ep):
+                        snapPoints.add(ep)
+                        break
             elif isinstance(item, shp.symbolPin):
                 snapPoints.add(item.mapToScene(item.start).toPoint())
             elif isinstance(item, shp.schematicPin):
@@ -551,11 +552,11 @@ class schematicScene(editorScene):
         orderedPoints = [currentPoint]
 
         while points:
-            distances = [(point - currentPoint).manhattanLength() for point in
-                         points]
-            nearest_point_index = distances.index(min(distances))
-            nearestPoint = points[nearest_point_index]
-            orderedPoints.append(nearestPoint)
+            nearest_point_index = min(
+                range(len(points)),
+                key=lambda i: (points[i] - currentPoint).manhattanLength()
+            )
+            orderedPoints.append(points[nearest_point_index])
             currentPoint = points.pop(nearest_point_index)
 
         return orderedPoints
@@ -706,12 +707,11 @@ class schematicScene(editorScene):
                                      instanceTuple.viewName, )
         viewPath = viewItem.viewPath
         try:
-            # Try to get items from cache first
-            items = self._symbolCache.get(viewPath)
+            # Use FileCache with mtime invalidation
+            items = self._symbolCache.get_json(viewPath)
             if items is None:
-                with open(viewPath, "r") as temp:
-                    items = json.load(temp)
-                    self._symbolCache[viewPath] = items
+                self.logger.error(f"Cannot load symbol file: {viewPath}")
+                return
 
             # Use comprehensions for better performance
             itemAttributes = {item["nam"]: item["def"] for item in items[2:] if
