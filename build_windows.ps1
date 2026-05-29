@@ -72,7 +72,7 @@ foreach ($PyVer in @("3.12", "3.13", "3.14")) {
         --nofollow-import-to=revedaPlot `
         --nofollow-import-to=plugins `
         --nofollow-import-to=defaultPDK `
-        --include-package-data=defaultPDK `
+        --nofollow-import-to=revedaLicense `
         --output-dir=$OutputDir `
         --product-name="Revolution EDA" `
         --product-version="0.8.11" `
@@ -97,13 +97,58 @@ foreach ($PyVer in @("3.12", "3.13", "3.14")) {
         Rename-Item -Path $DistFolder -NewName $ProjectName
     }
 
-    # Copy defaultPDK as data (excluded from compilation but included as package-data)
+    # Compile defaultPDK as a separate .pyd package
+    Write-Host "Compiling defaultPDK as separate package..."
     $PdkSrc = Join-Path $ScriptDir "defaultPDK"
+    $PdkBuildDir = Join-Path $OutputDir "defaultPDK_build"
+    New-Item -ItemType Directory -Force -Path $PdkBuildDir | Out-Null
+
+    & $PythonPath -m nuitka `
+        --mode=package `
+        --msvc=latest `
+        --include-package=defaultPDK `
+        --output-dir=$PdkBuildDir `
+        --assume-yes-for-downloads `
+        --no-pyi-file `
+        --jobs=2 `
+        --lto=no `
+        $PdkSrc
+
+    if ($LASTEXITCODE -eq 0) {
+        # Copy compiled defaultPDK into the artifact
+        $PdkDistFolder = Join-Path $PdkBuildDir "defaultPDK.dist"
+        $PdkTargetFolder = Join-Path $FinalFolder "defaultPDK"
+        if (Test-Path $PdkDistFolder) {
+            if (Test-Path $PdkTargetFolder) { Remove-Item -Recurse -Force $PdkTargetFolder }
+            Copy-Item -Path $PdkDistFolder -Destination $PdkTargetFolder -Recurse -Force
+        } else {
+            # Nuitka may output directly without .dist for package mode
+            $PdkCompiledFolder = Join-Path $PdkBuildDir "defaultPDK"
+            if (Test-Path $PdkCompiledFolder) {
+                if (Test-Path $PdkTargetFolder) { Remove-Item -Recurse -Force $PdkTargetFolder }
+                Copy-Item -Path $PdkCompiledFolder -Destination $PdkTargetFolder -Recurse -Force
+            }
+        }
+        Write-Host "defaultPDK compiled successfully." -ForegroundColor Green
+    } else {
+        Write-Warning "defaultPDK compilation failed -- falling back to source copy"
+    }
+
+    # Ensure defaultPDK exists (fallback: copy source modules including stipples)
     $PdkDst = Join-Path $FinalFolder "defaultPDK"
-    if ((Test-Path $PdkSrc) -and -not (Test-Path $PdkDst)) {
-        Write-Host "Copying defaultPDK..."
+    if (-not (Test-Path $PdkDst)) {
+        Write-Host "Copying defaultPDK source modules..."
         Copy-Item -Path $PdkSrc -Destination $PdkDst -Recurse -Force
     }
+    # Always copy stipples and data files that Nuitka may miss
+    $StipplesSrc = Join-Path $PdkSrc "stipples"
+    $StipplesDst = Join-Path $PdkDst "stipples"
+    if ((Test-Path $StipplesSrc) -and -not (Test-Path $StipplesDst)) {
+        Copy-Item -Path $StipplesSrc -Destination $StipplesDst -Recurse -Force
+    }
+
+    # Clean up defaultPDK build artifacts
+    if (Test-Path $PdkBuildDir) { Remove-Item -Recurse -Force $PdkBuildDir }
 
     # Copy .env.example for reference
     $EnvExample = Join-Path $ScriptDir ".env.example"

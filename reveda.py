@@ -47,6 +47,7 @@
 # nuitka-project: --nofollow-import-to=revedaPlot
 # nuitka-project: --nofollow-import-to=plugins
 # nuitka-project: --nofollow-import-to=defaultPDK
+# nuitka-project: --nofollow-import-to=revedaLicense
 # nuitka-project: --include-package-data=defaultPDK
 # nuitka-project-if: {OS} == "Windows":
 #    nuitka-project: --output-dir=C:\Users\eskiye50\dist

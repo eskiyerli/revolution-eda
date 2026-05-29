@@ -25,6 +25,15 @@
 - If a plugin handles custom views, expose `viewTypes` plus `openCellView()` and/or `createCellView()` from the package root. `plugins/revedasim/__init__.py` is the canonical example (`viewTypes = ['revbench']`).
 - Keep import side effects small: a failing plugin import is logged and the plugin is skipped.
 
+## Licensing architecture
+- The licensing system has two layers:
+  - `revedaLicense/` — proprietary module containing the real implementation (`licenseManager.py`). This is compiled to `.pyd`/`.so` for distribution and is **never** committed to the public repo (excluded via `.gitignore`).
+  - `revedaEditor/backend/licenseManager.py` — open-source compatibility shim. It re-exports from `revedaLicense` when present, or provides stubs so the base app starts without it.
+- Plugins import from `revedaEditor.backend.licenseManager`, never directly from `revedaLicense`.
+- License validation uses Ed25519 signatures. The public key in `revedaLicense/licenseManager.py` is XOR-obfuscated to resist extraction from Nuitka binaries.
+- Server-side tooling (`scripts/generate_license.py`, `scripts/obfuscate_key.py`) must never be committed to the public repo.
+- Private keys (`*.pem`, `*.key`) are gitignored. Only `.env.example` is committed; `.env` itself is not.
+
 ## Developer workflows
 - Install and run from source with Poetry:
   - `poetry install`
@@ -32,12 +41,16 @@
 - Restart the app after changing `.env`, switching PDKs/plugins, or editing plugin `config.json`; startup is when discovery/import happens.
 - Use `reveda.log` in the repo root first when debugging plugin loading, PDK import failures, JSON load failures, or missing menus.
 - There are a few focused tests under `revedaEditor/tests/` (for example `test_labels_nlp.py`, `test_net.py`, `test_symbol_pins.py`), but validation is still largely manual GUI testing.
-- Standalone packaging is driven by Nuitka directives embedded in `reveda.py`; plugin repos also keep their own compile scripts such as `plugins/revedasim/compileNuitka.sh`.
+- Standalone packaging uses Nuitka:
+  - Nuitka directives are embedded in `reveda.py` (comment block near the top).
+  - Windows builds: `build_windows.ps1` in the project root. It iterates over Python 3.12/3.13/3.14, locating Poetry virtualenvs at `$POETRY_VENV_BASE` (default `C:\Users\eskiye50\poetryenvs\*py3.XX`) and calling `python -m nuitka` directly.
+  - Plugin builds follow the same pattern (e.g. `plugins/aiTerminal/build_windows.ps1`).
+  - Output lands in `C:\Users\eskiye50\dist\revolution-eda\` with per-version zip artifacts.
 
 ## Codebase-specific patterns to preserve
 - Scene edits are expected to be undoable. Reuse commands in `revedaEditor/backend/undoStack.py` instead of mutating `QGraphicsScene` state ad hoc.
 - Saved geometry is scene-origin-relative in many encoders (`*_Encoder._subtract_point(...)`); preserve that convention when adding new JSON fields.
 - Symbol instances tolerate missing libraries by creating a draft placeholder (`loadJSON.py:createDraftSymbol()`); avoid turning unresolved references into hard crashes.
 - Many UI extensions are convention-based: menus are injected by config, PDK modules are imported by fixed filenames, and callbacks are found by symbol/cell names. Renames across those boundaries break runtime discovery.
-- If you need representative examples, use `defaultPDK/` for minimal built-in behavior, `ihp_pdk/` for a complete external PDK, and `plugins/aiTerminal`, `plugins/revedasim`, and `plugins/revedaPlot` for plugin patterns.
+- If you need representative examples, use `defaultPDK/` for minimal built-in behavior, and `plugins/aiTerminal`, `plugins/revedasim`, and `plugins/revedaPlot` for plugin patterns. External PDKs (`ihp_pdk/`, `gf180_pdk/`) are in separate repos but follow the same conventions.
 
