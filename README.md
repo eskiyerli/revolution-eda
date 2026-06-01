@@ -4,7 +4,7 @@
 
 Revolution EDA is a new generation of schematic and symbol editor targeting custom
 integrated circuit design with integrated simulation and plotting capabilities.
-Current version is **0.8.11**.
+Current version is **0.9.0**.
 
 
 ## Core Features
@@ -20,14 +20,15 @@ Current version is **0.8.11**.
    with text editors.
 5. **Configuration-Driven Netlisting**: Config view support similar to commercial tools for
    choosing simulation views.
-6. **Hierarchical Netlisting**: Full hierarchical netlisting capability with Xyce simulator
-   support, including bus and instance array netlisting.
+6. **Hierarchical Netlisting**: Full hierarchical netlisting capability with support for
+   Xyce, Spectre, and VACASK simulators (the support for the last are work-in-progress), 
+   including bus and instance array netlisting.
 7. **Python-Powered Labels**: Labels support Python functions enabling professional PDK
    development.
 8. **Layout Editor**: Full-featured hierarchical layout editor with support for rectangles,
    polygons, paths, pins, labels, vias (single and array), and python-based parametric
    layout cells. Includes layer management (selectability and visibility management), rulers,
-   and GDS import/export capabilities.
+   GDS/OAS import/export, and initial Schematic Driven Layout (SDL) support.
 9. **Comprehensive Library Management**: Familiar library browser for creating, renaming,
    copying, and deleting libraries, cells, and views.
 10. **Library Registry**: Built-in registry UI (`Tools → Libraries`) for downloading
@@ -36,14 +37,18 @@ Current version is **0.8.11**.
     that downloads and installs plugins from the Revolution EDA plugin registry.
 12. **PDK Registry**: GUI for registering and switching PDKs without editing configuration
     files manually.
-13. **AI Terminal**: Natural-language design modification through Claude (Anthropic) and
-    Gemini (Google) AI backends; API keys are stored in encrypted form.
+13. **AI Terminal**: Natural-language design modification through Claude (Anthropic),
+    Gemini (Google), Mistral AI backends and experimental support for AWS Bedrock; API keys are stored in encrypted form.
 14. **Integrated Python Console**: Full Python REPL in the main window for automation and
     scripting against Revolution EDA's internal APIs.
 15. **Stipple Pattern Editor**: Built-in editor for creating custom layer fill stipple
     patterns.
 16. **Persistent Configuration**: Save and restore configuration parameters.
-17. **Comprehensive Logging**: Error, warning, and info message logging to `reveda.log`.
+17. **Constrained Move**: Move items with orthogonal and diagonal constraints across all
+    editors using `Shift+M` shortcuts.
+18. **Plugin Licensing**: Ed255-signature-based license validation for commercial plugins with
+    machine-fingerprint activation and checkout workflow.
+19. **Comprehensive Logging**: Error, warning, and info message logging to `reveda.log`.
 
 ## Plugin Architecture
 
@@ -59,7 +64,7 @@ source-available plugins.
 
 ### Revolution EDA Simulation and Analysis Environment (revedasim)
 
-- **Xyce Simulator Integration**: Full support for Xyce circuit simulator
+- **Multi-Simulator Netlisting**: Full support for Xyce, Spectre, and VACASK circuit simulators
 - **Parameter Sweeps**: Multi-dimensional parameter sweep capabilities
 - **Analysis Types**: Support for DC, AC, transient, noise, and harmonic balance analyses
 - **Output Management**: Flexible output signal selection and processing
@@ -79,8 +84,8 @@ source-available plugins.
 
 - **Natural-Language Design Editing**: Modify schematics, symbols, and layouts using
   conversational requests sent to an AI model.
-- **Multiple AI Backends**: Claude (Anthropic) and Gemini (Google) supported; OpenAI
-  planned.
+- **Multiple AI Backends**: Claude (Anthropic), Gemini (Google), and Mistral AI supported;
+  OpenAI planned.
 - **Secure API Key Storage**: Keys encrypted with Fernet and stored under `~/.reveda/`.
 - **Automatic Backup & Undo**: A backup is created before every AI modification; one-click
   restore via the `undo` command or **Undo Changes** button.
@@ -174,6 +179,8 @@ Full documentation is available in the `docs/` directory and covers:
 - [Config Editor](docs/configEditor.md)
 - [AI Terminal](docs/AI_TERMINAL.md)
 - [Plugins](docs/plugins.md)
+- [Labels](docs/labels.md)
+- [Binary Plugins](docs/binaryPlugins.md)
 
 ## License
 

@@ -40,5 +40,6 @@ scripts/obfuscate_key.py
 # IDE
 .idea/
 .vscode/
+.kiro/
 *.swp
 *.swo

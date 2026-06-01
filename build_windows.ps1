@@ -46,40 +46,12 @@ foreach ($PyVer in @("3.12", "3.13", "3.14")) {
     }
     New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 
-    # Build with Nuitka (options match the nuitka-project directives in reveda.py)
+    # Build with Nuitka (most options come from nuitka-project directives in reveda.py)
+    # Only specify overrides and platform-specific flags here
     Write-Host "Building with Nuitka (this may take 10-30 minutes)..."
     & $PythonPath -m nuitka `
-        --standalone `
-        --deployment `
         --msvc=latest `
-        --enable-plugin=pyside6 `
-        --enable-plugin=data-files `
-        --include-data-dir=docs=docs `
-        --include-package=revedaEditor `
-        --include-package=cryptography `
-        --include-package=markdown `
-        --include-package=polars `
-        --include-module=pydoc `
-        --include-package=cProfile `
-        --include-package=profile `
-        --include-package=xml `
-        --include-package=certifi `
-        --include-module=PySide6.QtWebEngineWidgets `
-        --include-module=PySide6.QtOpenGL `
-        --nofollow-import-to=unittest `
-        --nofollow-import-to=pytest `
-        --nofollow-import-to=revedasim `
-        --nofollow-import-to=revedaPlot `
-        --nofollow-import-to=plugins `
-        --nofollow-import-to=defaultPDK `
-        --nofollow-import-to=revedaLicense `
         --output-dir=$OutputDir `
-        --product-name="Revolution EDA" `
-        --product-version="0.8.11" `
-        --company-name="Revolution EDA" `
-        --file-description="Electronic Design Automation Software for Professional Custom IC Design Engineers" `
-        --windows-icon-from-ico=revedaCoreLogo.ico `
-        --copyright="Revolution Semiconductor (C) 2026" `
         --assume-yes-for-downloads `
         --jobs=2 `
         --lto=no `

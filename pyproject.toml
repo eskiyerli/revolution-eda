@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "revolution-eda"
-version = "0.8.11"
+version = "0.9.0"
 description = "Custom IC Design Environment for Professionals"
 authors = ["Revolution Semiconductor <48187772+eskiyerli@users.noreply.github.com>"]
 license = "Mozilla Public License v2"
@@ -44,18 +44,18 @@ markdown = "^3.10.2"
 lxml = "^6.1.0"
 polars = "~1.40.1"
 orjson = "^3.11.9"
-anthropic = "^0.75.0"
-google-genai = "^1.74.0"
-mistralai = "^1.12.4"
 httpx = "^0.28.1"
 cryptography = "^46.0.3"
-
+pyqtgraph = { git = "https://github.com/pyqtgraph/pyqtgraph.git", branch = "master" }
 
 [tool.poetry.group.dev.dependencies]
 pytest = "~8.4.1"
 black = "~25.9.0"
 nuitka = "^4.0"
-pyqtgraph = { git = "https://github.com/pyqtgraph/pyqtgraph.git", branch = "master" }
+hypothesis = "^6.155.1"
+anthropic = "^0.75.0"
+google-genai = "^1.74.0"
+mistralai = "^1.12.4"
 
 [tool.poetry.scripts]
 reveda = "reveda:main"

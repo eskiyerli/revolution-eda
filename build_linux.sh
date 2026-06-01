@@ -46,38 +46,11 @@ for PY_VER in 3.12 3.13 3.14; do
     fi
     mkdir -p "${OUTPUT_DIR}"
 
-    # Build with Nuitka (options match the nuitka-project directives in reveda.py)
+    # Build with Nuitka (most options come from nuitka-project directives in reveda.py)
+    # Only specify overrides and platform-specific flags here
     echo "Building with Nuitka (this may take 10-30 minutes)..."
     "${PYTHON_PATH}" -m nuitka \
-        --standalone \
-        --deployment \
-        --enable-plugin=pyside6 \
-        --enable-plugin=data-files \
-        --include-data-dir=docs=docs \
-        --include-package=revedaEditor \
-        --include-package=cryptography \
-        --include-package=markdown \
-        --include-package=polars \
-        --include-module=pydoc \
-        --include-package=cProfile \
-        --include-package=profile \
-        --include-package=xml \
-        --include-package=certifi \
-        --include-module=PySide6.QtWebEngineWidgets \
-        --include-module=PySide6.QtOpenGL \
-        --nofollow-import-to=unittest \
-        --nofollow-import-to=pytest \
-        --nofollow-import-to=revedasim \
-        --nofollow-import-to=revedaPlot \
-        --nofollow-import-to=plugins \
-        --nofollow-import-to=defaultPDK \
-        --include-package-data=defaultPDK \
         --output-dir="${OUTPUT_DIR}" \
-        --product-name="Revolution EDA" \
-        --product-version="0.8.11" \
-        --company-name="Revolution EDA" \
-        --file-description="Electronic Design Automation Software for Professional Custom IC Design Engineers" \
-        --copyright="Revolution Semiconductor (C) 2026" \
         --assume-yes-for-downloads \
         --jobs=2 \
         --lto=no \
@@ -91,12 +64,32 @@ for PY_VER in 3.12 3.13 3.14; do
         mv "${DIST_FOLDER}" "${FINAL_FOLDER}"
     fi
 
-    # Copy defaultPDK as data (excluded from compilation but included as package-data)
+    # Build defaultPDK as a separate compiled module
     PDK_SRC="${SCRIPT_DIR}/defaultPDK"
     PDK_DST="${FINAL_FOLDER}/defaultPDK"
-    if [[ -d "${PDK_SRC}" && ! -d "${PDK_DST}" ]]; then
-        echo "Copying defaultPDK..."
-        cp -r "${PDK_SRC}" "${PDK_DST}"
+    PDK_BUILD_DIR="${OUTPUT_DIR}/defaultPDK_build"
+    if [[ -d "${PDK_SRC}" ]]; then
+        echo "Building defaultPDK as a compiled module..."
+        mkdir -p "${PDK_BUILD_DIR}"
+        "${PYTHON_PATH}" -m nuitka \
+            --module \
+            --include-package=defaultPDK \
+            --output-dir="${PDK_BUILD_DIR}" \
+            --assume-yes-for-downloads \
+            --jobs=2 \
+            --lto=no \
+            defaultPDK
+
+        # Copy compiled .so into the final folder
+        find "${PDK_BUILD_DIR}" -name "defaultPDK*.so" -exec cp {} "${FINAL_FOLDER}/" \;
+
+        # Copy data files (stipples/, config.json) that the PDK needs at runtime
+        mkdir -p "${PDK_DST}"
+        cp -r "${PDK_SRC}/stipples" "${PDK_DST}/" 2>/dev/null || true
+        cp "${PDK_SRC}/config.json" "${PDK_DST}/" 2>/dev/null || true
+
+        # Clean up PDK build artifacts
+        rm -rf "${PDK_BUILD_DIR}"
     fi
 
     # Copy .env.example for reference
