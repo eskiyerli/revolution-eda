@@ -1729,23 +1729,18 @@ windows-terminal = ["colorama (>=0.4.6)"]
 
 [[package]]
 name = "pyqtgraph"
-version = "0.15.0.dev0"
+version = "0.14.0"
 description = "Scientific Graphics and GUI Library for Python"
 optional = false
-python-versions = ">=3.12"
+python-versions = ">=3.10"
 groups = ["main"]
-files = []
-develop = false
+files = [
+    {file = "pyqtgraph-0.14.0-py3-none-any.whl", hash = "sha256:7abb7c3e17362add64f8711b474dffac5e7b0e9245abdf992e9a44119b7aa4f5"},
+]
 
 [package.dependencies]
 colorama = "*"
-numpy = ">=2.0.0"
-
-[package.source]
-type = "git"
-url = "https://github.com/pyqtgraph/pyqtgraph.git"
-reference = "master"
-resolved_reference = "d588dd3ec30915e61c8496a0fe1db21fc25e4da5"
+numpy = ">=1.25.0"
 
 [[package]]
 name = "pyside6"
@@ -2215,4 +2210,4 @@ files = [
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12,<3.15"
-content-hash = "4501f2fab81eb1213fdf01aedef84cd8fdbaec480426ab3df14501ff0012ab60"
+content-hash = "b3ebfea9969e7ccb4250078c6cc91a7905828de4b50803406d607231d4f14f16"

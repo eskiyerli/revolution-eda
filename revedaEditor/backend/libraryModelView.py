@@ -1,27 +1,12 @@
-#    “Commons Clause” License Condition v1.0
-#   #
-#    The Software is provided to you by the Licensor under the License, as defined
-#    below, subject to the following condition.
+# SPDX-License-Identifier: MPL-2.0
 #
-#    Without limiting other conditions in the License, the grant of rights under the
-#    License will not include, and the License does not grant to you, the right to
-#    Sell the Software.
+# Copyright (c) 2024-2026 Revolution Semiconductor (Registered in the Netherlands)
+# This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0.
+# If a copy of the MPL was not distributed with this file, You can obtain one at
+# https://mozilla.org/MPL/2.0/.
 #
-#    For purposes of the foregoing, “Sell” means practicing any or all of the rights
-#    granted to you under the License to provide to third parties, for a fee or other
-#    consideration (including without limitation fees for hosting) a product or service
-#    whose value derives, entirely or substantially, from the functionality of the Software.
-#    Any license notice or attribution required by the License must also include this
-#    Commons Clause License Condition notice.
-#
-#   Add-ons and extensions developed for this software may be distributed
-#   under their own separate licenses.
-#
-#    Software: Revolution EDA
-#    License: Mozilla Public License 2.0
-#    Licensor: Revolution Semiconductor (Registered in the Netherlands)
-#
-
+# Add-ons and extensions developed for this software may be distributed
+# under their own separate licenses.
 
 import json
 import logging
@@ -156,7 +141,7 @@ class BaseDesignLibrariesView(QWidget):
                 except OSError as e:
                     self.logger.warning(f"Error:{e.strerror}")
         else:
-            if hasattr(self._app, 'pluginsObj'):
+            if hasattr(self._app, 'pluginsObj') and self._app.pluginsObj is not None:
                 self._app.pluginsObj.createCellView(itemTuple)
 
     def reworkDesignLibrariesView(self, libraryDict: dict):
@@ -201,6 +186,23 @@ class BaseDesignLibrariesView(QWidget):
         """Handle veriloga view opening."""
         self._handle_text_view(viewItemT, ted.verilogaEditor, self.verilogaEditFinished)
 
+    def _handle_pcell_view(self, viewItemT: ddef.viewItemTuple):
+        """Handle pcell view opening in a JSON text editor."""
+        viewNameT = viewItemT.convertToViewNameTuple()
+        filePath = pathlib.Path(viewItemT.viewItem.viewPath).resolve()
+        if filePath.exists():
+            editor = ted.jsonEditor(filePath)
+            editor.cellViewTuple = viewNameT
+            editor.closedSignal.connect(self._pcellEditFinished)
+            self.appMainW.openViews[viewNameT] = editor
+            editor.show()
+        else:
+            self.logger.warning(f"PCell file {filePath} does not exist")
+
+    def _pcellEditFinished(self, editor: ted.jsonEditor):
+        """Handle pcell editor close."""
+        pass
+
     def openCellView(self, viewItemT: ddef.viewItemTuple):
         from revedaEditor.gui.editorFactory import EditorFactory
         viewNameT = viewItemT.convertToViewNameTuple()
@@ -243,11 +245,15 @@ class BaseDesignLibrariesView(QWidget):
             self._handle_spice_view(viewItemT)
         elif view_type == "veriloga":
             self._handle_veriloga_view(viewItemT)
+        elif view_type == "pcell":
+            self._handle_pcell_view(viewItemT)
         else:
-            if hasattr(self._app, 'pluginsObj'):
+            if hasattr(self._app, 'pluginsObj') and self._app.pluginsObj is not None:
                 result = self._app.pluginsObj.openCellView(viewItemT)
                 if not result:
                     self.logger.warning(f"No handler for view type: {view_type}")
+            else:
+                self.logger.warning(f"No handler for view type: {view_type}")
 
         return viewNameT
 

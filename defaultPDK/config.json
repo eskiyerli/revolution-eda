@@ -2,7 +2,7 @@
   "pdk_name": "defaultPDK",
   "pdk_version": "1.0.0",
   "technology": "130nm",
-  "copyright": "Mozilla Public License 2.0 modified with Commons Clause",
+  "copyright": "Mozilla Public License 2.0",
   "menu_items": [
   ]
 }

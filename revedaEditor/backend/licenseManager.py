@@ -1,18 +1,12 @@
-#    "Commons Clause" License Condition v1.0
+# SPDX-License-Identifier: MPL-2.0
 #
-#    The Software is provided to you by the Licensor under the License, as defined
-#    below, subject to the following condition.
+# Copyright (c) 2024-2026 Revolution Semiconductor (Registered in the Netherlands)
+# This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0.
+# If a copy of the MPL was not distributed with this file, You can obtain one at
+# https://mozilla.org/MPL/2.0/.
 #
-#    Without limiting other conditions in the License, the grant of rights under the
-#    License will not include, and the License does not grant to you, the right to
-#    Sell the Software.
-#
-#   Add-ons and extensions developed for this software may be distributed
-#   under their own separate licenses.
-#
-#    Software: Revolution EDA
-#    License: Mozilla Public License 2.0
-#    Licensor: Revolution Semiconductor (Registered in the Netherlands)
+# Add-ons and extensions developed for this software may be distributed
+# under their own separate licenses.
 
 """Compatibility shim - real implementation is in revedaLicense (compiled, closed-source).
 

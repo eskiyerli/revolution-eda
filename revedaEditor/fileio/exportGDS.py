@@ -132,8 +132,12 @@ class gdsExporter:
 
     def processPath(self, item, parentCell, offset: Tuple[float, float] = (0.0, 0.0)):
         ox, oy = offset
-        p1 = item.draftLine.p1()
-        p2 = item.draftLine.p2()
+        # draftLine is stored in item-local coordinates where the line is always
+        # horizontal (angle reset to 0); the actual direction is carried by the
+        # item's Qt rotation transform.  mapToParent() applies that rotation to
+        # recover the true endpoints in the parent coordinate system.
+        p1 = item.mapToParent(item.draftLine.p1())
+        p2 = item.mapToParent(item.draftLine.p2())
         path = gdstk.FlexPath(
             points=[(p1.x() - ox, p1.y() - oy), (p2.x() - ox, p2.y() - oy)],
             width=item.width,
