@@ -415,9 +415,13 @@ class layoutEditor(edw.editorWindow):
 
     def checkSaveCell(self):
         # need to add checks
+        if getattr(self, '_isPcellPreview', False):
+            return
         self.centralW.scene.saveLayoutCell(self.file)
 
     def saveCell(self):
+        if getattr(self, '_isPcellPreview', False):
+            return
         self.centralW.scene.saveLayoutCell(self.file)
 
     def loadLayout(self):
@@ -563,7 +567,8 @@ class layoutEditor(edw.editorWindow):
 
     def closeEvent(self, event):
         try:
-            self.centralW.scene.saveLayoutCell(self.file)
+            if not getattr(self, '_isPcellPreview', False):
+                self.centralW.scene.saveLayoutCell(self.file)
             cellViewNameTuple = ddef.viewNameTuple(
                 self.libName, self.cellName, self.viewName
             )

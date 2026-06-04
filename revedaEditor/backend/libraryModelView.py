@@ -187,21 +187,79 @@ class BaseDesignLibrariesView(QWidget):
         self._handle_text_view(viewItemT, ted.verilogaEditor, self.verilogaEditFinished)
 
     def _handle_pcell_view(self, viewItemT: ddef.viewItemTuple):
-        """Handle pcell view opening in a JSON text editor."""
+        """Handle pcell view opening by displaying a default instance in the layout editor."""
+        import inspect
+        from revedaEditor.backend.pdkLoader import importPDKModule
+        from revedaEditor.gui.layoutEditor import layoutEditor
+
         viewNameT = viewItemT.convertToViewNameTuple()
         filePath = pathlib.Path(viewItemT.viewItem.viewPath).resolve()
-        if filePath.exists():
-            editor = ted.jsonEditor(filePath)
-            editor.cellViewTuple = viewNameT
-            editor.closedSignal.connect(self._pcellEditFinished)
-            self.appMainW.openViews[viewNameT] = editor
-            editor.show()
-        else:
+        if not filePath.exists():
             self.logger.warning(f"PCell file {filePath} does not exist")
+            return
 
-    def _pcellEditFinished(self, editor: ted.jsonEditor):
-        """Handle pcell editor close."""
-        pass
+        # Read the pcell JSON to find the referenced pcell class
+        try:
+            with filePath.open("r") as f:
+                pcellData = json.load(f)
+        except (json.JSONDecodeError, OSError) as e:
+            self.logger.error(f"Error reading pcell file {filePath}: {e}")
+            return
+
+        if not pcellData or pcellData[0].get("cellView") != "pcell":
+            self.logger.error(f"Invalid pcell file format: {filePath}")
+            return
+
+        pcellRef = pcellData[1].get("reference") if len(pcellData) > 1 else None
+        if not pcellRef:
+            self.logger.error(f"No pcell reference found in {filePath}")
+            return
+
+        # Look up the pcell class from the PDK
+        pcellsModule = importPDKModule("pcells")
+        if pcellsModule is None or not hasattr(pcellsModule, "pcells"):
+            self.logger.error("Cannot load pcells module from PDK")
+            return
+
+        pcellClass = pcellsModule.pcells.get(pcellRef)
+        if pcellClass is None:
+            self.logger.error(f"Unknown pcell class: {pcellRef}")
+            return
+
+        # Open a layout editor for this pcell view
+        editor = layoutEditor(viewItemT.viewItem, self.libraryDict, self)
+        editor._isPcellPreview = True  # Mark as read-only pcell preview
+        self.appMainW.openViews[viewNameT] = editor
+
+        # Create a default instance of the pcell and add it to the scene
+        try:
+            pcellInstance = pcellClass()
+            # Extract default __init__ parameters and call the instance to generate geometry
+            initArgs = inspect.signature(pcellClass.__init__).parameters
+            argsUsed = [param for param in initArgs if param != "self"]
+            defaultValues = {
+                arg: getattr(pcellInstance, arg)
+                for arg in argsUsed
+                if hasattr(pcellInstance, arg)
+            }
+            if defaultValues:
+                pcellInstance(**defaultValues)
+
+            # Set instance metadata
+            pcellInstance.libraryName = viewNameT.libraryName
+            pcellInstance.cellName = viewNameT.cellName
+            pcellInstance.viewName = viewNameT.viewName
+            pcellInstance.counter = 1
+            pcellInstance.instanceName = "I1"
+            pcellInstance.setPos(QPoint(0, 0))
+
+            # Add to the scene
+            editor.centralW.scene.addItem(pcellInstance)
+            editor.centralW.scene.fitItemsInView()
+        except Exception as e:
+            self.logger.error(f"Error creating default pcell instance for {pcellRef}: {e}")
+
+        editor.show()
 
     def openCellView(self, viewItemT: ddef.viewItemTuple):
         from revedaEditor.gui.editorFactory import EditorFactory

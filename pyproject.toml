@@ -8,7 +8,8 @@ readme = "README.md"
 packages = [
     { include = "revedaEditor" },
     { include = "reveda.py" },
-    { include = "defaultPDK" }
+    { include = "defaultPDK" },
+    { include = ".env.example" }
 ]
 
 homepage = "https://github.com/eskiyerli/revolution-eda"
@@ -29,9 +30,10 @@ exclude = [
     "scripts",
     "*.pem",
     "*.key",
-    ".env",
-    "build_windows.ps1",
-    "test_license.py"
+    "*.ps1",
+    "*.sh",
+    "test_license.py",
+    "defaultPDK/*.sh"
 ]
 
 [tool.poetry.urls]
