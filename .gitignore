@@ -43,3 +43,7 @@ scripts/obfuscate_key.py
 .kiro/
 *.swp
 *.swo
+*.gds
+*.oas
+drcSettings.json
+*.lyrdb

@@ -15,7 +15,7 @@ import os
 import pathlib
 
 import orjson
-from typing import Dict, List, Set, Tuple, Union
+from typing import Dict, List, Optional, Set, Tuple, Union
 
 from PySide6.QtCore import (QLineF, QPoint, QPointF, QRect, QRectF,
                             QRegularExpression, Qt, Signal, Slot)
@@ -104,6 +104,7 @@ class schematicScene(editorScene):
         self.newInstanceTuple = None
         self.newAlignLine = None
         self._snapPointRect = self.defineSnapRect()
+        self._moveMacroActive = False
 
         # error shapes
         self.overlapRectSet = set()
@@ -160,7 +161,23 @@ class schematicScene(editorScene):
 
     def mousePressEvent(self, event):
         super().mousePressEvent(event)
-        if self.selectedItemGroup and self.editModes.moveItem:
+        if event.button() == Qt.MouseButton.LeftButton and self.editModes.stretchItem:
+            mousePos = event.scenePos().toPoint()
+            self._initiateStretch(mousePos)
+        elif self.selectedItemGroup and self.editModes.moveItem:
+            # Check if any movable items have connected nets that need stretching
+            self._moveMacroActive = False
+            hasStretchableItems = any(
+                isinstance(item, (shp.schematicSymbol, shp.schematicPin,
+                                  snet.schematicNet))
+                for item in self.selectedItemGroup.childItems()
+            )
+            if hasStretchableItems:
+                # Begin macro to group net deletions, replacements, and position
+                # change as a single undoable operation
+                self.undoStack.beginMacro("Move Items")
+                self._moveMacroActive = True
+
             for item in self.selectedItemGroup.childItems():
                 if isinstance(item, shp.schematicSymbol) or isinstance(item,
                                                                        shp.schematicPin):
@@ -189,7 +206,11 @@ class schematicScene(editorScene):
             self.newAlignLine.draftLine = QLineF(
                 self.newAlignLine.draftLine.p1(), self.mouseMoveLoc)
         elif self._stretchNet and self.editModes.stretchItem:
+            # Snap to nearby connection points first, fall back to grid-snapped position
             netEndPoint = self.findSnapPoint(self.mouseMoveLoc, set())
+            if netEndPoint == self.mouseMoveLoc:
+                # No nearby connection point found; snap cursor to grid
+                netEndPoint = self.snapToGrid(self.mouseMoveLoc)
             self._snapPointRect.setVisible(True)
             self._snapPointRect.setPos(netEndPoint)
             self._stretchNet.draftLine = QLineF(self._stretchNet.draftLine.p1(),
@@ -216,7 +237,16 @@ class schematicScene(editorScene):
             for item in self.selectedItemGroup.childItems():
                 if isinstance(item, snet.schematicNet):
                     item._finishSnapLines()
-        return super().mouseReleaseEvent(event)
+            # super() triggers destroyItemGroup -> ItemPositionHasChanged ->
+            # symbol/pin _finishSnapLines, then pushes undoGroupMoveStack
+            super().mouseReleaseEvent(event)
+            # End the macro started in mousePressEvent (groups net deletions,
+            # replacements, and position change as single undo step)
+            if getattr(self, '_moveMacroActive', False):
+                self.undoStack.endMacro()
+                self._moveMacroActive = False
+        else:
+            super().mouseReleaseEvent(event)
 
     def _handleMouseRelease(self, mousePos: QPoint,
                             button: Qt.MouseButton) -> None:
@@ -334,10 +364,102 @@ class schematicScene(editorScene):
 
     def _handleStretchItem(self):
         if self._stretchNet:
-            self._stretchNet.stretch = False
+            self._completeStretch(self.mouseMoveLoc)
+
+    def _completeStretch(self, releasePos: QPoint) -> None:
+        """
+        Complete a stretch operation on mouse release.
+
+        Snaps release position to grid/connection point, creates replacement
+        manhattan-routed net segments, assigns original net properties, resolves
+        connectivity, and pushes a single undo command.
+
+        The undo command captures the FINAL state after merge/split so that undo
+        removes all replacement nets (including any produced by mergeSplitNets)
+        and restores the original net plus any existing nets consumed by merging.
+        """
+        try:
+            # Snap release position: check for nearby connection points first,
+            # fall back to grid snap
+            snappedRelease = self.findSnapPoint(releasePos, set())
+            if snappedRelease == releasePos:
+                snappedRelease = self.snapToGrid(releasePos)
+
+            anchorPoint = self._stretchAnchorPoint
+
+            if snappedRelease == anchorPoint:
+                # Zero-length result: remove original net, push no undo command
+                # (original net was already removed from scene in _initiateStretch)
+                pass
+            elif snappedRelease == self._stretchClickedEndpoint:
+                # No geometric change: user released at the original clicked
+                # endpoint position. Restore the original net without pushing
+                # any undo command (nothing actually changed).
+                self.addItem(self._stretchOriginalNet)
+            else:
+                # Create 1–3 manhattan segments from anchor to snapped release
+                newSegments = self.addStretchWires(anchorPoint, snappedRelease)
+
+                # Defensive filter: discard any zero-length segments
+                # (p1 == p2) that may slip through from addStretchWires
+                newSegments = [
+                    seg for seg in newSegments
+                    if seg.draftLine.p1().toPoint() != seg.draftLine.p2().toPoint()
+                ]
+
+                if newSegments:
+                    # Assign original net's name, nameStrength, and width
+                    for segment in newSegments:
+                        segment.inherit(self._stretchOriginalNet)
+                        segment.width = self._stretchOriginalWidth
+
+                    # Snapshot nets currently in the scene BEFORE adding new
+                    # segments, so we can detect what mergeSplitNets changes.
+                    netsBefore = self.findSceneNetsSet()
+
+                    # Add segments to scene
+                    for segment in newSegments:
+                        self.addItem(segment)
+
+                    # Call mergeSplitNets on each new segment for connectivity.
+                    # This may remove some of our new segments (merged) and add
+                    # different ones, or remove existing scene nets (merged into
+                    # our new ones).
+                    for segment in newSegments:
+                        if segment.scene() is not None:
+                            self.mergeSplitNets(segment)
+
+                    # Snapshot nets after merge/split to determine final state
+                    netsAfter = self.findSceneNetsSet()
+
+                    # allNewNets: nets that now exist but didn't before
+                    allNewNets = list(netsAfter - netsBefore)
+
+                    # consumedNets: existing nets that were removed by merging
+                    consumedNets = list(netsBefore - netsAfter)
+
+                    # The undo must restore the original net AND any existing
+                    # nets that were consumed during merge/split
+                    allOldNets = [self._stretchOriginalNet] + consumedNets
+
+                    # Push single undo command capturing the complete operation
+                    undoCommand = us.addDeleteShapesUndo(
+                        self, allNewNets, allOldNets)
+                    self.undoStack.push(undoCommand)
+
+        except Exception as e:
+            self.logger.error(f"Error in _completeStretch: {e}", exc_info=True)
+        finally:
+            # Clean up: remove guideLine from scene, reset stretch state,
+            # hide snap indicator, restore default cursor
+            if self._stretchNet and self._stretchNet.scene() is not None:
+                self.removeItem(self._stretchNet)
             self._stretchNet = None
+            self._stretchOriginalNet = None
+            self._stretchClickedEndpoint = None
             self._snapPointRect.setVisible(False)
-            self.editModes.stretchItem = False
+            for view in self.views():
+                view.setCursor(Qt.CursorShape.ArrowCursor)
 
     def _handleNameNet(self, mouseReleaseLoc):
         if self.netNameString:
@@ -354,8 +476,11 @@ class schematicScene(editorScene):
             self.selectedNet = None
 
     def updateStretchNet(self):
+        netEndPoint = self.findSnapPoint(self.mouseMoveLoc, set())
+        if netEndPoint == self.mouseMoveLoc:
+            netEndPoint = self.snapToGrid(self.mouseMoveLoc)
         self._stretchNet.draftLine = QLineF(self._stretchNet.draftLine.p1(),
-                                            self.mouseMoveLoc)
+                                            netEndPoint)
 
     @Slot(snet.schematicNet)
     def _handleWireFinished(self, newNet: snet.schematicNet):
@@ -577,6 +702,114 @@ class schematicScene(editorScene):
                     furthest_points = (points[i], points[j])
 
         return furthest_points[0], furthest_points[1]
+
+    def _findNearestEndpoint(
+        self, mousePos: QPoint
+    ) -> Optional[Tuple[snet.schematicNet, QPoint, QPoint]]:
+        """
+        Search scene for nets with an endpoint within snapDistance of mousePos.
+        Returns (net, clickedEndpoint, anchorEndpoint) or None.
+        If both endpoints of the same net are within snapDistance, pick the one
+        farther by Manhattan distance as anchor.
+        """
+        snapDist = min(self.snapTuple)
+        bestNet = None
+        bestClickedEnd = None
+        bestAnchorEnd = None
+        bestDist = snapDist + 1  # Initialize beyond threshold
+
+        for netItem in self.findSceneNetsSet():
+            endpoints = netItem.sceneEndPoints
+            p1, p2 = endpoints[0], endpoints[1]
+
+            dist_p1 = (p1 - mousePos).manhattanLength()
+            dist_p2 = (p2 - mousePos).manhattanLength()
+
+            p1_within = dist_p1 <= snapDist
+            p2_within = dist_p2 <= snapDist
+
+            if not p1_within and not p2_within:
+                continue
+
+            # Determine clicked endpoint (closer to mousePos) and anchor (the other)
+            if p1_within and p2_within:
+                # Both within snap distance: clicked = closer, anchor = farther
+                if dist_p1 <= dist_p2:
+                    clickedEnd, anchorEnd, closestDist = p1, p2, dist_p1
+                else:
+                    clickedEnd, anchorEnd, closestDist = p2, p1, dist_p2
+            elif p1_within:
+                clickedEnd, anchorEnd, closestDist = p1, p2, dist_p1
+            else:
+                clickedEnd, anchorEnd, closestDist = p2, p1, dist_p2
+
+            # Keep the net with the closest endpoint to mousePos
+            if closestDist < bestDist:
+                bestDist = closestDist
+                bestNet = netItem
+                bestClickedEnd = clickedEnd
+                bestAnchorEnd = anchorEnd
+
+        if bestNet is not None:
+            return (bestNet, bestClickedEnd, bestAnchorEnd)
+        return None
+
+    def _initiateStretch(self, mousePos: QPoint) -> bool:
+        """
+        Find nearest net endpoint within snap distance of mousePos.
+        If found, remove original net, create guideLine from anchor to mousePos,
+        store stretch state, set appropriate cursor, and show snap indicator.
+        Returns True if stretch initiated, False otherwise.
+        """
+        result = self._findNearestEndpoint(mousePos)
+        if result is None:
+            return False
+
+        netItem, clickedEndpoint, anchorEndpoint = result
+
+        # Capture endpoint positions before removing from scene
+        # (mapToScene requires the item to be in a scene)
+        p1, p2 = netItem.sceneEndPoints[0], netItem.sceneEndPoints[1]
+
+        # Store stretch state: original net properties
+        self._stretchOriginalNet = netItem
+        self._stretchAnchorPoint = anchorEndpoint
+        self._stretchClickedEndpoint = clickedEndpoint
+        self._stretchOriginalName = netItem.name
+        self._stretchOriginalNameStrength = netItem.nameStrength
+        self._stretchOriginalWidth = netItem.width
+
+        # Remove original net from scene
+        self.removeItem(netItem)
+
+        # Create guideLine from anchor to cursor position
+        self._stretchNet = snet.guideLine(anchorEndpoint, mousePos)
+        self._stretchNet.inherit(netItem)
+        self.addItem(self._stretchNet)
+
+        # Determine net orientation and set cursor accordingly
+        # A horizontal net has same Y for both endpoints
+        # A vertical net has same X for both endpoints
+        if p1.y() == p2.y():
+            # Horizontal net
+            for view in self.views():
+                view.setCursor(Qt.CursorShape.SizeHorCursor)
+        elif p1.x() == p2.x():
+            # Vertical net
+            for view in self.views():
+                view.setCursor(Qt.CursorShape.SizeVerCursor)
+        else:
+            # Diagonal or other — use horizontal as default
+            for view in self.views():
+                view.setCursor(Qt.CursorShape.SizeHorCursor)
+
+        # Show snap indicator rect at cursor position
+        if self._snapPointRect.scene() is None:
+            self.addItem(self._snapPointRect)
+        self._snapPointRect.setPos(mousePos)
+        self._snapPointRect.setVisible(True)
+
+        return True
 
     def _handleStretchNet(self, netItem: snet.schematicNet, stretchEnd: str):
         match stretchEnd:

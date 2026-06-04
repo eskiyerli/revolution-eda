@@ -1349,6 +1349,7 @@ class schematicSymbol(symbolShape):
         self._snapLines: dict[symbolPin, set[net.guideLine]] = dict()
 
         self._pinNetDict: dict[symbolPin, set[net.schematicNet]] = dict()
+        self._removedNets: list = []
         self._setup_graphics()
         self.addShapes()
         self._start = self.childrenBoundingRect().bottomLeft()
@@ -1406,53 +1407,79 @@ class schematicSymbol(symbolShape):
 
     def generatePinNetDict(self):
         self._pinNetDict = dict()
+        if not self.scene():
+            return
+        snapDist = min(self.scene().snapTuple)
+        allNets = self.scene().findSceneNetsSet()
+        # Exclude nets that are in the same move group (they move with us)
+        moveGroup = getattr(self.scene(), 'selectedItemGroup', None)
+        if moveGroup:
+            coSelectedNets = {item for item in moveGroup.childItems()
+                             if isinstance(item, net.schematicNet)}
+            allNets -= coSelectedNets
         for pinItem in self._pins.values():
             netSet: set[net.schematicNet] = set()
-            for netItem in pinItem.collidingItems(Qt.IntersectsItemBoundingRect):
-                if isinstance(netItem, net.schematicNet):
-                    netSet.add(netItem)
+            pinScenePos = pinItem.mapToScene(pinItem.start).toPoint()
+            for netItem in allNets:
+                for endPoint in netItem.sceneEndPoints:
+                    if (pinScenePos - endPoint).manhattanLength() <= snapDist:
+                        netSet.add(netItem)
+                        break
             self._pinNetDict[pinItem] = netSet
 
     def initializeSnapLines(self, scene):
         self._snapLines = dict()
-        sceneGrid = scene.snapTuple[0]
+        self._removedNets = []  # Store removed nets for composite undo
+        sceneGrid = min(scene.snapTuple)
+        alreadyRemovedNets = set()  # Track nets already removed (shared across pins)
         for pinItem, netSet in self._pinNetDict.items():
             if not netSet:
                 continue
-            snapLinesSet: set[net.guideLine] = set()  # Move outside the loop
+            snapLinesSet: set[net.guideLine] = set()
             startPoint = pinItem.mapToScene(pinItem.start).toPoint()
             for netItem in netSet:
+                if netItem in alreadyRemovedNets:
+                    continue  # Already processed by another pin
                 endPoint = None
                 for point in netItem.sceneEndPoints:
-                    if (startPoint - point).manhattanLength() < sceneGrid / 2:
+                    if (startPoint - point).manhattanLength() <= sceneGrid:
                         endPoint = netItem.sceneOtherEnd(point)
                         break
                 if endPoint:
                     snapLine = net.guideLine(startPoint, endPoint)
                     snapLine.inherit(netItem)
                     snapLinesSet.add(snapLine)
-                    scene.deleteUndoStack(netItem)
+                    # Remove net from scene without pushing to undo stack;
+                    # the composite undo in _finishSnapLines will handle it.
+                    scene.removeItem(netItem)
+                    scene.itemsRefSet.discard(netItem)
+                    self._removedNets.append(netItem)
+                    alreadyRemovedNets.add(netItem)
                     scene.addItem(snapLine)
             self._snapLines[pinItem] = snapLinesSet
 
     def updateSnapLines(self):
+        """Update guide line start points to track each pin's current scene position.
 
-        # shape is not connected to any nets
+        Called on every mouse-move event while the symbol is being dragged.
+        Each guideLine's p1 (start) tracks the associated pin's scene position
+        while p2 (far endpoint) remains fixed at the original net's non-coincident endpoint.
+        """
         for pin, snapLinesSet in self._snapLines.items():
-            pin_start = pin.mapToScene(pin.start).toPoint()
             if not snapLinesSet:
                 continue
+            # Get the pin's current scene position (tracks the moving symbol)
+            pinScenePos = pin.mapToScene(pin.start).toPoint()
             for snapLine in list(snapLinesSet):  # Iterate over a copy
-                current_end = snapLine.line().p2()
-                new_line = QLineF(pin_start, current_end)
+                # p2 is the fixed far endpoint (non-coincident end of the original net)
+                farEnd = snapLine.line().p2().toPoint()
+                newLine = QLineF(pinScenePos, farEnd)
 
-                # Only update if there's a significant change
-                if (new_line.length() > 1  # Avoid very short lines
-                        and (abs(new_line.dx()) > 1 or abs(
-                            new_line.dy()) > 1)):  # Avoid unnecessary updates
-                    snapLine.setLine(new_line)
+                if newLine.length() >= 1:
+                    # Update guideLine start point to track the pin's new position
+                    snapLine.draftLine = newLine
                 else:
-                    # Remove unnecessary lines
+                    # Pin has reached the far endpoint; remove the guide line
                     self.scene().removeItem(snapLine)
                     snapLinesSet.remove(snapLine)
 
@@ -1460,20 +1487,39 @@ class schematicSymbol(symbolShape):
         if self._snapLines:
             try:
                 scene = self.scene()
+                allNewNets = []
                 for snapLinesSet in self._snapLines.values():
                     for snapLine in snapLinesSet:
-                        newNets = scene.addStretchWires(
-                            snapLine.line().p1().toPoint(),
-                            snapLine.line().p2().toPoint())
+                        if snapLine.scene() is None:
+                            continue  # Already removed (e.g. by updateSnapLines)
+                        p1 = snapLine.line().p1().toPoint()
+                        p2 = snapLine.line().p2().toPoint()
+                        if p1 == p2:
+                            # Zero-length: pin reached the far endpoint.
+                            # Just remove the guideLine without creating segments.
+                            scene.removeItem(snapLine)
+                            continue
+                        newNets = scene.addStretchWires(p1, p2)
                         if newNets:
                             for netItem in newNets:
                                 netItem.inherit(snapLine)
-                            scene.addListUndoStack(newNets)
+                            allNewNets.extend(newNets)
                         scene.removeItem(snapLine)
+                # Push a single addDeleteShapesUndo capturing all net replacements.
+                # The removed original nets were stored during initializeSnapLines.
+                removedNets = getattr(self, '_removedNets', [])
+                if allNewNets or removedNets:
+                    from revedaEditor.backend import undoStack as us
+                    undoCommand = us.addDeleteShapesUndo(
+                        scene, allNewNets, removedNets)
+                    scene.undoStack.push(undoCommand)
                 self._snapLines = dict()
+                self._removedNets = []
             except Exception as e:
                 # Log error but continue processing other guidelines
-                scene.logger.error(f"Error processing snap lines: {e}")
+                if self.scene():
+                    self.scene().logger.error(
+                        f"Error processing snap lines: {e}")
 
     def paint(self, painter, option, widget) -> None:
         # The shape() method is expensive. It's better to use boundingRect()
@@ -1687,6 +1733,7 @@ class schematicPin(symbolShape):
         self._pinType = pinType
         self._pinNetSet: set[net.schematicNet] = set()
         self._snapLines: set[net.guideLine] = set()
+        self._removedNets: list = []
         self._font = QFont("Arial", 12)
         self._updateTextMetrics()
         self._pinItem = schematicPinPolygon(self.pinPolygon, self)
@@ -1764,65 +1811,119 @@ class schematicPin(symbolShape):
         # implementation
         self._pinNetSet = set()
 
-        for netItem in self.collidingItems(Qt.IntersectsItemBoundingRect):
-            if isinstance(netItem, net.schematicNet):
-                self._pinNetSet.add(netItem)
+        scene = self.scene()
+        if not scene:
+            return
+
+        # Use _start (electrical connection point) not _centre (visual center).
+        # findConnectPoints snaps nets to mapToScene(_start), so we must match.
+        connectPoint = self.mapToScene(self._start).toPoint()
+        snapDist = min(scene.snapTuple)
+
+        allNets = scene.findSceneNetsSet()
+        # Exclude nets that are in the same move group (they move with us)
+        moveGroup = getattr(scene, 'selectedItemGroup', None)
+        if moveGroup:
+            coSelectedNets = {item for item in moveGroup.childItems()
+                             if isinstance(item, net.schematicNet)}
+            allNets -= coSelectedNets
+
+        for netItem in allNets:
+            for endPoint in netItem.sceneEndPoints:
+                if (connectPoint - endPoint).manhattanLength() <= snapDist:
+                    self._pinNetSet.add(netItem)
+                    break
 
     def initializeSnapLines(self, scene):
         self._snapLines = set()
+        self._removedNets = []  # Store removed nets for composite undo
 
         if not self._pinNetSet:
             return None
-        centrePoint = self.mapToScene(self._centre).toPoint()
+
+        # Use _start (electrical connection point), consistent with findConnectPoints
+        connectPoint = self.mapToScene(self._start).toPoint()
+        snapDist = min(scene.snapTuple)
+
         for netItem in self._pinNetSet:
             endPoint = None
             for point in netItem.sceneEndPoints:
-                if (centrePoint - point).manhattanLength() < max(self.PIN_HEIGHT,
-                                                                 self.PIN_WIDTH):
+                if (connectPoint - point).manhattanLength() <= snapDist:
                     endPoint = netItem.sceneOtherEnd(point)
                     break
             if endPoint:
-                snapLine = net.guideLine(centrePoint, endPoint)
+                # Skip guideLine creation if length < 1 scene unit
+                lineLength = (connectPoint - endPoint).manhattanLength()
+                if lineLength < 1:
+                    continue
+                snapLine = net.guideLine(connectPoint, endPoint)
                 snapLine.inherit(netItem)
                 self._snapLines.add(snapLine)
-                scene.deleteUndoStack(netItem)
+                # Remove net from scene without pushing to undo stack;
+                # the composite undo macro in mouseReleaseEvent will handle it.
+                scene.removeItem(netItem)
+                scene.itemsRefSet.discard(netItem)
+                self._removedNets.append(netItem)
                 scene.addItem(snapLine)
 
     def updateSnapLines(self):
         if not self._snapLines:
             return None
-        pinCentre = self.mapToScene(self._centre).toPoint()
-        for snapLine in self._snapLines:
-            current_end = snapLine.line().p2()
-            new_line = QLineF(pinCentre, current_end)
+        # Use _start (electrical connection point), not _centre
+        pinConnectPoint = self.mapToScene(self._start).toPoint()
+        for snapLine in list(self._snapLines):  # Iterate over a copy
+            current_end = snapLine.draftLine.p2()
+            new_line = QLineF(pinConnectPoint, current_end)
 
             # Only update if there's a significant change
             if (new_line.length() > 1  # Avoid very short lines
                     and (abs(new_line.dx()) > 1 or abs(
                         new_line.dy()) > 1)):  # Avoid unnecessary updates
-                snapLine.setLine(new_line)
+                snapLine.draftLine = new_line
             else:
                 # Remove unnecessary lines
                 self.scene().removeItem(snapLine)
-                self._snapLines.remove(snapLine)
+                self._snapLines.discard(snapLine)
 
     def _finishSnapLines(self):
         if self._snapLines:
             try:
                 scene = self.scene()
+                if not scene:
+                    return
+                allNewNets = []
                 for snapLine in self._snapLines:
-                    newNets = scene.addStretchWires(
-                        snapLine.line().p1().toPoint(),
-                        snapLine.line().p2().toPoint())
+                    if snapLine.scene() is None:
+                        continue  # Already removed (e.g. by updateSnapLines)
+                    p1 = snapLine.line().p1().toPoint()
+                    p2 = snapLine.line().p2().toPoint()
+
+                    if p1 == p2:
+                        # Pin reached far endpoint: remove without creating segments
+                        scene.removeItem(snapLine)
+                        continue
+
+                    # Create manhattan-routed replacement segments
+                    newNets = scene.addStretchWires(p1, p2)
                     if newNets:
                         for netItem in newNets:
                             netItem.inherit(snapLine)
-                        scene.addListUndoStack(newNets)
+                        allNewNets.extend(newNets)
                     scene.removeItem(snapLine)
+                # Push a single addDeleteShapesUndo capturing all net replacements.
+                removedNets = getattr(self, '_removedNets', [])
+                if allNewNets or removedNets:
+                    from revedaEditor.backend import undoStack as us
+                    undoCommand = us.addDeleteShapesUndo(
+                        scene, allNewNets, removedNets)
+                    scene.undoStack.push(undoCommand)
                 self._snapLines = set()
+                self._removedNets = []
             except Exception as e:
                 # Log error but continue processing other guidelines
-                scene.logger.error(f"Error processing snap lines: {e}")
+                if self.scene():
+                    self.scene().logger.error(
+                        f"Error processing snap lines: {e}")
 
     # def findPinNetIndexTuples(self, ) -> List[
     #     Tuple["schematicPin", "net.schematicNet", int]]:

@@ -158,6 +158,10 @@ class editorScene(QGraphicsScene):
             if self.editModes.moveItem or self.editModes.constrainedMoveItem:
                 # If clicked on an item, add it to selection
                 clickedItem = self.itemAt(self.mousePressLoc, QTransform())
+                # Resolve to top-level parent (e.g. schematicPinPolygon → schematicPin)
+                if clickedItem:
+                    while clickedItem.parentItem() is not None:
+                        clickedItem = clickedItem.parentItem()
                 if clickedItem and not clickedItem.isSelected():
                     self.clearSelection()
                     self.selectedItemsSet = {clickedItem}

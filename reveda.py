@@ -68,10 +68,20 @@ class revedaApp(QApplication):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.basePath = Path(__file__).resolve().parent
+        self._ensureEnvFile()
         load_dotenv()
         self._setupLogger()
         self._setupPaths()
         self.appMainW = rvm.MainWindow()
+
+    def _ensureEnvFile(self):
+        """Copy .env.example to .env on first run if .env doesn't exist."""
+        env_file = self.basePath / ".env"
+        if not env_file.exists():
+            example_file = self.basePath / ".env.example"
+            if example_file.exists():
+                import shutil
+                shutil.copy2(example_file, env_file)
 
     def _setupLogger(self):
         """Initialize application logger."""
