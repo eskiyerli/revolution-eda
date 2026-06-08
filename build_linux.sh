@@ -8,11 +8,16 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_NAME="reveda"
 ENTRY_POINT="${SCRIPT_DIR}/reveda.py"
 
+# Change directory to the script/project root so relative Nuitka paths (like docs) are resolved correctly
+cd "${SCRIPT_DIR}"
+
 VENV_BASE="${POETRY_VENV_BASE:-${HOME}/.poetryenvs}"
 OUTPUT_BASE="${HOME}/dist"
 
-for PY_VER in 3.12 3.13 3.14; do
-    ARTIFACT_NAME="linux-amd64-py${PY_VER}"
+# for PY_VER in 3.12 3.13 3.14; do
+for PY_VER in 3.13; do
+    # ARTIFACT_NAME="linux-amd64-py${PY_VER}"
+    ARTIFACT_NAME="linux-amd64"
     echo "========================================"
     echo "Building Revolution EDA for Linux with Python ${PY_VER}"
     echo "========================================"

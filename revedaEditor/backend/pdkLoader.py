@@ -17,9 +17,6 @@ from types import ModuleType
 
 from PySide6.QtGui import (QAction, QIcon)
 from PySide6.QtWidgets import QApplication
-from dotenv import load_dotenv
-
-load_dotenv()
 
 _module_cache: dict[tuple[str, str], ModuleType] = {}
 logger = logging.getLogger(__name__)

@@ -520,11 +520,14 @@ class schematicEditor(edw.editorWindow):
         return {pin.pinName: pin for pin in schematic_pins}
 
     def _draw_pins(self, symbol_scene, pin_names: list[str], locations: list[QPoint],
-                   offsets: QPoint, pin_map: dict) -> None:
+                   offsets: QPoint, pin_map: dict, default_dir: str) -> None:
         """Draw pins and their connecting lines."""
         for name, loc in zip(pin_names, locations):
             symbol_scene.lineDraw(loc, loc + offsets)
-            symbol_scene.addItem(pin_map[name].toSymbolPin(loc))
+            if name in pin_map:
+                symbol_scene.addItem(pin_map[name].toSymbolPin(loc))
+            else:
+                symbol_scene.addItem(shp.symbolPin(loc, name, default_dir, "Signal"))
 
     def generateSymbol(self, symbolViewName: str) -> None:
         # Get schematic pins and categorize them
@@ -582,22 +585,23 @@ class schematicEditor(edw.editorWindow):
         # Calculate pin locations and draw pins
         pin_configs = [(pin_names['left'],
                         [QPoint(-stub_length, (i + 1) * pin_distance) for i in
-                         range(len(pin_names['left']))], QPoint(stub_length, 0)),
+                         range(len(pin_names['left']))], QPoint(stub_length, 0), 'Input'),
                        (pin_names['right'],
                         [QPoint(rect_x_dim + stub_length, (i + 1) * pin_distance) for i in
-                         range(len(pin_names['right']))], QPoint(-stub_length, 0)),
+                         range(len(pin_names['right']))], QPoint(-stub_length, 0), 'Output'),
                        (pin_names['top'],
                         [QPoint((i + 1) * pin_distance, -stub_length) for i in
-                         range(len(pin_names['top']))], QPoint(0, stub_length)),
+                         range(len(pin_names['top']))], QPoint(0, stub_length), 'Inout'),
                        (pin_names['bottom'],
                         [QPoint((i + 1) * pin_distance, rect_y_dim + stub_length) for i in
-                         range(len(pin_names['bottom']))], QPoint(0, -stub_length))]
+                         range(len(pin_names['bottom']))], QPoint(0, -stub_length), 'Inout')]
 
-        for names, locations, offset in pin_configs:
-            self._draw_pins(sceneSymbol, names, locations, offset, pin_map)
+        for names, locations, offset, default_dir in pin_configs:
+            self._draw_pins(sceneSymbol, names, locations, offset, pin_map, default_dir)
 
         # Add symbol attributes
-        all_pin_names = [pin.pinName for pin in schematic_pins]
+        all_pin_names = (pin_names['left'] + pin_names['right'] +
+                         pin_names['top'] + pin_names['bottom'])
         sceneSymbol.attributeList = [
             symenc.symbolAttribute("SpiceNetlistLine", "X@instName %pinOrder @cellName"),
             symenc.symbolAttribute("SpectreNetlistLine",

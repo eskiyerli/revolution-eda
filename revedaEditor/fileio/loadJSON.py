@@ -263,6 +263,9 @@ class schematicItems:
         start = QPoint(item["st"][0], item["st"][1])
         end = QPoint(item["end"][0], item["end"][1])
         width = item.get('w', 0)
+        # Snap coordinates to grid to ensure nets are properly aligned
+        start = self.scene.snapToGrid(start)
+        end = self.scene.snapToGrid(end)
         netItem = net.schematicNet(start, end, width)
         netItem.name = item["nam"]
         match item["ns"]:

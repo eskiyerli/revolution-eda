@@ -535,10 +535,11 @@ class layoutEditor(edw.editorWindow):
         dialog = fd.selectCellViewDialog(self, libraryModel)
 
         if dialog.exec() == QDialog.DialogCode.Accepted:
+
             libItem = libm.getLibItem(libraryModel, dialog.libNamesCB.currentText())
             cellItem = libm.getCellItem(libItem, dialog.cellCB.currentText())
             viewItem = libm.getViewItem(cellItem, dialog.viewCB.currentText())
-
+            self.centralW.scene.clear()
             # Call scene to load schematic instances
             self.centralW.scene.loadSchematicInstances(
                 ddef.viewItemTuple(libItem, cellItem, viewItem)

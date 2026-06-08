@@ -390,10 +390,23 @@ class PluginRegistryWindow(QMainWindow):
         return entry.get("license", "") in ("Commercial", "Proprietary", "Paid")
 
     def _app_root(self) -> Path:
-        """Return the Revolution EDA application root directory."""
+        """Return the Revolution EDA application root directory.
+
+        If the installation directory is read-only (e.g., AppImage mount),
+        returns the current working directory for writable files.
+        """
         app = QApplication.instance()
         if app and hasattr(app, "basePath"):
-            return app.basePath
+            root = app.basePath
+            # Check if basePath is writable (not in a read-only AppImage)
+            try:
+                test_file = root / ".writetest"
+                test_file.touch()
+                test_file.unlink()
+                return root
+            except OSError:
+                # Fallback to current working directory for writable files
+                return Path.cwd()
         # Fallback: parent of revedaEditor package
         return Path(__file__).resolve().parents[2]
 

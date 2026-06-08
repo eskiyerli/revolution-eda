@@ -203,6 +203,14 @@ class schematicNet(QGraphicsItem):
         return f"schematicNet({self.sceneEndPoints}, {self._width})"
 
     def itemChange(self, change, value):
+        if change in (
+            QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged,
+            QGraphicsItem.GraphicsItemChange.ItemTransformHasChanged,
+            QGraphicsItem.GraphicsItemChange.ItemSceneHasChanged,
+            QGraphicsItem.GraphicsItemChange.ItemParentHasChanged,
+        ):
+            self.__dict__.pop("_hash_value", None)
+
         if self.scene():
             match change:
                 case QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
@@ -261,12 +269,15 @@ class schematicNet(QGraphicsItem):
             return
         sceneGrid = scene.snapTuple[0]
         self._removedNets = []  # Store removed nets for composite undo
+        alreadyRemovedNets = set()  # Track nets already removed (shared across endpoints)
         if not self._endPointNetDict:
             self.generateEndPointNetDict()
         for i, nets in self._endPointNetDict.items():
             point = self.sceneEndPoints[i]
             snapLinesSet: set["guideLine"] = set()
             for net in nets:
+                if net in alreadyRemovedNets:
+                    continue  # Already processed by another endpoint
                 for endPoint in net.sceneEndPoints:
                     if (endPoint - point).manhattanLength() < sceneGrid / 2:
                         otherEndPoint = net.sceneOtherEnd(endPoint)
@@ -278,6 +289,7 @@ class schematicNet(QGraphicsItem):
                         scene.removeItem(net)
                         scene.itemsRefSet.discard(net)
                         self._removedNets.append(net)
+                        alreadyRemovedNets.add(net)
                         scene.addItem(snapLine)
                         continue
             self._netSnapLines[i] = snapLinesSet

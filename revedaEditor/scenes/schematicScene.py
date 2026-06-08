@@ -489,8 +489,10 @@ class schematicScene(editorScene):
 
         """
 
-        if newNet.draftLine.length() < self.snapGrid / 2:
-            self.removeItem(newNet)
+        if newNet.draftLine.length() < 1:
+            # Only remove if the net is actually in this scene
+            if newNet.scene() == self:
+                self.removeItem(newNet)
             self.undoStack.removeLastCommand()
         else:
             newNetSceneRect = newNet.sceneBoundingRect().adjusted(-self.snapGrid,
@@ -503,7 +505,9 @@ class schematicScene(editorScene):
     def _updateNets(self, nets_to_remove: set, nets_to_add: set, name_source_net):
         """Helper to update nets in scene"""
         for net in nets_to_remove:
-            self.removeItem(net)
+            # Only remove if the net is actually in this scene
+            if net.scene() == self:
+                self.removeItem(net)
         for net in nets_to_add:
             self.addItem(net)
             net.mergeNetName(name_source_net)
@@ -546,7 +550,10 @@ class schematicScene(editorScene):
             points.extend(net.sceneEndPoints)
 
         furthestPoints = self.findFurthestPoints(points)
-        mergedNet = snet.schematicNet(*furthestPoints, width=busExists)
+        # Snap furthest points to grid to ensure merged net is properly aligned
+        p1 = self.snapToGrid(furthestPoints[0])
+        p2 = self.snapToGrid(furthestPoints[1])
+        mergedNet = snet.schematicNet(p1, p2, width=busExists)
 
         processedNets = parallelNets | {inputNet}
         for net in processedNets:
@@ -583,8 +590,10 @@ class schematicScene(editorScene):
         is_selected = inputNet.isSelected()
 
         for i in range(len(orderedPoints) - 1):
-            splitNet = snet.schematicNet(orderedPoints[i], orderedPoints[i + 1],
-                                         inputNet.width)
+            # Snap points to grid to ensure split nets are properly aligned
+            p1 = self.snapToGrid(orderedPoints[i])
+            p2 = self.snapToGrid(orderedPoints[i + 1])
+            splitNet = snet.schematicNet(p1, p2, inputNet.width)
             if not splitNet.draftLine.isNull():
                 if is_selected:
                     splitNet.setSelected(True)
@@ -595,8 +604,8 @@ class schematicScene(editorScene):
     def findSnapPoint(self, eventLoc: QPoint,
                       ignoredSet: set[snet.schematicNet]) -> QPoint:
         snapRect = QRect(eventLoc.x() - self.snapTuple[0],
-                         eventLoc.y() - self.snapTuple[1], 4 * self.snapTuple[0],
-                         4 * self.snapTuple[1], )
+                         eventLoc.y() - self.snapTuple[1], 2 * self.snapTuple[0],
+                         2 * self.snapTuple[1], )
         snapPoints = self.findConnectPoints(snapRect, ignoredSet)
 
         if self._newNet:
@@ -890,6 +899,12 @@ class schematicScene(editorScene):
                                           self.snapTuple[0])
             firstPoint = QPoint(firstPointX, start.y())
             secondPoint = QPoint(firstPointX, end.y())
+
+            # Snap all points to grid to ensure wire segments are properly aligned
+            start = self.snapToGrid(start)
+            firstPoint = self.snapToGrid(firstPoint)
+            secondPoint = self.snapToGrid(secondPoint)
+            end = self.snapToGrid(end)
 
             # Create wire segments
             lines = []

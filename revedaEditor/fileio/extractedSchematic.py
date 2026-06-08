@@ -573,14 +573,27 @@ class klayoutSchematicGenerator:
         else:
             side = "top" if dy < 0 else "bottom"
 
+        scene = self._getScene()
         if side == "left":
-            pinNetItem = snet.schematicNet(pinScenePos, pinScenePos - QPoint(30, 0), 1, 0)
+            endPos = pinScenePos - QPoint(30, 0)
+            if scene:
+                endPos = scene.snapToGrid(endPos)
+            pinNetItem = snet.schematicNet(pinScenePos, endPos, 1, 0)
         elif side == "right":
-            pinNetItem = snet.schematicNet(pinScenePos, pinScenePos + QPoint(30, 0), 1, 0)
+            endPos = pinScenePos + QPoint(30, 0)
+            if scene:
+                endPos = scene.snapToGrid(endPos)
+            pinNetItem = snet.schematicNet(pinScenePos, endPos, 1, 0)
         elif side == "top":
-            pinNetItem = snet.schematicNet(pinScenePos, pinScenePos - QPoint(0, 30), 1, 0)
+            endPos = pinScenePos - QPoint(0, 30)
+            if scene:
+                endPos = scene.snapToGrid(endPos)
+            pinNetItem = snet.schematicNet(pinScenePos, endPos, 1, 0)
         else:  # bottom
-            pinNetItem = snet.schematicNet(pinScenePos, pinScenePos + QPoint(0, 30), 1, 0)
+            endPos = pinScenePos + QPoint(0, 30)
+            if scene:
+                endPos = scene.snapToGrid(endPos)
+            pinNetItem = snet.schematicNet(pinScenePos, endPos, 1, 0)
 
         terminals = device.get("terminals", {})
         name = terminals.get(pinItem.pinName) if isinstance(terminals, dict) else None

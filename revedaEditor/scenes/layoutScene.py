@@ -787,9 +787,12 @@ class layoutScene(editorScene):
 
             # Set position - use schematic location as starting point
             # Convert grid units to scene coordinates
-            loc = sch_inst["loc"]
+            newInstBR = new_inst.boundingRect()
+            loc: tuple[int, int] = (sch_inst['loc'][0]*10+newInstBR.width(), sch_inst['loc'][1]*10+newInstBR.height())
+
             if isinstance(loc, (list, tuple)) and len(loc) >= 2:
                 new_inst.setPos(loc[0], loc[1])
+
 
             # Store SDL metadata for tracking
             new_inst._sdlSource = {
