@@ -1,26 +1,13 @@
-#    “Commons Clause” License Condition v1.0
-#   #
-#    The Software is provided to you by the Licensor under the License, as defined
-#    below, subject to the following condition.
+# 
+# Revolution EDA
+# 
+# Copyright (c) 2026 Revolution Semiconductor
 #
-#    Without limiting other conditions in the License, the grant of rights under the
-#    License will not include, and the License does not grant to you, the right to
-#    Sell the Software.
-#
-#    For purposes of the foregoing, “Sell” means practicing any or all of the rights
-#    granted to you under the License to provide to third parties, for a fee or other
-#    consideration (including without limitation fees for hosting) a product or service whose value
-#    derives, entirely or substantially, from the functionality of the Software. Any
-#    license notice or attribution required by the License must also include this
-#    Commons Clause License Condition notice.
-#
-#   Add-ons and extensions developed for this software may be distributed
-#   under their own separate licenses.
-#
-#    Software: Revolution EDA
-#    License: Mozilla Public License 2.0
-#    Licensor: Revolution Semiconductor (Registered in the Netherlands)
-#
+# This Source Code Form is subject to the terms of the
+# Mozilla Public License, v. 2.0.
+# If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+##
 from __future__ import annotations
 
 # import json
@@ -428,9 +415,13 @@ class layoutEditor(edw.editorWindow):
 
     def checkSaveCell(self):
         # need to add checks
+        if getattr(self, '_isPcellPreview', False):
+            return
         self.centralW.scene.saveLayoutCell(self.file)
 
     def saveCell(self):
+        if getattr(self, '_isPcellPreview', False):
+            return
         self.centralW.scene.saveLayoutCell(self.file)
 
     def loadLayout(self):
@@ -544,10 +535,11 @@ class layoutEditor(edw.editorWindow):
         dialog = fd.selectCellViewDialog(self, libraryModel)
 
         if dialog.exec() == QDialog.DialogCode.Accepted:
+
             libItem = libm.getLibItem(libraryModel, dialog.libNamesCB.currentText())
             cellItem = libm.getCellItem(libItem, dialog.cellCB.currentText())
             viewItem = libm.getViewItem(cellItem, dialog.viewCB.currentText())
-
+            self.centralW.scene.clear()
             # Call scene to load schematic instances
             self.centralW.scene.loadSchematicInstances(
                 ddef.viewItemTuple(libItem, cellItem, viewItem)
@@ -576,7 +568,8 @@ class layoutEditor(edw.editorWindow):
 
     def closeEvent(self, event):
         try:
-            self.centralW.scene.saveLayoutCell(self.file)
+            if not getattr(self, '_isPcellPreview', False):
+                self.centralW.scene.saveLayoutCell(self.file)
             cellViewNameTuple = ddef.viewNameTuple(
                 self.libName, self.cellName, self.viewName
             )
@@ -641,7 +634,8 @@ class layoutContainer(edw.editorContainer):
         return laylyr.pdkAllLayers[0]
 
     def selectLayer(self, layerName: str, layerPurpose: str):
-        self.scene.selectEdLayer = self.findSelectedLayer(layerName, layerPurpose)
+        selectedLayer = self.findSelectedLayer(layerName, layerPurpose)
+        self.scene.selectEdLayer = selectedLayer
 
     def layerSelectableChange(
         self, layerName: str, layerPurpose: str, layerSelectable: bool

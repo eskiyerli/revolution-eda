@@ -1,9 +1,16 @@
-#    "Commons Clause" License Condition v1.0
+# 
+# Revolution EDA
+# 
+# Copyright (c) 2026 Revolution Semiconductor
 #
-#    Software: Revolution EDA
-#    License: Mozilla Public License 2.0
-#    Licensor: Revolution Semiconductor (Registered in the Netherlands)
+# This Source Code Form is subject to the terms of the
+# Mozilla Public License, v. 2.0.
+# If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+##
 
+
+import importlib
 import json
 import os
 import platform
@@ -15,8 +22,10 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QUrl, QThread, Signal
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
+    QApplication,
     QHBoxLayout,
     QLabel,
     QTableWidget,
@@ -32,8 +41,45 @@ from PySide6.QtWidgets import (
 )
 
 
+class DownloadThread(QThread):
+    progress = Signal(int)
+    finished = Signal(bytes)
+    error = Signal(str)
+    
+    def __init__(self, url: str):
+        super().__init__()
+        self.url = url
+    
+    def run(self):
+        try:
+            with urllib.request.urlopen(self.url) as resp:
+                content_length = resp.headers.get('Content-Length')
+                total_size = int(content_length) if content_length else 0
+                downloaded = 0
+                chunks = []
+                
+                while True:
+                    chunk = resp.read(8192)
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+                    downloaded += len(chunk)
+                    
+                    if total_size > 0:
+                        progress = int((downloaded / total_size) * 100)
+                        self.progress.emit(min(progress, 100))
+                    else:
+                        # If no content length, show indeterminate progress
+                        self.progress.emit(0)
+                
+                content = b''.join(chunks)
+                self.finished.emit(content)
+        except Exception as e:
+            self.error.emit(str(e))
+
+
 class PluginRegistryWindow(QMainWindow):
-    DEFAULT_REGISTRY = "https://raw.githubusercontent.com/eskiyerli/revolutionEDA_plugins/main/plugins.json"
+    DEFAULT_REGISTRY = "https://plugins.reveda.eu/plugins.json"
 
     def __init__(
         self,
@@ -161,6 +207,9 @@ class PluginRegistryWindow(QMainWindow):
             url_text = f"Binary URLs: {entry.get('binary_urls', {})}"
         else:
             url_text = f"URL: {entry.get('url', '')}"
+        payment_url = entry.get('payment_url', '')
+        if payment_url:
+            url_text += f"\nCheckout: {payment_url}"
         text = f"{entry.get('description', '')}\n\nType: {entry.get('type', 'source').title()}\nVersion: {entry.get('version', 'N/A')}\nLicense: {entry.get('license', 'Unknown')}\n{url_text}"
         self.desc.setPlainText(text)
 
@@ -196,7 +245,13 @@ class PluginRegistryWindow(QMainWindow):
             if ret == QMessageBox.StandardButton.Yes:
                 self._install_entry(entry)
 
+
     def _install_entry(self, entry: dict):
+        # Commercial plugins need the compiled revedaLicense module
+        if self._plugin_requires_license(entry):
+            if not self._ensure_revedaLicense():
+                return
+
         name = re.sub(r"[^A-Za-z0-9_.-]", "_", entry.get("name", "plugin"))
         url = (
             self._get_binary_url(entry)
@@ -220,12 +275,25 @@ class PluginRegistryWindow(QMainWindow):
                 return
             shutil.rmtree(target_subdir, ignore_errors=True)
 
+        # Reset and show progress bar
+        self.progress.setValue(0)
+        self.progress.setVisible(True)
+        self.download_btn.setEnabled(False)
+        
+        # Create download thread
+        self.download_thread = DownloadThread(url)
+        self.download_thread.progress.connect(self.progress.setValue)
+        self.download_thread.finished.connect(lambda content: self._on_download_complete(content, url, target_subdir))
+        self.download_thread.error.connect(self._on_download_error)
+        self.download_thread.start()
+    
+    def _on_download_complete(self, content: bytes, url: str, target_subdir: Path):
+        """Handle successful download completion."""
         try:
-            with urllib.request.urlopen(url) as resp:
-                tmp_fd, tmp_path = tempfile.mkstemp()
-                os.close(tmp_fd)
-                with open(tmp_path, "wb") as out:
-                    out.write(resp.read())
+            tmp_fd, tmp_path = tempfile.mkstemp()
+            os.close(tmp_fd)
+            with open(tmp_path, "wb") as out:
+                out.write(content)
 
             self.pluginsDir.mkdir(parents=True, exist_ok=True)
             if url.lower().endswith(".zip"):
@@ -238,9 +306,65 @@ class PluginRegistryWindow(QMainWindow):
                 )
 
             os.remove(tmp_path)
+            self.progress.setValue(100)
             self.fetch_registry()
+            # Track successful download
+            entry = self._get_current_entry()
+            if entry:
+                self._track_download(entry, url)
         except Exception as e:
             QMessageBox.critical(self, "Error", str(e))
+        finally:
+            self.download_btn.setEnabled(True)
+            # Hide progress bar after a delay
+            QApplication.instance().processEvents()
+            
+    def _on_download_error(self, error_msg: str):
+        """Handle download error."""
+        QMessageBox.critical(self, "Download Error", f"Failed to download: {error_msg}")
+        self.download_btn.setEnabled(True)
+        self.progress.setValue(0)
+    
+    def _get_current_entry(self) -> dict | None:
+        """Get the currently selected registry entry."""
+        current_row = self.tableWidget.currentRow()
+        if current_row < 0:
+            return None
+        item = self.tableWidget.item(current_row, 0)
+        if not item:
+            return None
+        return item.data(Qt.ItemDataRole.UserRole)
+
+    def _track_download(self, entry: dict, url: str):
+        """Emit analytics event for plugin download/install."""
+        try:
+            import urllib.request
+            import json
+
+            payload = json.dumps({
+                "api_key": "phc_x4FKMrfv531eW4oLBuMExK6swzZ73yDHlLOIOmkVpUT",  # Replace with your PostHog project API key
+                "event": "plugin_downloaded",
+                "properties": {
+                    "plugin_name": entry.get("name"),
+                    "plugin_version": entry.get("version"),
+                    "plugin_license": entry.get("license"),
+                    "download_url": url,
+                    "platform": f"{platform.system()}-{platform.machine()}",
+                    "python_version": f"{sys.version_info.major}.{sys.version_info.minor}",
+                    "distinct_id": f"reveda_{platform.node()}",
+                }
+            }).encode()
+
+            req = urllib.request.Request(
+                "https://eu.i.posthog.com/capture/",
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=5):
+                pass
+        except Exception:
+            pass  # silently ignore analytics failures
 
     def _get_binary_url(self, entry: dict) -> str | None:
         binary_urls = entry.get("binary_urls", {})
@@ -257,6 +381,146 @@ class PluginRegistryWindow(QMainWindow):
                 return binary_urls[key]
 
         return entry.get("url")
+
+    @staticmethod
+    def _plugin_requires_license(entry: dict) -> bool:
+        """Return True if the plugin entry requires a commercial license."""
+        if entry.get("license_required", False):
+            return True
+        return entry.get("license", "") in ("Commercial", "Proprietary", "Paid")
+
+    def _app_root(self) -> Path:
+        """Return the Revolution EDA application root directory.
+
+        If the installation directory is read-only (e.g., AppImage mount),
+        returns the current working directory for writable files.
+        """
+        app = QApplication.instance()
+        if app and hasattr(app, "basePath"):
+            root = app.basePath
+            # Check if basePath is writable (not in a read-only AppImage)
+            try:
+                test_file = root / ".writetest"
+                test_file.touch()
+                test_file.unlink()
+                return root
+            except OSError:
+                # Fallback to current working directory for writable files
+                return Path.cwd()
+        # Fallback: parent of revedaEditor package
+        return Path(__file__).resolve().parents[2]
+
+    def _revedaLicense_url(self) -> str | None:
+        """Construct the download URL for the compiled revedaLicense extension."""
+        system = platform.system().lower()
+        major = sys.version_info.major
+        minor = sys.version_info.minor
+        base = "https://plugins.reveda.eu/revedaLicense"
+
+        if system == "linux":
+            arch = platform.machine().lower()
+            return f"{base}/revedaLicense.cpython-{major}{minor}-{arch}-linux-gnu.so"
+        elif system == "windows":
+            return f"{base}/revedaLicense.cp{major}{minor}-win_amd64.pyd"
+        elif system == "darwin":
+            return f"{base}/revedaLicense.cpython-{major}{minor}-darwin.so"
+        return None
+
+    def _download_revedaLicense(self) -> bool:
+        """Download and install the compiled revedaLicense extension.
+
+        Returns True on success, False otherwise.
+        """
+        url = self._revedaLicense_url()
+        if not url:
+            QMessageBox.warning(
+                self,
+                "Unsupported Platform",
+                "Automatic download of the license module is not available for your platform.\n"
+                "Please install the revedaLicense module manually.",
+            )
+            return False
+
+        # Reset and show progress bar
+        self.progress.setValue(0)
+        self.progress.setVisible(True)
+        self.download_btn.setEnabled(False)
+        
+        # Create download thread
+        self.license_download_thread = DownloadThread(url)
+        self.license_download_thread.progress.connect(self.progress.setValue)
+        self.license_download_thread.finished.connect(self._on_license_download_complete)
+        self.license_download_thread.error.connect(self._on_license_download_error)
+        self.license_download_thread.start()
+        
+        # Wait for completion (blocking since we need to return result)
+        self.license_download_thread.wait()
+        return hasattr(self, '_license_download_success') and self._license_download_success
+    
+    def _on_license_download_complete(self, content: bytes):
+        """Handle successful license download completion."""
+        url = self._revedaLicense_url()
+        app_root = self._app_root()
+        filename = Path(url).name
+        target = app_root / filename
+
+        try:
+            target.write_bytes(content)
+            # Ensure the extension is executable on Unix
+            if platform.system() != "Windows":
+                target.chmod(target.stat().st_mode | 0o755)
+            # Invalidate import caches so the new module can be found
+            importlib.invalidate_caches()
+            self._license_download_success = True
+        except Exception as e:
+            QMessageBox.critical(
+                self, "Install Error", f"Failed to write revedaLicense module:\n{e}"
+            )
+            self._license_download_success = False
+        finally:
+            self.download_btn.setEnabled(True)
+    
+    def _on_license_download_error(self, error_msg: str):
+        """Handle license download error."""
+        if "404" in error_msg:
+            url = self._revedaLicense_url()
+            QMessageBox.warning(
+                self,
+                "License Module Not Found",
+                f"The license module was not found on the server for your platform.\n"
+                f"URL: {url}\n\n"
+                f"Please contact support or install the module manually.",
+            )
+        else:
+            QMessageBox.critical(
+                self, "Download Error", f"Failed to download revedaLicense: {error_msg}"
+            )
+        self._license_download_success = False
+        self.download_btn.setEnabled(True)
+        self.progress.setValue(0)
+
+    def _ensure_revedaLicense(self) -> bool:
+        """Ensure the compiled revedaLicense module is available.
+
+        Returns True if already present or successfully downloaded.
+        """
+        try:
+            import revedaLicense  # noqa: F401
+            return True
+        except ImportError:
+            pass
+
+        ret = QMessageBox.question(
+            self,
+            "License Module Required",
+            "The revedaLicense module is required for commercial plugins but is not installed.\n\n"
+            "Would you like to download and install it now?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if ret != QMessageBox.StandardButton.Yes:
+            return False
+
+        return self._download_revedaLicense()
 
     def _on_uninstall(self):
         current_row = self.tableWidget.currentRow()

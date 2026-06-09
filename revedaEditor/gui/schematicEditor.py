@@ -1,26 +1,13 @@
-#    “Commons Clause” License Condition v1.0
-#   #
-#    The Software is provided to you by the Licensor under the License, as defined
-#    below, subject to the following condition.
+# 
+# Revolution EDA
+# 
+# Copyright (c) 2026 Revolution Semiconductor
 #
-#    Without limiting other conditions in the License, the grant of rights under the
-#    License will not include, and the License does not grant to you, the right to
-#    Sell the Software.
-#
-#    For purposes of the foregoing, “Sell” means practicing any or all of the rights
-#    granted to you under the License to provide to third parties, for a fee or other
-#    consideration (including without limitation fees for hosting) a product or service whose value
-#    derives, entirely or substantially, from the functionality of the Software. Any
-#    license notice or attribution required by the License must also include this
-#    Commons Clause License Condition notice.
-#
-#   Add-ons and extensions developed for this software may be distributed
-#   under their own separate licenses.
-#
-#    Software: Revolution EDA
-#    License: Mozilla Public License 2.0
-#    Licensor: Revolution Semiconductor (Registered in the Netherlands)
-#
+# This Source Code Form is subject to the terms of the
+# Mozilla Public License, v. 2.0.
+# If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+##
 
 """Schematic editor module for Revolution EDA.
 
@@ -53,7 +40,7 @@ import revedaEditor.gui.propertyDialogues as pdlg
 import revedaEditor.gui.toolsDialogues as tdlg
 import revedaEditor.scenes.schematicScene as schscn
 from revedaEditor.gui.editorFactory import EditorFactory
-from revedaEditor.netlisting import spectreNetlist, xyceNetlist
+from revedaEditor.netlisting import spectreNetlist, xyceNetlist, vacaskNetlist
 
 if TYPE_CHECKING:
     pass
@@ -125,7 +112,7 @@ class schematicEditor(edw.editorWindow):
         super()._addActions()
         # edit menu
         self.menuEdit.addAction(self.netNameAction)
-        self.menuEdit.removeAction(self.stretchAction)
+        # self.menuEdit.removeAction(self.stretchAction)
 
         self.propertyMenu = self.menuEdit.addMenu("Properties")
         self.propertyMenu.addAction(self.objPropAction)
@@ -227,7 +214,7 @@ class schematicEditor(edw.editorWindow):
         self.createPinAction.setShortcut(Qt.Key.Key_P)
         self.goDownAction.setShortcut("Shift+E")
         # unset stretch shortcut for schematic editor
-        self.stretchAction.setShortcut("")
+        # self.stretchAction.setShortcut("")
 
     def createNetClick(self, s):
         self.centralW.scene.editModes.setMode("drawWire")
@@ -303,7 +290,7 @@ class schematicEditor(edw.editorWindow):
             self.logger.error(f"Error during loading schematic for {self.cellName}: {e}")
 
     def createConfigView(self, configItem: libb.viewItem, newConfigDict: dict,
-                         processedCells: set):
+                         processedCells: set, savedSelections: dict = None):
         """Recursively build configuration view by traversing schematic hierarchy.
 
         Walks through all symbol instances in the schematic and determines
@@ -314,7 +301,11 @@ class schematicEditor(edw.editorWindow):
             configItem: The configuration view item being created.
             newConfigDict: Dictionary to populate with cell->view mappings.
             processedCells: Set tracking already-processed cells to avoid cycles.
+            savedSelections: Dict of cellName->viewName for preserving user selections.
         """
+        if savedSelections is None:
+            savedSelections = {}
+        
         sceneSymbolSet = self.centralW.scene.findSceneSymbolSet()
         for item in sceneSymbolSet:
             libItem = libm.getLibItem(self.libraryView.libraryModel, item.libraryName)
@@ -329,6 +320,13 @@ class schematicEditor(edw.editorWindow):
             if itemCellTuple not in processedCells:
                 if cellLine := newConfigDict.get(cellItem.cellName):
                     netlistableViews = [cellLine[1]]
+                
+                # Check if user had previously selected a view for this cell
+                if cellItem.cellName in savedSelections:
+                    savedView = savedSelections[cellItem.cellName]
+                    if savedView in viewNames:
+                        netlistableViews = [savedView]
+                
                 for viewName in netlistableViews:
                     match viewDict[viewName].viewType:
                         case "schematic":
@@ -340,12 +338,13 @@ class schematicEditor(edw.editorWindow):
                                                            self.libraryView, )
                             schematicObj.loadSchematic()
                             schematicObj.createConfigView(configItem, newConfigDict,
-                                                          processedCells)
+                                                          processedCells, savedSelections)
                             break
                         case _:
                             newConfigDict[cellItem.cellName] = [libItem.libraryName,
                                                                 viewName,
                                                                 itemSwitchViewList, ]
+                            # Don't traverse into non-schematic views
                             break
                 processedCells.add(itemCellTuple)
 
@@ -404,7 +403,14 @@ class schematicEditor(edw.editorWindow):
         topSubCkt = dlg.topAsSubcktCheckBox.isChecked()
         netlistFormat = dlg.netlistFormatCombo.currentText()
 
-        netlistObj = self.createNetlistObject(self.viewItem, netlistFilePath, topSubCkt, netlistFormat)
+        # Find the viewItem for the selected view name instead of using self.viewItem
+        selectedViewItem = libm.findViewItem(self.libraryView.libraryModel, self.libName,
+                                            self.cellName, selectedViewName)
+        if not selectedViewItem:
+            self._scene.logger.error(f"View {selectedViewName} not found for {self.libName}/{self.cellName}")
+            return
+
+        netlistObj = self.createNetlistObject(selectedViewItem, netlistFilePath, topSubCkt, netlistFormat)
 
         if netlistObj:
             with self.measureDuration():
@@ -413,17 +419,36 @@ class schematicEditor(edw.editorWindow):
     def createNetlistObject(self, viewItem: libb.viewItem, filePath: pathlib.Path,
                             topSubCkt: bool, netlistFormat: str = "Spice/Xyce"):
         # Select the appropriate netlister class based on format
-        netlisterClass = xyceNetlist if netlistFormat == "Spice/Xyce" else spectreNetlist
+        if netlistFormat == "Spice/Xyce":
+            netlisterClass = xyceNetlist
+        elif netlistFormat == "Spectre":
+            netlisterClass = spectreNetlist
+        elif netlistFormat == "VACASK":
+            netlisterClass = vacaskNetlist
+        else:
+            netlisterClass = xyceNetlist  # Default fallback
 
         if viewItem.viewType == "schematic":
             return netlisterClass(self, filePath, False, topSubCkt)
         elif viewItem.viewType == "config":
+            print(f"DEBUG: Config view detected - viewType={viewItem.viewType}")
             netlistObj = netlisterClass(self, filePath, True, topSubCkt)
             configItem = libm.findViewItem(self.libraryView.libraryModel, self.libName,
                                            self.cellName, viewItem.viewName)
+            print(f"DEBUG: configItem={configItem}")
             if configItem:
-                with configItem.data(Qt.ItemDataRole.UserRole + 2).open(mode="r") as f:
-                    netlistObj.configDict = json.load(f)[2]
+                configPath = configItem.data(Qt.ItemDataRole.UserRole + 2)
+                print(f"DEBUG: configPath={configPath}")
+                if configPath:
+                    with configPath.open(mode="r") as f:
+                        jsonData = json.load(f)
+                        print(f"DEBUG: jsonData={jsonData}")
+                        netlistObj.configDict = jsonData[2]
+                        print(f"Loaded config dict for netlisting: {netlistObj.configDict}")
+                else:
+                    print(f"DEBUG: configPath is None")
+            else:
+                print(f"DEBUG: configItem not found")
             return netlistObj
         return None
 
@@ -495,11 +520,14 @@ class schematicEditor(edw.editorWindow):
         return {pin.pinName: pin for pin in schematic_pins}
 
     def _draw_pins(self, symbol_scene, pin_names: list[str], locations: list[QPoint],
-                   offsets: QPoint, pin_map: dict) -> None:
+                   offsets: QPoint, pin_map: dict, default_dir: str) -> None:
         """Draw pins and their connecting lines."""
         for name, loc in zip(pin_names, locations):
             symbol_scene.lineDraw(loc, loc + offsets)
-            symbol_scene.addItem(pin_map[name].toSymbolPin(loc))
+            if name in pin_map:
+                symbol_scene.addItem(pin_map[name].toSymbolPin(loc))
+            else:
+                symbol_scene.addItem(shp.symbolPin(loc, name, default_dir, "Signal"))
 
     def generateSymbol(self, symbolViewName: str) -> None:
         # Get schematic pins and categorize them
@@ -557,22 +585,23 @@ class schematicEditor(edw.editorWindow):
         # Calculate pin locations and draw pins
         pin_configs = [(pin_names['left'],
                         [QPoint(-stub_length, (i + 1) * pin_distance) for i in
-                         range(len(pin_names['left']))], QPoint(stub_length, 0)),
+                         range(len(pin_names['left']))], QPoint(stub_length, 0), 'Input'),
                        (pin_names['right'],
                         [QPoint(rect_x_dim + stub_length, (i + 1) * pin_distance) for i in
-                         range(len(pin_names['right']))], QPoint(-stub_length, 0)),
+                         range(len(pin_names['right']))], QPoint(-stub_length, 0), 'Output'),
                        (pin_names['top'],
                         [QPoint((i + 1) * pin_distance, -stub_length) for i in
-                         range(len(pin_names['top']))], QPoint(0, stub_length)),
+                         range(len(pin_names['top']))], QPoint(0, stub_length), 'Inout'),
                        (pin_names['bottom'],
                         [QPoint((i + 1) * pin_distance, rect_y_dim + stub_length) for i in
-                         range(len(pin_names['bottom']))], QPoint(0, -stub_length))]
+                         range(len(pin_names['bottom']))], QPoint(0, -stub_length), 'Inout')]
 
-        for names, locations, offset in pin_configs:
-            self._draw_pins(sceneSymbol, names, locations, offset, pin_map)
+        for names, locations, offset, default_dir in pin_configs:
+            self._draw_pins(sceneSymbol, names, locations, offset, pin_map, default_dir)
 
         # Add symbol attributes
-        all_pin_names = [pin.pinName for pin in schematic_pins]
+        all_pin_names = (pin_names['left'] + pin_names['right'] +
+                         pin_names['top'] + pin_names['bottom'])
         sceneSymbol.attributeList = [
             symenc.symbolAttribute("SpiceNetlistLine", "X@instName %pinOrder @cellName"),
             symenc.symbolAttribute("SpectreNetlistLine",

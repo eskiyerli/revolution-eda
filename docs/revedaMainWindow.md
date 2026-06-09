@@ -22,24 +22,71 @@ console area that shows startup messages and logging output.
 
 ## Typical Startup Flow
 
-1. Launch Revolution EDA.
-2. Open the **Library Browser** from `Tools -> Library Browser`.
-3. Create or open a library.
-4. Create a cell and then create or open a cellview such as `schematic`, `symbol`, or
+1. Launch Revolution EDA from the project directory, or use `--project <path>`.
+2. The application loads `.env`, library definitions, and saved state from the project.
+3. Open the **Library Browser** from `Tools -> Library Browser`.
+4. Create or open a library.
+5. Create a cell and then create or open a cellview such as `schematic`, `symbol`, or
    `layout`.
-5. If needed, configure PDKs, plugins, and library registries from the main window menus.
+6. If needed, configure PDKs, plugins, and library registries from the main window menus.
+7. To switch to a different project, use `File -> Open Project...` or `File -> Recent
+   Projects` — the application will restart cleanly with the new configuration.
 
 ## Menu Actions You Will Use Most
 
 ### File Menu
 
-The main window File menu is intentionally minimal.
+The main window File menu manages project-level operations and application lifecycle.
 
-- `File -> Exit`: closes the application.
+- `File -> Open Project...`: Opens a project directory and restarts the application to load
+  the new project's configuration cleanly.
+- `File -> Recent Projects`: Lists the most recently opened project directories (up to 5).
+  Selecting an entry restarts the application pointing at that project.
+- `File -> Exit`: Closes the application.
 
 | Action | Shortcut | Notes |
 | --- | --- | --- |
+| `File -> Open Project...` | `Ctrl+Shift+O` | Opens a project directory (triggers restart). |
+| `File -> Recent Projects` | — | Quick access to previously opened projects. |
 | `File -> Exit` | `Ctrl+Q` | Closes Revolution EDA. |
+
+#### Project Management
+
+Revolution EDA uses a **project directory** concept. A project directory contains:
+
+- `.env` — environment variables (PDK path, plugin path, VA module path)
+- `library.json` — library definitions for the project
+- `reveda.conf` — saved application state (window geometry, view lists, thread pool settings)
+
+**How project loading works:**
+
+1. On startup, Revolution EDA opens the project directory specified by the `--project`
+   command-line argument, or the current working directory if no argument is given.
+2. The `.env` file is loaded (copied from `.env.example` if missing), setting paths for
+   PDK, plugins, and other resources.
+3. Library definitions are loaded from `library.json`.
+4. Application state is restored from `reveda.conf`.
+
+**Switching projects:**
+
+When you select a different project directory via `File -> Open Project...` or the
+`Recent Projects` menu, the application **saves the current project state and restarts**
+with the new project directory. This guarantees that PDKs, plugins, and all imported modules
+are loaded cleanly without stale state from the previous project.
+
+**Recent projects** are persisted in `~/.reveda/reveda_settings.ini` and survive application
+restarts.
+
+**Command-line usage:**
+
+```bash
+# Open a specific project directory
+reveda --project /path/to/my/project
+
+# Or simply run from the project directory
+cd /path/to/my/project
+reveda
+```
 
 ### Tools Menu
 

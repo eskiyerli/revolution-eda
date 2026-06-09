@@ -1,26 +1,13 @@
-#    “Commons Clause” License Condition v1.0
-#   #
-#    The Software is provided to you by the Licensor under the License, as defined
-#    below, subject to the following condition.
+# 
+# Revolution EDA
+# 
+# Copyright (c) 2026 Revolution Semiconductor
 #
-#    Without limiting other conditions in the License, the grant of rights under the
-#    License will not include, and the License does not grant to you, the right to
-#    Sell the Software.
-#
-#    For purposes of the foregoing, “Sell” means practicing any or all of the rights
-#    granted to you under the License to provide to third parties, for a fee or other
-#    consideration (including without limitation fees for hosting) a product or service whose value
-#    derives, entirely or substantially, from the functionality of the Software. Any
-#    license notice or attribution required by the License must also include this
-#    Commons Clause License Condition notice.
-#
-#   Add-ons and extensions developed for this software may be distributed
-#   under their own separate licenses.
-#
-#    Software: Revolution EDA
-#    License: Mozilla Public License 2.0
-#    Licensor: Revolution Semiconductor (Registered in the Netherlands)
-#
+# This Source Code Form is subject to the terms of the
+# Mozilla Public License, v. 2.0.
+# If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+##
 
 # Load symbol and maybe later schematic from json file.
 # import pathlib
@@ -28,7 +15,7 @@
 import functools
 import json
 import pathlib
-from typing import Any, List
+from typing import Any, Dict, List, Optional, Union
 
 import orjson
 from PySide6.QtCore import QPoint, QLineF, QRect
@@ -62,7 +49,7 @@ class symbolItems:
         self.scene = scene
         self.snapTuple = scene.snapTuple
 
-    def create(self, item: dict):
+    def create(self, item: dict) -> Optional[shp.symbolShape]:
         """
         Create symbol items from json file.
         """
@@ -86,7 +73,7 @@ class symbolItems:
                     return self.createPolygonItem(item)
 
     @staticmethod
-    def createRectItem(item: dict):
+    def createRectItem(item: dict) -> shp.symbolRectangle:
         """
         Create symbol items from json file.
         """
@@ -101,7 +88,7 @@ class symbolItems:
         return rect
 
     @staticmethod
-    def createCircleItem(item: dict):
+    def createCircleItem(item: dict) -> shp.symbolCircle:
         centre = QPoint(item["cen"][0], item["cen"][1])
         end = QPoint(item["end"][0], item["end"][1])
         circle = shp.symbolCircle(centre, end)  # note that we are using grid
@@ -115,7 +102,7 @@ class symbolItems:
         return circle
 
     @staticmethod
-    def createArcItem(item: dict):
+    def createArcItem(item: dict) -> shp.symbolArc:
         start = QPoint(item["st"][0], item["st"][1])
         end = QPoint(item["end"][0], item["end"][1])
 
@@ -128,7 +115,7 @@ class symbolItems:
         return arc
 
     @staticmethod
-    def createLineItem(item: dict):
+    def createLineItem(item: dict) -> shp.symbolLine:
         start = QPoint(item["st"][0], item["st"][1])
         end = QPoint(item["end"][0], item["end"][1])
 
@@ -139,7 +126,7 @@ class symbolItems:
         return line
 
     @staticmethod
-    def createPinItem(item: dict):
+    def createPinItem(item: dict) -> shp.symbolPin:
         start = QPoint(item["st"][0], item["st"][1])
         pin = shp.symbolPin(start, item["nam"], item["pd"], item["pt"])
         pin.setPos(QPoint(item["loc"][0], item["loc"][1]))
@@ -148,7 +135,7 @@ class symbolItems:
         return pin
 
     @staticmethod
-    def createLabelItem(item: dict):
+    def createLabelItem(item: dict) -> lbl.symbolLabel:
         start = QPoint(item["st"][0], item["st"][1])
         label = lbl.symbolLabel(
             start,
@@ -167,7 +154,7 @@ class symbolItems:
         return label
 
     @staticmethod
-    def createTextItem(item: dict):
+    def createTextItem(item: dict) -> shp.text:
         start = QPoint(item["st"][0], item["st"][1])
         text = shp.text(
             start,
@@ -182,7 +169,7 @@ class symbolItems:
         return text
 
     @staticmethod
-    def createPolygonItem(item: dict):
+    def createPolygonItem(item: dict) -> shp.symbolPolygon:
         pointsList = [QPoint(point[0], point[1]) for point in item["ps"]]
         polygon = shp.symbolPolygon(pointsList)
         polygon.flipTuple = item.get('fl', (1, 1))
@@ -202,7 +189,7 @@ class symbolItems:
         rect.setPos(QPoint(item["pos"][0], item["pos"][1]))
         return rect
 
-    def unknownItem(self):
+    def unknownItem(self) -> QGraphicsRectItem:
         rectItem = QGraphicsRectItem(QRect(0, 0, *self.snapTuple))
         rectItem.setVisible(False)
         return rectItem
@@ -276,6 +263,9 @@ class schematicItems:
         start = QPoint(item["st"][0], item["st"][1])
         end = QPoint(item["end"][0], item["end"][1])
         width = item.get('w', 0)
+        # Snap coordinates to grid to ensure nets are properly aligned
+        start = self.scene.snapToGrid(start)
+        end = self.scene.snapToGrid(end)
         netItem = net.schematicNet(start, end, width)
         netItem.name = item["nam"]
         match item["ns"]:

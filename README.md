@@ -4,7 +4,7 @@
 
 Revolution EDA is a new generation of schematic and symbol editor targeting custom
 integrated circuit design with integrated simulation and plotting capabilities.
-Current version is **0.8.11**.
+Current version is **0.9.0**.
 
 
 ## Core Features
@@ -20,14 +20,15 @@ Current version is **0.8.11**.
    with text editors.
 5. **Configuration-Driven Netlisting**: Config view support similar to commercial tools for
    choosing simulation views.
-6. **Hierarchical Netlisting**: Full hierarchical netlisting capability with Xyce simulator
-   support, including bus and instance array netlisting.
+6. **Hierarchical Netlisting**: Full hierarchical netlisting capability with support for
+   Xyce, Spectre, and VACASK simulators (the support for the last are work-in-progress), 
+   including bus and instance array netlisting.
 7. **Python-Powered Labels**: Labels support Python functions enabling professional PDK
    development.
 8. **Layout Editor**: Full-featured hierarchical layout editor with support for rectangles,
    polygons, paths, pins, labels, vias (single and array), and python-based parametric
    layout cells. Includes layer management (selectability and visibility management), rulers,
-   and GDS import/export capabilities.
+   GDS/OAS import/export, and initial Schematic Driven Layout (SDL) support.
 9. **Comprehensive Library Management**: Familiar library browser for creating, renaming,
    copying, and deleting libraries, cells, and views.
 10. **Library Registry**: Built-in registry UI (`Tools → Libraries`) for downloading
@@ -36,14 +37,22 @@ Current version is **0.8.11**.
     that downloads and installs plugins from the Revolution EDA plugin registry.
 12. **PDK Registry**: GUI for registering and switching PDKs without editing configuration
     files manually.
-13. **AI Terminal**: Natural-language design modification through Claude (Anthropic) and
-    Gemini (Google) AI backends; API keys are stored in encrypted form.
+13. **AI Terminal**: Natural-language design modification through Claude (Anthropic),
+    Gemini (Google), Mistral AI backends and experimental support for AWS Bedrock; API keys are stored in encrypted form.
 14. **Integrated Python Console**: Full Python REPL in the main window for automation and
     scripting against Revolution EDA's internal APIs.
 15. **Stipple Pattern Editor**: Built-in editor for creating custom layer fill stipple
     patterns.
-16. **Persistent Configuration**: Save and restore configuration parameters.
-17. **Comprehensive Logging**: Error, warning, and info message logging to `reveda.log`.
+16. **Persistent Configuration**: Save and restore configuration parameters per project.
+17. **Project Management**: Project-directory-based workflow with per-project `.env`,
+    `library.json`, and `reveda.conf`. Switching projects triggers a clean application
+    restart to ensure PDK and plugin modules are loaded fresh. Recent projects are tracked
+    and accessible from the File menu.
+18. **Constrained Move**: Move items with orthogonal and diagonal constraints across all
+    editors using `Shift+M` shortcuts.
+19. **Plugin Licensing**: Ed255-signature-based license validation for commercial plugins with
+    machine-fingerprint activation and checkout workflow.
+20. **Comprehensive Logging**: Error, warning, and info message logging to `reveda.log`.
 
 ## Plugin Architecture
 
@@ -59,7 +68,7 @@ source-available plugins.
 
 ### Revolution EDA Simulation and Analysis Environment (revedasim)
 
-- **Xyce Simulator Integration**: Full support for Xyce circuit simulator
+- **Multi-Simulator Netlisting**: Full support for Xyce, Spectre, and VACASK circuit simulators
 - **Parameter Sweeps**: Multi-dimensional parameter sweep capabilities
 - **Analysis Types**: Support for DC, AC, transient, noise, and harmonic balance analyses
 - **Output Management**: Flexible output signal selection and processing
@@ -79,8 +88,8 @@ source-available plugins.
 
 - **Natural-Language Design Editing**: Modify schematics, symbols, and layouts using
   conversational requests sent to an AI model.
-- **Multiple AI Backends**: Claude (Anthropic) and Gemini (Google) supported; OpenAI
-  planned.
+- **Multiple AI Backends**: Claude (Anthropic), Gemini (Google), and Mistral AI supported;
+  OpenAI planned.
 - **Secure API Key Storage**: Keys encrypted with Fernet and stored under `~/.reveda/`.
 - **Automatic Backup & Undo**: A backup is created before every AI modification; one-click
   restore via the `undo` command or **Undo Changes** button.
@@ -109,6 +118,12 @@ After installation, start the program with:
 reveda
 ```
 
+To open a specific project directory:
+
+```bash
+reveda --project /path/to/my/project
+```
+
 ### From Source
 
 ```bash
@@ -127,10 +142,17 @@ poetry run reveda
 
 Standalone binaries built with [Nuitka](https://nuitka.net) are available on the
 [GitHub Releases page](https://github.com/eskiyerli/revolution-eda/releases) and do not
-require a separate Python installation.
+require a separate Python installation. The binaries launch as GUI applications without a
+console window.
 
 - **Windows**: `reveda.exe`
 - **Linux**: `reveda.bin` (mark executable with `chmod +x reveda.bin` before running)
+
+Both support the `--project` argument:
+
+```bash
+reveda.exe --project C:\Users\me\designs\my_project
+```
 
 ### PDK Installation
 
@@ -174,33 +196,31 @@ Full documentation is available in the `docs/` directory and covers:
 - [Config Editor](docs/configEditor.md)
 - [AI Terminal](docs/AI_TERMINAL.md)
 - [Plugins](docs/plugins.md)
+- [Labels](docs/labels.md)
+- [Binary Plugins](docs/binaryPlugins.md)
 
 ## License
 
-Revolution EDA is **source-available** software, licensed under the
-[Mozilla Public License 2.0](https://mozilla.org/MPL/2.0/) as modified by the
-[Commons Clause](https://commonsclause.com/) condition.
+Revolution EDA is licensed under the [Mozilla Public License 2.0](https://mozilla.org/MPL/2.0/).
 
-You may use, modify, and distribute the source code freely **except** that you may not
-sell a product or service whose value derives substantially from the functionality of
-this software. This prohibition covers, without limitation:
+This is a free and open-source software license that allows you to:
 
-- Paid hosting or cloud/internet-delivered services built around Revolution EDA
-- Resale of the software itself or a rebranded derivative
+- **Use** the software for any purpose
+- **Modify** the source code
+- **Distribute** the software and your modifications
+- **Sell** products and services that incorporate Revolution EDA
+- **Create commercial derivatives** and rebranded versions
 
-The following activities are **explicitly permitted** and are **not** restricted:
+The MPL 2.0 is a weak copyleft license that requires:
+- Making source code modifications available under the same license
+- Preserving license notices in distributed copies
+- Not using the Revolution Semiconductor trademarks without permission
 
-- Consulting, training, integration, or support engagements where the Software is
-  a tool used in delivering services, not the product being sold
+### Plugin and PDK Licensing
 
-> **Note:** Revolution EDA is not "open source" as defined by the OSI or FSF because of
-> the Commons Clause restriction.
-
-### Commercial Licensing
-
-If your use case falls within the restrictions above and you require a commercial
-license, please contact **Revolution Semiconductor** at
-[info@reveda.eu](mailto:info@reveda.eu) to discuss terms.
+While the main Revolution EDA application uses MPL 2.0, plugins, PDKs (Process Design Kits), and 
+libraries may have their own separate licensing terms. Please check the individual license 
+files for each component.
 
 See [LICENSE.txt](LICENSE.txt) for the full license text.
 

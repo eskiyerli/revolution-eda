@@ -1,26 +1,12 @@
-#    "Commons Clause" License Condition v1.0
-#   #
-#    The Software is provided to you by the Licensor under the License, as defined
-#    below, subject to the following condition.
+# SPDX-License-Identifier: MPL-2.0
 #
-#    Without limiting other conditions in the License, the grant of rights under the
-#    License will not include, and the License does not grant to you, the right to
-#    Sell the Software.
+# Copyright (c) 2024-2026 Revolution Semiconductor (Registered in the Netherlands)
+# This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0.
+# If a copy of the MPL was not distributed with this file, You can obtain one at
+# https://mozilla.org/MPL/2.0/.
 #
-#    For purposes of the foregoing, "Sell" means practicing any or all of the rights
-#    granted to you under the License to provide to third parties, for a fee or other
-#    consideration (including without limitation fees for hosting) a product or service whose value
-#    derives, entirely or substantially, from the functionality of the Software. Any
-#    license notice or attribution required by the License must also include this
-#    Commons Clause License Condition notice.
-#
-#   Add-ons and extensions developed for this software may be distributed
-#   under their own separate licenses.
-#
-#    Software: Revolution EDA
-#    License: Mozilla Public License 2.0
-#    Licensor: Revolution Semiconductor (Registered in the Netherlands)
-#
+# Add-ons and extensions developed for this software may be distributed
+# under their own separate licenses.
 
 """Xyce netlist generation for schematic editors.
 
@@ -184,8 +170,18 @@ class xyceNetlist:
         sceneSymbolSet = schematicScene.findSceneSymbolSet()
         schematicScene.generatePinNetMap(sceneSymbolSet)
         for elementSymbol in sceneSymbolSet:
-            if elementSymbol.symattrs.get("NetlistIgnore") != "1" and (
-                    not elementSymbol.netlistIgnore):
+            # Check for ignore conditions based on mode (consistent with processElementSymbol)
+            should_ignore = False
+            if self._lvsMode:
+                # In LVS mode, check lvsIgnore attribute
+                if elementSymbol.symattrs.get("lvsIgnore") == "1":
+                    should_ignore = True
+            else:
+                # In normal mode, check NetlistIgnore attribute and netlistIgnore flag
+                if elementSymbol.symattrs.get("NetlistIgnore") == "1" or elementSymbol.netlistIgnore:
+                    should_ignore = True
+            
+            if not should_ignore:
                 cellItem = self._getCellItem(elementSymbol.libraryName,
                                              elementSymbol.cellName)
                 netlistView = self.determineNetlistView(elementSymbol, cellItem)
@@ -239,9 +235,19 @@ class xyceNetlist:
             viewTuple = ddef.viewNameTuple(schematicEdObj.libName, schematicEdObj.cellName,
                                            schematicEdObj.viewName)
             self.netlistedViewsSet.add(viewTuple)
-            schematicPinsSet = schematicEdObj.centralW.scene.findSceneSchemPinsSet()
+
+            # Name nets and generate pin-net map first
+            schematicScene = schematicEdObj.centralW.scene
+            schematicScene.nameSceneNets()
+            sceneSymbolSet = schematicScene.findSceneSymbolSet()
+            schematicScene.generatePinNetMap(sceneSymbolSet)
+
+            # Then get schematic pins
+            schematicPinsSet = schematicScene.findSceneSchemPinsSet()
             pinNames = [pin.pinName for pin in schematicPinsSet]
+            self._scene.logger.info(f"Schematic pins found for {schematicEdObj.cellName}: {pinNames}")
             expandedPinsString = self.expandPinNames(pinNames)
+            self._scene.logger.info(f"Expanded pins string for {schematicEdObj.cellName}: {expandedPinsString}")
 
             subcktContent = []
             self.collectSubcircuitContent(schematicEdObj, subcktContent)
@@ -309,8 +315,9 @@ class xyceNetlist:
     def determineNetlistView(self, elementSymbol, cellItem) -> str:
         """Determine which view to use for netlisting a symbol instance.
 
-        Uses configDict in config mode, otherwise iterates through switchViewList
-        to find the first matching view.
+        Priority order:
+        1. configDict (in config mode)
+        2. switchViewList (fallback)
 
         Args:
             elementSymbol: The symbol instance being netlisted.
@@ -326,20 +333,51 @@ class xyceNetlist:
         viewItems = [cellItem.child(row) for row in range(cellItem.rowCount())]
         viewNames = [view.viewName for view in viewItems]
 
-        if self._useConfig:
+        # Priority 2: Use configDict if configured
+        if self._useConfig and self.configDict:
             config_entry = self.configDict.get(elementSymbol.cellName)
-            result = config_entry[1] if config_entry else "symbol"
-        else:
-            # Iterate over the switch view list to determine the appropriate netlist view.
-            for viewName in self._switchViewList:
-                if viewName in viewNames:
-                    result = viewName
-                    break
+            if config_entry:
+                # Verify library name matches
+                if config_entry[0] == elementSymbol.libraryName:
+                    result = config_entry[1]
+                else:
+                    # Library mismatch, fall back to switchViewList
+                    result = self._findViewFromSwitchList(viewNames)
             else:
-                result = "symbol"
+                # Cell not in config, fall back to switchViewList
+                result = self._findViewFromSwitchList(viewNames)
+        else:
+            # Not using config or config dict is empty
+            result = self._findViewFromSwitchList(viewNames)
 
         self._viewNameCache[cacheKey] = result
         return result
+
+    def _findViewFromSwitchList(self, viewNames: List[str]) -> str:
+        """Find the first matching view from switchViewList, respecting stopViewList.
+        
+        Iterates through switchViewList in order:
+        - If a view is in stopViewList, use it and stop
+        - Else if a view is in viewNames (available), use it and stop
+        - If no match found, default to "symbol"
+        
+        Args:
+            viewNames: List of available view names for the cell.
+            
+        Returns:
+            The selected view name from switchViewList, or "symbol" if none match.
+        """
+        
+        for viewName in self._switchViewList:
+            # If this view is in stopViewList, use it and stop searching
+            if viewName in self._stopViewList:
+                return viewName
+            # Otherwise, if it's available, use it and stop searching
+            if viewName in viewNames:
+                return viewName
+        
+        # If no match found in switchViewList, default to "symbol"
+        return "symbol"
 
     def createItemLine(self, cirFile, elementSymbol: shp.schematicSymbol,
                        cellItem: libb.cellItem, netlistView: str, ):
@@ -458,13 +496,11 @@ class xyceNetlist:
                             instanceNets.append(nets[j])  # 1-to-1 matching across array width
                         elif len(nets) == 1:
                             instanceNets.append(nets[0])  # Scalar broadcasted to all array nodes
+                        elif j < len(nets):
+                            instanceNets.append(nets[j])  # Partial connection: connect available nets
                         else:
-                            # Log a connection width mismatch warning if len is neither 1 nor arraySize
-                            self._scene.logger.warning(
-                                f"Net connection width mismatch for {elementSymbol.instanceName}: "
-                                f"expected 1 or {arraySize}, got {len(nets)}. Falling back to element 0."
-                            )
-                            instanceNets.append(nets[0])
+                            # Out of bounds for partial connection - use last available net
+                            instanceNets.append(nets[-1])
 
                     specificNetsList = " ".join(instanceNets)
                     symbolLines.append(
@@ -490,19 +526,23 @@ class xyceNetlist:
     def createSpiceLine(self, elementSymbol: shp.schematicSymbol) -> list[str]:
         """Create Spice subcircuit netlist lines with include file handling.
 
-        Generates the netlist line using createXyceSymbolLine and adds
-        an .INC directive if the symbol has an 'incLine' attribute.
+        Generates the netlist line using createXyceSymbolLine and adds an .INC directive.
+        The Spice subcircuit file path is automatically constructed as {cellPath}/{cellName}.sp.
         """
         try:
             spiceLines = self.createXyceSymbolLine(elementSymbol)
-            incFileName = elementSymbol.symattrs.get("incLine", "").strip()
-            if incFileName:
-                cellItem = self._getCellItem(elementSymbol.libraryName, elementSymbol.cellName)
+            # Automatically construct Spice subcircuit file path from cell directory and cell name
+            cellItem = self._getCellItem(elementSymbol.libraryName, elementSymbol.cellName)
+            if cellItem:
                 cellPath = cellItem.data(Qt.ItemDataRole.UserRole + 2)
-                incFilePath = pathlib.Path(cellPath) / incFileName
-                self.includeLines.add(f'.INC "{incFilePath}"')
+                if cellPath:
+                    incFileName = f"{elementSymbol.cellName}.sp"
+                    incFilePath = pathlib.Path(cellPath) / incFileName
+                    self.includeLines.add(f'.INC "{incFilePath}"')
+                else:
+                    self._scene.logger.warning(f"Cell path not found for {elementSymbol.cellName}, skipping include file")
             else:
-                self.includeLines.add(f"* no include line found for {elementSymbol.cellName}")
+                self._scene.logger.warning(f"Cell item not found for {elementSymbol.cellName}, skipping include file")
             return spiceLines
         except Exception as e:
             self._scene.logger.error(f"Spice subckt netlist error for {elementSymbol.instanceName}: {e}")
@@ -519,13 +559,15 @@ class xyceNetlist:
             self.vamodelLines.add(elementSymbol.symattrs.get("vaModelLine",
                                                              f"* no model line is found for {elementSymbol.cellName}").strip())
             vaFileName = elementSymbol.symattrs.get("vaFileName", "").strip()
-            self._scene.logger.debug(f"Verilog-A file for {elementSymbol.cellName}: {vaFileName}")
             if vaFileName:
                 cellItem = self._getCellItem(elementSymbol.libraryName,
                                              elementSymbol.cellName)
                 cellPath = cellItem.cellPath
-                vaFilePath = pathlib.Path(cellPath) / vaFileName
-                self.vahdlLines.add(f"*.HDL {vaFilePath}")
+                if cellPath:
+                    vaFilePath = pathlib.Path(cellPath) / vaFileName
+                    self.vahdlLines.add(f"*.HDL {vaFilePath}")
+                else:
+                    self._scene.logger.warning(f"Cell path not found for {elementSymbol.cellName}, skipping HDL file")
             else:
                 self.vahdlLines.add(f"* no HDL file line found for {elementSymbol.cellName}")
 
@@ -593,6 +635,6 @@ class xyceNetlist:
                 expandedPinNameList.append(pinBaseName)
             else:
                 pinStep = 1 if pinTuple[1] >= pinTuple[0] else -1
-                for i in range(pinTuple[0], pinTuple[1] + pinStep):
+                for i in range(pinTuple[0], pinTuple[1] + pinStep, pinStep):
                     expandedPinNameList.append(f'{pinBaseName}<{i}>')
         return ' '.join(expandedPinNameList)

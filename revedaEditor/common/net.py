@@ -1,28 +1,13 @@
-#    “Commons Clause” License Condition v1.0
-#   #
-#    The Software is provided to you by the Licensor under the License, as defined
-#    below, subject to the following condition.
+# SPDX-License-Identifier: MPL-2.0
 #
-#    Without limiting other conditions in the License, the grant of rights under the
-#    License will not include, and the License does not grant to you, the right to
-#    Sell the Software.
+# Copyright (c) 2024-2026 Revolution Semiconductor (Registered in the Netherlands)
+# This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0.
+# If a copy of the MPL was not distributed with this file, You can obtain one at
+# https://mozilla.org/MPL/2.0/.
 #
-#    For purposes of the foregoing, “Sell” means practicing any or all of the rights
-#    granted to you under the License to provide to third parties, for a fee or other
-#    consideration (including without limitation fees for hosting) a product or service whose value
-#    derives, entirely or substantially, from the functionality of the Software. Any
-#    license notice or attribution required by the License must also include this
-#    Commons Clause License Condition notice.
-#   Add-ons and extensions developed for this software may be distributed
-#
-#   under their own separate licenses.
-#
-#    Software: Revolution EDA
-#    License: Mozilla Public License 2.0
-#    Licensor: Revolution Semiconductor (Registered in the Netherlands)
+# Add-ons and extensions developed for this software may be distributed
+# under their own separate licenses.
 
-
-# net class definition.
 from enum import IntEnum
 from functools import cached_property
 from typing import Dict, List, Set, Union
@@ -100,6 +85,7 @@ class schematicNet(QGraphicsItem):
         self._endPointNetDict: Dict[int, Set["schematicNet"]]
         # track nets connected to each end point.
         self._netSnapLines: dict[QPoint, Set["schematicNet"]] = {}
+        self._removedNets: list = []
 
         # Line and name initialization
         self.draftLine = QLineF(start, end)
@@ -217,6 +203,14 @@ class schematicNet(QGraphicsItem):
         return f"schematicNet({self.sceneEndPoints}, {self._width})"
 
     def itemChange(self, change, value):
+        if change in (
+            QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged,
+            QGraphicsItem.GraphicsItemChange.ItemTransformHasChanged,
+            QGraphicsItem.GraphicsItemChange.ItemSceneHasChanged,
+            QGraphicsItem.GraphicsItemChange.ItemParentHasChanged,
+        ):
+            self.__dict__.pop("_hash_value", None)
+
         if self.scene():
             match change:
                 case QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged:
@@ -271,20 +265,31 @@ class schematicNet(QGraphicsItem):
     def initializeSnapLines(self):
         """Initialize snap lines for the net."""
         scene = self.scene()
+        if not scene:
+            return
         sceneGrid = scene.snapTuple[0]
+        self._removedNets = []  # Store removed nets for composite undo
+        alreadyRemovedNets = set()  # Track nets already removed (shared across endpoints)
         if not self._endPointNetDict:
             self.generateEndPointNetDict()
         for i, nets in self._endPointNetDict.items():
             point = self.sceneEndPoints[i]
             snapLinesSet: set["guideLine"] = set()
             for net in nets:
+                if net in alreadyRemovedNets:
+                    continue  # Already processed by another endpoint
                 for endPoint in net.sceneEndPoints:
                     if (endPoint - point).manhattanLength() < sceneGrid / 2:
                         otherEndPoint = net.sceneOtherEnd(endPoint)
                         snapLine = guideLine(point, otherEndPoint)
                         snapLine.inherit(net)
                         snapLinesSet.add(snapLine)
-                        scene.deleteUndoStack(net)
+                        # Remove net from scene without pushing to undo stack;
+                        # the composite undo macro will handle it.
+                        scene.removeItem(net)
+                        scene.itemsRefSet.discard(net)
+                        self._removedNets.append(net)
+                        alreadyRemovedNets.add(net)
                         scene.addItem(snapLine)
                         continue
             self._netSnapLines[i] = snapLinesSet
@@ -322,18 +327,30 @@ class schematicNet(QGraphicsItem):
         if self._netSnapLines:
             try:
                 scene = self.scene()
+                allNewNets = []
                 for snapLinesSet in self._netSnapLines.values():
                     for snapLine in snapLinesSet:
-                        newNets = scene.addStretchWires(
-                            snapLine.line().p1().toPoint(),
-                            snapLine.line().p2().toPoint(),
-                        )
+                        p1 = snapLine.line().p1().toPoint()
+                        p2 = snapLine.line().p2().toPoint()
+                        if p1 == p2:
+                            # Zero-length: just remove the guideLine
+                            scene.removeItem(snapLine)
+                            continue
+                        newNets = scene.addStretchWires(p1, p2)
                         if newNets:
                             for netItem in newNets:
                                 netItem.inherit(snapLine)
-                            scene.addListUndoStack(newNets)
+                            allNewNets.extend(newNets)
                         scene.removeItem(snapLine)
+                # Push a single addDeleteShapesUndo capturing all net replacements.
+                removedNets = getattr(self, '_removedNets', [])
+                if allNewNets or removedNets:
+                    from revedaEditor.backend import undoStack as us
+                    undoCommand = us.addDeleteShapesUndo(
+                        scene, allNewNets, removedNets)
+                    scene.undoStack.push(undoCommand)
                 self._netSnapLines = {}
+                self._removedNets = []
             except Exception as e:
                 # Log error but continue processing other guidelines
                 scene.logger.error(f"Error processing snap lines: {e}")
@@ -524,20 +541,27 @@ class schematicNet(QGraphicsItem):
     def mergeNetName(self, otherNet: "schematicNet") -> bool:
         """
         Merge net names based on name strength and handle conflicts.
+
+        Rules:
+        - Higher nameStrength wins: receiver gets the winner's name and
+          receiver's nameStrength is set to INHERIT.
+        - Equal nameStrength with different names: nameConflict = True on both,
+          returns False.
+        - Equal nameStrength with same name (or both empty): no conflict,
+          returns True.
+        - If self already has higher strength, self keeps its name, returns True.
         """
         if otherNet.nameStrength > self.nameStrength:
-            if otherNet.nameStrength == 3:
-                self.name = otherNet.name
-                self.nameStrength = netNameStrengthEnum.INHERIT
-                return True
-            else:
-                self.name = otherNet.name
-                self.nameStrength = otherNet.nameStrength
-                return True
+            self.name = otherNet.name
+            self.nameStrength = netNameStrengthEnum.INHERIT
+            return True
         elif otherNet.nameStrength == self.nameStrength:
             if otherNet.name != self.name:
                 self.nameConflict = otherNet.nameConflict = True
                 return False
+            return True
+        else:
+            # self.nameStrength > otherNet.nameStrength: self keeps its name
             return True
 
     def clearName(self):
@@ -886,6 +910,16 @@ class guideLine(QGraphicsLineItem):
         self._nameStrength: netNameStrengthEnum = netNameStrengthEnum.NONAME
 
     @property
+    def draftLine(self) -> QLineF:
+        """Return the current line geometry."""
+        return self.line()
+
+    @draftLine.setter
+    def draftLine(self, line: QLineF):
+        """Update the line geometry with visual refresh."""
+        self.setLine(line)
+
+    @property
     def sceneEndPoints(self) -> list[QPoint]:
         """
         Returns a list of the end points of the net in scene coordinates.
@@ -933,9 +967,15 @@ class guideLine(QGraphicsLineItem):
             scene = self.scene()
             for snapLinesSet in self._netSnapLines.values():
                 for snapLine in snapLinesSet:
-                    newNets = scene.addStretchWires(
-                        snapLine.line().p1().toPoint(), snapLine.line().p2().toPoint()
-                    )
+                    if snapLine.scene() is None:
+                        continue  # Already removed
+                    p1 = snapLine.line().p1().toPoint()
+                    p2 = snapLine.line().p2().toPoint()
+                    if p1 == p2:
+                        # Zero-length: remove guideLine without creating segments
+                        scene.removeItem(snapLine)
+                        continue
+                    newNets = scene.addStretchWires(p1, p2)
                     if newNets:
                         for netItem in newNets:
                             netItem.inherit(snapLine)

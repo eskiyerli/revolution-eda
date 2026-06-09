@@ -1,33 +1,18 @@
-#    “Commons Clause” License Condition v1.0
-#   #
-#    The Software is provided to you by the Licensor under the License, as defined
-#    below, subject to the following condition.
+# SPDX-License-Identifier: MPL-2.0
 #
-#    Without limiting other conditions in the License, the grant of rights under the
-#    License will not include, and the License does not grant to you, the right to
-#    Sell the Software.
+# Copyright (c) 2024-2026 Revolution Semiconductor (Registered in the Netherlands)
+# This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0.
+# If a copy of the MPL was not distributed with this file, You can obtain one at
+# https://mozilla.org/MPL/2.0/.
 #
-#    For purposes of the foregoing, “Sell” means practicing any or all of the rights
-#    granted to you under the License to provide to third parties, for a fee or other
-#    consideration (including without limitation fees for hosting) a product or service
-#    whose value derives, entirely or substantially, from the functionality of the Software.
-#    Any license notice or attribution required by the License must also include this
-#    Commons Clause License Condition notice.
-#
-#   Add-ons and extensions developed for this software may be distributed
-#   under their own separate licenses.
-#
-#    Software: Revolution EDA
-#    License: Mozilla Public License 2.0
-#    Licensor: Revolution Semiconductor (Registered in the Netherlands)
-#
-
+# Add-ons and extensions developed for this software may be distributed
+# under their own separate licenses.
 
 import json
 import logging
 import pathlib
 import shutil
-from typing import List
+from typing import Any, Dict, List, Optional
 
 from PySide6.QtCore import Qt, QPoint
 from PySide6.QtGui import (QAction, QStandardItemModel, QStandardItem, )
@@ -64,7 +49,7 @@ class BaseDesignLibrariesView(QWidget):
         # Initialize the model (to be implemented by child classes)
         self.libraryModel = designLibrariesModel(self.libraryDict)
 
-    def removeLibrary(self, selectedLib: libb.libraryItem):
+    def removeLibrary(self, selectedLib: libb.libraryItem) -> None:
         try:
             button = QMessageBox.question(self, "Library Deletion",
                                           "Are you sure to delete this library? This action cannot be undone.", )
@@ -76,7 +61,7 @@ class BaseDesignLibrariesView(QWidget):
         except Exception as e:
             self.logger.error(f"Error removing library: {e}")
 
-    def renameLib(self, selectedLib: libb.libraryItem):
+    def renameLib(self, selectedLib: libb.libraryItem) -> None:
         try:
             oldLibraryName = selectedLib.libraryName
             dlg = fd.renameLibDialog(self, oldLibraryName)
@@ -94,7 +79,7 @@ class BaseDesignLibrariesView(QWidget):
         except Exception as e:
             self.logger.error(f"Error renaming library: {e}")
 
-    def openView(self, selectedViewItem: libb.viewItem):
+    def openView(self, selectedViewItem: libb.viewItem) -> None:
         try:
             cellItem = selectedViewItem.parent()
             libItem = cellItem.parent()
@@ -103,7 +88,7 @@ class BaseDesignLibrariesView(QWidget):
         except Exception as e:
             self.logger.error(f"Error opening view: {e}")
 
-    def createNewCellView(self, itemTuple: ddef.viewItemTuple):
+    def createNewCellView(self, itemTuple: ddef.viewItemTuple) -> None:
         """
             this method is used to open the editor after a viewitem is created.
         """
@@ -156,10 +141,10 @@ class BaseDesignLibrariesView(QWidget):
                 except OSError as e:
                     self.logger.warning(f"Error:{e.strerror}")
         else:
-            if hasattr(self._app, 'pluginsObj'):
+            if hasattr(self._app, 'pluginsObj') and self._app.pluginsObj is not None:
                 self._app.pluginsObj.createCellView(itemTuple)
 
-    def reworkDesignLibrariesView(self, libraryDict: dict):
+    def reworkDesignLibrariesView(self, libraryDict: dict) -> None:
         """
         To be implemented by child classes.
         """
@@ -201,6 +186,81 @@ class BaseDesignLibrariesView(QWidget):
         """Handle veriloga view opening."""
         self._handle_text_view(viewItemT, ted.verilogaEditor, self.verilogaEditFinished)
 
+    def _handle_pcell_view(self, viewItemT: ddef.viewItemTuple):
+        """Handle pcell view opening by displaying a default instance in the layout editor."""
+        import inspect
+        from revedaEditor.backend.pdkLoader import importPDKModule
+        from revedaEditor.gui.layoutEditor import layoutEditor
+
+        viewNameT = viewItemT.convertToViewNameTuple()
+        filePath = pathlib.Path(viewItemT.viewItem.viewPath).resolve()
+        if not filePath.exists():
+            self.logger.warning(f"PCell file {filePath} does not exist")
+            return
+
+        # Read the pcell JSON to find the referenced pcell class
+        try:
+            with filePath.open("r") as f:
+                pcellData = json.load(f)
+        except (json.JSONDecodeError, OSError) as e:
+            self.logger.error(f"Error reading pcell file {filePath}: {e}")
+            return
+
+        if not pcellData or pcellData[0].get("cellView") != "pcell":
+            self.logger.error(f"Invalid pcell file format: {filePath}")
+            return
+
+        pcellRef = pcellData[1].get("reference") if len(pcellData) > 1 else None
+        if not pcellRef:
+            self.logger.error(f"No pcell reference found in {filePath}")
+            return
+
+        # Look up the pcell class from the PDK
+        pcellsModule = importPDKModule("pcells")
+        if pcellsModule is None or not hasattr(pcellsModule, "pcells"):
+            self.logger.error("Cannot load pcells module from PDK")
+            return
+
+        pcellClass = pcellsModule.pcells.get(pcellRef)
+        if pcellClass is None:
+            self.logger.error(f"Unknown pcell class: {pcellRef}")
+            return
+
+        # Open a layout editor for this pcell view
+        editor = layoutEditor(viewItemT.viewItem, self.libraryDict, self)
+        editor._isPcellPreview = True  # Mark as read-only pcell preview
+        self.appMainW.openViews[viewNameT] = editor
+
+        # Create a default instance of the pcell and add it to the scene
+        try:
+            pcellInstance = pcellClass()
+            # Extract default __init__ parameters and call the instance to generate geometry
+            initArgs = inspect.signature(pcellClass.__init__).parameters
+            argsUsed = [param for param in initArgs if param != "self"]
+            defaultValues = {
+                arg: getattr(pcellInstance, arg)
+                for arg in argsUsed
+                if hasattr(pcellInstance, arg)
+            }
+            if defaultValues:
+                pcellInstance(**defaultValues)
+
+            # Set instance metadata
+            pcellInstance.libraryName = viewNameT.libraryName
+            pcellInstance.cellName = viewNameT.cellName
+            pcellInstance.viewName = viewNameT.viewName
+            pcellInstance.counter = 1
+            pcellInstance.instanceName = "I1"
+            pcellInstance.setPos(QPoint(0, 0))
+
+            # Add to the scene
+            editor.centralW.scene.addItem(pcellInstance)
+            editor.centralW.scene.fitItemsInView()
+        except Exception as e:
+            self.logger.error(f"Error creating default pcell instance for {pcellRef}: {e}")
+
+        editor.show()
+
     def openCellView(self, viewItemT: ddef.viewItemTuple):
         from revedaEditor.gui.editorFactory import EditorFactory
         viewNameT = viewItemT.convertToViewNameTuple()
@@ -237,15 +297,21 @@ class BaseDesignLibrariesView(QWidget):
             editor = configEditor(viewItemT.viewItem, self.libraryDict,
                                   self)
             editor.loadConfig()
+            editor.show()
+            self.appMainW.openViews[viewNameT] = editor
         elif view_type == "spice":
             self._handle_spice_view(viewItemT)
         elif view_type == "veriloga":
             self._handle_veriloga_view(viewItemT)
+        elif view_type == "pcell":
+            self._handle_pcell_view(viewItemT)
         else:
-            if hasattr(self._app, 'pluginsObj'):
+            if hasattr(self._app, 'pluginsObj') and self._app.pluginsObj is not None:
                 result = self._app.pluginsObj.openCellView(viewItemT)
                 if not result:
                     self.logger.warning(f"No handler for view type: {view_type}")
+            else:
+                self.logger.warning(f"No handler for view type: {view_type}")
 
         return viewNameT
 

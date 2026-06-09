@@ -1,27 +1,16 @@
-#    “Commons Clause” License Condition v1.0
-#   #
-#    The Software is provided to you by the Licensor under the License, as defined
-#    below, subject to the following condition.
+# SPDX-License-Identifier: MPL-2.0
 #
-#    Without limiting other conditions in the License, the grant of rights under the
-#    License will not include, and the License does not grant to you, the right to
-#    Sell the Software.
+# Copyright (c) 2024-2026 Revolution Semiconductor (Registered in the Netherlands)
+# This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0.
+# If a copy of the MPL was not distributed with this file, You can obtain one at
+# https://mozilla.org/MPL/2.0/.
 #
-#    For purposes of the foregoing, “Sell” means practicing any or all of the rights
-#    granted to you under the License to provide to third parties, for a fee or other
-#    consideration (including without limitation fees for hosting) a product or service whose value
-#    derives, entirely or substantially, from the functionality of the Software. Any
-#    license notice or attribution required by the License must also include this
-#    Commons Clause License Condition notice.
-#
+# Add-ons and extensions developed for this software may be distributed
+# under their own separate licenses.
 
-#
-#    Software: Revolution EDA
-#    License: Mozilla Public License 2.0
-#    Licensor: Revolution Semiconductor (Registered in the Netherlands)
-#
 import json
 import logging
+from functools import partial
 from pathlib import Path
 import shutil
 from typing import List, Dict
@@ -38,6 +27,7 @@ from PySide6.QtWidgets import (
     QGraphicsScene,
     QDialog,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QVBoxLayout,
     QWidget,
@@ -59,6 +49,7 @@ import revedaEditor.gui.pythonConsole as pcon
 import revedaEditor.gui.revinit as revinit
 import revedaEditor.gui.stippleEditor as stip
 from revedaEditor.backend.pdkLoader import importPDKModule
+from revedaEditor.backend.projectManager import ProjectManager
 
 from revedaEditor.resources import resources  # noqa: F401
 
@@ -94,7 +85,7 @@ class mainwContainer(QWidget):
         )
         self.console.writeoutput("Revolution Semiconductor (C) 2026.")
         self.console.writeoutput(
-            "Mozilla Public License v2.0 modified with Commons Clause"
+            "Mozilla Public License v2.0"
         )
         # layout statements, using a grid layout
         gLayout = QVBoxLayout()
@@ -160,17 +151,22 @@ class MainWindow(QMainWindow):
         self.switchViewList: List[str] = self.VIEW_TYPES["switch"]
         self.stopViewList: List[str] = self.VIEW_TYPES["stop"]
         self.openViews: Dict = {}
+        self._restartingForProjectSwitch: bool = False
 
     def _initPaths(self) -> None:
         """Initialize application paths."""
 
         try:
             self._app = QApplication.instance()
-            revedaPathObj = getattr(self._app, "revedaPathObj", None)
-            if revedaPathObj is not None:
-                self.runPath = revedaPathObj.parent
+            projectDir = getattr(self._app, "_projectDir", None)
+            if projectDir is not None:
+                self.runPath = projectDir
             else:
-                self.runPath = Path.cwd()
+                revedaPathObj = getattr(self._app, "revedaPathObj", None)
+                if revedaPathObj is not None:
+                    self.runPath = revedaPathObj.parent
+                else:
+                    self.runPath = Path.cwd()
             revedaPdkPathObj = getattr(self._app, "revedaPdkPathObj", None)
             if revedaPdkPathObj is not None:
                 self.pdkPath = revedaPdkPathObj
@@ -192,6 +188,8 @@ class MainWindow(QMainWindow):
             # Core application components
             self.app = QApplication.instance()
             self.logger = logging.getLogger("reveda")
+            # Project manager (handles per-project config loading)
+            self.projectManager = ProjectManager(self)
             # Library components
             self.libraryDict = self.readLibDefFile(self.libraryPathObj)
             self.libraryBrowser = libw.libraryBrowser(self)
@@ -201,8 +199,10 @@ class MainWindow(QMainWindow):
             self._setupThreadPool()
 
             # Final initialization
-
             self.loadAppState()
+
+            # Populate the Recent Projects menu from persistent store
+            self._updateRecentProjectsMenu()
         except Exception as e:
             self._handleInitError("Application component initialization failed", e)
 
@@ -233,6 +233,9 @@ class MainWindow(QMainWindow):
         self.menuTools = self.mainW_menubar.addMenu("&Tools")
         self.menuOptions = self.mainW_menubar.addMenu("&Options")
         self.menuHelp = self.mainW_menubar.addMenu("&Help")
+        self.menuFile.addAction(self.openProjectAction)
+        self.recentProjectsMenu = self.menuFile.addMenu("Recent Projects")
+        self.menuFile.addSeparator()
         self.menuFile.addAction(self.exitAction)
         self.menuTools.addAction(self.libraryBrowserAction)
         self.importTools = self.menuTools.addMenu("&Import")
@@ -255,6 +258,8 @@ class MainWindow(QMainWindow):
         self.menuOptions.addAction(self.optionsAction)
 
     def _createActions(self):
+        self.openProjectAction = QAction("Open Project...", self)
+        self.openProjectAction.setShortcut("Ctrl+Shift+O")
         exitIcon = QIcon(":/icons/external.png")
         self.exitAction = QAction(exitIcon, "Exit", self)
         self.exitAction.setShortcut("Ctrl+Q")
@@ -301,6 +306,7 @@ class MainWindow(QMainWindow):
         self.setupPluginsAction.triggered.connect(self.setupPluginsClick)
         self.setupPDKsAction.triggered.connect(self.setupPDKsClick)
         self.setupLibrariesAction.triggered.connect(self.setupLibrariesClick)
+        self.openProjectAction.triggered.connect(self.openProjectClick)
         self.helpAction.triggered.connect(self.helpClick)
         self.aboutAction.triggered.connect(self.aboutClick)
         self.licenseAction.triggered.connect(self.licenseClick)
@@ -318,6 +324,48 @@ class MainWindow(QMainWindow):
                 for item in data.get("include"):
                     libraryDict.update(self.readLibDefFile(Path(item)))
         return libraryDict
+
+    def openProjectClick(self):
+        """Handle File → Open Project action. Restarts the app with the new project."""
+        selected_dir = QFileDialog.getExistingDirectory(
+            self,
+            "Open Project Directory",
+            str(Path.cwd()),
+        )
+        if selected_dir:
+            self.projectManager.switch_project(Path(selected_dir))
+
+    def _updateRecentProjectsMenu(self):
+        """Rebuild the Recent Projects submenu from the store."""
+        self.recentProjectsMenu.clear()
+        projects = self.projectManager._recent_store.projects
+
+        if not projects:
+            no_recent = self.recentProjectsMenu.addAction("No recent projects")
+            no_recent.setEnabled(False)
+            return
+
+        for path in projects:
+            action = self.recentProjectsMenu.addAction(path.name)
+            action.setToolTip(str(path))
+            if path.exists():
+                action.triggered.connect(partial(self._openRecentProject, path))
+            else:
+                action.setEnabled(False)
+
+    def _openRecentProject(self, path: Path):
+        """Handle click on a recent project entry. Restarts the app."""
+        if not path.exists():
+            QMessageBox.warning(
+                self,
+                "Recent Project",
+                f"Project directory not found:\n{path}",
+            )
+            self.projectManager._recent_store.remove(path)
+            self._updateRecentProjectsMenu()
+            return
+
+        self.projectManager.switch_project(path)
 
     # open library browser window
     def libraryBrowserClick(self):
@@ -599,6 +647,16 @@ class MainWindow(QMainWindow):
             json.dump(items, f, indent=4)
 
     def closeEvent(self, event):
+        # Skip confirmation dialog when restarting for a project switch
+        if self._restartingForProjectSwitch:
+            if not self.threadPool.waitForDone(5000):
+                self.threadPool.clear()
+            for window in list(self.openViews.values()):
+                window.close()
+            self.openViews.clear()
+            event.accept()
+            return
+
         reply = QMessageBox.question(
             self,
             "Confirm Exit",
@@ -607,6 +665,7 @@ class MainWindow(QMainWindow):
             QMessageBox.No,
         )
         if reply == QMessageBox.Yes:
+            self.projectManager.save_current_state()
             if not self.threadPool.waitForDone(5000):
                 self.threadPool.clear()
             # Explicitly close all tracked editor/plugin windows

@@ -1,26 +1,13 @@
-#    “Commons Clause” License Condition v1.0
-#   #
-#    The Software is provided to you by the Licensor under the License, as defined
-#    below, subject to the following condition.
+# 
+# Revolution EDA
+# 
+# Copyright (c) 2026 Revolution Semiconductor
 #
-#    Without limiting other conditions in the License, the grant of rights under the
-#    License will not include, and the License does not grant to you, the right to
-#    Sell the Software.
-#
-#    For purposes of the foregoing, “Sell” means practicing any or all of the rights
-#    granted to you under the License to provide to third parties, for a fee or other
-#    consideration (including without limitation fees for hosting) a product or service whose value
-#    derives, entirely or substantially, from the functionality of the Software. Any
-#    license notice or attribution required by the License must also include this
-#    Commons Clause License Condition notice.
-#
-#   Add-ons and extensions developed for this software may be distributed
-#   under their own separate licenses.
-#
-#    Software: Revolution EDA
-#    License: Mozilla Public License 2.0
-#    Licensor: Revolution Semiconductor (Registered in the Netherlands)
-#
+# This Source Code Form is subject to the terms of the
+# Mozilla Public License, v. 2.0.
+# If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+##
 
 # properties dialogues for various editor functions
 
@@ -482,10 +469,11 @@ class symbolLabelsDialogue(QDialog):
 
 
 class instanceProperties(QDialog):
-    def __init__(self, parent):
+    def __init__(self, parent, availableViews=None):
         # assert isinstance(instance, shp.symbolShape)
         super().__init__(parent)
         self.parent = parent
+        self.availableViews = availableViews if availableViews else []
         self.initUI()
 
     def initUI(self):
@@ -504,10 +492,15 @@ class instanceProperties(QDialog):
         self.cellNameEdit.setReadOnly(True)
         self.cellNameEdit.setToolTip("Cell Name (Read Only)")
         formLayout.addRow(edf.boldLabel("Cell Name", self), self.cellNameEdit)
-        self.viewNameEdit = edf.longLineEdit()
-        self.viewNameEdit.setReadOnly(True)
-        self.viewNameEdit.setToolTip("View Name (Read Only)")
+        
+        # Changed from read-only line edit to editable combo box
+        self.viewNameEdit = QComboBox()
+        self.viewNameEdit.setEditable(True)
+        if self.availableViews:
+            self.viewNameEdit.addItems(self.availableViews)
+        self.viewNameEdit.setToolTip("Select or enter the view name")
         formLayout.addRow(edf.boldLabel("View Name", self), self.viewNameEdit)
+        
         self.instNameEdit = edf.longLineEdit()
         self.instNameEdit.setToolTip("Instance Name")
         formLayout.addRow(edf.boldLabel("Instance Name", self), self.instNameEdit)

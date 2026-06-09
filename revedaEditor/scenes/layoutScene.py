@@ -1,26 +1,13 @@
-#    “Commons Clause” License Condition v1.0
-#   #
-#    The Software is provided to you by the Licensor under the License, as defined
-#    below, subject to the following condition.
+# 
+# Revolution EDA
+# 
+# Copyright (c) 2026 Revolution Semiconductor
 #
-#    Without limiting other conditions in the License, the grant of rights under the
-#    License will not include, and the License does not grant to you, the right to
-#    Sell the Software.
-#
-#    For purposes of the foregoing, “Sell” means practicing any or all of the rights
-#    granted to you under the License to provide to third parties, for a fee or other
-#    consideration (including without limitation fees for hosting) a product or service whose value
-#    derives, entirely or substantially, from the functionality of the Software. Any
-#    license notice or attribution required by the License must also include this
-#    Commons Clause License Condition notice.
-#
-#   Add-ons and extensions developed for this software may be distributed
-#   under their own separate licenses.
-#
-#    Software: Revolution EDA
-#    License: Mozilla Public License 2.0
-#    Licensor: Revolution Semiconductor (Registered in the Netherlands)
-#
+# This Source Code Form is subject to the terms of the
+# Mozilla Public License, v. 2.0.
+# If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+##
 
 import inspect
 import json
@@ -62,8 +49,6 @@ import revedaEditor.gui.propertyDialogues as pdlg
 from revedaEditor.backend.pdkLoader import importPDKModule
 from revedaEditor.gui.alignItems import alignItemsDialogue, alignToLine
 from revedaEditor.scenes.editorScene import editorScene
-
-# from contextlib import contextmanager
 
 fabproc = importPDKModule("process")
 laylyr = importPDKModule("layoutLayers")
@@ -233,7 +218,7 @@ class layoutScene(editorScene):
         return point.toPoint() if isinstance(point, QPointF) else point
 
     def mousePressEvent(self, event: QGraphicsSceneMouseEvent) -> None:
-                        
+
         self.mousePressLoc = event.scenePos().toPoint()
         if self.editModes.cutShape:
             self.startCutLine()
@@ -408,7 +393,7 @@ class layoutScene(editorScene):
         else:  # Polygon
             points = item.points
             shape_name = "Polygon"
-        
+
         intersections = []
 
         # Find all intersection points with shape edges
@@ -423,18 +408,9 @@ class layoutScene(editorScene):
             idx1, p1 = intersections[0]
             idx2, p2 = intersections[1]
 
-            # Create two new polygons
-            poly1_points = [p1]
-            for i in range(idx1 + 1, idx2 + 1):
-                poly1_points.append(points[i])
-            poly1_points.append(p2)
-
-            poly2_points = [p2]
-            for i in range(idx2 + 1, len(points)):
-                poly2_points.append(points[i])
-            for i in range(0, idx1 + 1):
-                poly2_points.append(points[i])
-            poly2_points.append(p1)
+            # Create two new polygons using list slicing
+            poly1_points = [p1] + points[idx1 + 1:idx2 + 1] + [p2]
+            poly2_points = [p2] + points[idx2 + 1:] + points[:idx1 + 1] + [p1]
 
             poly1 = lshp.layoutPolygon(poly1_points, item.layer)
             poly2 = lshp.layoutPolygon(poly2_points, item.layer)
@@ -637,7 +613,17 @@ class layoutScene(editorScene):
                     and len(decodedData) > 1
                     and decodedData[0].get("cellView") == "pcell"
             ):
-                pcellInstance = eval(f"pcells.{decodedData[1]['reference']}()")
+                ref_name = decodedData[1]['reference']
+                if not isinstance(ref_name, str) or not ref_name.isidentifier():
+                    self.logger.error(f"Invalid pcell reference name: {ref_name!r}")
+                    return None
+                pcell_cls = getattr(pcells, ref_name, None)
+                if pcell_cls is None or not (
+                    isinstance(pcell_cls, type) and issubclass(pcell_cls, pcells.baseCell)
+                ):
+                    self.logger.error(f"Unknown or invalid pcell reference: {ref_name!r}")
+                    return None
+                pcellInstance = pcell_cls()
                 return setup_instance(pcellInstance)
             else:
                 self.logger.error(
@@ -697,20 +683,21 @@ class layoutScene(editorScene):
             return
 
         # Parse schematic instances (type "sys")
-        schInstances = []
-        for item in data[2:] if len(data) > 2 else []:  # Skip header
-            if isinstance(item, dict) and item.get("type") == "sys":
-                schInstances.append({
-                    "lib": item.get("lib", ""),
-                    "cell": item.get("cell", ""),
-                    "view": item.get("view", ""),
-                    "name": item.get("nam", ""),
-                    "counter": item.get("ic", 0),
-                    "loc": item.get("loc", (0, 0)),
-                    "ang": item.get("ang", 0),
-                    "fl": item.get("fl", (1, 1)),
-                    "labels": item.get("ld", {}),
-                })
+        schInstances = [
+            {
+                "lib": item.get("lib", ""),
+                "cell": item.get("cell", ""),
+                "view": item.get("view", ""),
+                "name": item.get("nam", ""),
+                "counter": item.get("ic", 0),
+                "loc": item.get("loc", (0, 0)),
+                "ang": item.get("ang", 0),
+                "fl": item.get("fl", (1, 1)),
+                "labels": item.get("ld", {}),
+            }
+            for item in (data[2:] if len(data) > 2 else [])
+            if isinstance(item, dict) and item.get("type") == "sys"
+        ]
 
         if not schInstances:
             self.logger.info("No schematic instances found to place")
@@ -801,9 +788,12 @@ class layoutScene(editorScene):
 
             # Set position - use schematic location as starting point
             # Convert grid units to scene coordinates
-            loc = sch_inst["loc"]
+            newInstBR = new_inst.boundingRect()
+            loc: tuple[int, int] = (sch_inst['loc'][0]*10+newInstBR.width(), sch_inst['loc'][1]*10+newInstBR.height())
+
             if isinstance(loc, (list, tuple)) and len(loc) >= 2:
                 new_inst.setPos(loc[0], loc[1])
+
 
             # Store SDL metadata for tracking
             new_inst._sdlSource = {
@@ -908,7 +898,7 @@ class layoutScene(editorScene):
         format_upper = format_type.upper()
         file_extension = ".gds" if format_upper == "GDS" else ".oas"
         export_path = export_dir / f"{self.cellName}{file_extension}"
-        
+
         try:
             # reprocess the layout to get the layout positions right.
             topLevelItems = [

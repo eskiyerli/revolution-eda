@@ -1,26 +1,13 @@
-#    “Commons Clause” License Condition v1.0
-#   #
-#    The Software is provided to you by the Licensor under the License, as defined
-#    below, subject to the following condition.
+# 
+# Revolution EDA
+# 
+# Copyright (c) 2026 Revolution Semiconductor
 #
-#    Without limiting other conditions in the License, the grant of rights under the
-#    License will not include, and the License does not grant to you, the right to
-#    Sell the Software.
-#
-#    For purposes of the foregoing, “Sell” means practicing any or all of the rights
-#    granted to you under the License to provide to third parties, for a fee or other
-#    consideration (including without limitation fees for hosting) a product or service whose value
-#    derives, entirely or substantially, from the functionality of the Software. Any
-#    license notice or attribution required by the License must also include this
-#    Commons Clause License Condition notice.
-#
-#   Add-ons and extensions developed for this software may be distributed
-#   under their own separate licenses.
-#
-#    Software: Revolution EDA
-#    License: Mozilla Public License 2.0
-#    Licensor: Revolution Semiconductor (Registered in the Netherlands)
-#
+# This Source Code Form is subject to the terms of the
+# Mozilla Public License, v. 2.0.
+# If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+##
 
 
 import json
@@ -28,11 +15,11 @@ import os
 import pathlib
 
 import orjson
-from typing import Dict, List, Set, Tuple, Union
+from typing import Dict, List, Optional, Set, Tuple, Union
 
 from PySide6.QtCore import (QLineF, QPoint, QPointF, QRect, QRectF,
                             QRegularExpression, Qt, Signal, Slot)
-from PySide6.QtGui import (QFont, QFontDatabase, QPen, QTextDocument)
+from PySide6.QtGui import (QFont, QFontDatabase, QPen, QTextDocument, QUndoCommand)
 from PySide6.QtWidgets import (QComboBox, QDialog, QGraphicsItem,
                                QGraphicsRectItem, QGraphicsScene,
                                QGraphicsSceneMouseEvent)
@@ -52,6 +39,7 @@ import revedaEditor.gui.alignItems as alg
 import revedaEditor.gui.fileDialogues as fd
 import revedaEditor.gui.propertyDialogues as pdlg
 from revedaEditor.backend.pdkLoader import importPDKModule
+from revedaEditor.common.fileCache import FileCache
 from revedaEditor.scenes.editorScene import editorScene
 
 schlyr = importPDKModule('schLayers')
@@ -117,6 +105,7 @@ class schematicScene(editorScene):
         self.newInstanceTuple = None
         self.newAlignLine = None
         self._snapPointRect = self.defineSnapRect()
+        self._moveMacroActive = False
 
         # error shapes
         self.overlapRectSet = set()
@@ -136,7 +125,7 @@ class schematicScene(editorScene):
         self.alignLineFinished.connect(alg.alignToLine)
 
         # Initialize cache
-        self._symbolCache = {}
+        self._symbolCache = FileCache()
 
     def _initializeFont(self):
         """Initialize fixed-width font settings."""
@@ -173,7 +162,23 @@ class schematicScene(editorScene):
 
     def mousePressEvent(self, event):
         super().mousePressEvent(event)
-        if self.selectedItemGroup and self.editModes.moveItem:
+        if event.button() == Qt.MouseButton.LeftButton and self.editModes.stretchItem:
+            mousePos = event.scenePos().toPoint()
+            self._initiateStretch(mousePos)
+        elif self.selectedItemGroup and self.editModes.moveItem:
+            # Check if any movable items have connected nets that need stretching
+            self._moveMacroActive = False
+            hasStretchableItems = any(
+                isinstance(item, (shp.schematicSymbol, shp.schematicPin,
+                                  snet.schematicNet))
+                for item in self.selectedItemGroup.childItems()
+            )
+            if hasStretchableItems:
+                # Begin macro to group net deletions, replacements, and position
+                # change as a single undoable operation
+                self.undoStack.beginMacro("Move Items")
+                self._moveMacroActive = True
+
             for item in self.selectedItemGroup.childItems():
                 if isinstance(item, shp.schematicSymbol) or isinstance(item,
                                                                        shp.schematicPin):
@@ -202,7 +207,11 @@ class schematicScene(editorScene):
             self.newAlignLine.draftLine = QLineF(
                 self.newAlignLine.draftLine.p1(), self.mouseMoveLoc)
         elif self._stretchNet and self.editModes.stretchItem:
+            # Snap to nearby connection points first, fall back to grid-snapped position
             netEndPoint = self.findSnapPoint(self.mouseMoveLoc, set())
+            if netEndPoint == self.mouseMoveLoc:
+                # No nearby connection point found; snap cursor to grid
+                netEndPoint = self.snapToGrid(self.mouseMoveLoc)
             self._snapPointRect.setVisible(True)
             self._snapPointRect.setPos(netEndPoint)
             self._stretchNet.draftLine = QLineF(self._stretchNet.draftLine.p1(),
@@ -229,7 +238,16 @@ class schematicScene(editorScene):
             for item in self.selectedItemGroup.childItems():
                 if isinstance(item, snet.schematicNet):
                     item._finishSnapLines()
-        return super().mouseReleaseEvent(event)
+            # super() triggers destroyItemGroup -> ItemPositionHasChanged ->
+            # symbol/pin _finishSnapLines, then pushes undoGroupMoveStack
+            super().mouseReleaseEvent(event)
+            # End the macro started in mousePressEvent (groups net deletions,
+            # replacements, and position change as single undo step)
+            if getattr(self, '_moveMacroActive', False):
+                self.undoStack.endMacro()
+                self._moveMacroActive = False
+        else:
+            super().mouseReleaseEvent(event)
 
     def _handleMouseRelease(self, mousePos: QPoint,
                             button: Qt.MouseButton) -> None:
@@ -347,10 +365,102 @@ class schematicScene(editorScene):
 
     def _handleStretchItem(self):
         if self._stretchNet:
-            self._stretchNet.stretch = False
+            self._completeStretch(self.mouseMoveLoc)
+
+    def _completeStretch(self, releasePos: QPoint) -> None:
+        """
+        Complete a stretch operation on mouse release.
+
+        Snaps release position to grid/connection point, creates replacement
+        manhattan-routed net segments, assigns original net properties, resolves
+        connectivity, and pushes a single undo command.
+
+        The undo command captures the FINAL state after merge/split so that undo
+        removes all replacement nets (including any produced by mergeSplitNets)
+        and restores the original net plus any existing nets consumed by merging.
+        """
+        try:
+            # Snap release position: check for nearby connection points first,
+            # fall back to grid snap
+            snappedRelease = self.findSnapPoint(releasePos, set())
+            if snappedRelease == releasePos:
+                snappedRelease = self.snapToGrid(releasePos)
+
+            anchorPoint = self._stretchAnchorPoint
+
+            if snappedRelease == anchorPoint:
+                # Zero-length result: remove original net, push no undo command
+                # (original net was already removed from scene in _initiateStretch)
+                pass
+            elif snappedRelease == self._stretchClickedEndpoint:
+                # No geometric change: user released at the original clicked
+                # endpoint position. Restore the original net without pushing
+                # any undo command (nothing actually changed).
+                self.addItem(self._stretchOriginalNet)
+            else:
+                # Create 1–3 manhattan segments from anchor to snapped release
+                newSegments = self.addStretchWires(anchorPoint, snappedRelease)
+
+                # Defensive filter: discard any zero-length segments
+                # (p1 == p2) that may slip through from addStretchWires
+                newSegments = [
+                    seg for seg in newSegments
+                    if seg.draftLine.p1().toPoint() != seg.draftLine.p2().toPoint()
+                ]
+
+                if newSegments:
+                    # Assign original net's name, nameStrength, and width
+                    for segment in newSegments:
+                        segment.inherit(self._stretchOriginalNet)
+                        segment.width = self._stretchOriginalWidth
+
+                    # Snapshot nets currently in the scene BEFORE adding new
+                    # segments, so we can detect what mergeSplitNets changes.
+                    netsBefore = self.findSceneNetsSet()
+
+                    # Add segments to scene
+                    for segment in newSegments:
+                        self.addItem(segment)
+
+                    # Call mergeSplitNets on each new segment for connectivity.
+                    # This may remove some of our new segments (merged) and add
+                    # different ones, or remove existing scene nets (merged into
+                    # our new ones).
+                    for segment in newSegments:
+                        if segment.scene() is not None:
+                            self.mergeSplitNets(segment)
+
+                    # Snapshot nets after merge/split to determine final state
+                    netsAfter = self.findSceneNetsSet()
+
+                    # allNewNets: nets that now exist but didn't before
+                    allNewNets = list(netsAfter - netsBefore)
+
+                    # consumedNets: existing nets that were removed by merging
+                    consumedNets = list(netsBefore - netsAfter)
+
+                    # The undo must restore the original net AND any existing
+                    # nets that were consumed during merge/split
+                    allOldNets = [self._stretchOriginalNet] + consumedNets
+
+                    # Push single undo command capturing the complete operation
+                    undoCommand = us.addDeleteShapesUndo(
+                        self, allNewNets, allOldNets)
+                    self.undoStack.push(undoCommand)
+
+        except Exception as e:
+            self.logger.error(f"Error in _completeStretch: {e}", exc_info=True)
+        finally:
+            # Clean up: remove guideLine from scene, reset stretch state,
+            # hide snap indicator, restore default cursor
+            if self._stretchNet and self._stretchNet.scene() is not None:
+                self.removeItem(self._stretchNet)
             self._stretchNet = None
+            self._stretchOriginalNet = None
+            self._stretchClickedEndpoint = None
             self._snapPointRect.setVisible(False)
-            self.editModes.stretchItem = False
+            for view in self.views():
+                view.setCursor(Qt.CursorShape.ArrowCursor)
 
     def _handleNameNet(self, mouseReleaseLoc):
         if self.netNameString:
@@ -367,8 +477,11 @@ class schematicScene(editorScene):
             self.selectedNet = None
 
     def updateStretchNet(self):
+        netEndPoint = self.findSnapPoint(self.mouseMoveLoc, set())
+        if netEndPoint == self.mouseMoveLoc:
+            netEndPoint = self.snapToGrid(self.mouseMoveLoc)
         self._stretchNet.draftLine = QLineF(self._stretchNet.draftLine.p1(),
-                                            self.mouseMoveLoc)
+                                            netEndPoint)
 
     @Slot(snet.schematicNet)
     def _handleWireFinished(self, newNet: snet.schematicNet):
@@ -377,8 +490,10 @@ class schematicScene(editorScene):
 
         """
 
-        if newNet.draftLine.length() < self.snapGrid / 2:
-            self.removeItem(newNet)
+        if newNet.draftLine.length() < 1:
+            # Only remove if the net is actually in this scene
+            if newNet.scene() == self:
+                self.removeItem(newNet)
             self.undoStack.removeLastCommand()
         else:
             newNetSceneRect = newNet.sceneBoundingRect().adjusted(-self.snapGrid,
@@ -391,7 +506,9 @@ class schematicScene(editorScene):
     def _updateNets(self, nets_to_remove: set, nets_to_add: set, name_source_net):
         """Helper to update nets in scene"""
         for net in nets_to_remove:
-            self.removeItem(net)
+            # Only remove if the net is actually in this scene
+            if net.scene() == self:
+                self.removeItem(net)
         for net in nets_to_add:
             self.addItem(net)
             net.mergeNetName(name_source_net)
@@ -434,7 +551,10 @@ class schematicScene(editorScene):
             points.extend(net.sceneEndPoints)
 
         furthestPoints = self.findFurthestPoints(points)
-        mergedNet = snet.schematicNet(*furthestPoints, width=busExists)
+        # Snap furthest points to grid to ensure merged net is properly aligned
+        p1 = self.snapToGrid(furthestPoints[0])
+        p2 = self.snapToGrid(furthestPoints[1])
+        mergedNet = snet.schematicNet(p1, p2, width=busExists)
 
         processedNets = parallelNets | {inputNet}
         for net in processedNets:
@@ -471,8 +591,10 @@ class schematicScene(editorScene):
         is_selected = inputNet.isSelected()
 
         for i in range(len(orderedPoints) - 1):
-            splitNet = snet.schematicNet(orderedPoints[i], orderedPoints[i + 1],
-                                         inputNet.width)
+            # Snap points to grid to ensure split nets are properly aligned
+            p1 = self.snapToGrid(orderedPoints[i])
+            p2 = self.snapToGrid(orderedPoints[i + 1])
+            splitNet = snet.schematicNet(p1, p2, inputNet.width)
             if not splitNet.draftLine.isNull():
                 if is_selected:
                     splitNet.setSelected(True)
@@ -483,16 +605,15 @@ class schematicScene(editorScene):
     def findSnapPoint(self, eventLoc: QPoint,
                       ignoredSet: set[snet.schematicNet]) -> QPoint:
         snapRect = QRect(eventLoc.x() - self.snapTuple[0],
-                         eventLoc.y() - self.snapTuple[1], 4 * self.snapTuple[0],
-                         4 * self.snapTuple[1], )
+                         eventLoc.y() - self.snapTuple[1], 2 * self.snapTuple[0],
+                         2 * self.snapTuple[1], )
         snapPoints = self.findConnectPoints(snapRect, ignoredSet)
 
         if self._newNet:
             snapPoints.update(self.findNetInterSect(self._newNet, snapRect))
         if snapPoints:
-            lengths = [(snapPoint - eventLoc).manhattanLength() for snapPoint in
-                       snapPoints]
-            closestPoint = list(snapPoints)[lengths.index(min(lengths))]
+            closestPoint = min(snapPoints,
+                               key=lambda p: (p - eventLoc).manhattanLength())
             return closestPoint
         else:
             return eventLoc
@@ -502,10 +623,11 @@ class schematicScene(editorScene):
         snapPoints = set()
         rectItems = set(self.items(sceneRect)) - ignoredSet
         for item in rectItems:
-            if isinstance(item, snet.schematicNet) and any(
-                    list(map(sceneRect.contains, item.sceneEndPoints))):
-                snapPoints.add(item.sceneEndPoints[list(
-                    map(sceneRect.contains, item.sceneEndPoints)).index(True)])
+            if isinstance(item, snet.schematicNet):
+                for ep in item.sceneEndPoints:
+                    if sceneRect.contains(ep):
+                        snapPoints.add(ep)
+                        break
             elif isinstance(item, shp.symbolPin):
                 snapPoints.add(item.mapToScene(item.start).toPoint())
             elif isinstance(item, shp.schematicPin):
@@ -565,11 +687,11 @@ class schematicScene(editorScene):
         orderedPoints = [currentPoint]
 
         while points:
-            distances = [(point - currentPoint).manhattanLength() for point in
-                         points]
-            nearest_point_index = distances.index(min(distances))
-            nearestPoint = points[nearest_point_index]
-            orderedPoints.append(nearestPoint)
+            nearest_point_index = min(
+                range(len(points)),
+                key=lambda i: (points[i] - currentPoint).manhattanLength()
+            )
+            orderedPoints.append(points[nearest_point_index])
             currentPoint = points.pop(nearest_point_index)
 
         return orderedPoints
@@ -590,6 +712,114 @@ class schematicScene(editorScene):
                     furthest_points = (points[i], points[j])
 
         return furthest_points[0], furthest_points[1]
+
+    def _findNearestEndpoint(
+        self, mousePos: QPoint
+    ) -> Optional[Tuple[snet.schematicNet, QPoint, QPoint]]:
+        """
+        Search scene for nets with an endpoint within snapDistance of mousePos.
+        Returns (net, clickedEndpoint, anchorEndpoint) or None.
+        If both endpoints of the same net are within snapDistance, pick the one
+        farther by Manhattan distance as anchor.
+        """
+        snapDist = min(self.snapTuple)
+        bestNet = None
+        bestClickedEnd = None
+        bestAnchorEnd = None
+        bestDist = snapDist + 1  # Initialize beyond threshold
+
+        for netItem in self.findSceneNetsSet():
+            endpoints = netItem.sceneEndPoints
+            p1, p2 = endpoints[0], endpoints[1]
+
+            dist_p1 = (p1 - mousePos).manhattanLength()
+            dist_p2 = (p2 - mousePos).manhattanLength()
+
+            p1_within = dist_p1 <= snapDist
+            p2_within = dist_p2 <= snapDist
+
+            if not p1_within and not p2_within:
+                continue
+
+            # Determine clicked endpoint (closer to mousePos) and anchor (the other)
+            if p1_within and p2_within:
+                # Both within snap distance: clicked = closer, anchor = farther
+                if dist_p1 <= dist_p2:
+                    clickedEnd, anchorEnd, closestDist = p1, p2, dist_p1
+                else:
+                    clickedEnd, anchorEnd, closestDist = p2, p1, dist_p2
+            elif p1_within:
+                clickedEnd, anchorEnd, closestDist = p1, p2, dist_p1
+            else:
+                clickedEnd, anchorEnd, closestDist = p2, p1, dist_p2
+
+            # Keep the net with the closest endpoint to mousePos
+            if closestDist < bestDist:
+                bestDist = closestDist
+                bestNet = netItem
+                bestClickedEnd = clickedEnd
+                bestAnchorEnd = anchorEnd
+
+        if bestNet is not None:
+            return (bestNet, bestClickedEnd, bestAnchorEnd)
+        return None
+
+    def _initiateStretch(self, mousePos: QPoint) -> bool:
+        """
+        Find nearest net endpoint within snap distance of mousePos.
+        If found, remove original net, create guideLine from anchor to mousePos,
+        store stretch state, set appropriate cursor, and show snap indicator.
+        Returns True if stretch initiated, False otherwise.
+        """
+        result = self._findNearestEndpoint(mousePos)
+        if result is None:
+            return False
+
+        netItem, clickedEndpoint, anchorEndpoint = result
+
+        # Capture endpoint positions before removing from scene
+        # (mapToScene requires the item to be in a scene)
+        p1, p2 = netItem.sceneEndPoints[0], netItem.sceneEndPoints[1]
+
+        # Store stretch state: original net properties
+        self._stretchOriginalNet = netItem
+        self._stretchAnchorPoint = anchorEndpoint
+        self._stretchClickedEndpoint = clickedEndpoint
+        self._stretchOriginalName = netItem.name
+        self._stretchOriginalNameStrength = netItem.nameStrength
+        self._stretchOriginalWidth = netItem.width
+
+        # Remove original net from scene
+        self.removeItem(netItem)
+
+        # Create guideLine from anchor to cursor position
+        self._stretchNet = snet.guideLine(anchorEndpoint, mousePos)
+        self._stretchNet.inherit(netItem)
+        self.addItem(self._stretchNet)
+
+        # Determine net orientation and set cursor accordingly
+        # A horizontal net has same Y for both endpoints
+        # A vertical net has same X for both endpoints
+        if p1.y() == p2.y():
+            # Horizontal net
+            for view in self.views():
+                view.setCursor(Qt.CursorShape.SizeHorCursor)
+        elif p1.x() == p2.x():
+            # Vertical net
+            for view in self.views():
+                view.setCursor(Qt.CursorShape.SizeVerCursor)
+        else:
+            # Diagonal or other — use horizontal as default
+            for view in self.views():
+                view.setCursor(Qt.CursorShape.SizeHorCursor)
+
+        # Show snap indicator rect at cursor position
+        if self._snapPointRect.scene() is None:
+            self.addItem(self._snapPointRect)
+        self._snapPointRect.setPos(mousePos)
+        self._snapPointRect.setVisible(True)
+
+        return True
 
     def _handleStretchNet(self, netItem: snet.schematicNet, stretchEnd: str):
         match stretchEnd:
@@ -671,6 +901,12 @@ class schematicScene(editorScene):
             firstPoint = QPoint(firstPointX, start.y())
             secondPoint = QPoint(firstPointX, end.y())
 
+            # Snap all points to grid to ensure wire segments are properly aligned
+            start = self.snapToGrid(start)
+            firstPoint = self.snapToGrid(firstPoint)
+            secondPoint = self.snapToGrid(secondPoint)
+            end = self.snapToGrid(end)
+
             # Create wire segments
             lines = []
             segments = [(start, firstPoint), (firstPoint, secondPoint),
@@ -720,12 +956,11 @@ class schematicScene(editorScene):
                                      instanceTuple.viewName, )
         viewPath = viewItem.viewPath
         try:
-            # Try to get items from cache first
-            items = self._symbolCache.get(viewPath)
+            # Use FileCache with mtime invalidation
+            items = self._symbolCache.get_json(viewPath)
             if items is None:
-                with open(viewPath, "r") as temp:
-                    items = json.load(temp)
-                    self._symbolCache[viewPath] = items
+                self.logger.error(f"Cannot load symbol file: {viewPath}")
+                return
 
             # Use comprehensions for better performance
             itemAttributes = {item["nam"]: item["def"] for item in items[2:] if
@@ -960,12 +1195,30 @@ class schematicScene(editorScene):
             self.logger.error(e)
 
     def setInstanceProperties(self, item: shp.schematicSymbol):
-        dlg = pdlg.instanceProperties(self.editorWindow)
+        # Get available views for the instance's cell
+        availableViews = []
+        try:
+            libItem = libm.getLibItem(self.editorWindow.libraryView.libraryModel, 
+                                      item.libraryName)
+            if libItem:
+                cellItem = libm.getCellItem(libItem, item.cellName)
+                if cellItem:
+                    availableViews = [cellItem.child(row).viewName 
+                                    for row in range(cellItem.rowCount())]
+        except Exception as e:
+            self.logger.warning(f"Failed to get available views for {item.cellName}: {e}")
+        
+        dlg = pdlg.instanceProperties(self.editorWindow, availableViews=availableViews)
         dlg.libNameEdit.setText(item.libraryName)
         dlg.cellNameEdit.setText(item.cellName)
         dlg.cellNameEdit.setEnabled(True)
 
-        dlg.viewNameEdit.setText(item.viewName)
+        # Set the current view name in the combo box
+        if item.viewName in availableViews:
+            dlg.viewNameEdit.setCurrentText(item.viewName)
+        else:
+            dlg.viewNameEdit.addItem(item.viewName)
+            dlg.viewNameEdit.setCurrentText(item.viewName)
         dlg.instNameEdit.setText(item.instanceName)
         location = (item.scenePos() - self.origin).toTuple()
         dlg.xLocationEdit.setText(str(location[0]))
@@ -1002,13 +1255,19 @@ class schematicScene(editorScene):
         if dlg.exec() == QDialog.DialogCode.Accepted:
             libraryName = dlg.libNameEdit.text().strip()
             cellName = dlg.cellNameEdit.text().strip()
-            viewName = dlg.viewNameEdit.text().strip()
-            instanceTuple = ddef.viewNameTuple(libraryName, cellName, viewName)
+            netlistViewName = dlg.viewNameEdit.currentText().strip()
             location = QPoint(int(float(dlg.xLocationEdit.text().strip())),
                               int(float(dlg.yLocationEdit.text().strip())), )
-            newInstance = self.instSymbol(instanceTuple, location)
+            
+            # Create new instance with symbol view (for display)
+            # but store the netlist view separately
+            symbolViewTuple = ddef.viewNameTuple(libraryName, cellName, "symbol")
+            newInstance = self.instSymbol(symbolViewTuple, location)
 
             if newInstance:
+                # Set the netlisting view (this is what matters for netlisting)
+                newInstance.viewName = netlistViewName
+                
                 newInstance.instanceName = dlg.instNameEdit.text().strip()
                 newInstance.angle = float(dlg.angleEdit.text().strip())
                 newInstance.counter = item.counter

@@ -196,7 +196,7 @@ Example:
     },
     {
       "name": "revedasim",
-      "version": "0.8.8",
+      "version": "0.9.0",
       "license": "Proprietary",
       "type": "binary",
       "description": "Simulation plugin",

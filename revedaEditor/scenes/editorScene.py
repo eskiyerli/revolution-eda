@@ -1,31 +1,18 @@
-#    “Commons Clause” License Condition v1.0
-#   #
-#    The Software is provided to you by the Licensor under the License, as defined
-#    below, subject to the following condition.
+# 
+# Revolution EDA
+# 
+# Copyright (c) 2026 Revolution Semiconductor
 #
-#    Without limiting other conditions in the License, the grant of rights under the
-#    License will not include, and the License does not grant to you, the right to
-#    Sell the Software.
+# This Source Code Form is subject to the terms of the
+# Mozilla Public License, v. 2.0.
+# If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #
-#    For purposes of the foregoing, “Sell” means practicing any or all of the rights
-#    granted to you under the License to provide to third parties, for a fee or other
-#    consideration (including without limitation fees for hosting) a product or service whose value
-#    derives, entirely or substantially, from the functionality of the Software. Any
-#    license notice or attribution required by the License must also include this
-#    Commons Clause License Condition notice.
-#
-#   Add-ons and extensions developed for this software may be distributed
-#   under their own separate licenses.
-#
-#    Software: Revolution EDA
-#    License: Mozilla Public License 2.0
-#    Licensor: Revolution Semiconductor (Registered in the Netherlands)
-
 import pathlib
 import time
 from contextlib import contextmanager
 from itertools import cycle
-from typing import TYPE_CHECKING, List, Union
+from typing import TYPE_CHECKING, Any, List, Optional, Union
 
 from PySide6.QtCore import (QEvent, QPoint, QRectF, QSizeF, Qt, QRect)
 from PySide6.QtGui import QColor, QGuiApplication, QPainterPath, QPen, QTransform
@@ -120,12 +107,12 @@ class editorScene(QGraphicsScene):
         self.mouseReleaseLoc = QPoint(0, 0)
         self.newAlignLine = None
 
-    def contextMenuEvent(self, event):
+    def contextMenuEvent(self, event) -> None:
         if self.itemAt(event.scenePos(), QTransform()) is None:
             self.messageLine.setText("No item selected")
         super().contextMenuEvent(event)
 
-    def mousePressEvent(self, event):
+    def mousePressEvent(self, event) -> None:
         modifiers = QGuiApplication.keyboardModifiers()
         if event.button() == Qt.MouseButton.LeftButton:
             self.mousePressLoc = event.scenePos().toPoint()
@@ -171,6 +158,10 @@ class editorScene(QGraphicsScene):
             if self.editModes.moveItem or self.editModes.constrainedMoveItem:
                 # If clicked on an item, add it to selection
                 clickedItem = self.itemAt(self.mousePressLoc, QTransform())
+                # Resolve to top-level parent (e.g. schematicPinPolygon → schematicPin)
+                if clickedItem:
+                    while clickedItem.parentItem() is not None:
+                        clickedItem = clickedItem.parentItem()
                 if clickedItem and not clickedItem.isSelected():
                     self.clearSelection()
                     self.selectedItemsSet = {clickedItem}
@@ -197,7 +188,7 @@ class editorScene(QGraphicsScene):
 
         super().mousePressEvent(event)
 
-    def mouseMoveEvent(self, event):
+    def mouseMoveEvent(self, event) -> None:
         super().mouseMoveEvent(event)
         self.mouseMoveLoc = event.scenePos().toPoint()
         if self.editModes.selectItem:
@@ -220,7 +211,7 @@ class editorScene(QGraphicsScene):
             offset = self.mouseMoveLoc - self.mousePressLoc
             self.selectedItemGroup.setPos(offset)
 
-    def mouseReleaseEvent(self, event):
+    def mouseReleaseEvent(self, event) -> None:
         # if event.button() != Qt.MouseButton.LeftButton:
         #     super().mouseReleaseEvent(event)
         #     return
@@ -350,26 +341,26 @@ class editorScene(QGraphicsScene):
 
         return super().eventFilter(source, event)
 
-    def copySelectedItems(self):
+    def copySelectedItems(self) -> None:
         """
         Will be implemented in the subclasses.
         """
 
-    def flipHorizontal(self):
+    def flipHorizontal(self) -> None:
         for item in self.selectedItems():
             item.flipTuple = (-1, 1)
 
-    def flipVertical(self):
+    def flipVertical(self) -> None:
         for item in self.selectedItems():
             item.flipTuple = (1, -1)
 
-    def selectAll(self):
+    def selectAll(self) -> None:
         """
         Select all items in the scene.
         """
         [item.setSelected(True) for item in self.items()]
 
-    def deselectAll(self):
+    def deselectAll(self) -> None:
         """
         Deselect all items in the scene.
         """
@@ -391,7 +382,7 @@ class editorScene(QGraphicsScene):
         self.editModes.setMode("selectItem")
         self.messageLine.setText("All items deselected")
 
-    def deleteSelectedItems(self):
+    def deleteSelectedItems(self) -> None:
         if self.selectedItems() is not None:
             for item in self.selectedItems():
                 # self.removeItem(item)
@@ -399,12 +390,12 @@ class editorScene(QGraphicsScene):
                 self.undoStack.push(undoCommand)
             self.update()  # update the scene
 
-    def stretchSelectedItems(self):
+    def stretchSelectedItems(self) -> None:
         for item in self.selectedItems():
             if hasattr(item, "stretch"):
                 item.stretch = True
 
-    def reloadScene(self):
+    def reloadScene(self) -> None:
         """Reload scene with proper painter state management."""
         self._safeLoadDesign(self.editorWindow.file, reload=True)
 

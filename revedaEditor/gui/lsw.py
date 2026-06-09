@@ -1,26 +1,13 @@
-#    “Commons Clause” License Condition v1.0
-#   #
-#    The Software is provided to you by the Licensor under the License, as defined
-#    below, subject to the following condition.
+# 
+# Revolution EDA
+# 
+# Copyright (c) 2026 Revolution Semiconductor
 #
-#    Without limiting other conditions in the License, the grant of rights under the
-#    License will not include, and the License does not grant to you, the right to
-#    Sell the Software.
-#
-#    For purposes of the foregoing, “Sell” means practicing any or all of the rights
-#    granted to you under the License to provide to third parties, for a fee or other
-#    consideration (including without limitation fees for hosting) a product or service whose value
-#    derives, entirely or substantially, from the functionality of the Software. Any
-#    license notice or attribution required by the License must also include this
-#    Commons Clause License Condition notice.
-#
-#   Add-ons and extensions developed for this software may be distributed
-#   under their own separate licenses.
-#
-#    Software: Revolution EDA
-#    License: Mozilla Public License 2.0
-#    Licensor: Revolution Semiconductor (Registered in the Netherlands)
-#
+# This Source Code Form is subject to the terms of the
+# Mozilla Public License, v. 2.0.
+# If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+##
 import os
 import pathlib
 from pathlib import Path
@@ -85,11 +72,11 @@ class layerDataModel(QStandardItemModel):
             self.setItem(row, 2, QStandardItem(layer.purpose))
             item = QStandardItem()
             item.setCheckable(True)
-            item.setCheckState(Qt.Checked if layer.selectable else Qt.Unchecked)
+            item.setCheckState(Qt.CheckState.Checked if layer.selectable else Qt.CheckState.Unchecked)
             self.setItem(row, 3, item)
             item = QStandardItem()
             item.setCheckable(True)
-            item.setCheckState(Qt.Checked if layer.visible else Qt.Unchecked)
+            item.setCheckState(Qt.CheckState.Checked if layer.visible else Qt.CheckState.Unchecked)
             self.setItem(row, 4, item)
 
     def createData(self, layerlist: list) -> list:
@@ -194,16 +181,16 @@ class layerViewTable(QTableView):
         self.selectedRow: int = -1
         self.resizeColumnsToContents()
         self.setShowGrid(False)
-        self.setSelectionBehavior(QTableView.SelectRows)
-        self.setSelectionMode(QTableView.SingleSelection)
+        self.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
+        self.setSelectionMode(QTableView.SelectionMode.SingleSelection)
         self.verticalHeader().setVisible(False)
         # Set custom delegate for texture column
         self.setItemDelegateForColumn(self.columnTexture, TextureDelegate(self))
 
     def connectSignals(self):
         """Connect signal handlers"""
-        self.selectionModel().selectionChanged.connect(self.onSelectionChanged)
         self._model.dataChanged.connect(self.onDataChanged)
+        self.clicked.connect(self.onClicked)
 
     def getLayerInfo(self, row: int) -> tuple[str, str]:
         """Helper method to get layer name and purpose"""
@@ -213,12 +200,12 @@ class layerViewTable(QTableView):
         )
 
     def onDataChanged(self, topLeft: QModelIndex, bottomRight: QModelIndex, roles: list):
-        if Qt.CheckStateRole not in roles:
+        if Qt.ItemDataRole.CheckStateRole not in roles:
             return
 
         row, column = topLeft.row(), topLeft.column()
         item = self._model.item(row, column)
-        isChecked = item.checkState() == Qt.Checked
+        isChecked = item.checkState() == Qt.CheckState.Checked
         layerName, layerPurpose = self.getLayerInfo(row)
 
         if column == self.columnSelectable:
@@ -226,21 +213,41 @@ class layerViewTable(QTableView):
         elif column == self.columnVisible:
             self.layerVisible.emit(layerName, layerPurpose, isChecked)
 
+    def onClicked(self, index):
+        """Handle mouse clicks on the table"""
+        row = index.row()
+        
+        # Get layer info and emit selection
+        layerName, layerPurpose = self.getLayerInfo(row)
+        self.dataSelected.emit(layerName, layerPurpose)
+
     def onSelectionChanged(self, selected, deselected):
         if selected.indexes():
             indices = selected.indexes()
-            layerName = self._model.data(indices[self.columnName])
-            layerPurpose = self._model.data(indices[self.columnPurpose])
+            # Get the first selected index to determine the row
+            firstIndex = indices[0]
+            row = firstIndex.row()
+            
+            # Get the layer name and purpose from the correct columns
+            layerNameIndex = self._model.index(row, self.columnName)
+            layerPurposeIndex = self._model.index(row, self.columnPurpose)
+            
+            layerName = self._model.data(layerNameIndex)
+            layerPurpose = self._model.data(layerPurposeIndex)
+            
+            # Debug logging
+            print(f"DEBUG: Layer selected - Name: '{layerName}', Purpose: '{layerPurpose}', Row: {row}")
+            
             self.dataSelected.emit(layerName, layerPurpose)
 
     def updateAllLayers(self, visible: bool = None, selectable: bool = None):
         """Helper method to update all layers' visibility or selectability"""
         if visible is not None:
-            state, column = Qt.Checked if visible else Qt.Unchecked, self.columnVisible
+            state, column = Qt.CheckState.Checked if visible else Qt.CheckState.Unchecked, self.columnVisible
             for layer in laylyr.pdkAllLayers:
                 layer.visible = visible
         else:
-            state, column = Qt.Checked if selectable else Qt.Unchecked, self.columnSelectable
+            state, column = Qt.CheckState.Checked if selectable else Qt.CheckState.Unchecked, self.columnSelectable
             for layer in laylyr.pdkAllLayers:
                 layer.selectable = selectable
             # Update scene items selectability

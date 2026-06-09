@@ -391,9 +391,9 @@ class aboutDialog(QDialog):
         # Add information about your application using rich text
         aboutLabel = QLabel(
             "<h2>Revolution EDA</h2>"
-            "<p><strong>Version:</strong> 0.8.11</p>"
+            "<p><strong>Version:</strong> 0.9.0</p>"
             "<p><strong>Copyright: Revolution Semiconductor</strong> © 2026</p>"
-            "<p><strong>License:</strong> Mozilla Public License 2.0 amended with Commons Clause</p>"
+            "<p><strong>License:</strong> Mozilla Public License 2.0</p>"
             "<p><strong> Website:</strong> <a href='https://reveda.eu'>Revolution EDA</a></p>"
             "<p><strong> GitHub:</strong> "
             "<a href='https://github.com/eskiyerli/revolution-eda'>Revolution "
@@ -436,9 +436,9 @@ class licenseDialog(QDialog):
 
     @staticmethod
     def _loadLicenseText() -> str:
-        # 1. Try installed package data
+        # 1. Try package data (LICENSE.txt bundled inside revedaEditor/)
         try:
-            ref = importlib.resources.files("revedaEditor").joinpath("../LICENSE.txt")
+            ref = importlib.resources.files("revedaEditor").joinpath("LICENSE.txt")
             candidate = Path(str(ref)).resolve()
             if candidate.exists():
                 return candidate.read_text(encoding="utf-8")
@@ -455,7 +455,15 @@ class licenseDialog(QDialog):
         except Exception:
             pass
 
-        # 3. CWD fallback
+        # 3. Relative to this file (works in source tree and Nuitka builds)
+        try:
+            candidate = Path(__file__).resolve().parent.parent.parent / "LICENSE.txt"
+            if candidate.exists():
+                return candidate.read_text(encoding="utf-8")
+        except Exception:
+            pass
+
+        # 4. CWD fallback
         candidate = Path("LICENSE.txt")
         if candidate.exists():
             return candidate.read_text(encoding="utf-8")
