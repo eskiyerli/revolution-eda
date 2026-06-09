@@ -1,0 +1,118 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/eskiyerli/revolution-eda/master/revedaEditor/fileio/schemas/schematic.schema.json",
+  "title": "Revolution EDA Schematic File",
+  "description": "Schema for schematic design files",
+  "type": "array",
+  "minItems": 2,
+  "items": [
+    { "$ref": "#/$defs/viewHeader" },
+    { "$ref": "#/$defs/gridSettings" }
+  ],
+  "additionalItems": { "$ref": "#/$defs/schematicItem" },
+  "$defs": {
+    "point": {
+      "type": "array",
+      "items": { "type": "number" },
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "flipTuple": {
+      "type": "array",
+      "items": { "type": ["number", "integer"] },
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "rectCoords": {
+      "type": "array",
+      "items": { "type": "number" },
+      "minItems": 4,
+      "maxItems": 4
+    },
+    "viewHeader": {
+      "type": "object",
+      "required": ["viewType"],
+      "properties": {
+        "viewType": { "type": "string", "enum": ["symbol", "schematic", "layout"] },
+        "schemaVersion": { "type": "string" }
+      }
+    },
+    "gridSettings": {
+      "type": "object",
+      "properties": {
+        "snapGrid": {
+          "type": "array",
+          "items": { "type": ["number", "integer"] },
+          "minItems": 2,
+          "maxItems": 2
+        }
+      }
+    },
+    "schematicItem": {
+      "oneOf": [
+        { "$ref": "#/$defs/schematicSymbol" },
+        { "$ref": "#/$defs/schematicNet" },
+        { "$ref": "#/$defs/schematicPin" },
+        { "$ref": "#/$defs/schematicText" }
+      ]
+    },
+    "schematicSymbol": {
+      "type": "object",
+      "required": ["type", "lib", "cell", "view", "nam", "ic", "ld", "loc"],
+      "properties": {
+        "type": { "const": "sys" },
+        "lib": { "type": "string" },
+        "cell": { "type": "string" },
+        "view": { "type": "string" },
+        "nam": { "type": "string" },
+        "ic": { "type": "integer" },
+        "ld": { "type": "object" },
+        "loc": { "$ref": "#/$defs/point" },
+        "ang": { "type": "number" },
+        "ign": { "type": "integer" },
+        "br": { "$ref": "#/$defs/rectCoords" },
+        "fl": { "$ref": "#/$defs/flipTuple" }
+      }
+    },
+    "schematicNet": {
+      "type": "object",
+      "required": ["type", "st", "end", "nam", "ns"],
+      "properties": {
+        "type": { "const": "scn" },
+        "st": { "$ref": "#/$defs/point" },
+        "end": { "$ref": "#/$defs/point" },
+        "nam": { "type": "string" },
+        "ns": { "type": "integer" }
+      }
+    },
+    "schematicPin": {
+      "type": "object",
+      "required": ["type", "st", "pn", "pd", "pt"],
+      "properties": {
+        "type": { "const": "scp" },
+        "st": { "$ref": "#/$defs/point" },
+        "pn": { "type": "string" },
+        "pd": { "type": "string" },
+        "pt": { "type": "string" },
+        "ang": { "type": "number" },
+        "fl": { "$ref": "#/$defs/flipTuple" }
+      }
+    },
+    "schematicText": {
+      "type": "object",
+      "required": ["type", "st", "tc", "ff", "fs", "th", "ta", "to"],
+      "properties": {
+        "type": { "const": "txt" },
+        "st": { "$ref": "#/$defs/point" },
+        "tc": { "type": "string" },
+        "ff": { "type": "string" },
+        "fs": { "type": "string" },
+        "th": { "type": ["number", "integer"] },
+        "ta": { "type": "string" },
+        "to": { "type": "string" },
+        "ang": { "type": "number" },
+        "fl": { "$ref": "#/$defs/flipTuple" }
+      }
+    }
+  }
+}

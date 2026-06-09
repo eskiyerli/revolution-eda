@@ -24,7 +24,13 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Electronic Design Automation (EDA)"
 ]
 
+include = [
+    { path = "pyqtgraph/**" },
+    { path = "revedaEditor/fileio/schemas/*.json" }
+]
 exclude = [
+    "examples",
+    "icons",
     "revedaEditor/tests",
     "revedaLicense",
     "scripts",
@@ -41,6 +47,9 @@ exclude = [
 
 [tool.poetry.dependencies]
 python = ">=3.12,<3.15"
+jsonschema = "^4.23.0"
+anthropic = "^0.75.0"
+google-generativeai = "^0.8.5"
 PySide6 = "~6.11.1"
 quantiphy = "~2.21"
 python-dotenv = "~1.2.2"

@@ -42,6 +42,7 @@ import revedaEditor.backend.undoStack as us
 import revedaEditor.common.labels as lbl
 import revedaEditor.common.shapes as shp  # import the shapes
 import revedaEditor.fileio.loadJSON as lj
+import revedaEditor.fileio.schemaValidation as sv
 import revedaEditor.fileio.symbolEncoder as symenc
 import revedaEditor.gui.alignItems as alg
 import revedaEditor.gui.propertyDialogues as pdlg
@@ -585,11 +586,19 @@ class symbolScene(editorScene):
         try:
             with filePathObj.open("rb") as file:
                 decodedData = orjson.loads(file.read())
+            # Validate file structure before processing
+            is_valid, errors = sv.validate_design_file(
+                decodedData, "symbol", str(filePathObj)
+            )
+            if not is_valid:
+                for err in errors:
+                    self.logger.error(
+                        f"Symbol validation error in '{filePathObj.name}': {err}"
+                    )
+                return
             self.blockSignals(True)
             with self.measureDuration():
                 viewDict, gridSettings, *itemData = decodedData
-                if viewDict.get("viewType") != "symbol":
-                    raise Exception("Not a symbol file!")
                 if gridSettings and gridSettings.get("snapGrid"):
                     self.editorWindow.configureGridSettings(decodedData[1].get(
                         "snapGrid", (self.majorGrid,
@@ -652,7 +661,7 @@ class symbolScene(editorScene):
                                                                       symbolClasses)]
             # Build save data
             save_data = [
-                {"viewType": "symbol"},
+                {"viewType": "symbol", "schemaVersion": "1.0"},
                 {"snapGrid": (self.majorGrid, self.snapGrid)},
                 *sceneItems,
                 *getattr(self, "attributeList", [])

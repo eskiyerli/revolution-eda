@@ -41,6 +41,7 @@ import revedaEditor.common.layoutShapes as lshp  # import layout shapes
 import revedaEditor.fileio.exportGDS as gdse
 import revedaEditor.fileio.layoutEncoder as layenc
 import revedaEditor.fileio.loadJSON as lj
+import revedaEditor.fileio.schemaValidation as sv
 import revedaEditor.gui.editFunctions as edf
 import revedaEditor.gui.fileDialogues as fd
 import revedaEditor.gui.layoutDialogues as ldlg
@@ -855,7 +856,7 @@ class layoutScene(editorScene):
                    and isinstance(item, tuple(self.LAYOUT_SHAPES))
             ]
             layoutData = [
-                {"viewType": "layout"},
+                {"viewType": "layout", "schemaVersion": "1.0"},
                 {"snapGrid": (self.majorGrid, self.snapGrid)},
                 *topLevelItems,
             ]
@@ -955,8 +956,16 @@ class layoutScene(editorScene):
         try:
             with filePathObj.open("rb") as file:
                 decodedData = orjson.loads(file.read())
-            if len(decodedData) < 2 or decodedData[0].get("viewType") != "layout":
-                self.logger.error("Invalid file type.")
+            # Validate file structure before processing
+            is_valid, errors = sv.validate_design_file(
+                decodedData, "layout", str(filePathObj)
+            )
+            if not is_valid:
+                for err in errors:
+                    self.logger.error(
+                        f"Layout validation error in "
+                        f"'{filePathObj.name}': {err}"
+                    )
                 return False
             with self.measureDuration():
                 self.editorWindow.configureGridSettings(
