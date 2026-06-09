@@ -43,12 +43,16 @@ Current version is **0.9.0**.
     scripting against Revolution EDA's internal APIs.
 15. **Stipple Pattern Editor**: Built-in editor for creating custom layer fill stipple
     patterns.
-16. **Persistent Configuration**: Save and restore configuration parameters.
-17. **Constrained Move**: Move items with orthogonal and diagonal constraints across all
+16. **Persistent Configuration**: Save and restore configuration parameters per project.
+17. **Project Management**: Project-directory-based workflow with per-project `.env`,
+    `library.json`, and `reveda.conf`. Switching projects triggers a clean application
+    restart to ensure PDK and plugin modules are loaded fresh. Recent projects are tracked
+    and accessible from the File menu.
+18. **Constrained Move**: Move items with orthogonal and diagonal constraints across all
     editors using `Shift+M` shortcuts.
-18. **Plugin Licensing**: Ed255-signature-based license validation for commercial plugins with
+19. **Plugin Licensing**: Ed255-signature-based license validation for commercial plugins with
     machine-fingerprint activation and checkout workflow.
-19. **Comprehensive Logging**: Error, warning, and info message logging to `reveda.log`.
+20. **Comprehensive Logging**: Error, warning, and info message logging to `reveda.log`.
 
 ## Plugin Architecture
 
@@ -114,6 +118,12 @@ After installation, start the program with:
 reveda
 ```
 
+To open a specific project directory:
+
+```bash
+reveda --project /path/to/my/project
+```
+
 ### From Source
 
 ```bash
@@ -132,10 +142,17 @@ poetry run reveda
 
 Standalone binaries built with [Nuitka](https://nuitka.net) are available on the
 [GitHub Releases page](https://github.com/eskiyerli/revolution-eda/releases) and do not
-require a separate Python installation.
+require a separate Python installation. The binaries launch as GUI applications without a
+console window.
 
 - **Windows**: `reveda.exe`
 - **Linux**: `reveda.bin` (mark executable with `chmod +x reveda.bin` before running)
+
+Both support the `--project` argument:
+
+```bash
+reveda.exe --project C:\Users\me\designs\my_project
+```
 
 ### PDK Installation
 

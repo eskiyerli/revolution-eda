@@ -10,7 +10,7 @@ $EntryPoint = Join-Path $ScriptDir "reveda.py"
 $VenvBase = if ($env:POETRY_VENV_BASE) { $env:POETRY_VENV_BASE } else { "C:\Users\eskiye50\poetryenvs" }
 $OutputBase = "C:\Users\eskiye50\dist"
 
-foreach ($PyVer in @("3.12", "3.13", "3.14")) {
+foreach ($PyVer in @("3.13")) {
     $ArtifactName = "windows-amd64-py${PyVer}"
     Write-Host "========================================" -ForegroundColor Cyan
     Write-Host "Building Revolution EDA for Windows with Python $PyVer" -ForegroundColor Cyan
