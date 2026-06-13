@@ -60,7 +60,7 @@ lxml = "^6.1.0"
 polars = "~1.40.1"
 orjson = "^3.11.9"
 httpx = "^0.28.1"
-cryptography = "^46.0.3"
+cryptography = "^48.0.1"
 pyqtgraph = "~0.14.0"
 
 [tool.poetry.group.dev.dependencies]

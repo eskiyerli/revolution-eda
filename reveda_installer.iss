@@ -12,12 +12,12 @@
 #define MyAppVersion "0.9.0"
 #define MyAppPublisher "Revolution EDA"
 #define MyAppExeName "reveda.exe"
-#define MyAppDescription "Electronic Design Automation Software for Professional Custom IC Design Engineers"
+#define MyAppDescription "Electronic Design Automation Software for Professional Custom IC Design Engineers from schematics to GDSII"
 
 ; Default source folder matches build_windows.ps1 output convention.
 ; Override with /DSourceRoot="..." when invoking ISCC if needed.
 #ifndef SourceRoot
-  #define SourceRoot "C:\Users\eskiye50\dist\revolution-eda\windows-amd64-py3.13\reveda"
+  #define SourceRoot "C:\Users\eskiy\dist\revolution-eda\windows-amd64-py3.13\reveda"
 #endif
 
 [Setup]
@@ -53,24 +53,9 @@ Name: "desktopicon"; Description: "Create a desktop icon"; GroupDescription: "Ad
 Source: "{#SourceRoot}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
 
 [Icons]
-Name: "{userprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
-Name: "{userdesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+Name: "{userprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"
+Name: "{userdesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent; WorkingDir: "{app}"
 
-[Code]
-function InitializeSetup(): Boolean;
-begin
-  if not DirExists(ExpandConstant('{#SourceRoot}')) then begin
-    MsgBox(
-      'Build source folder was not found:' + #13#10 + ExpandConstant('{#SourceRoot}') + #13#10#13#10 +
-      'Build the app first or pass /DSourceRoot="<path-to-nuitka-dist>" to ISCC.',
-      mbError,
-      MB_OK
-    );
-    Result := False;
-  end else begin
-    Result := True;
-  end;
-end;

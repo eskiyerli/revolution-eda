@@ -42,6 +42,7 @@ for PY_VER in 3.13; do
     echo "Installing/upgrading build dependencies..."
     "${PYTHON_PATH}" -m pip install --upgrade pip > /dev/null
     "${PYTHON_PATH}" -m pip install --upgrade nuitka > /dev/null
+    "${PYTHON_PATH}" -m pip install -r <(poetry export -f requirements.txt) > /dev/null
 
     # Output directory per Python version
     OUTPUT_DIR="${OUTPUT_BASE}/revolution-eda/${ARTIFACT_NAME}"
@@ -97,7 +98,7 @@ for PY_VER in 3.13; do
         rm -rf "${PDK_BUILD_DIR}"
     fi
 
-    # Copy .env.example for reference
+    # Copy .env.example for reference and project auto-initialization
     ENV_EXAMPLE="${SCRIPT_DIR}/.env.example"
     if [[ -f "${ENV_EXAMPLE}" ]]; then
         cp "${ENV_EXAMPLE}" "${FINAL_FOLDER}/"

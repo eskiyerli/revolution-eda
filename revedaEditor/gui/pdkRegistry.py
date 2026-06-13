@@ -46,15 +46,27 @@ class PDKRegistryWindow(QMainWindow):
         "https://raw.githubusercontent.com/eskiyerli/revolutionEDA_pdks/main/pdks.json"
     )
 
-    def __init__(self, parent=None, registry_url: str | None = None):
+    def __init__(
+        self,
+        parent=None,
+        registry_url: str | None = None,
+        pdks_dir: Path | None = None,
+    ):
         super().__init__(parent)
         self.setWindowTitle("Revolution EDA PDK Registry")
         self.resize(900, 400)
         self.logger = logging.getLogger("reveda")
 
         self.registry_url = registry_url or self.DEFAULT_REGISTRY
-        app = QApplication.instance()
-        self.pdksDir = app.basePath.parent/'pdks'
+        if pdks_dir:
+            self.pdksDir = pdks_dir
+        else:
+            pdk_path = os.environ.get("REVEDA_PDK_PATH")
+            if pdk_path:
+                self.pdksDir = Path(pdk_path)
+            else:
+                # Use central directory (~/.reveda/pdks) as default for AppImage compatibility
+                self.pdksDir = Path.home() / ".reveda" / "pdks"
         self.pdksDir = self.pdksDir.resolve()
         if not self.pdksDir.exists():
             self.pdksDir.mkdir(parents=True)
@@ -75,8 +87,8 @@ class PDKRegistryWindow(QMainWindow):
         self.pdkPathEdit = edf.longLineEdit()
         self.pdkPathEdit.setText(str(self.pdksDir))
         pathLayout.addWidget(self.pdkPathEdit, 5)
-        self.pdkPathButton = QPushButton("...")
-        self.pdkPathButton.clicked.connect(self.onPDKPathButtonClicked)
+        self.pdkPathButton = QPushButton("Browse...")
+        self.pdkPathButton.clicked.connect(self._on_browse)
         pathLayout.addWidget(self.pdkPathButton, 1)
         main_l.addLayout(pathLayout)
         
@@ -126,13 +138,21 @@ class PDKRegistryWindow(QMainWindow):
         self.download_btn.clicked.connect(self._on_download)
         self.uninstall_btn.clicked.connect(self._on_uninstall)
         self.refresh_btn.clicked.connect(self.fetch_registry)
+        self.pdkPathEdit.textChanged.connect(self._on_path_changed)
 
 
-    def onPDKPathButtonClicked(self):
-        self.pdkPathEdit.setText(
-            QFileDialog.getExistingDirectory(self, caption="Select PDK Repo Path")
+    def _on_browse(self):
+        directory = QFileDialog.getExistingDirectory(
+            self, "Select PDK Installation Directory", str(self.pdksDir)
         )
-        self.pdksDir = Path(self.pdkPathEdit.text())
+        if directory:
+            self.pdkPathEdit.setText(directory)
+
+    def _on_path_changed(self, text: str):
+        self.pdksDir = Path(text).resolve()
+        if not self.pdksDir.exists():
+            self.pdksDir.mkdir(parents=True)
+        self.fetch_registry()
 
     def fetch_registry(self):
         self.tableWidget.setRowCount(0)

@@ -93,11 +93,13 @@ class PluginRegistryWindow(QMainWindow):
 
         self.registry_url = registry_url or self.DEFAULT_REGISTRY
         plugin_path = os.environ.get("REVEDA_PLUGIN_PATH")
-        self.pluginsDir = (
-            Path(plugin_path)
-            if plugin_path
-            else (plugins_dir or Path.cwd() / "plugins")
-        )
+        if plugin_path:
+            self.pluginsDir = Path(plugin_path)
+        elif plugins_dir:
+            self.pluginsDir = plugins_dir
+        else:
+            # Use central directory (~/.reveda/plugins) as default
+            self.pluginsDir = Path.home() / ".reveda" / "plugins"
         self.pluginsDir = self.pluginsDir.resolve()
 
         self._initUI()
@@ -460,18 +462,44 @@ class PluginRegistryWindow(QMainWindow):
     def _on_license_download_complete(self, content: bytes):
         """Handle successful license download completion."""
         url = self._revedaLicense_url()
-        app_root = self._app_root()
-        filename = Path(url).name
-        target = app_root / filename
+        # Install to ~/.reveda/ so it's on sys.path as a top-level package
+        central_dir = Path.home() / ".reveda"
+        central_dir.mkdir(parents=True, exist_ok=True)
+
+        # Keep the original platform-tagged filename from the URL
+        target_filename = Path(url).name
+        target = central_dir / target_filename
 
         try:
             target.write_bytes(content)
             # Ensure the extension is executable on Unix
             if platform.system() != "Windows":
                 target.chmod(target.stat().st_mode | 0o755)
+
+            # Add ~/.reveda to sys.path if not already there
+            central_dir_str = str(central_dir)
+            if central_dir_str not in sys.path:
+                sys.path.insert(0, central_dir_str)
+
             # Invalidate import caches so the new module can be found
             importlib.invalidate_caches()
-            self._license_download_success = True
+
+            # Try to import to verify it works
+            try:
+                from revedaLicense.licenseManager import has_valid_license  # noqa: F401
+                self._license_download_success = True
+
+                # Reload the license module in the main app to ensure it's available
+                app = QApplication.instance()
+                if app and hasattr(app, 'reloadLicenseModule'):
+                    app.reloadLicenseModule()
+            except ImportError as e:
+                QMessageBox.critical(
+                    self, "Install Error",
+                    f"revedaLicense module downloaded but import failed:\n{e}\n"
+                    f"This may indicate a platform mismatch or corrupted download."
+                )
+                self._license_download_success = False
         except Exception as e:
             QMessageBox.critical(
                 self, "Install Error", f"Failed to write revedaLicense module:\n{e}"
@@ -504,16 +532,29 @@ class PluginRegistryWindow(QMainWindow):
 
         Returns True if already present or successfully downloaded.
         """
-        try:
-            import revedaLicense  # noqa: F401
+        # Check if the real compiled module is installed in ~/.reveda/
+        # The shim in revedaEditor.backend.licenseManager is always present,
+        # so we need to check for the actual compiled .pyd/.so file.
+        # The file keeps its platform-tagged name (e.g. revedaLicense.cp313-win_amd64.pyd).
+        central_dir = Path.home() / ".reveda"
+        url = self._revedaLicense_url()
+        if url:
+            compiled_file = central_dir / Path(url).name
+        elif platform.system() == "Windows":
+            compiled_file = central_dir / "revedaLicense.pyd"
+        else:
+            compiled_file = central_dir / "revedaLicense.so"
+
+        if compiled_file.exists():
+            # Real module is installed, invalidate caches and return True
+            importlib.invalidate_caches()
             return True
-        except ImportError:
-            pass
 
         ret = QMessageBox.question(
             self,
             "License Module Required",
-            "The revedaLicense module is required for commercial plugins but is not installed.\n\n"
+            "The revedaLicense module is required for commercial plugins but is not "
+            "installed in ~/.reveda/.\n\n"
             "Would you like to download and install it now?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )

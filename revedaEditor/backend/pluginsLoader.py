@@ -11,6 +11,7 @@
 
 import importlib
 import pkgutil
+import sys
 from pathlib import Path
 
 from PySide6.QtGui import QAction, QIcon
@@ -29,9 +30,13 @@ class pluginsLoader:
         self._app = QApplication.instance()
         self.pluginMenuConfig = {}
 
-        for _, name, _ in pkgutil.iter_modules([str(self.pluginsPathObj)]):
+        for _, name, ispkg in pkgutil.iter_modules([str(self.pluginsPathObj)]):
             self._app.logger.info(f"Found plugin: {name}")
             try:
+                if ispkg:
+                    plugin_dir = str(self.pluginsPathObj / name)
+                    if plugin_dir not in sys.path:
+                        sys.path.append(plugin_dir)
                 module = importlib.import_module(name)
                 self.plugins[f"{name}"] = module
             except ImportError as e:

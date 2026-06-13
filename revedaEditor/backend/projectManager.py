@@ -236,6 +236,9 @@ class ProjectManager:
         if not env_file.exists():
             self._copy_env_template(project_dir)
         if env_file.exists():
+            # Clear project-specific environment variables to prevent leakage of base/global defaults
+            for var in ["REVEDA_PDK_PATH", "REVEDA_PLUGIN_PATH", "REVEDA_VA_MODULE_PATH"]:
+                os.environ.pop(var, None)
             load_dotenv(env_file, override=True)
 
     def _load_library_json(self, project_dir: Path) -> dict:
@@ -307,10 +310,11 @@ class ProjectManager:
         """Resolve REVEDA_PLUGIN_PATH to absolute."""
         plugin_path = os.environ.get("REVEDA_PLUGIN_PATH")
         if not plugin_path:
-            default_plugins = self._app.basePath / "plugins"
-            return default_plugins if default_plugins.exists() else None
+            # Use central directory (~/.reveda/plugins) as default
+            central_plugins = self._app._getCentralDirectory() / "plugins"
+            return central_plugins if central_plugins.exists() else None
 
-        resolved = Path(plugin_path)
+        resolved = Path(plugin_path).expanduser()
         if not resolved.is_absolute():
             resolved = (project_dir / plugin_path).resolve()
 

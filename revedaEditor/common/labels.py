@@ -22,9 +22,50 @@ load_dotenv()
 
 from revedaEditor.backend.pdkLoader import importPDKModule
 
-schlyr = importPDKModule("schLayers")
-symlyr = importPDKModule("symLayers")
-cb = importPDKModule("callbacks")
+
+def _get_schlyr():
+    """Lazy accessor for schematic layers PDK module (avoids circular import)."""
+    global _schlyr_cache
+    try:
+        return _schlyr_cache
+    except NameError:
+        _schlyr_cache = importPDKModule("schLayers")
+        return _schlyr_cache
+
+
+def _get_symlyr():
+    """Lazy accessor for symbol layers PDK module (avoids circular import)."""
+    global _symlyr_cache
+    try:
+        return _symlyr_cache
+    except NameError:
+        _symlyr_cache = importPDKModule("symLayers")
+        return _symlyr_cache
+
+
+def _get_cb():
+    """Lazy accessor for callbacks PDK module (avoids circular import)."""
+    global _cb_cache
+    try:
+        return _cb_cache
+    except NameError:
+        _cb_cache = importPDKModule("callbacks")
+        return _cb_cache
+
+
+class _LazyModule:
+    """Proxy that defers PDK module loading until first attribute access."""
+    def __init__(self, getter):
+        self._getter = getter
+
+    def __getattr__(self, name):
+        module = self._getter()
+        return getattr(module, name)
+
+
+schlyr = _LazyModule(_get_schlyr)
+symlyr = _LazyModule(_get_symlyr)
+cb = _LazyModule(_get_cb)
 
 
 class symbolLabel(QGraphicsSimpleTextItem):

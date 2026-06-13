@@ -7,8 +7,8 @@ $ScriptDir = $PSScriptRoot
 $ProjectName = "reveda"
 $EntryPoint = Join-Path $ScriptDir "reveda.py"
 
-$VenvBase = if ($env:POETRY_VENV_BASE) { $env:POETRY_VENV_BASE } else { "C:\Users\eskiye50\poetryenvs" }
-$OutputBase = "C:\Users\eskiye50\dist"
+$VenvBase = if ($env:POETRY_VENV_BASE) { $env:POETRY_VENV_BASE } else { "C:\Users\eskiy\poetryenvs" }
+$OutputBase = "C:\Users\eskiy\dist"
 
 foreach ($PyVer in @("3.13")) {
     $ArtifactName = "windows-amd64-py${PyVer}"
