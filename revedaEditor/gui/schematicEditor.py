@@ -143,6 +143,7 @@ class schematicEditor(edw.editorWindow):
         self.selectMenu.addAction(self.selectDeviceAction)
         self.selectMenu.addAction(self.selectNetAction)
         self.selectMenu.addAction(self.selectPinAction)
+        self.selectMenu.addAction(self.selectTextAction)
         self.selectMenu.addSeparator()
         self.selectMenu.addAction(self.removeSelectFilterAction)
         self.simulationMenu = QMenu("&Simulation")
@@ -175,6 +176,7 @@ class schematicEditor(edw.editorWindow):
         self.selectDeviceAction.triggered.connect(self.selectDeviceClick)
         self.selectNetAction.triggered.connect(self.selectNetClick)
         self.selectPinAction.triggered.connect(self.selectPinClick)
+        self.selectTextAction.triggered.connect(self.selectTextClick)
         self.removeSelectFilterAction.triggered.connect(self.removeSelectFilterClick)
         self.renumberInstanceAction.triggered.connect(self.renumberInstanceClick)
         self.findRelatedEditors.triggered.connect(self.findRelatedEditorsClick)
@@ -200,6 +202,7 @@ class schematicEditor(edw.editorWindow):
         self.schematicToolbar.addAction(self.selectDeviceAction)
         self.schematicToolbar.addAction(self.selectNetAction)
         self.schematicToolbar.addAction(self.selectPinAction)
+        self.schematicToolbar.addAction(self.selectTextAction)
         self.schematicToolbar.addAction(self.removeSelectFilterAction)
 
     def _schematicContextMenu(self):
@@ -479,6 +482,10 @@ class schematicEditor(edw.editorWindow):
     def selectPinClick(self, s=None):
         self.centralW.scene.selectModes.setMode("selectPin")
         self.messageLine.setText("Select Only Pins")
+
+    def selectTextClick(self, s=None):
+        self.centralW.scene.selectModes.setMode("selectText")
+        self.messageLine.setText("Select Only Text")
 
     def removeSelectFilterClick(self, s=None):
         self.centralW.scene.selectModes.setMode("selectAll")

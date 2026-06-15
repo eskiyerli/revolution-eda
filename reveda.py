@@ -69,6 +69,76 @@ if _central_dir not in sys.path:
 
 from dotenv import load_dotenv
 
+# ─── CRITICAL: Load .env BEFORE any revedaEditor imports ───────────────────────
+# revedaEditor/__init__.py eagerly imports all subpackages, which triggers
+# module-level importPDKModule() calls. REVEDA_PDK_PATH must be set correctly
+# in os.environ BEFORE those imports execute.
+def _early_load_env():
+    """Parse --project arg and load the correct .env before revedaEditor imports."""
+    import argparse
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--project", type=str, default=None)
+    args, _ = parser.parse_known_args()
+
+    base_path = Path(__file__).resolve().parent
+    central_dir_name = ".reveda"
+
+    if args.project:
+        project_dir = Path(args.project).expanduser().resolve()
+    else:
+        # Same logic as _resolveDefaultProjectDir: try CWD first
+        cwd = Path.cwd().resolve()
+        try:
+            test = cwd / ".reveda_write_test"
+            test.touch()
+            test.unlink()
+            project_dir = cwd
+        except OSError:
+            project_dir = Path.home() / "reveda_projects"
+
+    # Load .env with same priority chain as revedaApp.__init__
+    project_env = project_dir / ".env"
+    central_env = Path.home() / central_dir_name / ".env"
+
+    if project_env.exists():
+        load_dotenv(project_env, override=True)
+    elif central_env.exists():
+        load_dotenv(central_env, override=True)
+    else:
+        base_env = base_path / ".env"
+        if base_env.exists():
+            load_dotenv(base_env, override=True)
+        else:
+            example_env = base_path / ".env.example"
+            if example_env.exists():
+                load_dotenv(example_env, override=True)
+
+    # Also set up PDK parent on sys.path so the PDK package is importable
+    pdk_path_str = os.environ.get("REVEDA_PDK_PATH")
+    if pdk_path_str:
+        pdk_path = Path(pdk_path_str).expanduser()
+        if not pdk_path.is_absolute():
+            # Try relative to project dir first, then base path
+            candidate = (project_dir / pdk_path_str).resolve()
+            if candidate.exists():
+                pdk_path = candidate
+            else:
+                candidate = (base_path / pdk_path_str).resolve()
+                pdk_path = candidate
+        else:
+            pdk_path = pdk_path.resolve()
+
+        if pdk_path.exists():
+            pdk_parent = str(pdk_path.parent)
+            if pdk_parent not in sys.path:
+                sys.path.append(pdk_parent)
+            pdk_str = str(pdk_path)
+            if pdk_str not in sys.path:
+                sys.path.append(pdk_str)
+
+_early_load_env()
+# ─── END early .env loading ────────────────────────────────────────────────────
+
 from PySide6.QtCore import QRect, Qt
 from PySide6.QtGui import QColor, QFont, QPainter, QPixmap
 from PySide6.QtWidgets import QApplication, QSplashScreen
@@ -457,6 +527,9 @@ class revedaApp(QApplication):
                     else:
                         self.revedaPdkPathObj = candidate  # will trigger error below
             if self.revedaPdkPathObj.exists():
+                pdk_parent = str(self.revedaPdkPathObj.parent)
+                if pdk_parent not in sys.path:
+                    sys.path.append(pdk_parent)
                 if str(self.revedaPdkPathObj) not in sys.path:
                     sys.path.append(str(self.revedaPdkPathObj))
             else:
@@ -464,6 +537,9 @@ class revedaApp(QApplication):
                 fallback = self.basePath / "defaultPDK"
                 if fallback.exists():
                     self.revedaPdkPathObj = fallback
+                    pdk_parent = str(fallback.parent)
+                    if pdk_parent not in sys.path:
+                        sys.path.append(pdk_parent)
                     if str(fallback) not in sys.path:
                         sys.path.append(str(fallback))
                 else:
@@ -474,6 +550,9 @@ class revedaApp(QApplication):
         else:
             self.revedaPdkPathObj = self.basePath / "defaultPDK"
             if self.revedaPdkPathObj.exists():
+                pdk_parent = str(self.revedaPdkPathObj.parent)
+                if pdk_parent not in sys.path:
+                    sys.path.append(pdk_parent)
                 if str(self.revedaPdkPathObj) not in sys.path:
                     sys.path.append(str(self.revedaPdkPathObj))
             else:
@@ -491,15 +570,33 @@ class revedaApp(QApplication):
         self._setupPluginPath(central_dir)
 
     def updatePDKPath(self, newPath: Path):
-        """Update PDK path and persist to .env file"""
+        """Update PDK path, reinitialize PDK config, and persist to .env file."""
+        from revedaEditor.backend.pdkLoader import clearPDKModuleCache
+
         self.revedaPdkPathObj = newPath.resolve()
 
         # Update environment variable
         os.environ["REVEDA_PDK_PATH"] = str(self.revedaPdkPathObj)
 
-        # Update sys.path
+        # Add the PDK's parent directory to sys.path so that Python can import
+        # the PDK as a package (e.g. "import pdkname.module").
+        pdk_parent = str(self.revedaPdkPathObj.parent)
+        if pdk_parent not in sys.path:
+            sys.path.append(pdk_parent)
+
+        # Also add the PDK path itself for direct module imports within the PDK
         if str(self.revedaPdkPathObj) not in sys.path:
             sys.path.append(str(self.revedaPdkPathObj))
+
+        # Clear cached PDK modules so the new PDK's modules are imported fresh
+        clearPDKModuleCache()
+
+        # Reinitialize the PDK configuration object so menus and callbacks
+        # reflect the new PDK's config.json
+        if self.revedaPdkPathObj.exists():
+            self.pdkConfigObj = pdkConfig(self.revedaPdkPathObj)
+        else:
+            self.pdkConfigObj = None
 
         # Persist to .env file
         self.update_env_file("REVEDA_PDK_PATH", str(self.revedaPdkPathObj))

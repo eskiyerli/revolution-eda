@@ -136,6 +136,7 @@ class schematicSelectModes(selectModes):
     selectDevice: bool
     selectNet: bool
     selectPin: bool
+    selectText: bool
 
 
 @dataclass
@@ -146,6 +147,14 @@ class layoutSelectModes(selectModes):
     selectLabel: bool
     selectText: bool
     selectPin: bool
+
+
+@dataclass
+class symbolSelectModes(selectModes):
+    selectPin: bool
+    selectShape: bool
+    selectLabel: bool
+    selectText: bool
 
 
 # library editor related named tuples

@@ -77,9 +77,45 @@ def importPDKModule(moduleName: str) -> ModuleType | None:
 
 
 def clearPDKModuleCache() -> None:
-    """Clear the PDK module cache. Call when switching PDKs at runtime."""
+    """Clear the PDK module cache and remove stale PDK modules from sys.modules.
+
+    Call when switching PDKs at runtime. This ensures that subsequent imports
+    load the new PDK's modules fresh rather than returning stale cached objects.
+    """
+    # Determine the old PDK package name(s) from cached entries
+    old_pdk_names = {pathlib.Path(path).name for path, _ in _module_cache.keys()}
+
     _module_cache.clear()
-    logger.debug("PDK module cache cleared")
+
+    # Also try to determine the current PDK name from environment before the switch
+    # (the caller updates os.environ BEFORE calling this function)
+    try:
+        current_pdk = _get_pdk_path().name
+    except (FileNotFoundError, Exception):
+        current_pdk = None
+
+    # Remove all modules belonging to old PDK packages from sys.modules
+    # so that importlib.import_module() will do a fresh import
+    keys_to_remove = []
+    for mod_name in list(sys.modules.keys()):
+        for pdk_name in old_pdk_names:
+            if mod_name == pdk_name or mod_name.startswith(f"{pdk_name}."):
+                keys_to_remove.append(mod_name)
+                break
+
+    for key in keys_to_remove:
+        del sys.modules[key]
+
+    # Invalidate import caches so Python's import machinery picks up new paths
+    importlib.invalidate_caches()
+
+    if keys_to_remove:
+        logger.debug(
+            f"PDK module cache cleared; removed {len(keys_to_remove)} entries "
+            f"from sys.modules: {keys_to_remove}"
+        )
+    else:
+        logger.debug("PDK module cache cleared")
 
 
 class pdkConfig:

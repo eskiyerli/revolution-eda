@@ -646,6 +646,26 @@ class layoutScene(editorScene):
         """
         return {item for item in self.items() if isinstance(item, lshp.layoutInstance)}
 
+    def _filterBySelectModes(self, items: set) -> set:
+        """Filter rubber-band selected items by the active selection filter."""
+        if self.selectModes.selectAll:
+            return items
+        return {item for item in items if self._itemPassesFilter(item)}
+
+    def _itemPassesFilter(self, item) -> bool:
+        """Check if an item passes the current selection filter."""
+        if self.selectModes.selectInstance and isinstance(item, lshp.layoutInstance):
+            return True
+        if self.selectModes.selectPath and isinstance(item, lshp.layoutPath):
+            return True
+        if self.selectModes.selectVia and isinstance(item, lshp.layoutViaArray):
+            return True
+        if self.selectModes.selectPin and isinstance(item, lshp.layoutPin):
+            return True
+        if self.selectModes.selectLabel and isinstance(item, lshp.layoutLabel):
+            return True
+        return False
+
     def loadSchematicInstances(self, schematicTuple: ddef.viewItemTuple) -> None:
         """Load schematic and create corresponding layout instances.
 

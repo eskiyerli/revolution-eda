@@ -143,6 +143,14 @@ class symbolLabel(QGraphicsSimpleTextItem):
             f" {self._labelUse})"
         )
 
+    def sceneEvent(self, event) -> bool:
+        """Block events when the active selection filter excludes labels."""
+        if self.scene() and hasattr(self.scene(), 'selectModes'):
+            if hasattr(self.scene().selectModes, 'selectLabel'):
+                if not (self.scene().selectModes.selectLabel or self.scene().selectModes.selectAll):
+                    return False
+        return super().sceneEvent(event)
+
     def mousePressEvent(self, event):
         super().mousePressEvent(event)
         if self.scene() and self.scene().editModes.moveItem:

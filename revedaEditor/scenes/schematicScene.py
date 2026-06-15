@@ -80,7 +80,8 @@ class schematicScene(editorScene):
         self.selectModes = ddef.schematicSelectModes(selectAll=True,
                                                      selectDevice=False,
                                                      selectNet=False,
-                                                     selectPin=False)
+                                                     selectPin=False,
+                                                     selectText=False)
 
         # Initialize selection trackers
         self.selectedNet = None
@@ -853,6 +854,24 @@ class schematicScene(editorScene):
     def findSceneNetsSet(self) -> set[snet.schematicNet]:
         return {item for item in self.items() if
                 isinstance(item, snet.schematicNet)}
+
+    def _filterBySelectModes(self, items: set) -> set:
+        """Filter rubber-band selected items by the active selection filter."""
+        if self.selectModes.selectAll:
+            return items
+        return {item for item in items if self._itemPassesFilter(item)}
+
+    def _itemPassesFilter(self, item) -> bool:
+        """Check if an item passes the current selection filter."""
+        if self.selectModes.selectDevice and isinstance(item, shp.schematicSymbol):
+            return True
+        if self.selectModes.selectNet and isinstance(item, snet.schematicNet):
+            return True
+        if self.selectModes.selectPin and isinstance(item, shp.schematicPin):
+            return True
+        if self.selectModes.selectText and isinstance(item, shp.text):
+            return True
+        return False
 
     def findRectSymbolPin(self, rect: Union[QRect, QRectF]) -> set[shp.symbolPin]:
         pinsRectSet = {item for item in self.items(rect) if

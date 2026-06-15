@@ -355,17 +355,17 @@ class editorWindow(QMainWindow):
                                           self)
         self.createSymbolAction.setToolTip("Create Symbol from Cellview")
 
-        createTextIcon = QIcon(":icons/sticky-note-text.png")
+        createTextIcon = QIcon(":/icons/sticky-note-text.png")
         self.createTextAction = QAction(createTextIcon, "Create Text...", self)
         self.createTextAction.setToolTip("Create Text")
 
         # selection Actions
-        selectDeviceIcon = QIcon(":icons/target.png")
+        selectDeviceIcon = QIcon(":/icons/target.png")
         self.selectDeviceAction = QAction(selectDeviceIcon, "Select Devices",
                                           self)
         self.selectDeviceAction.setToolTip("Select Devices Only")
 
-        selectNetIcon = QIcon(":icons/pencil--plus.png")
+        selectNetIcon = QIcon(":/icons/pencil--plus.png")
         self.selectNetAction = QAction(selectNetIcon, "Select Nets", self)
         self.selectNetAction.setToolTip("Select Nets Only")
 
@@ -380,6 +380,17 @@ class editorWindow(QMainWindow):
         self.removeSelectFilterAction = QAction(removeSelectFilterIcon,
                                                 "Remove Select Filters", self)
         self.removeSelectFilterAction.setToolTip("Remove Selection Filters")
+
+        selectShapeIcon = QIcon(":icons/layer-shape.png")
+        self.selectShapeAction = QAction(selectShapeIcon, "Select Shapes", self)
+        self.selectShapeAction.setToolTip("Select Shapes Only")
+
+        self.selectLabelAction = QAction("Select Labels", self)
+        self.selectLabelAction.setToolTip("Select Labels Only")
+
+        selectTextIcon = QIcon(":/icons/cheque--plus.png")
+        self.selectTextAction = QAction(selectTextIcon, "Select Text", self)
+        self.selectTextAction.setToolTip("Select Text Only")
 
         ignoreIcon = QIcon(":/icons/minus-circle.png")
         self.ignoreAction = QAction(ignoreIcon, "Ignore", self)

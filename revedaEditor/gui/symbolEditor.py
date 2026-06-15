@@ -72,6 +72,11 @@ class symbolEditor(edw.editorWindow):
         self.symbolToolbar.addAction(self.createArcAction)
         self.symbolToolbar.addAction(self.createLabelAction)
         self.symbolToolbar.addAction(self.createPinAction)
+        self.symbolToolbar.addSeparator()
+        self.symbolToolbar.addAction(self.selectPinAction)
+        self.symbolToolbar.addAction(self.selectShapeAction)
+        self.symbolToolbar.addAction(self.selectLabelAction)
+        self.symbolToolbar.addAction(self.removeSelectFilterAction)
 
     def _addActions(self):
         super()._addActions()
@@ -84,6 +89,15 @@ class symbolEditor(edw.editorWindow):
         self.menuCreate.addAction(self.createArcAction)
         self.menuCreate.addAction(self.createLabelAction)
         self.menuCreate.addAction(self.createPinAction)
+
+        # Selection filter submenu
+        self.selectMenu = self.menuUtilities.addMenu("Selection")
+        self.selectMenu.addAction(self.selectPinAction)
+        self.selectMenu.addAction(self.selectShapeAction)
+        self.selectMenu.addAction(self.selectLabelAction)
+        self.selectMenu.addAction(self.selectTextAction)
+        self.selectMenu.addSeparator()
+        self.selectMenu.addAction(self.removeSelectFilterAction)
 
         if hasattr(self._app, 'pluginsObj') and hasattr(self._app.pluginsObj, 'applyPluginMenus'):
             self._app.pluginsObj.applyPluginMenus(self)
@@ -100,6 +114,12 @@ class symbolEditor(edw.editorWindow):
         self.objPropAction.triggered.connect(self.objPropClick)
         self.deleteAction.triggered.connect(self.deleteClick)
         self.viewPropAction.triggered.connect(self.viewPropClick)
+        # Selection filter triggers
+        self.selectPinAction.triggered.connect(self.selectPinClick)
+        self.selectShapeAction.triggered.connect(self.selectShapeClick)
+        self.selectLabelAction.triggered.connect(self.selectLabelClick)
+        self.selectTextAction.triggered.connect(self.selectTextClick)
+        self.removeSelectFilterAction.triggered.connect(self.removeSelectFilterClick)
 
     def _symbolContextMenu(self):
         super()._editorContextMenu()
@@ -107,6 +127,26 @@ class symbolEditor(edw.editorWindow):
 
     def objPropClick(self):
         self.centralW.scene.itemProperties()
+
+    def selectPinClick(self, s=None):
+        self.centralW.scene.selectModes.setMode("selectPin")
+        self.messageLine.setText("Select Only Pins")
+
+    def selectShapeClick(self, s=None):
+        self.centralW.scene.selectModes.setMode("selectShape")
+        self.messageLine.setText("Select Only Shapes")
+
+    def selectLabelClick(self, s=None):
+        self.centralW.scene.selectModes.setMode("selectLabel")
+        self.messageLine.setText("Select Only Labels")
+
+    def selectTextClick(self, s=None):
+        self.centralW.scene.selectModes.setMode("selectText")
+        self.messageLine.setText("Select Only Text")
+
+    def removeSelectFilterClick(self, s=None):
+        self.centralW.scene.selectModes.setMode("selectAll")
+        self.messageLine.setText("Select All Objects")
 
     def checkSaveCell(self):
         self.centralW.scene.saveSymbolCell(self.file)

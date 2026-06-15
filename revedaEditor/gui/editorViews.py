@@ -72,7 +72,7 @@ class editorView(QGraphicsView):
         self.viewRect = None
         self.init_UI()
         glWidget = QOpenGLWidget()
-        glWidget.setUpdateBehavior(QOpenGLWidget.UpdateBehavior.PartialUpdate)
+        glWidget.setUpdateBehavior(QOpenGLWidget.UpdateBehavior.NoPartialUpdate)
         self.setViewport(glWidget)
 
 
@@ -81,7 +81,7 @@ class editorView(QGraphicsView):
         Initializes the user interface.
         """
         # Batch all settings to minimize Qt overhead
-        self.setViewportUpdateMode(QGraphicsView.ViewportUpdateMode.SmartViewportUpdate)
+        self.setViewportUpdateMode(QGraphicsView.ViewportUpdateMode.FullViewportUpdate)
         self.setCacheMode(QGraphicsView.CacheModeFlag.CacheBackground)
         self.setMouseTracking(True)
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
@@ -112,6 +112,10 @@ class editorView(QGraphicsView):
         delta = newPos - oldPos
         self.translate(delta.x(), delta.y())
         self.determineViewRect()
+        # Force full scene update after zoom to prevent items (nets) from
+        # disappearing due to SmartViewportUpdate's dirty-region tracking
+        # not covering all items after a transform change.
+        self.scene().update()
     
     def determineViewRect(self):
         self.viewRect = self.mapToScene(self.rect()).boundingRect().toRect()
@@ -329,7 +333,7 @@ class symbolView(editorView):
 
 
 class schematicView(editorView):
-    _dotRadius = 10
+    _dotRadius = 4
 
     def __init__(self, scene: schematicScene, parent):
         super().__init__(scene, parent)

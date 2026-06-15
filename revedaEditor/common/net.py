@@ -90,6 +90,7 @@ class schematicNet(QGraphicsItem):
         # Line and name initialization
         self.draftLine = QLineF(start, end)
         self._nameItem = self.createEmptyNameItem()
+        
 
     def createEmptyNameItem(self):
         nameItem = netName("", self)
@@ -201,6 +202,14 @@ class schematicNet(QGraphicsItem):
 
     def __repr__(self):
         return f"schematicNet({self.sceneEndPoints}, {self._width})"
+
+    def sceneEvent(self, event) -> bool:
+        """Block events when the active selection filter excludes nets."""
+        scene = self.scene()
+        if scene and hasattr(scene, 'selectModes'):
+            if not (scene.selectModes.selectNet or scene.selectModes.selectAll):
+                return False
+        return super().sceneEvent(event)
 
     def itemChange(self, change, value):
         if change in (

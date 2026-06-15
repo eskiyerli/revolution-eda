@@ -35,6 +35,7 @@ class editorScene(QGraphicsScene):
 
     def __init__(self, parent):
         super().__init__(parent)
+        self.setItemIndexMethod(QGraphicsScene.ItemIndexMethod.NoIndex)
         self.containerWidget = parent
         self.editorWindow = self.containerWidget.editorWindow
 
@@ -97,7 +98,7 @@ class editorScene(QGraphicsScene):
         # Scene properties
         self.readOnly = False
         self.installEventFilter(self)
-        self.setMinimumRenderSize(2)
+        self.setMinimumRenderSize(0)
         self._initialGroupPosList = []
         self._initialGroupPos = QPoint(0, 0)
         self._finalGroupPosDiff = QPoint(0, 0)
@@ -122,6 +123,7 @@ class editorScene(QGraphicsScene):
                     # Handle additive/toggle selection before calling super
                     self.itemsAtPressSet = {item for item in self.items(self.mousePressLoc)
                                             if item.parentItem() is None}
+                    self.itemsAtPressSet = self._filterBySelectModes(self.itemsAtPressSet)
                     if self.itemsAtPressSet:
                         self.itemCycler = cycle(self.itemsAtPressSet)
                         item = next(self.itemCycler)
@@ -250,6 +252,7 @@ class editorScene(QGraphicsScene):
                 itemsInRectSet = set(
                     [item for item in self.items(selectionPath, mode=selectionMode) if
                      item.parentItem() is None])
+                itemsInRectSet = self._filterBySelectModes(itemsInRectSet)
                 if modifiers == Qt.KeyboardModifier.ShiftModifier:
                     self.selectedItemsSet |= itemsInRectSet
                 elif modifiers == Qt.KeyboardModifier.ControlModifier:
@@ -279,6 +282,14 @@ class editorScene(QGraphicsScene):
             self._handleMouseRelease(self.mouseReleaseLoc, event.button())
         self.messageLine.setText(self.messages.get(self.editModes.mode(), ""))
         super().mouseReleaseEvent(event)
+
+    def _filterBySelectModes(self, items: set) -> set:
+        """Filter items by the scene's active selectModes.
+
+        Subclasses override this to provide editor-specific filtering logic.
+        Base implementation returns items unchanged.
+        """
+        return items
 
     def snapToGrid(self, point: QPoint) -> QPoint:
         """Snap point to scene grid."""

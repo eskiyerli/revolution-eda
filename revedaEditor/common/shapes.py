@@ -135,8 +135,12 @@ class symbolShape(QGraphicsItem):
 
     def sceneEvent(self, event) -> bool:
         """
-        Do not propagate event if shape needs to keep still.
+        Do not propagate event if shape needs to keep still or is filtered out.
         """
+        if self.scene() and hasattr(self.scene(), 'selectModes'):
+            if hasattr(self.scene().selectModes, 'selectShape'):
+                if not (self.scene().selectModes.selectShape or self.scene().selectModes.selectAll):
+                    return False
         if self.scene() and (
                 self.scene().editModes.changeOrigin or self.scene().drawMode):
             return False
@@ -1064,6 +1068,12 @@ class symbolPin(symbolShape):
     # def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent) -> None:
     #     super().mouseReleaseEvent(event)
 
+    def sceneEvent(self, event) -> bool:
+        if self.scene() and hasattr(self.scene(), 'selectModes'):
+            if hasattr(self.scene().selectModes, 'selectPin'):
+                if not (self.scene().selectModes.selectPin or self.scene().selectModes.selectAll):
+                    return False
+        return super().sceneEvent(event)
 
     def itemChange(self, change, value):
         # if change == QGraphicsItem.ItemSceneHasChanged:
@@ -1209,6 +1219,13 @@ class text(symbolShape):
             f"text({self._start},{self._textContent}, {self._textFont.family()},"
             f" {self._textFont.style()}, {self._textHeight}, {self._textAlign},"
             f"{self._textOrient})")
+
+    def sceneEvent(self, event) -> bool:
+        if self.scene() and hasattr(self.scene(), 'selectModes'):
+            if hasattr(self.scene().selectModes, 'selectText'):
+                if not (self.scene().selectModes.selectText or self.scene().selectModes.selectAll):
+                    return False
+        return super().sceneEvent(event)
 
     def setOrient(self):
         if self._textOrient == text.textOrients[0]:
@@ -1391,6 +1408,11 @@ class schematicSymbol(symbolShape):
         self.setFiltersChildEvents(True)
         self.setHandlesChildEvents(True)
         self.setFlag(QGraphicsItem.ItemContainsChildrenInShape, True)
+
+    def sceneEvent(self, event) -> bool:
+        if not (self.scene().selectModes.selectDevice or self.scene().selectModes.selectAll):
+            return False
+        return super().sceneEvent(event)
 
     def addShapes(self):
         for item in self._shapes:
@@ -1791,6 +1813,11 @@ class schematicPin(symbolShape):
     def __repr__(self) -> str:
         return (f"schematicPin({self._start}, {self._pinName}, {self._pinDir}, "
                 f"{self._pinType})")
+
+    def sceneEvent(self, event) -> bool:
+        if not (self.scene().selectModes.selectPin or self.scene().selectModes.selectAll):
+            return False
+        return super().sceneEvent(event)
 
     def paint(self, painter, option, widget) -> None:
         if self.isSelected():

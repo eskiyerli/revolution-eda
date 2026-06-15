@@ -97,6 +97,13 @@ class symbolScene(editorScene):
         self.symbolShapes = ["line", "arc", "rect", "circle", "pin", "label", "polygon"]
         self.attributeList = []  # list of symbol attributes
         self.origin = QPoint(0, 0)
+
+        self.selectModes = ddef.symbolSelectModes(selectAll=True,
+                                                   selectPin=False,
+                                                   selectShape=False,
+                                                   selectLabel=False,
+                                                   selectText=False)
+
         # some default attributes
 
         self.pinName = ""
@@ -581,6 +588,26 @@ class symbolScene(editorScene):
                     tempPoints.append(QPointF(float(xcoor), float(ycoor)))
             newPolygon = shp.symbolPolygon(tempPoints)
             self.undoStack.push(us.addDeleteShapeUndo(self, newPolygon, item))
+
+    def _filterBySelectModes(self, items: set) -> set:
+        """Filter rubber-band selected items by the active selection filter."""
+        if self.selectModes.selectAll:
+            return items
+        return {item for item in items if self._itemPassesFilter(item)}
+
+    def _itemPassesFilter(self, item) -> bool:
+        """Check if an item passes the current selection filter."""
+        if self.selectModes.selectPin and isinstance(item, shp.symbolPin):
+            return True
+        if self.selectModes.selectShape and isinstance(item, (
+                shp.symbolRectangle, shp.symbolLine, shp.symbolCircle,
+                shp.symbolArc, shp.symbolPolygon)):
+            return True
+        if self.selectModes.selectLabel and isinstance(item, lbl.symbolLabel):
+            return True
+        if self.selectModes.selectText and isinstance(item, shp.text):
+            return True
+        return False
 
     def loadDesign(self, filePathObj: pathlib.Path) -> None:
         try:
