@@ -215,8 +215,14 @@ class layerViewTable(QTableView):
 
     def onClicked(self, index):
         """Handle mouse clicks on the table"""
-        row = index.row()
-        
+        # The index comes from the view's current model which may be a proxy.
+        # Map through the proxy (if any) to get the source-model row.
+        sourceIndex = index
+        proxyModel = self.model()
+        if hasattr(proxyModel, "mapToSource"):
+            sourceIndex = proxyModel.mapToSource(index)
+        row = sourceIndex.row()
+
         # Get layer info and emit selection
         layerName, layerPurpose = self.getLayerInfo(row)
         self.dataSelected.emit(layerName, layerPurpose)
@@ -226,6 +232,10 @@ class layerViewTable(QTableView):
             indices = selected.indexes()
             # Get the first selected index to determine the row
             firstIndex = indices[0]
+            # Map through proxy model if present
+            proxyModel = self.model()
+            if hasattr(proxyModel, "mapToSource"):
+                firstIndex = proxyModel.mapToSource(firstIndex)
             row = firstIndex.row()
             
             # Get the layer name and purpose from the correct columns
@@ -234,9 +244,6 @@ class layerViewTable(QTableView):
             
             layerName = self._model.data(layerNameIndex)
             layerPurpose = self._model.data(layerPurposeIndex)
-            
-            # Debug logging
-            print(f"DEBUG: Layer selected - Name: '{layerName}', Purpose: '{layerPurpose}', Row: {row}")
             
             self.dataSelected.emit(layerName, layerPurpose)
 

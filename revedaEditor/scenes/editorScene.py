@@ -158,16 +158,19 @@ class editorScene(QGraphicsScene):
 
             # Handle other edit modes
             if self.editModes.moveItem or self.editModes.constrainedMoveItem:
-                # If clicked on an item, add it to selection
-                clickedItem = self.itemAt(self.mousePressLoc, QTransform())
-                # Resolve to top-level parent (e.g. schematicPinPolygon → schematicPin)
-                if clickedItem:
-                    while clickedItem.parentItem() is not None:
-                        clickedItem = clickedItem.parentItem()
-                if clickedItem and not clickedItem.isSelected():
-                    self.clearSelection()
-                    self.selectedItemsSet = {clickedItem}
-                    clickedItem.setSelected(True)
+                # If there are already selected items, use them for the move
+                # (preserves selection from cycle-through with PageUp).
+                # Only pick a new item if nothing is currently selected.
+                if not self.selectedItems():
+                    clickedItem = self.itemAt(self.mousePressLoc, QTransform())
+                    # Resolve to top-level parent (e.g. schematicPinPolygon → schematicPin)
+                    if clickedItem:
+                        while clickedItem.parentItem() is not None:
+                            clickedItem = clickedItem.parentItem()
+                    if clickedItem:
+                        self.clearSelection()
+                        self.selectedItemsSet = {clickedItem}
+                        clickedItem.setSelected(True)
                 # Create move group from selected items
                 if self.selectedItems():
                     self.selectedItemGroup = self.createItemGroup(self.selectedItems())
