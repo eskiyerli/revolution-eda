@@ -661,9 +661,29 @@ class layoutContainer(edw.editorContainer):
 
 
 class LayerFilterProxyModel(QSortFilterProxyModel):
-    """Proxy model that matches the search string against layer name OR purpose."""
+    """Proxy model that matches the search string against layer name OR purpose,
+    and optionally restricts to only layers used in the layout."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._usedLayersOnly = False
+        self._usedLayerRows: set = set()  # source-model row indices of used layers
+
+    def setUsedLayersOnly(self, enabled: bool):
+        """Enable/disable the 'show only used layers' filter."""
+        self._usedLayersOnly = enabled
+        self.invalidateFilter()
+
+    def setUsedLayerRows(self, rows: set):
+        """Set which source-model rows correspond to layers used in the scene."""
+        self._usedLayerRows = rows
+        if self._usedLayersOnly:
+            self.invalidateFilter()
 
     def filterAcceptsRow(self, sourceRow, sourceParent):
+        # Used-layers filter takes priority
+        if self._usedLayersOnly and sourceRow not in self._usedLayerRows:
+            return False
         pattern = self.filterRegularExpression()
         if pattern.pattern() == "":
             return True
@@ -709,10 +729,19 @@ class lswWindow(QWidget):
         asAction.setToolTip("Set layers unselectable")
         asAction.triggered.connect(self._allLayersSelectable)
 
+        # Filter used layers toggle
+        fuIcon = QIcon(":/icons/layer-mask.png")
+        self._filterUsedAction = QAction(fuIcon, "Show Used Layers Only", self)
+        self._filterUsedAction.setToolTip("Show only layers used in the layout")
+        self._filterUsedAction.setCheckable(True)
+        self._filterUsedAction.toggled.connect(self._toggleUsedLayers)
+
         toolBar.addAction(avAction)
         toolBar.addAction(nvAction)
         toolBar.addAction(asAction)
         toolBar.addAction(nsAction)
+        toolBar.addSeparator()
+        toolBar.addAction(self._filterUsedAction)
         layout.addWidget(toolBar)
 
         # Search field
@@ -770,3 +799,32 @@ class lswWindow(QWidget):
 
     def _noLayersSelectable(self):
         self._updateFilteredLayers(selectable=False)
+
+    def _toggleUsedLayers(self, checked: bool):
+        """Toggle filtering to show only layers used in the current layout."""
+        if checked:
+            usedRows = self._getUsedLayerRows()
+            self._proxyModel.setUsedLayerRows(usedRows)
+        self._proxyModel.setUsedLayersOnly(checked)
+
+    def _getUsedLayerRows(self) -> set:
+        """Scan the layout scene and return source-model rows for layers that
+        have at least one shape on them (including inside instances)."""
+        scene = self.lswTable.layoutScene
+        # Collect (name, purpose) tuples — always hashable
+        usedLayerKeys: set = set()
+        for item in scene.items():
+            if hasattr(item, "layer"):
+                layer = item.layer
+                usedLayerKeys.add((layer.name, layer.purpose))
+
+        # Map used layer keys back to source model row indices
+        sourceModel = self._proxyModel.sourceModel()
+        usedRows = set()
+        for row in range(sourceModel.rowCount()):
+            nameItem = sourceModel.item(row, lsw.layerViewTable.columnName)
+            purpItem = sourceModel.item(row, lsw.layerViewTable.columnPurpose)
+            if nameItem and purpItem:
+                if (nameItem.text(), purpItem.text()) in usedLayerKeys:
+                    usedRows.add(row)
+        return usedRows
