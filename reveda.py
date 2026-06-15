@@ -177,7 +177,13 @@ def _create_splash(project_name: str = "", base_path: Path | None = None) -> QSp
 
     # Draw the loading message in black
     painter.setPen(QColor("#000000"))
-    font = QFont("Segoe UI", 13)
+    # Cross-platform font selection
+    if platform.system() == "Windows":
+        font = QFont("Segoe UI", 13)
+    elif platform.system() == "Darwin":
+        font = QFont("Helvetica Neue", 13)
+    else:
+        font = QFont("DejaVu Sans", 13)
     painter.setFont(font)
     text_rect = QRect(0, y_offset, width, height - y_offset)
     msg = f"Loading project: {project_name}..." if project_name else "Loading..."
@@ -475,6 +481,7 @@ class revedaApp(QApplication):
         as it may be System32, an AppImage mount, or another read-only location.
         """
         self.logger = logging.getLogger("reveda")
+        self.logger.setLevel(logging.INFO)
 
         # Try project directory first, then central directory
         candidates = [
@@ -486,7 +493,7 @@ class revedaApp(QApplication):
             try:
                 logFilePath.parent.mkdir(parents=True, exist_ok=True)
                 handler = logging.FileHandler(logFilePath)
-                handler.setLevel(logging.DEBUG)
+                handler.setLevel(logging.INFO)
                 handler.setFormatter(
                     logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
                 )
@@ -497,7 +504,7 @@ class revedaApp(QApplication):
 
         # Fallback stream handler so the app never crashes due to logging permission errors
         handler = logging.StreamHandler(sys.stderr)
-        handler.setLevel(logging.DEBUG)
+        handler.setLevel(logging.INFO)
         self.logger.addHandler(handler)
 
     def _setupPaths(self):

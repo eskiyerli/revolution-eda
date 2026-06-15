@@ -220,7 +220,7 @@ class MainWindow(QMainWindow):
     def _loggerDef(self):
 
         c_handler = logging.StreamHandler(stream=self.centralW.console)
-        c_handler.setLevel(logging.DEBUG)
+        c_handler.setLevel(logging.INFO)
         c_format = logging.Formatter("%(levelname)s - %(message)s")
         c_handler.setFormatter(c_format)
         self.logger.addHandler(c_handler)

@@ -115,8 +115,10 @@ class schematicNet(QGraphicsItem):
         if hasattr(self, "_draftLine") and self._draftLine == line:
             return
 
-        self.prepareGeometryChange()
         self.__dict__.pop("_hash_value", None)
+
+        # Apply geometry change before any geometry/bounds attributes are modified
+        self.prepareGeometryChange()
 
         self._draftLine = line
         origin_point = line.p1()
@@ -129,13 +131,15 @@ class schematicNet(QGraphicsItem):
         self._angle = angle_calculators.get(self._mode, lambda angle: angle)(line_angle)
 
         self._draftLine.setAngle(0)
-        self.setTransformOriginPoint(origin_point)
-        self.setRotation(-self._angle)
 
-        # Clear the cached _extractRect
+        # Clear the cached _extractRect and calculate new bounding boxes
         self.__dict__.pop("_extractRect", None)
         self._shapeRect = self._extractRect.adjusted(-2, -2, 2, 2)
         self._boundingRect = self._extractRect.adjusted(-10, -10, 10, 10)
+
+        # Apply transform/rotation (setRotation internally handles prepareGeometryChange as needed)
+        self.setTransformOriginPoint(origin_point)
+        self.setRotation(-self._angle)
 
     @cached_property
     def _extractRect(self) -> QRectF:
@@ -198,6 +202,7 @@ class schematicNet(QGraphicsItem):
         )
         return_pen = QPen(base_pen)
         return_pen.setWidth(base_pen.width() * (self._width + 1))
+        return_pen.setCosmetic(True)
         return return_pen
 
     def __repr__(self):
@@ -665,6 +670,10 @@ class schematicNet(QGraphicsItem):
         # Clear the cached _extractRect
         if "_extractRect" in self.__dict__:
             del self.__dict__["_extractRect"]
+        # Recalculate bounding boxes for the new width
+        self._shapeRect = self._extractRect.adjusted(-2, -2, 2, 2)
+        self._boundingRect = self._extractRect.adjusted(-10, -10, 10, 10)
+        self.prepareGeometryChange()
         self.update()
 
     def highlight(self):

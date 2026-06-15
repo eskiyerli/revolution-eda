@@ -102,31 +102,42 @@ draftLayer = ddef.edLayer(
 schematicPinPen = QPen(
     schematicPinLayer.pcolor, schematicPinLayer.pwidth, schematicPinLayer.pstyle
 )
+schematicPinPen.setCosmetic(True)
 selectedSchematicPinPen = QPen(
     selectedSchematicPinLayer.pcolor,
     selectedSchematicPinLayer.pwidth,
     selectedSchematicPinLayer.pstyle,
 )
+selectedSchematicPinPen.setCosmetic(True)
 textPen = QPen(textLayer.pcolor, textLayer.pwidth, textLayer.pstyle)
+textPen.setCosmetic(True)
 selectedTextPen = QPen(
     selectedTextLayer.pcolor, selectedTextLayer.pwidth, selectedTextLayer.pstyle
 )
+selectedTextPen.setCosmetic(True)
 guideLinePen = QPen(guideLineLayer.pcolor, guideLineLayer.pwidth, guideLineLayer.pstyle)
 guideLinePen.setCosmetic(True)
 wirePen = QPen(wireLayer.pcolor, wireLayer.pwidth, wireLayer.pstyle)
+wirePen.setCosmetic(True)
 
 selectedWirePen = QPen(
     selectedWireLayer.pcolor, selectedWireLayer.pwidth, selectedWireLayer.pstyle
 )
+selectedWirePen.setCosmetic(True)
 stretchWirePen = QPen(QColor("red"), wireLayer.pwidth, wireLayer.pstyle)
+stretchWirePen.setCosmetic(True)
 errorWirePen = QPen(wireErrorLayer.pcolor, wireErrorLayer.pwidth, wireErrorLayer.pstyle)
+errorWirePen.setCosmetic(True)
 ignoreSymbolPen = QPen(
     ignoreSymbolLayer.pcolor, ignoreSymbolLayer.pwidth, ignoreSymbolLayer.pstyle
 )
+ignoreSymbolPen.setCosmetic(True)
 hilightPen = QPen(
     wireHilightLayer.pcolor, wireHilightLayer.pwidth, wireHilightLayer.pstyle
 )
+hilightPen.setCosmetic(True)
 otherPen = QPen(otherLayer.pcolor, otherLayer.pwidth, otherLayer.pstyle)
+otherPen.setCosmetic(True)
 draftPen = QPen(draftLayer.pcolor, draftLayer.pwidth, draftLayer.pstyle)
 draftPen.setCosmetic(True)
 
