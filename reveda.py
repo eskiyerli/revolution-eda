@@ -20,6 +20,7 @@
 # nuitka-project: --include-data-dir=docs=docs
 # nuitka-project: --include-data-dir=revedaEditor/fileio/schemas=revedaEditor/fileio/schemas
 # nuitka-project: --include-data-file=revedaLogo.png=revedaLogo.png
+# nuitka-project: --include-data-file=LICENSE.txt=LICENSE.txt
 # nuitka-project: --include-package=revedaEditor
 # nuitka-project: --include-package=cryptography
 # nuitka-project: --include-package=markdown
@@ -67,7 +68,17 @@ _central_dir = str(Path.home() / ".reveda")
 if _central_dir not in sys.path:
     sys.path.append(_central_dir)
 
-from dotenv import load_dotenv
+_dotenv_import_failed = False
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    _dotenv_import_failed = True
+    # If python-dotenv is not installed, we can't load .env files.
+    # The app will rely on environment variables being set manually.
+    # We define a dummy function to avoid NameError exceptions later.
+    def load_dotenv(*args, **kwargs):
+        # A warning will be logged inside revedaApp where the logger is available.
+        pass
 
 # ─── CRITICAL: Load .env BEFORE any revedaEditor imports ───────────────────────
 # revedaEditor/__init__.py eagerly imports all subpackages, which triggers
@@ -139,7 +150,7 @@ def _early_load_env():
 _early_load_env()
 # ─── END early .env loading ────────────────────────────────────────────────────
 
-from PySide6.QtCore import QRect, Qt
+from PySide6.QtCore import QRect, Qt, QStandardPaths
 from PySide6.QtGui import QColor, QFont, QPainter, QPixmap
 from PySide6.QtWidgets import QApplication, QSplashScreen
 
@@ -483,29 +494,32 @@ class revedaApp(QApplication):
         self.logger = logging.getLogger("reveda")
         self.logger.setLevel(logging.INFO)
 
-        # Try project directory first, then central directory
-        candidates = [
-            self._projectDir / "reveda.log",
-            Path.home() / self.CENTRAL_DIR_NAME / "reveda.log",
-        ]
+        # Use a platform-specific, user-writable directory for logs.
+        # This avoids permission errors when running from read-only locations.
+        log_dir = Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppDataLocation)) / "RevolutionEDA"
+        log_file_path = log_dir / "reveda.log"
 
-        for logFilePath in candidates:
-            try:
-                logFilePath.parent.mkdir(parents=True, exist_ok=True)
-                handler = logging.FileHandler(logFilePath)
-                handler.setLevel(logging.INFO)
-                handler.setFormatter(
-                    logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-                )
-                self.logger.addHandler(handler)
-                return
-            except OSError:
-                continue
+        try:
+            log_dir.mkdir(parents=True, exist_ok=True)
+            handler = logging.FileHandler(log_file_path)
+            handler.setLevel(logging.INFO)
+            handler.setFormatter(
+                logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+            )
+            self.logger.addHandler(handler)
+        except OSError as e:
+            # Fallback stream handler so the app never crashes due to logging permission errors
+            print(f"Critical: Could not create log file at {log_file_path}: {e}", file=sys.stderr)
+            handler = logging.StreamHandler(sys.stderr)
+            handler.setLevel(logging.WARNING)
+            self.logger.addHandler(handler)
+            self.logger.warning("Logging to stderr due to file system error.")
 
-        # Fallback stream handler so the app never crashes due to logging permission errors
-        handler = logging.StreamHandler(sys.stderr)
-        handler.setLevel(logging.INFO)
-        self.logger.addHandler(handler)
+        if _dotenv_import_failed:
+            self.logger.warning(
+                "Package 'python-dotenv' is not installed. .env files will not be loaded. "
+                "Please install it (`pip install python-dotenv`) or set environment variables manually."
+            )
 
     def _setupPaths(self):
         """Orchestrates path resolution for PDK, license, and plugins."""
@@ -529,20 +543,19 @@ class revedaApp(QApplication):
                 else:
                     # Fall back to relative to basePath (install dir)
                     candidate = (self.basePath / pdkPath).resolve()
-                    if candidate.exists():
-                        self.revedaPdkPathObj = candidate
-                    else:
-                        self.revedaPdkPathObj = candidate  # will trigger error below
-            if self.revedaPdkPathObj.exists():
+                    self.revedaPdkPathObj = candidate  # Assign even if non-existent for error below
+
+            if self.revedaPdkPathObj.is_dir():
                 pdk_parent = str(self.revedaPdkPathObj.parent)
                 if pdk_parent not in sys.path:
                     sys.path.append(pdk_parent)
                 if str(self.revedaPdkPathObj) not in sys.path:
                     sys.path.append(str(self.revedaPdkPathObj))
             else:
+                self.logger.error(f"PDK path is not a valid directory: {self.revedaPdkPathObj}")
                 # Ultimate fallback: basePath/defaultPDK
                 fallback = self.basePath / "defaultPDK"
-                if fallback.exists():
+                if fallback.is_dir():
                     self.revedaPdkPathObj = fallback
                     pdk_parent = str(fallback.parent)
                     if pdk_parent not in sys.path:
@@ -556,7 +569,7 @@ class revedaApp(QApplication):
                     )
         else:
             self.revedaPdkPathObj = self.basePath / "defaultPDK"
-            if self.revedaPdkPathObj.exists():
+            if self.revedaPdkPathObj.is_dir():
                 pdk_parent = str(self.revedaPdkPathObj.parent)
                 if pdk_parent not in sys.path:
                     sys.path.append(pdk_parent)
