@@ -260,17 +260,19 @@ class editorView(QGraphicsView):
             case _:
                 super().keyPressEvent(event)
 
-    def printView(self, printer):
+    def printView(self, printer, sourceRect=None):
         """
         Print view using selected Printer.
 
         Args:
-            printer (QPrinter): The printer object to use for printing.
+            printer: The paint device (QPrinter, QSvgGenerator, QImage, etc.).
+            sourceRect (QRectF, optional): The scene rectangle to render. If None,
+                the items bounding rect with margin is used automatically.
 
-        This method prints the current view using the provided printer. It first creates a QPainter object
-        using the printer. Then, it stores the original states of gridbackg and linebackg attributes.
-        After that, it calls the revedaPrint method to render the view onto the painter. Finally, it
-        restores the gridbackg and linebackg attributes to their original state.
+        This method prints the current view using the provided paint device. It first creates
+        a QPainter object using the device. Then, it stores the original states of gridbackg
+        and linebackg attributes. After that, it renders the scene onto the painter. Finally,
+        it restores the gridbackg and linebackg attributes to their original state.
         """
         # Store original states
         originalGridbackg = self.gridbackg
@@ -285,7 +287,13 @@ class editorView(QGraphicsView):
         painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
         targetRect = painter.viewport()
-        sourceRect = self.sceneRect()
+        if sourceRect is None:
+            items_rect = self.scene().itemsBoundingRect()
+            if not items_rect.isEmpty():
+                margin = max(20.0, min(items_rect.width(), items_rect.height()) * 0.05)
+                sourceRect = items_rect.adjusted(-margin, -margin, margin, margin)
+            else:
+                sourceRect = self.sceneRect()
         self.scene().render(painter, targetRect, sourceRect)
         # Restore original states
         self.gridbackg = originalGridbackg

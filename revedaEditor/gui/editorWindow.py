@@ -12,18 +12,23 @@
 
 from __future__ import annotations
 
+import os
 import pathlib
+import shutil
+import subprocess
+import tempfile
 import time
 from contextlib import contextmanager
 from logging import getLogger
 from typing import TYPE_CHECKING, Optional
 
-from PySide6.QtCore import (Qt, QSize, )
-from PySide6.QtGui import (QAction, QIcon, QImage, QKeySequence)
+from PySide6.QtCore import (Qt, QSize, QSizeF, QMarginsF)
+from PySide6.QtGui import (QAction, QIcon, QImage, QKeySequence, QPageSize)
 from PySide6.QtPrintSupport import QPrintDialog, QPrinter, QPrintPreviewDialog
+from PySide6.QtSvg import QSvgGenerator
 from PySide6.QtWidgets import (QApplication, QDialog, QFileDialog, QGraphicsScene,
                                QLabel, QMainWindow, QDialogButtonBox,
-                               QMenu, QToolBar, QWidget)
+                               QMenu, QToolBar, QWidget, QMessageBox)
 
 import revedaEditor.backend.dataDefinitions as ddef
 import revedaEditor.backend.libBackEnd as libb
@@ -626,18 +631,102 @@ class editorWindow(QMainWindow):
         ppdlg.exec()
 
     def imageExportClick(self):
-        image = QImage(self.centralW.view.viewport().size(),
-                       QImage.Format_ARGB32_Premultiplied)
-        self.centralW.view.printView(image)
         fdlg = QFileDialog(self, caption="Select or create an image file")
         fdlg.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
         fdlg.setDefaultSuffix("png")
         fdlg.setFileMode(QFileDialog.FileMode.AnyFile)
         fdlg.setViewMode(QFileDialog.ViewMode.Detail)
-        fdlg.setNameFilter("Image Files (*.png *.jpg *.bmp *.gif *.jpeg)")
+        fdlg.setNameFilter("PNG Image (*.png);;JPEG Image (*.jpg *.jpeg);;BMP Image (*.bmp);;GIF Image (*.gif);;SVG Vector Graphic (*.svg);;EPS Vector Graphic (*.eps)")
         if fdlg.exec() == QDialog.DialogCode.Accepted:
             imageFile = fdlg.selectedFiles()[0]
-            image.save(imageFile)
+            ext = pathlib.Path(imageFile).suffix.lower()
+            if ext == ".svg":
+                items_rect = self.centralW.view.scene().itemsBoundingRect()
+                if items_rect.isEmpty():
+                    items_rect = self.centralW.view.sceneRect()
+                margin = max(20.0, min(items_rect.width(), items_rect.height()) * 0.05)
+                sourceRect = items_rect.adjusted(-margin, -margin, margin, margin)
+                # Normalize to a reasonable pixel size instead of using raw scene
+                # units (which can be 100k+ for layout scenes using dbu=1000).
+                maxDim = 4000
+                srcW = sourceRect.width()
+                srcH = sourceRect.height()
+                if srcW <= 0:
+                    srcW = 800
+                if srcH <= 0:
+                    srcH = 600
+                aspect = srcW / srcH
+                if srcW >= srcH:
+                    width = maxDim
+                    height = int(maxDim / aspect)
+                else:
+                    height = maxDim
+                    width = int(maxDim * aspect)
+                generator = QSvgGenerator()
+                generator.setFileName(imageFile)
+                generator.setResolution(72)
+                generator.setSize(QSize(width, height))
+                generator.setViewBox(sourceRect)
+                generator.setTitle("Revolution EDA Export")
+                self.centralW.view.printView(generator, sourceRect)
+            elif ext == ".eps":
+                if not shutil.which("pdftops"):
+                    QMessageBox.critical(self, "Export Error", "pdftops tool is required for EPS export but was not found in the system PATH.")
+                    return
+                temp_pdf_fd, temp_pdf_path = tempfile.mkstemp(suffix=".pdf")
+                os.close(temp_pdf_fd)
+                try:
+                    printer = QPrinter(QPrinter.PrinterMode.ScreenResolution)
+                    printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
+                    printer.setOutputFileName(temp_pdf_path)
+                    items_rect = self.centralW.view.scene().itemsBoundingRect()
+                    if items_rect.isEmpty():
+                        items_rect = self.centralW.view.sceneRect()
+                    margin = max(20.0, min(items_rect.width(), items_rect.height()) * 0.05)
+                    sourceRect = items_rect.adjusted(-margin, -margin, margin, margin)
+                    srcW = sourceRect.width()
+                    srcH = sourceRect.height()
+                    if srcW <= 0:
+                        srcW = 800
+                    if srcH <= 0:
+                        srcH = 600
+                    # Scale scene units to a reasonable physical page size.
+                    # Target the longest edge at ~10 inches (720 points) max.
+                    maxPoints = 720.0
+                    aspect = srcW / srcH
+                    if srcW >= srcH:
+                        width_points = maxPoints
+                        height_points = maxPoints / aspect
+                    else:
+                        height_points = maxPoints
+                        width_points = maxPoints * aspect
+                    page_size = QPageSize(QSizeF(width_points, height_points), QPageSize.Unit.Point)
+                    printer.setPageSize(page_size)
+                    printer.setPageMargins(QMarginsF(0, 0, 0, 0))
+                    self.centralW.view.printView(printer, sourceRect)
+                    subprocess.run(["pdftops", "-eps", temp_pdf_path, imageFile], check=True)
+                except Exception as e:
+                    QMessageBox.critical(self, "Export Error", f"Failed to export to EPS: {str(e)}")
+                finally:
+                    if os.path.exists(temp_pdf_path):
+                        os.remove(temp_pdf_path)
+            else:
+                items_rect = self.centralW.view.scene().itemsBoundingRect()
+                if items_rect.isEmpty():
+                    items_rect = self.centralW.view.sceneRect()
+                aspect_ratio = items_rect.width() / items_rect.height() if items_rect.height() > 0 else 1.0
+                target_width = max(2000, self.centralW.view.viewport().width())
+                target_height = int(target_width / aspect_ratio)
+                if target_height > 10000:
+                    target_height = 10000
+                    target_width = int(target_height * aspect_ratio)
+                elif target_width > 10000:
+                    target_width = 10000
+                    target_height = int(target_width / aspect_ratio)
+                image = QImage(QSize(target_width, target_height), QImage.Format_ARGB32_Premultiplied)
+                image.fill(Qt.GlobalColor.white)
+                self.centralW.view.printView(image)
+                image.save(imageFile)
 
     def deleteClick(self, s):
         self.centralW.scene.editModes.setMode("deleteItem")
