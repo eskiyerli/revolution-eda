@@ -215,7 +215,9 @@ class layoutScene(editorScene):
         fabproc.dbu.
         """
         point *= fabproc.dbu
-        return point.toPoint() if isinstance(point, QPointF) else point
+        if isinstance(point, QPointF):
+            return QPoint(round(point.x()), round(point.y()))
+        return point
 
     def mousePressEvent(self, event: QGraphicsSceneMouseEvent) -> None:
 
@@ -253,7 +255,8 @@ class layoutScene(editorScene):
         elif self.editModes.addLabel and self.newLabel is not None:
             self.newLabel.start = self.mouseMoveLoc
         elif self.editModes.addInstance and self.newInstance is not None:
-            self.newInstance.setPos(self.mouseMoveLoc - self.newInstance.start)
+            self.newInstance.setPos(
+                self.snapToGrid(self.mouseMoveLoc - self.newInstance.start))
         # Handle drawing polygon mode
         elif self.editModes.drawPolygon and self.newPolygon is not None:
             self.polygonGuideLine.setLine(
@@ -492,7 +495,8 @@ class layoutScene(editorScene):
         if self.layoutInstanceTuple:
             self.newInstance = self.addNewInstance()
             self.addUndoStack(self.newInstance)
-            self.newInstance.setPos(self.mouseReleaseLoc - self.newInstance.start)
+            self.newInstance.setPos(
+                self.snapToGrid(self.mouseReleaseLoc - self.newInstance.start))
 
     def addLayoutLabel(self):
         if self.newLabel is not None:
@@ -877,7 +881,8 @@ class layoutScene(editorScene):
             ]
             layoutData = [
                 {"viewType": "layout", "schemaVersion": "1.0"},
-                {"snapGrid": (self.majorGrid, self.snapGrid)},
+                {"snapGrid": (self.majorGrid, self.snapGrid),
+                 "lodThreshold": self.editorWindow.lodThreshold},
                 *topLevelItems,
             ]
 
@@ -991,6 +996,17 @@ class layoutScene(editorScene):
                 self.editorWindow.configureGridSettings(
                     decodedData[1].get("snapGrid", (self.majorGrid, self.snapGrid))
                 )
+                # Restore LOD threshold if saved
+                lodThreshold = decodedData[1].get("lodThreshold", None)
+                if lodThreshold is not None:
+                    try:
+                        lodThreshold = float(lodThreshold)
+                        if lodThreshold > 0:
+                            self.editorWindow.lodThreshold = lodThreshold
+                            from revedaEditor.common.layoutShapes import layoutInstance
+                            layoutInstance._lodThreshold = lodThreshold
+                    except (ValueError, TypeError):
+                        pass
                 if len(decodedData) > 2:
                     self.createLayoutItems(decodedData[2:])
             self.itemsRefSet = set(self.items())

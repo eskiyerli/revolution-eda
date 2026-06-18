@@ -833,6 +833,13 @@ class layoutDisplayConfigDialog(displayConfigDialog):
         self.dbuEntry.setToolTip("Number of points per um")
         self.dbuEntry.setReadOnly(True)
         self.fLayout.insertRow(0, "Process Points per um:", self.dbuEntry)
+        self.lodThresholdEdit = edf.shortLineEdit()
+        self.lodThresholdEdit.setToolTip(
+            "Level-of-detail threshold for instance simplification when zooming out.\n"
+            "Lower values delay simplification; higher values simplify sooner.\n"
+            "Typical range: 0.001 – 0.1  (default 0.02)"
+        )
+        self.fLayout.addRow("Instance LOD Threshold:", self.lodThresholdEdit)
 
 
 class selectConfigDialogue(QDialog):

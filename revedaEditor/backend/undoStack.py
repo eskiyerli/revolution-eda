@@ -79,7 +79,8 @@ class addDeleteShapesUndo(QUndoCommand):
             self._scene.addItem(item)
         self._scene.itemsRefSet |= set(self._newShapes)
         for item in self._oldShapes:
-            self._scene.removeItem(item)
+            if item.scene() is not None:
+                self._scene.removeItem(item)
         try:
             self._scene.itemsRefSet -= set(self._oldShapes)
         except KeyError:

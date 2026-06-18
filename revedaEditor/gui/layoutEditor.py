@@ -18,6 +18,7 @@ from PySide6.QtCore import Qt, QSortFilterProxyModel
 from PySide6.QtGui import (
     QAction,
     QIcon,
+    QTransform,
 )
 from PySide6.QtWidgets import (
     QApplication,
@@ -56,6 +57,7 @@ class layoutEditor(edw.editorWindow):
         self.majorGrid = fabproc.majorGrid
         self.snapGrid = fabproc.snapGrid
         self.snapTuple = (self.snapGrid, self.snapGrid)
+        self.lodThreshold = 0.02  # default instance LOD threshold
         self.layoutChooser = None
         self.gdsExportDirObj = (
             self.appMainW.runPath / "gdsExport" / self.libName / self.cellName
@@ -500,16 +502,52 @@ class layoutEditor(edw.editorWindow):
         self._exportLayoutCell("OAS")
 
     def handlePolygonSelection(self, polygons):
-        # Remove previous polygons
+        # Remove previous polygons and reset their transforms
         for polygon in self._drcPolygons:
+            polygon.setTransform(QTransform())
             self.centralW.scene.removeItem(polygon)
 
-        # Add new polygons
+        # Add new polygons, applying instance transforms for sub-cell violations.
+        # KLayout reports DRC violations in the cell's local coordinate system.
+        # For the top cell, coordinates are already in scene space. For sub-cells
+        # (pcell instances, regular instances), we need to apply the instance's
+        # scene transform so the error polygon lines up with the layout.
         for polygon in polygons:
+            polygonCell = polygon.cell
+            if polygonCell and polygonCell != self.cellName:
+                # Violation is in a sub-cell — find the matching instance and
+                # apply its transform to position the polygon correctly.
+                transform = self._findInstanceTransform(polygonCell)
+                if transform is not None:
+                    polygon.setTransform(transform)
             self.centralW.scene.addItem(polygon)
 
         # Remember current polygons (store reference)
         self._drcPolygons = polygons
+
+    def _findInstanceTransform(self, gdsCellName: str):
+        """Find the scene transform for an instance whose GDS cell name matches.
+
+        GDS cell naming conventions (from exportGDS.py):
+          - Regular instances: {libraryName}_{cellName}_{viewName}
+          - Pcells: {libraryName}_{className}_{params}_{counter}
+
+        Returns the QTransform of the first matching instance, or None.
+        """
+        from revedaEditor.common import layoutShapes as lshp
+
+        for item in self.centralW.scene.items():
+            if isinstance(item, lshp.layoutPcell):
+                # Pcell GDS name starts with {libraryName}_{className}_
+                prefix = f"{item.libraryName}_{type(item).__name__}_"
+                if gdsCellName.startswith(prefix):
+                    return item.sceneTransform()
+            elif isinstance(item, lshp.layoutInstance):
+                # Regular instance GDS name: {libraryName}_{cellName}_{viewName}
+                instanceGDSName = f"{item.libraryName}_{item.cellName}_{item.viewName}"
+                if gdsCellName == instanceGDSName:
+                    return item.sceneTransform()
+        return None
 
     def clearDRCPolygons(self):
         self.handlePolygonSelection([])
@@ -552,6 +590,7 @@ class layoutEditor(edw.editorWindow):
         dcd.dbuEntry.setText(str(self.dbu))
         dcd.majorGridEntry.setText(str(self.majorGrid))
         dcd.snapGridEdit.setText(str(self.snapGrid))
+        dcd.lodThresholdEdit.setText(str(self.lodThreshold))
         if dcd.exec() == QDialog.DialogCode.Accepted:
             self.configureGridSettings(
                 (int(dcd.majorGridEntry.text()), int(dcd.snapGridEdit.text()))
@@ -565,6 +604,16 @@ class layoutEditor(edw.editorWindow):
             else:
                 self.centralW.view.gridbackg = False
                 self.centralW.view.linebackg = False
+            # Apply LOD threshold
+            try:
+                newThreshold = float(dcd.lodThresholdEdit.text())
+                if newThreshold > 0:
+                    self.lodThreshold = newThreshold
+                    from revedaEditor.common.layoutShapes import layoutInstance
+                    layoutInstance._lodThreshold = newThreshold
+                    self.centralW.scene.update()
+            except ValueError:
+                pass
 
     def closeEvent(self, event):
         try:

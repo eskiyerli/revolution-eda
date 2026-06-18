@@ -79,8 +79,8 @@ class editorScene(QGraphicsScene):
         self.itemsAtPressSet = set()
         self._draftPen = QPen(QColor(0, 150, 0, 128), int(self.snapGrid / 2), Qt.DashLine)
         self._zoomPen = QPen(QColor(255, 0, 0, 255), 2, Qt.DashLine)
-        self._draftPen.setCosmetic(False)
-        self._zoomPen.setCosmetic(False)
+        self._zoomPen.setCosmetic(True)
+        self._draftPen.setCosmetic(True)
 
         # Initialize UI elements
         self.origin = QPoint(0, 0)
@@ -107,8 +107,15 @@ class editorScene(QGraphicsScene):
         self.mouseMoveLoc = QPoint(0, 0)
         self.mouseReleaseLoc = QPoint(0, 0)
         self.newAlignLine = None
+        self._rightZoomPressLoc: Optional[QPoint] = None
+        self._rightZoomRectItem: Optional[QGraphicsRectItem] = None
+        self._suppressContextMenu: bool = False
 
     def contextMenuEvent(self, event) -> None:
+        if self._suppressContextMenu:
+            self._suppressContextMenu = False
+            event.accept()
+            return
         if self.itemAt(event.scenePos(), QTransform()) is None:
             self.messageLine.setText("No item selected")
         super().contextMenuEvent(event)
@@ -191,6 +198,10 @@ class editorScene(QGraphicsScene):
                     self.zoomRectItem.setZValue(100)
                     self.addItem(self.zoomRectItem)
 
+        elif event.button() == Qt.MouseButton.RightButton:
+            self._rightZoomPressLoc = event.scenePos().toPoint()
+            self._suppressContextMenu = False
+
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event) -> None:
@@ -216,6 +227,19 @@ class editorScene(QGraphicsScene):
             offset = self.mouseMoveLoc - self.mousePressLoc
             self.selectedItemGroup.setPos(offset)
 
+        if (event.buttons() & Qt.MouseButton.RightButton) and self._rightZoomPressLoc is not None:
+            currentPos = event.scenePos().toPoint()
+            dragRect = QRectF(self._rightZoomPressLoc.toPointF(),
+                              currentPos.toPointF()).normalized()
+            if self._rightZoomRectItem is None and (
+                    dragRect.width() > self.snapDistance or dragRect.height() > self.snapDistance):
+                self._rightZoomRectItem = QGraphicsRectItem(0, 0, 0, 0)
+                self._rightZoomRectItem.setPen(self._zoomPen)
+                self._rightZoomRectItem.setZValue(100)
+                self.addItem(self._rightZoomRectItem)
+            if self._rightZoomRectItem is not None:
+                self._rightZoomRectItem.setRect(dragRect)
+
     def mouseReleaseEvent(self, event) -> None:
         # if event.button() != Qt.MouseButton.LeftButton:
         #     super().mouseReleaseEvent(event)
@@ -223,6 +247,18 @@ class editorScene(QGraphicsScene):
 
         modifiers = QGuiApplication.keyboardModifiers()
         self.mouseReleaseLoc = event.scenePos().toPoint()
+
+        if event.button() == Qt.MouseButton.RightButton:
+            if self._rightZoomRectItem is not None:
+                rect = self._rightZoomRectItem.rect().toRect()
+                self.removeItem(self._rightZoomRectItem)
+                self._rightZoomRectItem = None
+                if rect.width() > self.snapDistance and rect.height() > self.snapDistance:
+                    self.zoomToRect(rect)
+                    self._suppressContextMenu = True
+            self._rightZoomPressLoc = None
+            super().mouseReleaseEvent(event)
+            return
 
         if (self.editModes.moveItem or self.editModes.constrainedMoveItem) and self.selectedItemGroup:
             _groupItems = self.selectedItemGroup.childItems()
@@ -454,9 +490,11 @@ class editorScene(QGraphicsScene):
         self.views()[0].fitInView(self.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
         self.views()[0].viewport().update()
 
-    def zoomToRect(self) -> None:
-        if self.zoomRectItem:
-            self.setSceneRect(self.zoomRectItem.rect().adjusted(-40, -40, 40, 40))
+    def zoomToRect(self, rect: QRect = None) -> None:
+        if rect is None and self.zoomRectItem:
+            rect = self.zoomRectItem.rect().toRect()
+        if rect is not None and not QRectF(rect).isEmpty():
+            self.setSceneRect(QRectF(rect).adjusted(-40, -40, 40, 40))
             self.views()[0].fitInView(self.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
             self.views()[0].viewport().update()
 

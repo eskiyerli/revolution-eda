@@ -398,7 +398,7 @@ class LVSDBParser:
         layout_devices = self.get_layout_devices(layout_cell_name)
         schematic_devices = self.get_schematic_devices(schematic_cell_name)
         if not layout_devices or not schematic_devices:
-            return 0, []
+            return 0, [], []
 
         layout_type_counts = Counter(
             self._normalize_device_type(device.get('type')) for device in layout_devices
@@ -407,7 +407,7 @@ class LVSDBParser:
             self._normalize_device_type(device.get('type')) for device in schematic_devices
         )
         if layout_type_counts != schematic_type_counts:
-            return 0, []
+            return 0, [], []
 
         layout_signature_counts = Counter(
             self._device_param_signature(device) for device in layout_devices

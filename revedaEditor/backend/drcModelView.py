@@ -129,7 +129,9 @@ class DRCTableView(QTableView):
     def _zoomToError(self, row: int):
         polygonItems = self.drcOutputsModel.getPolygons(row)
         if polygonItems:
-            polygonItem = self.drcOutputsModel.getPolygons(row)[0]
+            polygonItem = polygonItems[0]
             padding = int(getattr(process, 'dbu', 1000)/2)
-            self.zoomToRect.emit(polygonItem.polygon().toPolygon().boundingRect().adjusted(-padding, -padding, padding, padding))
-            # self.zoomToPolygon.emit(self.drcOutputsModel.getPoints(row))
+            # Use mapToScene to get the polygon in scene coordinates,
+            # accounting for any transform applied for sub-cell violations.
+            scenePolygon = polygonItem.mapToScene(polygonItem.polygon())
+            self.zoomToRect.emit(scenePolygon.toPolygon().boundingRect().adjusted(-padding, -padding, padding, padding))

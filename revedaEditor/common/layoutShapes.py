@@ -42,6 +42,7 @@ from PySide6.QtWidgets import (
     QGraphicsSceneHoverEvent,
     QGraphicsSceneMouseEvent,
     QStyle,
+    QStyleOptionGraphicsItem,
 )
 
 import revedaEditor.backend.dataDefinitions as ddef
@@ -623,15 +624,46 @@ class layoutInstance(layoutShape):
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}({self._libraryName}, {self._cellName}, {self._viewName}, {self._instanceName})"
 
+    # LOD threshold below which children are hidden and a simplified
+    # bounding-box is drawn instead.  Tweak to taste — lower values defer
+    # simplification to more extreme zoom-outs.
+    _lodThreshold = 0.02
+
     def boundingRect(self) -> QRectF:
         return self.childrenBoundingRect().normalized().adjusted(-2, -2, 2, 2)
 
     def paint(self, painter, option, widget) -> None:
-        painter.setRenderHint(QPainter.NonCosmeticBrushPatterns)
-        if option.state & QStyle.State_Selected:
-            # if self in self.scene().selectedItemsSet:
-            painter.setPen(self._selectedPen)
-            painter.drawRect(self.childrenBoundingRect())
+        lod = QStyleOptionGraphicsItem.levelOfDetailFromTransform(
+            painter.worldTransform()
+        )
+
+        if lod < self._lodThreshold:
+            # --- Low-detail mode: hide children, draw a filled rect with outline ---
+            if not getattr(self, "_childrenHidden", False):
+                for child in self.childItems():
+                    child.setVisible(False)
+                self._childrenHidden = True
+
+            rect = self.childrenBoundingRect()
+            painter.setPen(QPen(QColor(150, 150, 150), 0))
+            painter.setBrush(QColor(100, 100, 100, 60))
+            painter.drawRect(rect)
+
+            if option.state & QStyle.State_Selected:
+                painter.setPen(self._selectedPen)
+                painter.setBrush(Qt.NoBrush)
+                painter.drawRect(rect)
+        else:
+            # --- Full-detail mode: ensure children are visible ---
+            if getattr(self, "_childrenHidden", False):
+                for child in self.childItems():
+                    child.setVisible(True)
+                self._childrenHidden = False
+
+            painter.setRenderHint(QPainter.NonCosmeticBrushPatterns)
+            if option.state & QStyle.State_Selected:
+                painter.setPen(self._selectedPen)
+                painter.drawRect(self.childrenBoundingRect())
 
     def sceneEvent(self, event):
         """

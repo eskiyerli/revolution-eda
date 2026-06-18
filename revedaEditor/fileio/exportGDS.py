@@ -150,9 +150,11 @@ class gdsExporter:
 
     def _processLabel(self, item, parentCell, offset: Tuple[float, float] = (0.0, 0.0)):
         ox, oy = offset
+        centre = item.boundingRect().center()
         label = gdstk.Label(
             text=item.labelText,
-            origin=(item.start.x() - ox, item.start.y() - oy),
+            # origin=(item.start.x() - ox, item.start.y() - oy),
+            origin=(centre.x()-ox, centre.y()-oy),
             magnification=float(item.fontHeight * self._dbu),
             rotation=item.angle,
             layer=item.layer.gdsLayer,

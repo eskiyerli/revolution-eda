@@ -673,12 +673,23 @@ class editorWindow(QMainWindow):
                 if not shutil.which("pdftops"):
                     QMessageBox.critical(self, "Export Error", "pdftops tool is required for EPS export but was not found in the system PATH.")
                     return
+                # Ask whether to export in color or monochrome
+                monoChoice = QMessageBox.question(
+                    self,
+                    "EPS Export Mode",
+                    "Export as monochrome (grayscale)?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No,
+                )
+                monochrome = monoChoice == QMessageBox.StandardButton.Yes
                 temp_pdf_fd, temp_pdf_path = tempfile.mkstemp(suffix=".pdf")
                 os.close(temp_pdf_fd)
                 try:
                     printer = QPrinter(QPrinter.PrinterMode.ScreenResolution)
                     printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
                     printer.setOutputFileName(temp_pdf_path)
+                    if monochrome:
+                        printer.setColorMode(QPrinter.ColorMode.GrayScale)
                     items_rect = self.centralW.view.scene().itemsBoundingRect()
                     if items_rect.isEmpty():
                         items_rect = self.centralW.view.sceneRect()

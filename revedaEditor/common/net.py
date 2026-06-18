@@ -268,12 +268,18 @@ class schematicNet(QGraphicsItem):
     def generateEndPointNetDict(self):
         self._endPointNetDict = dict[int, Set[schematicNet]]()
         if self.scene():
+            # Exclude nets that are in the same move group (they move with us)
+            moveGroup = getattr(self.scene(), 'selectedItemGroup', None)
+            coSelectedNets = set()
+            if moveGroup:
+                coSelectedNets = {item for item in moveGroup.childItems()
+                                  if isinstance(item, schematicNet)}
             for i, endPoint in enumerate(self.sceneEndPoints):
                 netSet: Set["schematicNet"] = {
                                                   item
                                                   for item in self.scene().items(endPoint)
                                                   if isinstance(item, schematicNet)
-                                              } - {self}
+                                              } - {self} - coSelectedNets
                 self._endPointNetDict[i] = netSet
 
     def initializeSnapLines(self):
@@ -344,6 +350,8 @@ class schematicNet(QGraphicsItem):
                 allNewNets = []
                 for snapLinesSet in self._netSnapLines.values():
                     for snapLine in snapLinesSet:
+                        if snapLine.scene() is None:
+                            continue  # Already removed (e.g. by updateSnapLines)
                         p1 = snapLine.line().p1().toPoint()
                         p2 = snapLine.line().p2().toPoint()
                         if p1 == p2:
