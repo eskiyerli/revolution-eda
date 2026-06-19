@@ -28,6 +28,7 @@ import revedaEditor.common.net as snet
 
 SYMBOL_PIN_DISTANCE = 80
 SYMBOL_STUB_LENGHT = 20
+LAYOUT_TO_SCHEMATIC_SCALE = 100  # schematic scene units per µm of layout position
 
 
 class klayoutSchematicGenerator:
@@ -263,15 +264,31 @@ class klayoutSchematicGenerator:
         layout_devices = self.parser.get_layout_devices(self.layoutEditor.cellName)
         xref = self.parser.get_crossref(self.layoutEditor.cellName)
 
+        # print(f"DEBUG: layout_devices count: {len(layout_devices) if layout_devices else 0}")
+        # print(f"DEBUG: xref: {xref}")
+
         if xref and layout_devices:
             layout_pos_by_id = {
                 self._make_hashable(d["id"]): d.get("position") for d in layout_devices
             }
+            # print(f"DEBUG: layout_pos_by_id sample: {list(layout_pos_by_id.items())[:3]}")
+            # print(f"DEBUG: xref mappings count: {len(xref.get('mapping', {}).get('devices', []))}")
             for mapping in xref.get("mapping", {}).get("devices", []):
                 layout_dev = self._make_hashable(mapping.get("layout_dev"))
                 schem_dev = self._make_hashable(mapping.get("schem_dev"))
                 if layout_dev in layout_pos_by_id and schem_dev is not None:
                     self.schem_to_layout_pos[schem_dev] = layout_pos_by_id[layout_dev]
+        
+        # Fallback: if xref mapping is sparse, use direct ID match
+        # (extracted schematic devices should have IDs matching layout devices)
+        if len(self.schem_to_layout_pos) < len(layout_devices) if layout_devices else 0:
+            # print(f"DEBUG: xref sparse ({len(self.schem_to_layout_pos)} matches), using direct ID fallback")
+            for d in layout_devices:
+                dev_id = self._make_hashable(d["id"])
+                if dev_id not in self.schem_to_layout_pos:
+                    self.schem_to_layout_pos[dev_id] = d.get("position")
+        
+        # print(f"DEBUG: schem_to_layout_pos count: {len(self.schem_to_layout_pos)}")
         return self.schem_to_layout_pos
 
     def _findCellItem(self, cellName: str):
@@ -372,7 +389,10 @@ class klayoutSchematicGenerator:
     def _getMappedLayoutPosition(self, deviceId: Any):
         if deviceId is None:
             return None
-        return self.schem_to_layout_pos.get(self._make_hashable(deviceId))
+        hashed = self._make_hashable(deviceId)
+        pos = self.schem_to_layout_pos.get(hashed)
+        # print(f"DEBUG: _getMappedLayoutPosition: deviceId={deviceId}, hashed={hashed}, pos={pos}")
+        return pos
 
     def _getAggregateLayoutPosition(self, deviceIds: list[Any]) -> Any:
         if not deviceIds:
@@ -408,6 +428,7 @@ class klayoutSchematicGenerator:
 
     def _toScenePlacement(self, layout_pos, snapToGrid) -> Optional[QPoint]:
         """Convert parser position payload to schematic scene coordinates."""
+        # print(f'layout position: {layout_pos}')
         if layout_pos is None:
             return None
 
@@ -421,8 +442,9 @@ class klayoutSchematicGenerator:
             else:
                 return None
 
-            x = int(round(float(x_raw) / 5))
-            y = int(round(float(y_raw) / 5))
+            x = int(round(float(x_raw)/self.tempSchematicEditor.majorGrid))
+            y = int(round(float(y_raw)/self.tempSchematicEditor.majorGrid))
+            # print(f"Layout position: {layout_pos}, Scene position: ({x}, {y})")
             return snapToGrid(QPoint(x, y))
         except (TypeError, ValueError):
             return None
