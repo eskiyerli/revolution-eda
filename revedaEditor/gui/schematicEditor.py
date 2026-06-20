@@ -102,6 +102,12 @@ class schematicEditor(edw.editorWindow):
         self.hilightNetAction = QAction("Highlight Net", self)
         self.hilightNetAction.setToolTip("Highlight Selected Net Connections")
         self.hilightNetAction.setCheckable(True)
+        self.probeNetAction = QAction("Probe Net", self)
+        self.probeNetAction.setToolTip("Probe a Net and Trace It Through Hierarchy")
+        self.probeNetAction.setCheckable(True)
+        self.removeProbeNetAction = QAction("Remove Probe", self)
+        self.removeProbeNetAction.setToolTip("Remove a Probe by Clicking a Probed Net")
+        self.removeProbeNetAction.setCheckable(True)
         self.renumberInstanceAction = QAction("Renumber Instances", self)
         self.renumberInstanceAction.setToolTip("Renumber Instances")
         simulationIcon = QIcon("icons/application-run.png")
@@ -136,6 +142,8 @@ class schematicEditor(edw.editorWindow):
 
         # tools menu
         self.menuTools.addAction(self.hilightNetAction)
+        self.menuTools.addAction(self.probeNetAction)
+        self.menuTools.addAction(self.removeProbeNetAction)
         self.menuTools.addAction(self.renumberInstanceAction)
         self.menuTools.addAction(self.findRelatedEditors)
         # utilities Menu
@@ -172,6 +180,8 @@ class schematicEditor(edw.editorWindow):
         self.deleteErrorsAction.triggered.connect(self.deleteErrorsClick)
 
         self.hilightNetAction.triggered.connect(self.hilightNetClick)
+        self.probeNetAction.triggered.connect(self.probeNetClick)
+        self.removeProbeNetAction.triggered.connect(self.removeProbeNetClick)
         self.netNameAction.triggered.connect(self.createNetNameClick)
         self.selectDeviceAction.triggered.connect(self.selectDeviceClick)
         self.selectNetAction.triggered.connect(self.selectNetClick)
@@ -209,6 +219,9 @@ class schematicEditor(edw.editorWindow):
         super()._editorContextMenu()
         self.centralW.scene.itemContextMenu.addAction(self.ignoreAction)
         self.centralW.scene.itemContextMenu.addAction(self.goDownAction)
+        self.centralW.scene.itemContextMenu.addSeparator()
+        self.centralW.scene.itemContextMenu.addAction(self.probeNetAction)
+        self.centralW.scene.itemContextMenu.addAction(self.removeProbeNetAction)
 
     def _createShortcuts(self):
         super()._createShortcuts()
@@ -276,11 +289,20 @@ class schematicEditor(edw.editorWindow):
     def checkSaveCell(self):
         self.centralW.scene.nameSceneNets()
         self.centralW.scene.saveSchematic(self.file)
+        self.centralW.scene.reloadScene()
+        if hasattr(self.centralW.scene, 'reapplyProbesAfterReload'):
+            self.centralW.scene.reapplyProbesAfterReload()
         if self.parentEditor:
             self.parentEditor.centralW.scene.reloadScene()
+            parentScene = self.parentEditor.centralW.scene
+            if hasattr(parentScene, 'reapplyProbesAfterReload'):
+                parentScene.reapplyProbesAfterReload()
 
     def saveCell(self):
         self.centralW.scene.saveSchematic(self.file)
+        self.centralW.scene.reloadScene()
+        if hasattr(self.centralW.scene, 'reapplyProbesAfterReload'):
+            self.centralW.scene.reapplyProbesAfterReload()
 
     def loadSchematic(self):
         try:
@@ -354,6 +376,11 @@ class schematicEditor(edw.editorWindow):
     def closeEvent(self, event):
         try:
             self.centralW.scene.saveSchematic(self.file)
+            if self.parentEditor is not None:
+                self.parentEditor.centralW.scene.reloadScene()
+                parentScene = self.parentEditor.centralW.scene
+                if hasattr(parentScene, 'reapplyProbesAfterReload'):
+                    parentScene.reapplyProbesAfterReload()
             cellViewNameTuple = ddef.viewNameTuple(self.libName, self.cellName,
                                                    self.viewName)
             self.appMainW.openViews.pop(cellViewNameTuple, None)
@@ -470,6 +497,12 @@ class schematicEditor(edw.editorWindow):
 
     def hilightNetClick(self, s):
         self.centralW.scene.hilightNets()
+
+    def probeNetClick(self, s):
+        self.centralW.scene.probeNets()
+
+    def removeProbeNetClick(self, s):
+        self.centralW.scene.removeProbeMode()
 
     def selectDeviceClick(self, s=None):
         self.centralW.scene.selectModes.setMode("selectDevice")

@@ -117,6 +117,14 @@ class schematicScene(editorScene):
         self.parentEditor = None
         self.parentObj = None
 
+        # Probe state
+        self.probeMode = False
+        self.removeProbeMode_ = False
+        self.probePinNames: Set[str] = set()
+        self._probedNets: Dict[str, Set[snet.schematicNet]] = dict()
+        self._probeColorIndex: int = 0
+        self._probeColorMap: Dict[str, int] = dict()
+
         # Font initialization
         self._initializeFont()
 
@@ -531,6 +539,15 @@ class schematicScene(editorScene):
             if splitDone:
                 self._updateNets({inputNet} - splitOutputNets,
                                  splitOutputNets - {inputNet}, inputNet)
+
+    def cleanUpNets(self):
+        """Run mergeSplitNets on every net in the scene to remove duplicates."""
+        netSnapshot = list(
+            item for item in self.items() if isinstance(item, snet.schematicNet)
+        )
+        for netItem in netSnapshot:
+            if netItem.scene() is self:
+                self.mergeSplitNets(netItem)
 
     def mergeNets(self, inputNet: snet.schematicNet) -> Tuple[
         bool, snet.schematicNet, Set[snet.schematicNet]]:
@@ -1054,6 +1071,7 @@ class schematicScene(editorScene):
             JSONEncodeError: If there are JSON serialization errors
         """
         try:
+            self.cleanUpNets()
             self.itemsRefSet = set(self.items())
             # Ensure parentW directory exists
             file.parent.mkdir(parents=True, exist_ok=True)
@@ -1098,6 +1116,7 @@ class schematicScene(editorScene):
                 self.logger.info(
                     f"Saved schematic to {self.editorWindow.cellName}:"
                     f"{self.editorWindow.viewName}")
+                lj.schematicItems._load_sym_json.cache_clear()
                 self.undoStack.clear()
                 return True
         except IOError as io_err:
@@ -1401,6 +1420,292 @@ class schematicScene(editorScene):
         except Exception as e:
             self.logger.error(e)
 
+    def probeNets(self):
+        """Toggle probe mode on/off."""
+        try:
+            self.probeMode = bool(
+                self.editorWindow.probeNetAction.isChecked())
+            if self.probeMode:
+                self.removeProbeMode_ = False
+                self.editorWindow.removeProbeNetAction.setChecked(False)
+            else:
+                self.clearProbe()
+        except Exception as e:
+            self.logger.error(e)
+
+    def removeProbeMode(self):
+        """Toggle remove-probe mode on/off."""
+        try:
+            self.removeProbeMode_ = bool(
+                self.editorWindow.removeProbeNetAction.isChecked())
+            if self.removeProbeMode_:
+                self.probeMode = False
+                self.editorWindow.probeNetAction.setChecked(False)
+            if not self.removeProbeMode_:
+                self.clearProbe()
+        except Exception as e:
+            self.logger.error(e)
+
+    def clearProbe(self):
+        """Clear all probes and reset probe state. Also clears probes
+        from related editors in the hierarchy."""
+        from PySide6.QtWidgets import QApplication
+        # Clear local probes
+        for netSet in self._probedNets.values():
+            for netItem in netSet:
+                if netItem.scene():
+                    netItem.unprobe()
+        self._probedNets.clear()
+        self._probeColorMap.clear()
+        self.probePinNames.clear()
+        # Clear probes from related editors
+        editor = self.editorWindow
+        openWindows = {w for w in QApplication.topLevelWidgets()
+                       if hasattr(w, 'centralW') and hasattr(w.centralW, 'scene')}
+        relatedEditors = set()
+        editor.findRelated(editor, relatedEditors, openWindows)
+        for w in relatedEditors:
+            if w == editor:
+                continue
+            relatedScene = w.centralW.scene
+            if not hasattr(relatedScene, '_probedNets'):
+                continue
+            if relatedScene._probedNets:
+                for netSet in relatedScene._probedNets.values():
+                    for netItem in netSet:
+                        if netItem.scene():
+                            netItem.unprobe()
+                relatedScene._probedNets.clear()
+                relatedScene._probeColorMap.clear()
+                relatedScene.probePinNames.clear()
+
+    def reapplyProbesAfterReload(self):
+        """Reapply probes after a scene reload. The reload destroys all
+        QGraphicsItems, so _probedNets holds stale references. Rebuild
+        from the surviving _probeColorMap (net name → color index)."""
+        if not self._probeColorMap:
+            return
+        savedProbes = dict(self._probeColorMap)
+        self._probedNets.clear()
+        self._probeColorMap.clear()
+        self.probePinNames.clear()
+        for netName, colorIndex in savedProbes.items():
+            self.addProbe(netName, propagate=False, colorIndex=colorIndex)
+
+    def addProbe(self, netName: str, propagate: bool = True,
+                 colorIndex: Optional[int] = None):
+        """Add a probe for the given net name. Probes all matching nets
+        with a cycling color pen. When propagate is True, also propagates
+        the probe to all related editors in the hierarchy."""
+        if not netName:
+            return
+        if netName in self._probedNets:
+            return
+        if colorIndex is None:
+            colorIndex = self._probeColorIndex
+            self._probeColorIndex = (self._probeColorIndex + 1) % len(
+                schlyr.probePens)
+        probePen = schlyr.probePens[colorIndex % len(schlyr.probePens)]
+        self.nameSceneNets()
+        sceneNetsSet = self.findSceneNetsSet()
+        matchingNets = {
+            net for net in sceneNetsSet
+            if snet.schematicNet._namesMatch(net.name, netName)
+        }
+        self._probedNets[netName] = matchingNets
+        self._probeColorMap[netName] = colorIndex
+        for netItem in matchingNets:
+            netItem.probe(probePen)
+        if propagate:
+            self._propagateProbeHierarchy(netName, {self.editorWindow},
+                                          colorIndex)
+
+    def removeProbe(self, netName: str, propagate: bool = True):
+        """Remove a specific probe by net name. When propagate is True,
+        also removes corresponding probes from related editors."""
+        netSet = self._probedNets.pop(netName, None)
+        self._probeColorMap.pop(netName, None)
+        if netSet:
+            for netItem in netSet:
+                if netItem.scene():
+                    netItem.unprobe()
+        if propagate:
+            self._propagateRemoveProbe(netName, {self.editorWindow})
+
+    def _propagateProbeHierarchy(self, netName: str, visited: set,
+                                 colorIndex: int = 0):
+        """Propagate a probe to all related editors in the hierarchy."""
+        editor = self.editorWindow
+        # Propagate up to parent
+        if editor.parentEditor and editor.parentEditor not in visited:
+            parentScene = editor.parentEditor.centralW.scene
+            if hasattr(parentScene, 'addProbe'):
+                visited.add(editor.parentEditor)
+                parentNetNames = self._mapNetToParent(netName, editor)
+                for parentNetName in parentNetNames:
+                    parentScene.addProbe(parentNetName, propagate=False,
+                                         colorIndex=colorIndex)
+                    parentScene._propagateProbeHierarchy(
+                        parentNetName, visited, colorIndex)
+                    parentScene._propagateProbeDown(
+                        parentNetName, visited, colorIndex)
+
+        # Propagate down to children
+        self._propagateProbeDown(netName, visited, colorIndex)
+
+    def _propagateProbeDown(self, netName: str, visited: set,
+                             colorIndex: int = 0):
+        """Propagate probe down to child editors by finding which pins of
+        the parent symbol are connected to the probed net, then probing
+        the matching schematic pins in the child scene."""
+        from PySide6.QtWidgets import QApplication
+        editor = self.editorWindow
+        self.nameSceneNets()
+        for w in QApplication.topLevelWidgets():
+            if not hasattr(w, 'centralW') or not hasattr(w.centralW, 'scene'):
+                continue
+            if w in visited:
+                continue
+            if not hasattr(w, 'parentEditor') or w.parentEditor != editor:
+                continue
+            if not hasattr(w, 'parentObj'):
+                continue
+            visited.add(w)
+            childScene = w.centralW.scene
+            if not hasattr(childScene, 'probeMode'):
+                continue
+            parentSymbol = w.parentObj
+            if not hasattr(parentSymbol, 'pins'):
+                continue
+            # Find which pins of the parent symbol are connected to the probed net
+            childPinNames = set()
+            for pinName, pinItem in parentSymbol.pins.items():
+                try:
+                    connectedNets = [
+                        n for n in pinItem.collidingItems(
+                            Qt.IntersectsItemBoundingRect)
+                        if isinstance(n, snet.schematicNet)
+                    ]
+                except RuntimeError:
+                    continue
+                for netItem in connectedNets:
+                    if (snet.schematicNet._namesMatch(netItem.name, netName)
+                            and not netItem.name.startswith("dnet")):
+                        childPinNames.add(pinName)
+                        break
+            if childPinNames:
+                childScene.probePinNames |= childPinNames
+                childScene.applyProbe(colorIndex)
+                # Continue propagating from child for the current probe only
+                for childProbeName in list(childScene._probedNets.keys()):
+                    if snet.schematicNet._namesMatch(childProbeName, netName):
+                        childScene._propagateProbeDown(
+                            childProbeName, visited, colorIndex)
+
+    def _mapNetToParent(self, netName: str, editor) -> set:
+        """Map a net name in the current scene to net name(s) in the parent
+        scene by finding schematic pins connected to the probed net, then
+        finding nets connected to the matching pins on the parent symbol."""
+        parentNetNames = set()
+        self.nameSceneNets()
+        # Find child schematic pins connected to the probed net
+        matchingPinNames = set()
+        for pinItem in self.findSceneSchemPinsSet():
+            try:
+                connectedNets = [
+                    n for n in pinItem.collidingItems(
+                        Qt.IntersectsItemBoundingRect)
+                    if isinstance(n, snet.schematicNet)
+                ]
+            except RuntimeError:
+                continue
+            if connectedNets and snet.schematicNet._namesMatch(
+                    connectedNets[0].name, netName):
+                matchingPinNames.add(pinItem.pinName)
+
+        if not matchingPinNames or not editor.parentEditor:
+            return parentNetNames
+
+        # Find nets connected to matching pins on the parent symbol
+        parentScene = editor.parentEditor.centralW.scene
+        parentScene.nameSceneNets()
+        parentSymbol = editor.parentObj
+        if not hasattr(parentSymbol, 'pins'):
+            return parentNetNames
+
+        for pinName, pinItem in parentSymbol.pins.items():
+            if pinName in matchingPinNames:
+                try:
+                    connectedNets = [
+                        n for n in pinItem.collidingItems(
+                            Qt.IntersectsItemBoundingRect)
+                        if isinstance(n, snet.schematicNet)
+                    ]
+                except RuntimeError:
+                    continue
+                for netItem in connectedNets:
+                    if not netItem.name.startswith("dnet"):
+                        parentNetNames.add(netItem.name)
+        return parentNetNames
+
+    def _propagateRemoveProbe(self, netName: str, visited: set):
+        """Remove corresponding probes from related editors."""
+        from PySide6.QtWidgets import QApplication
+        editor = self.editorWindow
+        # Remove from parent
+        if editor.parentEditor and editor.parentEditor not in visited:
+            parentScene = editor.parentEditor.centralW.scene
+            if hasattr(parentScene, '_probedNets'):
+                visited.add(editor.parentEditor)
+                parentNetNames = self._mapNetToParent(netName, editor)
+                for parentNetName in parentNetNames:
+                    parentScene.removeProbe(parentNetName, propagate=False)
+                    parentScene._propagateRemoveProbe(parentNetName, visited)
+        # Remove from children
+        for w in QApplication.topLevelWidgets():
+            if not hasattr(w, 'centralW') or not hasattr(w.centralW, 'scene'):
+                continue
+            if w in visited:
+                continue
+            if not hasattr(w, 'parentEditor') or w.parentEditor != editor:
+                continue
+            visited.add(w)
+            childScene = w.centralW.scene
+            if not hasattr(childScene, '_probedNets'):
+                continue
+            # Remove all probes in child that match through pin mapping
+            for childProbeName in list(childScene._probedNets.keys()):
+                childScene.removeProbe(childProbeName, propagate=False)
+                childScene._propagateRemoveProbe(childProbeName, visited)
+
+    def applyProbe(self, colorIndex: int = 0):
+        """Apply probe from parent pin names. Called after child scene is loaded."""
+        if not self.probePinNames:
+            return
+        probePen = schlyr.probePens[colorIndex % len(schlyr.probePens)]
+        self.nameSceneNets()
+        sceneNetsSet = self.findSceneNetsSet()
+        schemPinsSet = self.findSceneSchemPinsSet()
+
+        for pinItem in schemPinsSet:
+            if pinItem.pinName in self.probePinNames:
+                connectedNets = [
+                    netItem for netItem in pinItem.collidingItems(
+                        Qt.IntersectsItemBoundingRect)
+                    if isinstance(netItem, snet.schematicNet)
+                ]
+                if connectedNets:
+                    probeName = connectedNets[0].name
+                    if probeName in self._probedNets:
+                        continue
+                    matchingNets = {
+                        net for net in sceneNetsSet
+                        if snet.schematicNet._namesMatch(net.name, probeName)
+                    }
+                    self._probedNets[probeName] = matchingNets
+                    for netItem in matchingNets:
+                        netItem.probe(probePen)
+
     def goDownHier(self):
         """
         Go down the hierarchy, opening the selected view.
@@ -1459,9 +1764,49 @@ class schematicScene(editorScene):
                             if dlg.buttonId == 2:
                                 childWindow.centralW.scene.readOnly = True
 
+                        # Propagate probes to child scene
+                        if self.probeMode and self._probedNets:
+                            childScene = childWindow.centralW.scene
+                            if hasattr(childScene, 'probePinNames'):
+                                self._propagateProbeToChild(
+                                    childScene, selectedSymbol)
 
         except IndexError:
             pass
+
+    def _propagateProbeToChild(self, childScene, selectedSymbol):
+        """Propagate all active probes to a child scene by finding which
+        pins of the selected symbol are connected to each probed net and
+        passing those pin names to the child scene. Each probe retains
+        its own color."""
+        self.nameSceneNets()
+        if not hasattr(selectedSymbol, 'pins'):
+            return
+        # Build a map of pin name → connected net name for the symbol
+        pinToNet = {}
+        for pinName, pinItem in selectedSymbol.pins.items():
+            try:
+                connectedNets = [
+                    n for n in pinItem.collidingItems(
+                        Qt.IntersectsItemBoundingRect)
+                    if isinstance(n, snet.schematicNet)
+                ]
+            except RuntimeError:
+                continue
+            for netItem in connectedNets:
+                if not netItem.name.startswith("dnet"):
+                    pinToNet[pinName] = netItem.name
+                    break
+        # For each probed net, find matching pins and apply probe to child
+        childScene.probeMode = True
+        for idx, probedNetName in enumerate(self._probedNets):
+            childPinNames = set()
+            for pinName, netName in pinToNet.items():
+                if snet.schematicNet._namesMatch(netName, probedNetName):
+                    childPinNames.add(pinName)
+            if childPinNames:
+                childScene.probePinNames |= childPinNames
+                childScene.applyProbe(idx % len(schlyr.probePens))
 
     def ignoreSymbol(self):
         if self.selectedItems() is not None:

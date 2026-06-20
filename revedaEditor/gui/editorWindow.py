@@ -800,7 +800,6 @@ class editorWindow(QMainWindow):
     def goUpHierarchy(self):
         self.saveCell()
         if self.parentEditor is not None:
-            self.parentEditor.updateDesignScene()
             self.parentEditor.raise_()
         self.close()
 

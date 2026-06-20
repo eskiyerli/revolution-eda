@@ -16,6 +16,8 @@ from typing import Any, Optional
 
 from PySide6.QtCore import QPoint
 
+from revedaEditor.fileio import spiceNetlist
+
 
 
 import revedaEditor.common.shapes as shp
@@ -62,66 +64,7 @@ class klayoutSchematicGenerator:
     def _parse_source_netlist(
         cls, sourceNetlistPath: pathlib.Path | None
     ) -> dict[str, dict[str, Any]]:
-        if sourceNetlistPath is None or not sourceNetlistPath.exists():
-            return {}
-
-        subckts: dict[str, dict[str, Any]] = {}
-        current: dict[str, Any] | None = None
-
-        with sourceNetlistPath.open("r", encoding="utf-8") as netlistFile:
-            for rawLine in netlistFile:
-                line = rawLine.strip()
-                if not line or line.startswith("*"):
-                    continue
-
-                upperLine = line.upper()
-                if upperLine.startswith(".SUBCKT"):
-                    tokens = line.split()
-                    if len(tokens) < 2:
-                        current = None
-                        continue
-                    name = tokens[1]
-                    current = {
-                        "name": name,
-                        "pins": tokens[2:],
-                        "instances": {},
-                    }
-                    subckts[name.casefold()] = current
-                    continue
-
-                if upperLine.startswith(".ENDS"):
-                    current = None
-                    continue
-
-                if current is None or not line[:1].upper() == "X":
-                    continue
-
-                tokens = line.split()
-                if len(tokens) < 3:
-                    continue
-
-                instanceName = tokens[0][1:]
-                callTokens = tokens[1:]
-                cellIndex = next(
-                    (
-                        index
-                        for index in range(len(callTokens) - 1, -1, -1)
-                        if "=" not in callTokens[index]
-                    ),
-                    None,
-                )
-                if cellIndex is None:
-                    continue
-
-                cellName = callTokens[cellIndex]
-                connections = callTokens[:cellIndex]
-                current["instances"][instanceName] = {
-                    "name": instanceName,
-                    "cell_name": cellName,
-                    "connections": connections,
-                }
-
-        return subckts
+        return spiceNetlist.parse_spice_netlist(sourceNetlistPath)
 
     @classmethod
     def _build_hierarchy_node(

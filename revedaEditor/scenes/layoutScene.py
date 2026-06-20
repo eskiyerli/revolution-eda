@@ -903,6 +903,8 @@ class layoutScene(editorScene):
             self.logger.info(
                 f"Saved layout to {self.editorWindow.cellName}:{self.editorWindow.viewName}"
             )
+            lj.PCellCache.clear_caches()
+            lj.layoutItems._load_json_file.cache_clear()
 
         except ValueError as e:
             self.logger.error(f"Invalid layout data: {str(e)}")

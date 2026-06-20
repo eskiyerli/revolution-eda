@@ -10,7 +10,7 @@
 
 from enum import IntEnum
 from functools import cached_property
-from typing import Dict, List, Set, Union
+from typing import Dict, List, Optional, Set, Union
 
 from PySide6.QtCore import (
     QLineF,
@@ -77,6 +77,8 @@ class schematicNet(QGraphicsItem):
         # self._stretch: bool = False
         self._nameConflict: bool = False
         self._highlighted: bool = False
+        self._probed: bool = False
+        self._probePen: Optional[QPen] = None
         self._nameStrength: int = netNameStrengthEnum.NONAME
 
         # Collections
@@ -194,6 +196,7 @@ class schematicNet(QGraphicsItem):
         pen_mapping = {
             self.isSelected(): schlyr.selectedWirePen,
             # self._stretch: schlyr.stretchWirePen,
+            self._probed: self._probePen if self._probePen else schlyr.probePens[0],
             self._highlighted: schlyr.hilightPen,
             self._nameConflict: schlyr.errorWirePen,
         }
@@ -215,6 +218,10 @@ class schematicNet(QGraphicsItem):
             if not (scene.selectModes.selectNet or scene.selectModes.selectAll):
                 return False
         return super().sceneEvent(event)
+
+    def contextMenuEvent(self, event):
+        self.setSelected(True)
+        self.scene().itemContextMenu.exec_(event.screenPos())
 
     def itemChange(self, change, value):
         if change in (
@@ -244,18 +251,25 @@ class schematicNet(QGraphicsItem):
         if scene:
             if scene.editModes.moveItem:
                 self.setFlag(QGraphicsItem.ItemIsMovable, True)
-            # elif self._stretch:
-            #     eventPos = event.pos().toPoint()
-            #     if (
-            #             eventPos - self._draftLine.p1().toPoint()
-            #     ).manhattanLength() <= scene.snapDistance:
-            #         self.setCursor(Qt.SizeHorCursor)
-            #         scene.stretchNet.emit(self, "p1")
-            #     elif (
-            #             eventPos - self._draftLine.p2().toPoint()
-            #     ).manhattanLength() <= self.scene().snapDistance:
-            #         self.setCursor(Qt.SizeHorCursor)
-            #         scene.stretchNet.emit(self, "p2")
+            # Probe mode: clicking a net adds a probe for that net name
+            if (hasattr(scene, 'probeMode') and scene.probeMode
+                    and event.button() == Qt.MouseButton.LeftButton):
+                scene.nameSceneNets()
+                scene.addProbe(self.name)
+                event.accept()
+                return
+            # Remove-probe mode: clicking a probed net removes that probe
+            if (hasattr(scene, 'removeProbeMode_') and scene.removeProbeMode_
+                    and event.button() == Qt.MouseButton.LeftButton):
+                if self._probed:
+                    scene.nameSceneNets()
+                    # Find which probe this net belongs to
+                    for probeName, netSet in scene._probedNets.items():
+                        if self in netSet:
+                            scene.removeProbe(probeName)
+                            break
+                event.accept()
+                return
         super().mousePressEvent(event)
 
     def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent) -> None:
@@ -439,11 +453,12 @@ class schematicNet(QGraphicsItem):
             None
         """
         super().hoverEnterEvent(event)
+        scene = self.scene()
         # Check if highlightNets flag is set in the scene
-        if self.scene().highlightNets:
+        if scene.highlightNets:
             self._highlighted = True
-            self.scene().nameSceneNets()  # first name all the nets in the scene.
-            sceneNetsSet = self.scene().findSceneNetsSet()
+            scene.nameSceneNets()  # first name all the nets in the scene.
+            sceneNetsSet = scene.findSceneNetsSet()
             self._connectedNetsSet = {
                 net for net in sceneNetsSet if self._namesMatch(net.name, self.name)
             }
@@ -456,7 +471,7 @@ class schematicNet(QGraphicsItem):
                     netItem.mapToScene(netItem.draftLine.center()),
                 )
                 self._flightLinesSet.add(flightLine)
-                self.scene().addItem(flightLine)
+                scene.addItem(flightLine)
 
     def hoverLeaveEvent(self, event: QGraphicsSceneHoverEvent) -> None:
         super().hoverLeaveEvent(event)
@@ -699,6 +714,25 @@ class schematicNet(QGraphicsItem):
     @highlighted.setter
     def highlighted(self, value: bool):
         self._highlighted = value
+        self.update()
+
+    def probe(self, pen: Optional[QPen] = None):
+        self._probed = True
+        self._probePen = pen
+        self.update()
+
+    def unprobe(self):
+        self._probed = False
+        self._probePen = None
+        self.update()
+
+    @property
+    def probed(self):
+        return self._probed
+
+    @probed.setter
+    def probed(self, value: bool):
+        self._probed = value
         self.update()
 
     @property

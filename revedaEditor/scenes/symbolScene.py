@@ -699,6 +699,7 @@ class symbolScene(editorScene):
                 json.dump(save_data, f, cls=symenc.symbolEncoder, indent=4)
 
             self.undoStack.clear()
+            lj.schematicItems._load_sym_json.cache_clear()
             return True
 
         except Exception as e:

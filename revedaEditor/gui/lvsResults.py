@@ -28,6 +28,8 @@ from PySide6.QtWidgets import (
     QLabel,
     QPlainTextEdit,
     QTabWidget,
+    QTreeWidget,
+    QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -38,6 +40,7 @@ import revedaEditor.common.net as snet
 import revedaEditor.common.shapes as shp
 from revedaEditor.backend.pdkLoader import importPDKModule
 from revedaEditor.fileio.importlvsdb import LVSDBParser, LVSErrorRect
+from revedaEditor.fileio import spiceNetlist
 
 process = importPDKModule("process")
 
@@ -47,7 +50,8 @@ class lvsResultsDialogue(QDialog):
 
     def __init__(self, parent, nets: list, devices: list, cells: Optional[list] = None, parser=None,
                  crossrefs: Optional[list] = None, schem_nets: Optional[list] = None,
-                 schem_devices: Optional[list] = None, schematic_editor=None):
+                 schem_devices: Optional[list] = None, schematic_editor=None,
+                 source_netlist_path=None):
         super().__init__(parent)
         self.layoutEditor = parent
         self.parser = parser
@@ -86,14 +90,38 @@ class lvsResultsDialogue(QDialog):
         ]
         self._highlight_color_index = 0
         self._net_color_by_signature: dict[tuple, QColor] = {}
+        self._crossrefs = crossrefs or []
+        self._cells = cells or []
+        self._nets = nets or []
+        self._devices = devices or []
+        self._cell_lookup: dict[str, dict] = {
+            c.get('name', ''): c for c in (cells or []) if isinstance(c, dict)
+        }
+        self._source_netlist_path = source_netlist_path
+        self._schem_to_xref: dict[str, dict] = {
+            cr.get('schem_cell', ''): cr for cr in (crossrefs or []) if isinstance(cr, dict)
+        }
+        self._layout_to_xref: dict[str, dict] = {
+            cr.get('layout_cell', ''): cr for cr in (crossrefs or []) if isinstance(cr, dict)
+        }
+        self._spice_subckts: dict[str, dict] = self._parse_spice_hierarchy(source_netlist_path)
+
+        # Source nets/devices from the original design schematic (always available
+        # as it is one of the two inputs to the LVS process).
+        schem_nets = self._extract_nets_from_schematic(schematic_editor)
+        schem_devices = self._extract_devices_from_schematic(schematic_editor)
+        self._schem_nets = schem_nets
+        self._schem_devices = schem_devices
 
         self.setWindowTitle("Revolution EDA LVS Results Dialogue")
-        self.setMinimumSize(500, 400)
+        self.setMinimumSize(700, 600)
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.Window)
         layout = QVBoxLayout()
 
         self.tabWidget = QTabWidget()
         self.tabWidget.addTab(*self._build_summary_tab(crossrefs))
+        self.tabWidget.addTab(*self._build_layout_hierarchy_tab(crossrefs))
+        self.tabWidget.addTab(*self._build_schematic_hierarchy_tab(crossrefs))
         self.tabWidget.addTab(*self._build_nets_tab(nets))
         self.tabWidget.addTab(*self._build_devices_tab(devices))
         self.tabWidget.addTab(*self._build_schem_nets_tab(schem_nets))
@@ -209,6 +237,68 @@ class lvsResultsDialogue(QDialog):
         tab.setLayout(layout)
         return tab, "Devices"
 
+    def _extract_nets_from_schematic(self, schematic_editor) -> list[dict]:
+        """Extract nets from the original design schematic editor scene.
+
+        Produces dicts with keys ``net_id``, ``name``, ``shapes``, ``visited``
+        to match the format expected by :class:`LVSNetsTableModel`.
+        Connected net segments share the same name; only one entry per
+        unique name is produced.
+        """
+        try:
+            scene = schematic_editor.centralW.scene
+            scene.nameSceneNets()
+            nets_set = scene.findSceneNetsSet()
+            seen_names: set[str] = set()
+            result = []
+            for net_item in sorted(nets_set, key=lambda n: n.name or ''):
+                name = net_item.name or ''
+                if name in seen_names:
+                    continue
+                seen_names.add(name)
+                result.append({
+                    'net_id': len(result),
+                    'name': name,
+                    'shapes': [],
+                    'visited': False,
+                })
+            return result
+        except Exception:
+            return []
+
+    def _extract_devices_from_schematic(self, schematic_editor) -> list[dict]:
+        """Extract devices from the original design schematic editor scene.
+
+        Produces dicts with keys ``id``, ``type``, ``name``, ``params``,
+        ``terminals``, ``position``, ``visited`` to match the format
+        expected by :class:`LVSDevicesTableModel`.
+        """
+        try:
+            scene = schematic_editor.centralW.scene
+            scene.nameSceneNets()
+            symbol_set = scene.findSceneSymbolSet()
+            scene.generatePinNetMap(symbol_set)
+            seen_names: set[str] = set()
+            result = []
+            for sym in sorted(symbol_set, key=lambda s: s.instanceName or ''):
+                inst_name = sym.instanceName or ''
+                if inst_name in seen_names:
+                    continue
+                seen_names.add(inst_name)
+                pos = sym.scenePos()
+                result.append({
+                    'id': len(result),
+                    'type': sym.cellName or '',
+                    'name': inst_name,
+                    'params': dict(sym.symattrs) if sym.symattrs else {},
+                    'terminals': dict(sym.pinNetMap) if sym.pinNetMap else {},
+                    'position': [pos.x(), pos.y()],
+                    'visited': False,
+                })
+            return result
+        except Exception:
+            return []
+
     def _build_schem_nets_tab(self, schem_nets: Optional[list]) -> tuple[QWidget, str]:
         tab = QWidget()
         layout = QVBoxLayout()
@@ -286,6 +376,431 @@ class lvsResultsDialogue(QDialog):
         tab.setLayout(layout)
         label = f"Mismatches ({total_mismatches})" if total_mismatches > 0 else "Mismatches"
         return tab, label
+
+    # ------------------------------------------------------------------
+    # Hierarchy tree tabs
+    # ------------------------------------------------------------------
+
+    def _build_layout_hierarchy_tab(self, crossrefs: Optional[list]) -> tuple[QWidget, str]:
+        tab = QWidget()
+        layout = QVBoxLayout()
+
+        self.layoutHierarchyTree = QTreeWidget()
+        self.layoutHierarchyTree.setColumnCount(5)
+        self.layoutHierarchyTree.setHeaderLabels(
+            ["Cell Name", "Equivalent", "Net Mism.", "Pin Mism.", "Device Mism."]
+        )
+        self.layoutHierarchyTree.setAlternatingRowColors(True)
+        self.layoutHierarchyTree.itemClicked.connect(self.onLayoutHierarchyCellSelected)
+
+        self._populate_layout_hierarchy_tree(crossrefs)
+
+        for i in range(5):
+            self.layoutHierarchyTree.resizeColumnToContents(i)
+
+        layout.addWidget(self.layoutHierarchyTree, 3)
+
+        self.layoutHierarchyDetails = QPlainTextEdit()
+        self.layoutHierarchyDetails.setReadOnly(True)
+        self.layoutHierarchyDetails.setMinimumHeight(150)
+        self.layoutHierarchyDetails.setPlainText(
+            "Select a cell to see its LVS errors."
+        )
+        layout.addWidget(self.layoutHierarchyDetails, 1)
+
+        tab.setLayout(layout)
+        return tab, "Layout Hierarchy"
+
+    def _build_schematic_hierarchy_tab(self, crossrefs: Optional[list]) -> tuple[QWidget, str]:
+        tab = QWidget()
+        layout = QVBoxLayout()
+
+        self.schematicHierarchyTree = QTreeWidget()
+        self.schematicHierarchyTree.setColumnCount(5)
+        self.schematicHierarchyTree.setHeaderLabels(
+            ["Cell Name", "Equivalent", "Net Mism.", "Pin Mism.", "Device Mism."]
+        )
+        self.schematicHierarchyTree.setAlternatingRowColors(True)
+        self.schematicHierarchyTree.itemClicked.connect(self.onSchematicHierarchyCellSelected)
+
+        self._populate_schematic_hierarchy_tree(crossrefs)
+
+        for i in range(5):
+            self.schematicHierarchyTree.resizeColumnToContents(i)
+
+        layout.addWidget(self.schematicHierarchyTree, 3)
+
+        self.schematicHierarchyDetails = QPlainTextEdit()
+        self.schematicHierarchyDetails.setReadOnly(True)
+        self.schematicHierarchyDetails.setMinimumHeight(150)
+        self.schematicHierarchyDetails.setPlainText(
+            "Select a cell to see its LVS errors."
+        )
+        layout.addWidget(self.schematicHierarchyDetails, 1)
+
+        tab.setLayout(layout)
+        return tab, "Schematic Hierarchy"
+
+    def _populate_layout_hierarchy_tree(self, crossrefs: Optional[list]):
+        if not self._spice_subckts:
+            self._populate_flat_hierarchy_tree(
+                self.layoutHierarchyTree, crossrefs, use_schem_name=False
+            )
+            return
+
+        top_schem_cell = self._find_top_schematic_cell()
+        if not top_schem_cell:
+            return
+
+        root_item = self._build_hierarchy_tree_item(
+            top_schem_cell, use_schem_name=False, is_root=True,
+            visited=set()
+        )
+        if root_item:
+            self.layoutHierarchyTree.addTopLevelItem(root_item)
+            self.layoutHierarchyTree.expandItem(root_item)
+
+    def _populate_schematic_hierarchy_tree(self, crossrefs: Optional[list]):
+        if not self._spice_subckts:
+            self._populate_flat_hierarchy_tree(
+                self.schematicHierarchyTree, crossrefs, use_schem_name=True
+            )
+            return
+
+        top_schem_cell = self._find_top_schematic_cell()
+        if not top_schem_cell:
+            return
+
+        root_item = self._build_hierarchy_tree_item(
+            top_schem_cell, use_schem_name=True, is_root=True,
+            visited=set()
+        )
+        if root_item:
+            self.schematicHierarchyTree.addTopLevelItem(root_item)
+            self.schematicHierarchyTree.expandItem(root_item)
+
+    def _parse_spice_hierarchy(self, netlist_path) -> dict[str, dict]:
+        """Parse a SPICE netlist to extract subcircuit hierarchy.
+
+        Delegates to :mod:`revedaEditor.fileio.spiceNetlist`.
+        """
+        return spiceNetlist.parse_spice_netlist(netlist_path)
+
+    def _find_top_schematic_cell(self) -> str | None:
+        """Find the top-level schematic cell name from crossrefs or parser."""
+        top_layout_cell = getattr(self.layoutEditor, 'cellName', None)
+        if top_layout_cell and self.parser:
+            xref = self.parser.get_crossref(top_layout_cell)
+            if xref and xref.get('schematic_name'):
+                return xref['schematic_name']
+
+        if self._crossrefs:
+            first = self._crossrefs[0]
+            return first.get('schem_cell') or first.get('layout_cell')
+
+        return None
+
+    def _build_hierarchy_tree_item(
+        self,
+        schem_cell_name: str,
+        use_schem_name: bool,
+        is_root: bool,
+        visited: set[str],
+    ) -> QTreeWidgetItem | None:
+        """Recursively build a QTreeWidgetItem from the SPICE subcircuit hierarchy.
+
+        For each schematic cell, look up the corresponding crossref to get
+        mismatch data. When use_schem_name is False, display the layout cell
+        name from the crossref instead.
+        """
+        key = schem_cell_name.casefold()
+        if key in visited:
+            return None
+        visited = visited | {key}
+
+        crossref = self._schem_to_xref.get(schem_cell_name)
+        if crossref is None:
+            crossref = self._schem_to_xref.get(schem_cell_name.casefold())
+        if crossref is None:
+            for sc, cr in self._schem_to_xref.items():
+                if sc.casefold() == key:
+                    crossref = cr
+                    break
+
+        if use_schem_name:
+            display_name = schem_cell_name
+        else:
+            display_name = crossref.get('layout_cell', schem_cell_name) if crossref else schem_cell_name
+
+        if crossref:
+            equivalent = crossref.get('equivalent', False)
+            net_mism = crossref.get('net_mismatches', 0)
+            pin_mism = crossref.get('pin_mismatches', 0)
+            dev_mism = crossref.get('device_mismatches', 0)
+        else:
+            equivalent = None
+            net_mism = 0
+            pin_mism = 0
+            dev_mism = 0
+
+        equiv_str = "\u2713" if equivalent else ("\u2717" if equivalent is not None else "?")
+        item = QTreeWidgetItem([
+            display_name,
+            equiv_str,
+            str(net_mism),
+            str(pin_mism),
+            str(dev_mism),
+        ])
+        if crossref:
+            item.setData(0, Qt.ItemDataRole.UserRole, crossref)
+        else:
+            item.setData(0, Qt.ItemDataRole.UserRole, {
+                'layout_cell': display_name,
+                'schem_cell': schem_cell_name,
+                'equivalent': None,
+                'net_mismatches': 0,
+                'pin_mismatches': 0,
+                'device_mismatches': 0,
+                'crossref': {},
+            })
+
+        if is_root:
+            font = item.font(0)
+            font.setBold(True)
+            for col in range(5):
+                item.setFont(col, font)
+
+        if equivalent is False:
+            red = QColor("#e11d48")
+            for col in range(5):
+                item.setForeground(col, red)
+        elif equivalent is True and net_mism == 0 and pin_mism == 0 and dev_mism == 0:
+            green = QColor("#10b981")
+            item.setForeground(1, green)
+
+        subckt = self._spice_subckts.get(key)
+        if subckt:
+            for inst_info in subckt.get('instances', {}).values():
+                child_cell = inst_info.get('cell_name', '')
+                if not child_cell:
+                    continue
+                child_item = self._build_hierarchy_tree_item(
+                    child_cell, use_schem_name, is_root=False, visited=visited
+                )
+                if child_item:
+                    child_item.setText(0, f"{inst_info.get('name', '?')} ({child_item.text(0)})")
+                    item.addChild(child_item)
+
+        return item
+
+    def _populate_flat_hierarchy_tree(
+        self, tree: QTreeWidget, crossrefs: Optional[list], use_schem_name: bool
+    ):
+        """Fallback: populate tree as flat list when no SPICE netlist is available."""
+        if not crossrefs:
+            return
+
+        top_cell = getattr(self.layoutEditor, 'cellName', None)
+        top_entry = None
+        child_entries = []
+        for cr in crossrefs:
+            if cr.get('layout_cell') == top_cell:
+                top_entry = cr
+            else:
+                child_entries.append(cr)
+
+        if not top_entry and crossrefs:
+            top_entry = crossrefs[0]
+            child_entries = crossrefs[1:]
+
+        if top_entry:
+            root_item = self._make_hierarchy_tree_item(
+                top_entry, is_root=True, use_schem_name=use_schem_name
+            )
+            tree.addTopLevelItem(root_item)
+            for cr in child_entries:
+                child_item = self._make_hierarchy_tree_item(
+                    cr, is_root=False, use_schem_name=use_schem_name
+                )
+                root_item.addChild(child_item)
+            tree.expandItem(root_item)
+
+    def _make_hierarchy_tree_item(
+        self, crossref: dict, is_root: bool = False, use_schem_name: bool = False
+    ) -> QTreeWidgetItem:
+        if use_schem_name:
+            cell_name = crossref.get('schem_cell', '?')
+        else:
+            cell_name = crossref.get('layout_cell', '?')
+
+        equivalent = crossref.get('equivalent', False)
+        net_mism = crossref.get('net_mismatches', 0)
+        pin_mism = crossref.get('pin_mismatches', 0)
+        dev_mism = crossref.get('device_mismatches', 0)
+
+        item = QTreeWidgetItem([
+            cell_name,
+            "\u2713" if equivalent else "\u2717",
+            str(net_mism),
+            str(pin_mism),
+            str(dev_mism),
+        ])
+        item.setData(0, Qt.ItemDataRole.UserRole, crossref)
+
+        if is_root:
+            font = item.font(0)
+            font.setBold(True)
+            for col in range(5):
+                item.setFont(col, font)
+
+        if not equivalent:
+            red = QColor("#e11d48")
+            for col in range(5):
+                item.setForeground(col, red)
+        elif net_mism == 0 and pin_mism == 0 and dev_mism == 0:
+            green = QColor("#10b981")
+            item.setForeground(1, green)
+
+        return item
+
+    def onLayoutHierarchyCellSelected(self, item: QTreeWidgetItem):
+        crossref = item.data(0, Qt.ItemDataRole.UserRole)
+        if not crossref:
+            return
+
+        self._show_hierarchy_cell_details(
+            crossref, self.layoutHierarchyDetails, 'layout'
+        )
+
+        cell_name = crossref.get('layout_cell', '')
+        if cell_name:
+            cell_data = self._cell_lookup.get(cell_name)
+            if cell_data and cell_data.get('bbox'):
+                self.onCellSelected(cell_data)
+
+        self.onCrossrefSelected(crossref, 'all')
+
+        if cell_name and self.parser:
+            cell_nets = self.parser.get_nets(cell_name)
+            cell_devices = self.parser.get_layout_devices(cell_name)
+            if hasattr(self, 'lvsTable'):
+                self.lvsTable.lvsNetsModel.updateData(cell_nets)
+            if hasattr(self, 'devicesTable'):
+                self.devicesTable.lvsDevicesModel.updateData(cell_devices)
+            if hasattr(self, 'crossrefsTable'):
+                self.crossrefsTable.lvsCrossrefsModel.updateData([crossref])
+
+    def onSchematicHierarchyCellSelected(self, item: QTreeWidgetItem):
+        crossref = item.data(0, Qt.ItemDataRole.UserRole)
+        if not crossref:
+            return
+
+        self._show_hierarchy_cell_details(
+            crossref, self.schematicHierarchyDetails, 'schematic'
+        )
+
+        self.onCrossrefSelected(crossref, 'all')
+
+        schem_cell = crossref.get('schem_cell', '')
+        if schem_cell:
+            cell_nets = None
+            cell_devices = None
+
+            # Use original design schematic for top-level cell when available.
+            if (self.schematicEditor is not None
+                    and hasattr(self.schematicEditor, 'cellName')
+                    and self.schematicEditor.cellName == schem_cell):
+                cell_nets = self._extract_nets_from_schematic(self.schematicEditor)
+                cell_devices = self._extract_devices_from_schematic(self.schematicEditor)
+
+            # Fall back to parser data for child cells or when no editor.
+            if cell_nets is None and self.parser:
+                cell_nets = self.parser.get_schematic_nets(schem_cell)
+            if cell_devices is None and self.parser:
+                cell_devices = self.parser.get_schematic_devices(schem_cell)
+
+            if cell_nets is not None and hasattr(self, 'schemNetsTable'):
+                self.schemNetsTable.lvsNetsModel.updateData(cell_nets)
+            if cell_devices is not None and hasattr(self, 'schemDevicesTable'):
+                self.schemDevicesTable.lvsDevicesModel.updateData(cell_devices)
+            if hasattr(self, 'crossrefsTable'):
+                self.crossrefsTable.lvsCrossrefsModel.updateData([crossref])
+
+    def _show_hierarchy_cell_details(
+        self, crossref: dict, details_widget: QPlainTextEdit, side: str = 'layout'
+    ):
+        if side == 'layout':
+            cell_name = crossref.get('layout_cell', '?')
+            other_name = crossref.get('schem_cell', '?')
+            other_label = 'Schematic'
+        else:
+            cell_name = crossref.get('schem_cell', '?')
+            other_name = crossref.get('layout_cell', '?')
+            other_label = 'Layout'
+
+        equivalent = crossref.get('equivalent', False)
+        net_mism = crossref.get('net_mismatches', 0)
+        pin_mism = crossref.get('pin_mismatches', 0)
+        dev_mism = crossref.get('device_mismatches', 0)
+
+        details = f"Cell: {cell_name}\n"
+        details += f"{other_label} counterpart: {other_name}\n"
+        details += f"Equivalent: {'\u2713 Yes' if equivalent else '\u2717 No'}\n"
+        details += f"Net Mismatches: {net_mism}\n"
+        details += f"Pin Mismatches: {pin_mism}\n"
+        details += f"Device Mismatches: {dev_mism}\n"
+
+        xref_data = crossref.get('crossref', {})
+        mapping = xref_data.get('mapping', {})
+        diagnostics = xref_data.get('diagnostics', {})
+
+        if net_mism > 0:
+            details += f"\n--- Net Mismatches ---\n"
+            net_messages = diagnostics.get('net_mismatch_messages', [])
+            if net_messages:
+                for msg in net_messages:
+                    details += f"  {msg}\n"
+            else:
+                for net in mapping.get('nets', []):
+                    if LVSDBParser._is_mismatch(net):
+                        details += (
+                            f"  Layout: {net.get('layout_net', '?')} "
+                            f"\u2194 Schematic: {net.get('schem_net', '?')}\n"
+                        )
+
+        if pin_mism > 0:
+            details += f"\n--- Pin Mismatches ---\n"
+            for pin in mapping.get('pins', []):
+                if LVSDBParser._is_mismatch(pin):
+                    details += (
+                        f"  Layout: {pin.get('layout_pin', '?')} "
+                        f"\u2194 Schematic: {pin.get('schem_pin', '?')}\n"
+                    )
+
+        if dev_mism > 0:
+            details += f"\n--- Device Mismatches ---\n"
+            summaries = crossref.get('device_mismatch_summaries', [])
+            if summaries:
+                for s in summaries:
+                    details += f"  {s}\n"
+            else:
+                for dev in mapping.get('devices', []):
+                    if LVSDBParser._is_mismatch(dev):
+                        details += (
+                            f"  Layout: {dev.get('layout_dev', '?')} "
+                            f"\u2194 Schematic: {dev.get('schem_dev', '?')}\n"
+                        )
+
+        if net_mism == 0 and pin_mism == 0 and dev_mism == 0:
+            if equivalent:
+                details += "\n\u2713 No mismatches \u2014 cell is equivalent.\n"
+            else:
+                details += (
+                    "\nCell is marked as not equivalent, "
+                    "but no specific mismatches were detected.\n"
+                )
+
+        details_widget.setPlainText(details)
 
     def _clear_layout_highlights(self):
         if hasattr(self.layoutEditor, 'centralW') and hasattr(self.layoutEditor.centralW, 'scene'):

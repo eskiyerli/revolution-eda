@@ -248,6 +248,8 @@ class symbolEditor(edw.editorWindow):
         """
         try:
             self.centralW.scene.saveSymbolCell(self.file)
+            if self.parentEditor is not None:
+                self.parentEditor.centralW.scene.reloadScene()
             cellViewNameTuple = ddef.viewNameTuple(self.libName, self.cellName,
                                                    self.viewName)
             self.appMainW.openViews.pop(cellViewNameTuple, None)

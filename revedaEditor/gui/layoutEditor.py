@@ -420,6 +420,8 @@ class layoutEditor(edw.editorWindow):
         if getattr(self, '_isPcellPreview', False):
             return
         self.centralW.scene.saveLayoutCell(self.file)
+        if self.parentEditor:
+            self.parentEditor.centralW.scene.reloadScene()
 
     def saveCell(self):
         if getattr(self, '_isPcellPreview', False):
@@ -619,6 +621,8 @@ class layoutEditor(edw.editorWindow):
         try:
             if not getattr(self, '_isPcellPreview', False):
                 self.centralW.scene.saveLayoutCell(self.file)
+            if self.parentEditor is not None:
+                self.parentEditor.centralW.scene.reloadScene()
             cellViewNameTuple = ddef.viewNameTuple(
                 self.libName, self.cellName, self.viewName
             )

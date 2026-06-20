@@ -73,6 +73,11 @@ class LVSNetsTableModel(QAbstractTableModel):
             index = self.index(row, 3)  # Column 3 is 'Visited'
             self.dataChanged.emit(index, index)
 
+    def updateData(self, nets: List[Dict[str, Any]]):
+        self.beginResetModel()
+        self._data = nets
+        self.endResetModel()
+
 
 class LVSNetsTableView(QTableView):
     netSelected = Signal(list)  # Signal to emit selected net's shapes
@@ -167,6 +172,11 @@ class LVSDevicesTableModel(QAbstractTableModel):
             index = self.index(row, 4)  # Column 4 is 'Visited'
             self.dataChanged.emit(index, index)
 
+    def updateData(self, devices: List[Dict[str, Any]]):
+        self.beginResetModel()
+        self._data = devices
+        self.endResetModel()
+
 
 class LVSDevicesTableView(QTableView):
     deviceSelected = Signal(dict)  # Signal to emit selected device dict
@@ -256,6 +266,11 @@ class LVSCellsTableModel(QAbstractTableModel):
             self._data[row]['visited'] = True
             index = self.index(row, 4)  # Column 4 is 'Visited'
             self.dataChanged.emit(index, index)
+
+    def updateData(self, cells: List[Dict[str, Any]]):
+        self.beginResetModel()
+        self._data = cells
+        self.endResetModel()
 
 
 class LVSCellsTableView(QTableView):
@@ -349,6 +364,11 @@ class LVSCrossrefsTableModel(QAbstractTableModel):
             self._data[row]['visited'] = True
             index = self.index(row, 7)  # Column 7 is 'Visited'
             self.dataChanged.emit(index, index)
+
+    def updateData(self, crossrefs: List[Dict[str, Any]]):
+        self.beginResetModel()
+        self._data = crossrefs
+        self.endResetModel()
 
 
 class LVSCrossrefsTableView(QTableView):
