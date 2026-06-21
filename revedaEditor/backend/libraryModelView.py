@@ -481,8 +481,9 @@ class designLibrariesColumnView(BaseDesignLibrariesView):
         self.cellsListView.setModel(None)
         self.viewsListView.setModel(None)
 
-        # Update library model reference in parent
+        # Update library model reference in parent and app main window
         self.libBrowsW.libraryModel = self.libraryModel
+        self.appMainW.libraryModel = self.libraryModel
 
     def libsListContextMenuEvent(self, pos: QPoint):
         senderView = self.sender()
@@ -939,6 +940,7 @@ class designLibrariesTreeView(BaseDesignLibrariesView):
         self.libraryModel = designLibrariesModel(libraryDict)
         self.setModel(self.libraryModel)
         self.libBrowsW.libraryModel = self.libraryModel
+        self.appMainW.libraryModel = self.libraryModel
 
     def showFileInfo(self, selectedItem: libb.viewItem):
         viewPath = selectedItem.data(Qt.ItemDataRole.UserRole + 2)

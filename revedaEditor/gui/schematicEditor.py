@@ -108,6 +108,8 @@ class schematicEditor(edw.editorWindow):
         self.removeProbeNetAction = QAction("Remove Probe", self)
         self.removeProbeNetAction.setToolTip("Remove a Probe by Clicking a Probed Net")
         self.removeProbeNetAction.setCheckable(True)
+        self.removeAllProbesAction = QAction("Remove All Probes", self)
+        self.removeAllProbesAction.setToolTip("Remove All Net Probes Across the Hierarchy")
         self.renumberInstanceAction = QAction("Renumber Instances", self)
         self.renumberInstanceAction.setToolTip("Renumber Instances")
         simulationIcon = QIcon("icons/application-run.png")
@@ -144,6 +146,7 @@ class schematicEditor(edw.editorWindow):
         self.menuTools.addAction(self.hilightNetAction)
         self.menuTools.addAction(self.probeNetAction)
         self.menuTools.addAction(self.removeProbeNetAction)
+        self.menuTools.addAction(self.removeAllProbesAction)
         self.menuTools.addAction(self.renumberInstanceAction)
         self.menuTools.addAction(self.findRelatedEditors)
         # utilities Menu
@@ -182,6 +185,7 @@ class schematicEditor(edw.editorWindow):
         self.hilightNetAction.triggered.connect(self.hilightNetClick)
         self.probeNetAction.triggered.connect(self.probeNetClick)
         self.removeProbeNetAction.triggered.connect(self.removeProbeNetClick)
+        self.removeAllProbesAction.triggered.connect(self.removeAllProbesClick)
         self.netNameAction.triggered.connect(self.createNetNameClick)
         self.selectDeviceAction.triggered.connect(self.selectDeviceClick)
         self.selectNetAction.triggered.connect(self.selectNetClick)
@@ -503,6 +507,13 @@ class schematicEditor(edw.editorWindow):
 
     def removeProbeNetClick(self, s):
         self.centralW.scene.removeProbeMode()
+
+    def removeAllProbesClick(self, s):
+        self.probeNetAction.setChecked(False)
+        self.removeProbeNetAction.setChecked(False)
+        self.centralW.scene.probeMode = False
+        self.centralW.scene.removeProbeMode_ = False
+        self.centralW.scene.clearProbe()
 
     def selectDeviceClick(self, s=None):
         self.centralW.scene.selectModes.setMode("selectDevice")

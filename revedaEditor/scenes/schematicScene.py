@@ -990,6 +990,12 @@ class schematicScene(editorScene):
                                      instanceTuple.libraryName,
                                      instanceTuple.cellName,
                                      instanceTuple.viewName, )
+        if viewItem is None:
+            self.logger.error(
+                f"Symbol not found in library: "
+                f"{instanceTuple.libraryName}/{instanceTuple.cellName}/"
+                f"{instanceTuple.viewName}")
+            return None
         viewPath = viewItem.viewPath
         try:
             # Use FileCache with mtime invalidation
