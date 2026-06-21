@@ -221,7 +221,7 @@ class layoutScene(editorScene):
 
     def mousePressEvent(self, event: QGraphicsSceneMouseEvent) -> None:
 
-        self.mousePressLoc = event.scenePos().toPoint()
+        self.mousePressLoc = self.snapToGrid(event.scenePos().toPoint())
         if self.editModes.cutShape:
             self.startCutLine()
         super().mousePressEvent(event)
@@ -237,7 +237,7 @@ class layoutScene(editorScene):
             None
         """
         # Get the current mouse position
-        self.mouseMoveLoc = event.scenePos().toPoint()
+        self.mouseMoveLoc = self.snapToGrid(event.scenePos().toPoint())
         # Call the parentW class's mouseMoveEvent method
         super().mouseMoveEvent(event)
 
@@ -1229,17 +1229,20 @@ class layoutScene(editorScene):
         dlg.endExtendEdit.setText(
             str(round(item.endExtend / fabproc.dbu, roundingFactor))
         )
+        scenePoints = item.sceneEndPoints
+        p1Layout = self.toLayoutCoord(scenePoints[0])
+        p2Layout = self.toLayoutCoord(scenePoints[1])
         dlg.p1PointEditX.setText(
-            str(round(item.draftLine.p1().x() / fabproc.dbu, roundingFactor))
+            str(round(p1Layout.x(), roundingFactor))
         )
         dlg.p1PointEditY.setText(
-            str(round(item.draftLine.p1().y() / fabproc.dbu, roundingFactor))
+            str(round(p1Layout.y(), roundingFactor))
         )
         dlg.p2PointEditX.setText(
-            str(round(item.draftLine.p2().x() / fabproc.dbu, roundingFactor))
+            str(round(p2Layout.x(), roundingFactor))
         )
         dlg.p2PointEditY.setText(
-            str(round(item.draftLine.p2().y() / fabproc.dbu, roundingFactor))
+            str(round(p2Layout.y(), roundingFactor))
         )
         dlg.angleEdit.setText(str(item.angle))
         if dlg.exec() == QDialog.DialogCode.Accepted:

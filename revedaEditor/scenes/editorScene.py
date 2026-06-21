@@ -123,7 +123,7 @@ class editorScene(QGraphicsScene):
     def mousePressEvent(self, event) -> None:
         modifiers = QGuiApplication.keyboardModifiers()
         if event.button() == Qt.MouseButton.LeftButton:
-            self.mousePressLoc = event.scenePos().toPoint()
+            self.mousePressLoc = self.snapToGrid(event.scenePos().toPoint())
             if self.editModes.selectItem:
                 clickedItem = self.itemAt(self.mousePressLoc, QTransform())
                 if clickedItem:
@@ -205,8 +205,8 @@ class editorScene(QGraphicsScene):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event) -> None:
+        self.mouseMoveLoc = self.snapToGrid(event.scenePos().toPoint())
         super().mouseMoveEvent(event)
-        self.mouseMoveLoc = event.scenePos().toPoint()
         if self.editModes.selectItem:
             if self.selectionRectItem and self.mousePressLoc:
                 self.selectionRectItem.setRect(QRectF(self.mousePressLoc.toPointF(),
@@ -246,7 +246,7 @@ class editorScene(QGraphicsScene):
         #     return
 
         modifiers = QGuiApplication.keyboardModifiers()
-        self.mouseReleaseLoc = event.scenePos().toPoint()
+        self.mouseReleaseLoc = self.snapToGrid(event.scenePos().toPoint())
 
         if event.button() == Qt.MouseButton.RightButton:
             if self._rightZoomRectItem is not None:
@@ -377,17 +377,9 @@ class editorScene(QGraphicsScene):
         self.undoStack.push(undoCommand)
 
     def eventFilter(self, source, event):
-        """
-        Filter mouse events to snap them to background grid points.
-        """
-        if self.readOnly:
+        """Block all mouse events when scene is read-only."""
+        if self.readOnly and event.type() in self.MOUSE_EVENTS:
             return True
-
-        if event.type() in self.MOUSE_EVENTS:
-            # Use the _snapPoint method which can be overridden by subclasses
-            snappedPos = self._snapPoint(event.scenePos().toPoint())
-            event.setScenePos(snappedPos)
-            return False
 
         return super().eventFilter(source, event)
 

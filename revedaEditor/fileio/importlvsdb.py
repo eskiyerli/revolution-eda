@@ -9,6 +9,7 @@
 # under their own separate licenses.
 
 from collections import Counter
+import logging
 import re
 from typing import List, Dict, Any, Optional, Iterator, Tuple
 
@@ -17,6 +18,9 @@ from PySide6.QtCore import (QRect, Qt)
 from PySide6.QtWidgets import QGraphicsRectItem
 
 # from revedaEditor.backend.pdkLoader import importPDKModule
+
+logger = logging.getLogger("reveda")
+
 
 class LVSErrorRect(QGraphicsRectItem):
     def __init__(self, rect: QRect) -> None:
@@ -145,8 +149,18 @@ class LVSDBParser:
         """
         with open(self.filepath, 'r') as f:
             content = f.read()
-            # Skip the header #%lvsdb-klayout
-            content = re.sub(r'^#%lvsdb-klayout', '', content).strip()
+            # Check and strip the LVSDB header, warn on unrecognized format
+            header_match = re.match(r'^#%lvsdb-klayout(?:-([\d.]+))?', content)
+            if header_match:
+                version = header_match.group(1)
+                if version is not None:
+                    logger.info(f"LVSDB format version: {version}")
+                content = content[header_match.end():].strip()
+            else:
+                logger.warning(
+                    f"Unrecognized LVSDB header in {self.filepath}; "
+                    "parsing may fail or produce incomplete results."
+                )
             # Wrap in extra parens so all top-level sections are parsed as one list
             tokens = self.tokenize('(' + content + ')')
             result = self.parse_expression(tokens)
