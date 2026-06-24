@@ -804,6 +804,11 @@ class displayConfigDialog(QDialog):
             "Enter the Snap Grid Value as a multiple of scene grid"
         )
         self.fLayout.addRow("Snap Distance", self.snapGridEdit)
+        self.snapConnectEdit = QLineEdit()
+        self.snapConnectEdit.setToolTip(
+            "Enter the Snap Connect Distance for wire/pin endpoint snapping"
+        )
+        self.fLayout.addRow("Snap Connect Distance:", self.snapConnectEdit)
 
         gridTypeGroup = QGroupBox("Grid Type")
         gridTypeLayout = QHBoxLayout()

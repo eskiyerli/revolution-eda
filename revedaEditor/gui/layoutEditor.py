@@ -592,11 +592,15 @@ class layoutEditor(edw.editorWindow):
         dcd.dbuEntry.setText(str(self.dbu))
         dcd.majorGridEntry.setText(str(self.majorGrid))
         dcd.snapGridEdit.setText(str(self.snapGrid))
+        dcd.snapConnectEdit.setText(str(self.snapConnectDistance))
         dcd.lodThresholdEdit.setText(str(self.lodThreshold))
         if dcd.exec() == QDialog.DialogCode.Accepted:
             self.configureGridSettings(
                 (int(dcd.majorGridEntry.text()), int(dcd.snapGridEdit.text()))
             )
+            self.snapConnectDistance = int(dcd.snapConnectEdit.text())
+            if hasattr(self, 'centralW') and self.centralW:
+                self.centralW.scene.snapConnectDistance = self.snapConnectDistance
             if dcd.dotType.isChecked():
                 self.centralW.view.gridbackg = True
                 self.centralW.view.linebackg = False

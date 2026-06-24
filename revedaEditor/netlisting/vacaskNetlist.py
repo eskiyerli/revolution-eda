@@ -18,6 +18,7 @@ LVS modes.
 VACASK format differences from Spectre:
 - Uses ``ground`` directive instead of ``global`` for reference nodes
 - Uses ``load`` directive for OSDI/Verilog-A devices instead of ``ahdl_include``
+- Requires ``model`` statements for all device types
 - Supports ``parameters`` block for parameter declarations
 - Supports ``control``/``endc`` block for simulation setup
 - Supports ``embed`` directive for embedded files
@@ -25,12 +26,26 @@ VACASK format differences from Spectre:
 - Subcircuit blocks use ``subckt`` / ``ends`` (same as Spectre)
 - Include directives use ``include "file"`` (same as Spectre)
 - Comments use ``//`` (same as Spectre)
+
+Device loading categories:
+- **Built-in** (vsource, isource, vcvs, vccs, ccvs, cccs, mutual):
+  No ``load`` needed; ``VacaskModelLine`` provides the ``model`` statement.
+- **Built-in OSDI** (resistor, capacitor, inductor, diode, opamp):
+  ``VacaskLoadFile`` is a bare filename (e.g. ``resistor.osdi``);
+  ``VacaskModelLine`` provides the ``model`` statement.
+- **Custom Verilog-A/OSDI**: ``VacaskLoadFile`` is a full path, or if absent
+  the path is auto-constructed as ``{cellPath}/{cellName}.va``;
+  ``VacaskModelLine`` provides the ``model`` statement.
+- **Library includes**: ``VacaskIncludeLib`` emits an ``include`` directive
+  and suppresses that symbol's ``VacaskModelLine`` (the library provides it).
 """
 
 from __future__ import annotations
 
 import datetime
 import functools
+import io
+import json
 import pathlib
 import re
 from typing import TYPE_CHECKING, List
@@ -109,6 +124,11 @@ class vacaskNetlist:
         self.includeLines: set[str] = set()
         self.vahdlLines: set[str] = set()
         self.loadLines: set[str] = set()
+        self.groundNets: set[str] = set()
+        self.globalNets: set[str] = set()
+        self.modelLines: set[str] = set()
+        self.osdiLoadLines: set[str] = set()
+        self.includeLibLines: set[str] = set()
         # Caches to avoid repeated Qt model traversals for the same cells.
         self._viewNameCache: dict[tuple, str] = {}
         self._cellItemCache: dict[tuple, libb.cellItem | None] = {}
@@ -174,21 +194,56 @@ class vacaskNetlist:
                     f"// View Name: {self.schematic.viewName}\n",
                     f"// Date: {datetime.datetime.now()}\n",
                     80 * "/" + "\n",
-                    "ground 0\n\n",
                 ])
             )
 
             self.subcircuitDefs = []
 
-            self.recursiveNetlisting(self.schematic, cirFile)
+            # Buffer netlisting content so ground net names can be collected
+            # before writing the ground directive.
+            contentBuffer = io.StringIO()
+            self.recursiveNetlisting(self.schematic, contentBuffer)
+
+            # Write global directive with collected non-ground global net names.
+            globalNets = " ".join(sorted(self.globalNets))
+            if globalNets:
+                cirFile.write(f"global {globalNets}\n\n")
+
+            # Write ground directive with collected ground net names (once).
+            groundNets = " ".join(sorted(self.groundNets))
+            if groundNets:
+                cirFile.write(f"ground 0 {groundNets}\n\n")
+            else:
+                cirFile.write("ground 0\n\n")
+
+            # Write library includes (section-based model libraries).
+            for line in sorted(self.includeLibLines):
+                cirFile.write(f"{line}\n")
+            if self.includeLibLines:
+                cirFile.write("\n")
+
+            # Write OSDI built-in loads (bare filenames) and custom loads (paths).
+            for line in sorted(self.osdiLoadLines):
+                cirFile.write(f"{line}\n")
+            for line in sorted(self.loadLines):
+                cirFile.write(f"{line}\n")
+            if self.osdiLoadLines or self.loadLines:
+                cirFile.write("\n")
+
+            # Write model statements (deduplicated).
+            for line in sorted(self.modelLines):
+                cirFile.write(f"{line}\n")
+            if self.modelLines:
+                cirFile.write("\n")
+
+            cirFile.write(contentBuffer.getvalue())
+            contentBuffer.close()
 
             if self.subcircuitDefs:
                 cirFile.write("\n// Subcircuit Definitions\n")
                 for subcktDef in self.subcircuitDefs:
                     cirFile.write(subcktDef)
 
-            for line in self.loadLines:
-                cirFile.write(f"{line}\n")
             for line in self.includeLines:
                 cirFile.write(f"{line}\n")
             for line in self.vahdlLines:
@@ -249,9 +304,11 @@ class vacaskNetlist:
                 elif "symbol" in netlistView:
                     lines = self.createVacaskSymbolLine(elementSymbol)
                     content.extend(lines if isinstance(lines, list) else [lines])
+                    self._collectModelLoadInfo(elementSymbol)
                 elif "spice" in netlistView:
                     lines = self.createSpiceLine(elementSymbol)
                     content.extend(lines if isinstance(lines, list) else [lines])
+                    self._collectModelLoadInfo(elementSymbol)
                 elif "veriloga" in netlistView:
                     lines = self.createVerilogaLine(elementSymbol)
                     content.extend(lines if isinstance(lines, list) else [lines])
@@ -348,6 +405,63 @@ class vacaskNetlist:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    def _processGlobalNet(self, netName: str) -> str:
+        """Strip trailing ``!`` from global net names and track them for directives.
+
+        VACASK does not accept ``!`` in net names.  Global nets (those ending
+        with ``!``) are handled as follows:
+
+        - ``gnd!`` is converted to ``gnd`` and added to :attr:`groundNets`
+          for the ``ground 0`` directive.
+        - Any other global net (e.g. ``vdd!``) has the ``!`` stripped and is
+          added to :attr:`globalNets` for the ``global`` directive.
+        """
+        if "gnd!" in netName:
+            self.groundNets.add("gnd")
+            return netName.replace("gnd!", "gnd")
+        if netName.endswith("!"):
+            globalName = netName[:-1]
+            self.globalNets.add(globalName)
+            return globalName
+        return netName
+
+    def _collectModelLoadInfo(
+        self, elementSymbol: shp.schematicSymbol, skipLoadFile: bool = False
+    ):
+        """Collect model, load, and include-library directives from symbol attributes.
+
+        Reads ``VacaskModelLine``, ``VacaskLoadFile``, and ``VacaskIncludeLib``
+        from *elementSymbol.symattrs* and populates the corresponding sets on
+        this netlister.  All directives are deduplicated via sets so they are
+        written only once per netlist.
+
+        - ``VacaskModelLine``: added to :attr:`modelLines` unless
+          ``VacaskIncludeLib`` is present (the library file provides the model).
+        - ``VacaskLoadFile``: bare filenames (no path separator) go to
+          :attr:`osdiLoadLines`; paths go to :attr:`loadLines`.
+          Skipped when *skipLoadFile* is ``True`` (e.g. when the load path
+          is resolved from the veriloga view JSON instead).
+        - ``VacaskIncludeLib``: added to :attr:`includeLibLines`.
+        """
+        includeLib = elementSymbol.symattrs.get("VacaskIncludeLib")
+        if includeLib:
+            includeLib = includeLib.strip().replace("\\", "/")
+            self.includeLibLines.add(f'include "{includeLib}"')
+
+        if not includeLib:
+            modelLine = elementSymbol.symattrs.get("VacaskModelLine")
+            if modelLine:
+                self.modelLines.add(modelLine.strip())
+
+        if not skipLoadFile:
+            loadFile = elementSymbol.symattrs.get("VacaskLoadFile")
+            if loadFile:
+                loadFile = loadFile.strip().replace("\\", "/")
+                if "/" in loadFile:
+                    self.loadLines.add(f'load "{loadFile}"')
+                else:
+                    self.osdiLoadLines.add(f'load "{loadFile}"')
 
     def _getCellItem(self, libraryName: str, cellName: str) -> libb.cellItem | None:
         """Return the cellItem for *(libraryName, cellName)*, cached to avoid repeated model traversals.
@@ -461,10 +575,12 @@ class vacaskNetlist:
             symbolLines = self.createVacaskSymbolLine(elementSymbol)
             for line in symbolLines:
                 cirFile.write(f"{line}\n")
+            self._collectModelLoadInfo(elementSymbol)
         elif "spice" in netlistView:
             spiceLines = self.createSpiceLine(elementSymbol)
             for line in spiceLines:
                 cirFile.write(f"{line}\n")
+            self._collectModelLoadInfo(elementSymbol)
         elif "veriloga" in netlistView:
             verilogaLines = self.createVerilogaLine(elementSymbol)
             for line in verilogaLines:
@@ -540,9 +656,12 @@ class vacaskNetlist:
                     return baseName, None
                 return baseName, netTuple
 
+            # Process net names: strip ! from global nets and track them.
+            pinNets = [self._processGlobalNet(n) for n in elementSymbol.pinNetMap.values()]
+
             # Collect net vector information
             netVectorInfos = [
-                getNetVectorInfo(netName) for netName in elementSymbol.pinNetMap.values()
+                getNetVectorInfo(netName) for netName in pinNets
             ]
 
             # Check if we can preserve vector notation
@@ -574,7 +693,7 @@ class vacaskNetlist:
             else:
                 # Fall back to expansion
                 expandedPinNets = [
-                    expandNet(netName) for netName in elementSymbol.pinNetMap.values()
+                    expandNet(netName) for netName in pinNets
                 ]
 
                 if arraySize == 1:
@@ -663,25 +782,60 @@ class vacaskNetlist:
                 f"// Netlist line is not defined for symbol of {elementSymbol.instanceName}"
             ]
 
-    def createVerilogaLine(self, elementSymbol) -> list[str]:
-        """Create VACASK Verilog-A netlist lines with load file handling.
+    def _resolveVerilogaViewPath(self, elementSymbol) -> pathlib.Path | None:
+        """Resolve the ``.va`` file path from the veriloga view JSON.
 
-        Generates the instance line and adds ``load`` directive.
-        The Verilog-A file path is automatically constructed as {cellPath}/{cellName}.va.
+        Reads the view JSON (``viewItem.viewPath``) and extracts the
+        ``filePath`` key from the second element, joining it with the cell
+        path.  Returns ``None`` if the view or file path cannot be found.
+        """
+        cellItem = self._getCellItem(
+            elementSymbol.libraryName, elementSymbol.cellName
+        )
+        if cellItem is None:
+            return None
+        netlistView = self.determineNetlistView(elementSymbol, cellItem)
+        viewItem = libm.getViewItem(cellItem, netlistView)
+        if viewItem is None:
+            return None
+        try:
+            with viewItem.viewPath.open("r") as f:
+                viewData = json.load(f)
+            if len(viewData) > 1 and viewData[1].get("filePath"):
+                return pathlib.Path(cellItem.cellPath).joinpath(
+                    viewData[1]["filePath"]
+                )
+        except (json.JSONDecodeError, OSError, IndexError, KeyError):
+            pass
+        return None
+
+    def createVerilogaLine(self, elementSymbol) -> list[str]:
+        """Create VACASK Verilog-A netlist lines with load and model handling.
+
+        Generates the instance line and resolves the ``.va`` file path from the
+        veriloga view JSON.  Falls back to ``VacaskLoadFile`` from symbol
+        attributes, then to auto-constructed ``{cellPath}/{cellName}.va``.
+        Model and include-library directives are always collected via
+        :meth:`_collectModelLoadInfo`.
         """
         try:
             symbolLines = self._createNetlistLine(
-                elementSymbol, "VerilogaNetlistLine"
+                elementSymbol, "VacaskNetlistLine"
             )
-            # Automatically construct Verilog-A file path from cell directory and cell name
-            cellItem = self._getCellItem(
-                elementSymbol.libraryName, elementSymbol.cellName
-            )
-            cellPath = cellItem.cellPath
-            vaFileName = f"{elementSymbol.cellName}.va"
-            vaFilePath = pathlib.Path(cellPath) / vaFileName
-            # VACASK uses 'load' directive for OSDI/Verilog-A files
-            self.loadLines.add(f'load "{vaFilePath.as_posix()}"')
+            vaFilePath = self._resolveVerilogaViewPath(elementSymbol)
+            if vaFilePath:
+                self.loadLines.add(f'load "{vaFilePath.as_posix()}"')
+                self._collectModelLoadInfo(elementSymbol, skipLoadFile=True)
+            else:
+                self._collectModelLoadInfo(elementSymbol)
+                if not elementSymbol.symattrs.get("VacaskLoadFile"):
+                    cellItem = self._getCellItem(
+                        elementSymbol.libraryName, elementSymbol.cellName
+                    )
+                    cellPath = cellItem.cellPath
+                    vaFileName = f"{elementSymbol.cellName}.va"
+                    vaFilePath = pathlib.Path(cellPath) / vaFileName
+                    self.loadLines.add(f'load "{vaFilePath.as_posix()}"')
             return symbolLines
         except Exception as e:
             self._scene.logger.error(

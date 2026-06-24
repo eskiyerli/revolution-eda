@@ -43,6 +43,7 @@ class editorScene(QGraphicsScene):
         self.snapGrid = self.editorWindow.snapGrid
         self.snapTuple = self.editorWindow.snapTuple
         self.snapDistance = min(*self.editorWindow.snapTuple)
+        self.snapConnectDistance = self.editorWindow.snapConnectDistance
 
         # Initialize mouse-related attributes together
         self.mousePressLoc = self.mouseMoveLoc = self.mouseReleaseLoc = None

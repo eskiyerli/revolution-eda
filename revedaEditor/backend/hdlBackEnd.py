@@ -115,23 +115,37 @@ class verilogaC:
                 case "inout":
                     rawPins = line.replace("inout ", "").replace(";", "").split(",")
                     self.inoutPins.extend([pin.strip() for pin in rawPins])
+                case "(*":
+                    if "parameter" in line:
+                        self._parseParameter(line)
                 case "parameter":
-                    paramDefPart = (
-                        line.replace("parameter", "").replace(";", "").split("*(")[0]
-                    )
-                    paramName = paramDefPart.split("=")[0].split()[-1].strip()
-                    paramValue = paramDefPart.split("=")[1].split()[0].strip()
-                    if "(*" in line:
-                        paramAttr = line.strip().split("(*")[1]
-                    else:
-                        paramAttr = ""
-                    if "type" in paramAttr and '"instance"' in paramAttr:
-                        # parameter value is between = and (*
-                        self.instanceParams[paramName] = paramValue
-                        if "xyceAlsoModel" in paramAttr and '"yes"' in paramAttr:
-                            self.modelParams[paramName] = paramValue
-                    else:  # no parameter attribute statement
-                        self.modelParams[paramName] = paramValue
+                    self._parseParameter(line)
+
+    def _parseParameter(self, line: str):
+        """Parse a parameter declaration line and classify it as instance or model.
+
+        Handles both attributed lines (``(* type="instance" *) parameter ...``)
+        and bare lines (``parameter real w = 1u;``).
+        """
+        paramType = "model"
+        attrMatch = re.search(r'\(\*\s*type\s*=\s*"(\w+)"\s*\*\)', line)
+        if attrMatch:
+            paramType = attrMatch.group(1)
+
+        paramBody = re.sub(r'\(\*.*?\*\)', '', line)
+        paramBody = paramBody.replace("parameter", "").replace(";", "").strip()
+        paramBody = re.sub(r'\b(real|integer|string)\b', '', paramBody).strip()
+
+        fromClause = paramBody.split("from")[0].strip()
+        if "=" not in fromClause:
+            return
+        paramName = fromClause.split("=")[0].strip().split()[-1].strip()
+        paramValue = fromClause.split("=")[1].strip().split()[0].strip()
+
+        if paramType == "instance":
+            self.instanceParams[paramName] = paramValue
+        else:
+            self.modelParams[paramName] = paramValue
 
     @property
     def pathObj(self):
@@ -156,18 +170,17 @@ class verilogaC:
     @property
     def netlistLine(self):
 
-        # Create a string of instance parameters in the format [@key:key=%:key=item]
-        instParamString = " ".join(
-            [
-                f"[@{key}:{key}=%:{key}={item}]"
-                for key, item in self.instanceParams.items()
-            ]
+        # Create instance parameter references in VACASK format: key=@key
+        instParamRefs = " ".join(
+            f"{key}=@{key}" for key in self.instanceParams
         )
 
-        # Create the netlist line string with the formatted values
-        self._netlistLine = f"Y{self._vaModule} @instName %pinOrder  {self._vaModule}Model {instParamString}"
+        # VACASK netlist line: @instName (%pinOrder) {vaModule}Model w=@w l=@l
+        self._netlistLine = (
+            f"@instName (%pinOrder) {self._vaModule}Model"
+            + (f" {instParamRefs}" if instParamRefs else "")
+        )
 
-        # Return the netlist line
         return self._netlistLine
 
     @property

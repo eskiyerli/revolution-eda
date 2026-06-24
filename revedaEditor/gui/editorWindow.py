@@ -18,12 +18,14 @@ import shutil
 import subprocess
 import tempfile
 import time
+
+import numpy as np
 from contextlib import contextmanager
 from logging import getLogger
 from typing import TYPE_CHECKING, Optional
 
-from PySide6.QtCore import (Qt, QSize, QSizeF, QMarginsF)
-from PySide6.QtGui import (QAction, QIcon, QImage, QKeySequence, QPageSize)
+from PySide6.QtCore import (Qt, QSize, QSizeF, QMarginsF, QRectF)
+from PySide6.QtGui import (QAction, QIcon, QImage, QKeySequence, QPageSize, QPainter)
 from PySide6.QtPrintSupport import QPrintDialog, QPrinter, QPrintPreviewDialog
 from PySide6.QtSvg import QSvgGenerator
 from PySide6.QtWidgets import (QApplication, QDialog, QFileDialog, QGraphicsScene,
@@ -53,6 +55,7 @@ class editorWindow(QMainWindow):
     MAIN_LOGGER = "reveda"
     MAJOR_GRID_DEFAULT = 20
     SNAP_GRID_DEFAULT = 10
+    SNAP_CONNECT_DISTANCE_DEFAULT = 20
 
     def __init__(self, viewItem: libb.viewItem, libraryDict: dict,
                  libraryView: lmview.BaseDesignLibrariesView) -> None:
@@ -81,6 +84,7 @@ class editorWindow(QMainWindow):
         self.majorGrid = self.MAJOR_GRID_DEFAULT  # dot/line grid spacing
         self.snapGrid = self.SNAP_GRID_DEFAULT  # snapping grid size
         self.snapTuple = (self.snapGrid, self.snapGrid)
+        self.snapConnectDistance = self.SNAP_CONNECT_DISTANCE_DEFAULT
         self.processManager = prm.ProcessManager(3, self)
         self.init_UI()
         self._createSignalConnections()
@@ -560,9 +564,13 @@ class editorWindow(QMainWindow):
         dcd = pdlg.displayConfigDialog(self)
         dcd.majorGridEntry.setText(str(self.majorGrid))
         dcd.snapGridEdit.setText(str(self.snapGrid))
+        dcd.snapConnectEdit.setText(str(self.snapConnectDistance))
         if dcd.exec() == QDialog.DialogCode.Accepted:
             self.configureGridSettings(
                 (int(dcd.majorGridEntry.text()), int(dcd.snapGridEdit.text())))
+            self.snapConnectDistance = int(dcd.snapConnectEdit.text())
+            if hasattr(self, 'centralW') and self.centralW:
+                self.centralW.scene.snapConnectDistance = self.snapConnectDistance
             if dcd.dotType.isChecked():
                 self.centralW.view.gridbackg = True
                 self.centralW.view.linebackg = False
@@ -592,6 +600,8 @@ class editorWindow(QMainWindow):
                         obj.snapGrid = self.snapGrid
                     if hasattr(obj, 'snapTuple'):
                         obj.snapTuple = (self.snapGrid, self.snapGrid)
+                    if hasattr(obj, 'snapConnectDistance'):
+                        obj.snapConnectDistance = self.snapConnectDistance
                 self.centralW.scene.invalidate(self.centralW.scene.sceneRect(),
                                                QGraphicsScene.SceneLayer.BackgroundLayer)
         except Exception as e:
@@ -673,11 +683,10 @@ class editorWindow(QMainWindow):
                 if not shutil.which("pdftops"):
                     QMessageBox.critical(self, "Export Error", "pdftops tool is required for EPS export but was not found in the system PATH.")
                     return
-                # Ask whether to export in color or monochrome
                 monoChoice = QMessageBox.question(
                     self,
                     "EPS Export Mode",
-                    "Export as monochrome (grayscale)?",
+                    "Export as black and white?",
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                     QMessageBox.StandardButton.No,
                 )
@@ -685,11 +694,6 @@ class editorWindow(QMainWindow):
                 temp_pdf_fd, temp_pdf_path = tempfile.mkstemp(suffix=".pdf")
                 os.close(temp_pdf_fd)
                 try:
-                    printer = QPrinter(QPrinter.PrinterMode.ScreenResolution)
-                    printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
-                    printer.setOutputFileName(temp_pdf_path)
-                    if monochrome:
-                        printer.setColorMode(QPrinter.ColorMode.GrayScale)
                     items_rect = self.centralW.view.scene().itemsBoundingRect()
                     if items_rect.isEmpty():
                         items_rect = self.centralW.view.sceneRect()
@@ -701,10 +705,8 @@ class editorWindow(QMainWindow):
                         srcW = 800
                     if srcH <= 0:
                         srcH = 600
-                    # Scale scene units to a reasonable physical page size.
-                    # Target the longest edge at ~10 inches (720 points) max.
-                    maxPoints = 720.0
                     aspect = srcW / srcH
+                    maxPoints = 720.0
                     if srcW >= srcH:
                         width_points = maxPoints
                         height_points = maxPoints / aspect
@@ -712,9 +714,41 @@ class editorWindow(QMainWindow):
                         height_points = maxPoints
                         width_points = maxPoints * aspect
                     page_size = QPageSize(QSizeF(width_points, height_points), QPageSize.Unit.Point)
-                    printer.setPageSize(page_size)
-                    printer.setPageMargins(QMarginsF(0, 0, 0, 0))
-                    self.centralW.view.printView(printer, sourceRect)
+                    if monochrome:
+                        # Render to high-res QImage, threshold to B&W, then paint to PDF
+                        maxDim = 4000
+                        if srcW >= srcH:
+                            imgW = maxDim
+                            imgH = int(maxDim / aspect)
+                        else:
+                            imgH = maxDim
+                            imgW = int(maxDim * aspect)
+                        image = QImage(QSize(imgW, imgH), QImage.Format_ARGB32_Premultiplied)
+                        image.fill(Qt.GlobalColor.white)
+                        self.centralW.view.printView(image, sourceRect)
+                        # Threshold: any non-white pixel becomes black
+                        ptr = image.bits()
+                        ptr.setsize(image.sizeInBytes())
+                        arr = np.frombuffer(ptr, dtype=np.uint8).reshape(imgH, imgW, 4)
+                        mask = (arr[:, :, :3] < 255).any(axis=2)
+                        arr[mask] = [0, 0, 0, 255]
+                        arr[~mask] = [255, 255, 255, 255]
+                        # Paint monochrome image to PDF
+                        printer = QPrinter(QPrinter.PrinterMode.ScreenResolution)
+                        printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
+                        printer.setOutputFileName(temp_pdf_path)
+                        printer.setPageSize(page_size)
+                        printer.setPageMargins(QMarginsF(0, 0, 0, 0))
+                        painter = QPainter(printer)
+                        painter.drawImage(QRectF(0, 0, width_points, height_points), image)
+                        painter.end()
+                    else:
+                        printer = QPrinter(QPrinter.PrinterMode.ScreenResolution)
+                        printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
+                        printer.setOutputFileName(temp_pdf_path)
+                        printer.setPageSize(page_size)
+                        printer.setPageMargins(QMarginsF(0, 0, 0, 0))
+                        self.centralW.view.printView(printer, sourceRect)
                     subprocess.run(["pdftops", "-eps", temp_pdf_path, imageFile], check=True)
                 except Exception as e:
                     QMessageBox.critical(self, "Export Error", f"Failed to export to EPS: {str(e)}")

@@ -630,6 +630,10 @@ class symbolScene(editorScene):
                     self.editorWindow.configureGridSettings(decodedData[1].get(
                         "snapGrid", (self.majorGrid,
                                      self.snapGrid)))
+                snapConnectDistance = decodedData[1].get("snapConnectDistance")
+                if snapConnectDistance is not None:
+                    self.editorWindow.snapConnectDistance = snapConnectDistance
+                    self.snapConnectDistance = snapConnectDistance
                 self.attributeList = []
                 self.createSymbolItems(itemData)
             self.itemsRef = set(self.items())
@@ -689,7 +693,8 @@ class symbolScene(editorScene):
             # Build save data
             save_data = [
                 {"viewType": "symbol", "schemaVersion": "1.0"},
-                {"snapGrid": (self.majorGrid, self.snapGrid)},
+                {"snapGrid": (self.majorGrid, self.snapGrid),
+                 "snapConnectDistance": self.snapConnectDistance},
                 *sceneItems,
                 *getattr(self, "attributeList", [])
             ]

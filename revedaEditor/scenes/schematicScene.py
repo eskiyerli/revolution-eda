@@ -200,7 +200,7 @@ class schematicScene(editorScene):
     def mouseMoveEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         """Handle mouse move event."""
         super().mouseMoveEvent(event)
-        self.mouseMoveLoc = event.scenePos().toPoint()
+        self.mouseMoveLoc = self.snapToGrid(event.scenePos().toPoint())
 
         if self._newInstance and self.editModes.addInstance:
             self._newInstance.setPos(self.mouseMoveLoc)
@@ -208,7 +208,8 @@ class schematicScene(editorScene):
 
             self._newPin.setPos(self.mouseMoveLoc - self._newPin.start)
         elif self._newNet and (self.editModes.drawWire or self.editModes.drawBus):
-            netEndPoint = self.findSnapPoint(self.mouseMoveLoc, {self._newNet})
+            netEndPoint = self.snapToGrid(
+                self.findSnapPoint(self.mouseMoveLoc, {self._newNet}))
             self._snapPointRect.setPos(netEndPoint)
             self._newNet.draftLine = QLineF(self._newNet.draftLine.p1(),
                                             netEndPoint)
@@ -351,14 +352,24 @@ class schematicScene(editorScene):
             self.editModes.setMode('selectItem')
 
     def _handleDrawBus(self, eventLoc: QPoint):
-        if self._newNet:
-            self._newNet.draftLine = QLineF(self._newNet.draftLine.p1(),
-                                            self.snapToGrid(eventLoc))
+        """Handle draw bus logic with continuous mode."""
+        ignoredSet = {self._newNet} if self._newNet is not None else set()
+        snapPoint = self.snapToGrid(self.findSnapPoint(eventLoc, ignoredSet))
+
+        if self._newNet is None:
+            # Start new bus
+            self._snapPointRect.setPos(snapPoint)
+            self._newNet = snet.schematicNet(snapPoint, snapPoint, 1)
+            self.addUndoStack(self._newNet)
+        else:
+            # Continue from last point – use same snapPoint for segment end and next start
+            self._newNet.draftLine = QLineF(self._newNet.draftLine.p1(), snapPoint)
             self.wireEditFinished.emit(self._newNet)
-            self._newNet = None
-        startSnapPoint = self.snapToGrid(self.findSnapPoint(eventLoc, set()))
-        self._newNet = snet.schematicNet(startSnapPoint, startSnapPoint, 1)
-        self.addUndoStack(self._newNet)
+
+            # Start next segment from same endpoint
+            self._snapPointRect.setPos(snapPoint)
+            self._newNet = snet.schematicNet(snapPoint, snapPoint, 1)
+            self.addUndoStack(self._newNet)
 
     def _handleDrawText(self, mouseReleaseLoc: QPoint) -> None:
         """
@@ -622,9 +633,10 @@ class schematicScene(editorScene):
 
     def findSnapPoint(self, eventLoc: QPoint,
                       ignoredSet: set[snet.schematicNet]) -> QPoint:
-        snapRect = QRect(eventLoc.x() - self.snapTuple[0],
-                         eventLoc.y() - self.snapTuple[1], 2 * self.snapTuple[0],
-                         2 * self.snapTuple[1], )
+        snapRect = QRect(eventLoc.x() - self.snapConnectDistance,
+                         eventLoc.y() - self.snapConnectDistance,
+                         2 * self.snapConnectDistance,
+                         2 * self.snapConnectDistance, )
         snapPoints = self.findConnectPoints(snapRect, ignoredSet)
 
         if self._newNet:
@@ -1092,7 +1104,8 @@ class schematicScene(editorScene):
 
                     header_items = [{"viewType": "schematic",
                                      "schemaVersion": "1.0"}, {
-                        "snapGrid": (self.majorGrid, self.snapGrid)}, ]
+                        "snapGrid": (self.majorGrid, self.snapGrid),
+                        "snapConnectDistance": self.snapConnectDistance}, ]
                     json.dump(header_items[0], f)
                     f.write(",\n")
                     json.dump(header_items[1], f)
@@ -1187,6 +1200,10 @@ class schematicScene(editorScene):
                     self.editorWindow.configureGridSettings(
                         decodedData[1].get("snapGrid",
                                            (self.majorGrid, self.snapGrid)))
+                snapConnectDistance = decodedData[1].get("snapConnectDistance")
+                if snapConnectDistance is not None:
+                    self.editorWindow.snapConnectDistance = snapConnectDistance
+                    self.snapConnectDistance = snapConnectDistance
                 self.blockSignals(True)
                 try:
                     self.createSchematicItems(itemData)

@@ -117,6 +117,7 @@ class symbolLabel(QGraphicsSimpleTextItem):
         self._labelFont = QFont("Arial")
         self._labelFont.setPointSize(int(float(self._labelHeight)))
         self._labelFont.setKerning(False)
+        self.setFont(self._labelFont)
         self._labelVisible: bool = False
 
         self._angle = 0.0  # rotation angle

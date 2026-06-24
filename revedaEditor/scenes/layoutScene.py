@@ -882,6 +882,7 @@ class layoutScene(editorScene):
             layoutData = [
                 {"viewType": "layout", "schemaVersion": "1.0"},
                 {"snapGrid": (self.majorGrid, self.snapGrid),
+                 "snapConnectDistance": self.editorWindow.snapConnectDistance,
                  "lodThreshold": self.editorWindow.lodThreshold},
                 *topLevelItems,
             ]
@@ -998,6 +999,10 @@ class layoutScene(editorScene):
                 self.editorWindow.configureGridSettings(
                     decodedData[1].get("snapGrid", (self.majorGrid, self.snapGrid))
                 )
+                snapConnectDistance = decodedData[1].get("snapConnectDistance")
+                if snapConnectDistance is not None:
+                    self.editorWindow.snapConnectDistance = snapConnectDistance
+                    self.snapConnectDistance = snapConnectDistance
                 # Restore LOD threshold if saved
                 lodThreshold = decodedData[1].get("lodThreshold", None)
                 if lodThreshold is not None:

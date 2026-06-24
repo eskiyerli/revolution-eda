@@ -84,8 +84,6 @@ class xyceNetlist:
         self._stopViewList = schematic.stopViewList
         self.netlistedViewsSet = set()  # keeps track of netlisted views.
         self.includeLines = set()  # keeps track of include lines.
-        self.vamodelLines = set()  # keeps track of vamodel lines.
-        self.vahdlLines = set()  # keeps track of *.HDL lines.
         # Caches to avoid repeated Qt model traversals for the same cells.
         self._viewNameCache: dict[tuple, str] = {}  # (libName, cellName) -> netlist view name
         self._cellItemCache: dict[tuple, libb.cellItem | None] = {}  # (libName, cellName) -> cellItem
@@ -149,10 +147,6 @@ class xyceNetlist:
             # cirFile.write(".END\n")
             for line in self.includeLines:
                 cirFile.write(f"{line}\n")
-            for line in self.vamodelLines:
-                cirFile.write(f"{line}\n")
-            for line in self.vahdlLines:
-                cirFile.write(f"{line}\n")
 
     def collectSubcircuitContent(self, schematic: schematicEditor, content):
         """Collect subcircuit content without writing to file.
@@ -215,8 +209,12 @@ class xyceNetlist:
                     lines = self.createSpiceLine(elementSymbol)
                     content.extend(lines if isinstance(lines, list) else [lines])
                 elif "veriloga" in netlistView:
-                    lines = self.createVerilogaLine(elementSymbol)
-                    content.extend(lines if isinstance(lines, list) else [lines])
+                    raise ValueError(
+                        f"Verilog-A view '{netlistView}' selected for "
+                        f"{elementSymbol.libraryName}/{elementSymbol.cellName} "
+                        f"({elementSymbol.instanceName}). Xyce netlister no "
+                        f"longer supports Verilog-A. Use VACASK instead."
+                    )
             elif elementSymbol.netlistIgnore:
                 content.append(f"*{elementSymbol.instanceName} is marked to be ignored\n")
             else:
@@ -419,9 +417,12 @@ class xyceNetlist:
             for line in spiceLines:
                 cirFile.write(f"{line}\n")
         elif "veriloga" in netlistView:
-            verilogaLines = self.createVerilogaLine(elementSymbol)
-            for line in verilogaLines:
-                cirFile.write(f"{line}\n")
+            raise ValueError(
+                f"Verilog-A view '{netlistView}' selected for "
+                f"{elementSymbol.libraryName}/{elementSymbol.cellName} "
+                f"({elementSymbol.instanceName}). Xyce netlister no "
+                f"longer supports Verilog-A. Use VACASK instead."
+            )
 
     def _createNetlistLine(self, elementSymbol: shp.schematicSymbol, netlistLineKey: str) -> \
             list[str]:
@@ -546,34 +547,6 @@ class xyceNetlist:
             return spiceLines
         except Exception as e:
             self._scene.logger.error(f"Spice subckt netlist error for {elementSymbol.instanceName}: {e}")
-            return [f"*Netlist line is not defined for symbol of {elementSymbol.instanceName}\n"]
-
-    def createVerilogaLine(self, elementSymbol) -> list[str]:
-        """Create Verilog-A netlist lines with model and HDL file handling.
-
-        Generates the netlist line and adds vaModelLine and *.HDL directives
-        if the symbol has the corresponding attributes.
-        """
-        try:
-            symbolLines = self._createNetlistLine(elementSymbol, "XyceVerilogaNetlistLine")
-            self.vamodelLines.add(elementSymbol.symattrs.get("vaModelLine",
-                                                             f"* no model line is found for {elementSymbol.cellName}").strip())
-            vaFileName = elementSymbol.symattrs.get("vaFileName", "").strip()
-            if vaFileName:
-                cellItem = self._getCellItem(elementSymbol.libraryName,
-                                             elementSymbol.cellName)
-                cellPath = cellItem.cellPath
-                if cellPath:
-                    vaFilePath = pathlib.Path(cellPath) / vaFileName
-                    self.vahdlLines.add(f"*.HDL {vaFilePath}")
-                else:
-                    self._scene.logger.warning(f"Cell path not found for {elementSymbol.cellName}, skipping HDL file")
-            else:
-                self.vahdlLines.add(f"* no HDL file line found for {elementSymbol.cellName}")
-
-            return symbolLines
-        except Exception as e:
-            self._scene.logger.error(f"Verilog-A netlist error for {elementSymbol.instanceName}: {e}")
             return [f"*Netlist line is not defined for symbol of {elementSymbol.instanceName}\n"]
 
     @staticmethod

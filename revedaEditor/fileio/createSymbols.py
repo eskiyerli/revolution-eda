@@ -243,26 +243,25 @@ def createVaSymbol(
                     )
 
             symbolScene.attributeList = list()  # empty attribute list
-            # Because Xyce changes the netlist line,
-            # we need to define a separate attribute for Xyce
-            # TODO: What about NgSpice and/or VACASK
             if importedVaObj.modelParams:
                 for key, value in importedVaObj.modelParams.items():
                     symbolScene.attributeList.append(se.symbolAttribute(key, value))
-                symbolScene.attributeList.append(
-                    se.symbolAttribute(
-                        "XyceVerilogaNetlistLine", importedVaObj.netlistLine
-                    )
-                )
 
-            modelParamsString = ", ".join(
-                f"{key} = {value}" for key, value in importedVaObj.modelParams.items()
+            # VACASK instance netlist line from hdlBackEnd.verilogaC.netlistLine
+            symbolScene.attributeList.append(
+                se.symbolAttribute("VacaskNetlistLine", importedVaObj.netlistLine)
+            )
+
+            # VACASK model line: model {vaModule}Model {vaModule} vth0=0.4 tox=2n
+            modelParamsString = " ".join(
+                f"{key}={value}" for key, value in importedVaObj.modelParams.items()
+            )
+            vacaskModelLine = (
+                f"model {importedVaObj.vaModule}Model {importedVaObj.vaModule}"
+                + (f" {modelParamsString}" if modelParamsString else "")
             )
             symbolScene.attributeList.append(
-                se.symbolAttribute(
-                    "vaModelLine",
-                    f".MODEL {importedVaObj.vaModule}Model {importedVaObj.vaModule} {modelParamsString}",
-                )
+                se.symbolAttribute("VacaskModelLine", vacaskModelLine)
             )
             symbolScene.attributeList.append(
                 se.symbolAttribute("vaFileName", f"{str(importedVaObjPath.name)}")
