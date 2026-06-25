@@ -28,7 +28,6 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import (
     QColor,
-    QGuiApplication,
     QPen,
 )
 from PySide6.QtWidgets import (
@@ -188,7 +187,6 @@ class symbolScene(editorScene):
         super().mouseReleaseEvent(event)
 
     def _handleMouseRelease(self, mousePos: QPoint, button: Qt.MouseButton) -> None:
-        modifiers = QGuiApplication.keyboardModifiers()
         try:
         #    if self.editModes.changeOrigin:
         #         self.origin = mousePos
@@ -341,7 +339,7 @@ class symbolScene(editorScene):
         guideLine = QLineF(startLoc, startLoc)
         polygonGuideLine = QGraphicsLineItem(guideLine)
         polygonGuideLine.setPen(QPen(QColor(255, 255, 0), 1, Qt.DashLine))
-        self.addUndoStack(polygonGuideLine)
+        self.addItem(polygonGuideLine)
         return newPolygon, polygonGuideLine
 
     def finishPolygon(self, event):
@@ -380,15 +378,20 @@ class symbolScene(editorScene):
             dlg.xEdit.setText("0")
             dlg.yEdit.setText("0")
             if dlg.exec() == QDialog.DialogCode.Accepted:
-                for item in self.selectedItems():
-                    item.moveBy(
-                        self.snapToBase(float(dlg.xEdit.text()), self.snapTuple[0]),
-                        self.snapToBase(float(dlg.yEdit.text()), self.snapTuple[1]),
-                    )
+                dx = self.snapToBase(float(dlg.xEdit.text()), self.snapTuple[0])
+                dy = self.snapToBase(float(dlg.yEdit.text()), self.snapTuple[1])
+                moveCommand = us.undoMoveByCommand(self, self.selectedItems(), dx, dy)
+                self.undoStack.push(moveCommand)
             self.editorWindow.messageLine.setText(
                 f"Moved items by {dlg.xEdit.text()} and {dlg.yEdit.text()}"
             )
             self.editModes.setMode("selectItem")
+
+    def stretchSelectedItems(self) -> None:
+        for item in self.selectedItems():
+            if hasattr(item, "stretch"):
+                item.stretch = True
+                break
 
     def itemProperties(self):
         """
@@ -494,14 +497,14 @@ class symbolScene(editorScene):
             startX = int(float(queryDlg.startXEdit.text()))
             startY = int(float(queryDlg.startYEdit.text()))
             start = self.snapToGrid(QPoint(startX, startY))
-            width = int(float(queryDlg.widthEdit.text()))
-            height = int(float(queryDlg.heightEdit.text()))
+            width = self.snapToBase(float(queryDlg.widthEdit.text()), self.snapTuple[0])
+            height = self.snapToBase(float(queryDlg.heightEdit.text()), self.snapTuple[1])
             end = start + QPoint(width, height)
             newArc = shp.symbolArc(start, end)
             newArc.arcType = arcType
+            newArc.height = height
 
             self.undoStack.push(us.addDeleteShapeUndo(self, newArc, item))
-            newArc.height = height
 
     def updateSymbolLabel(self, item):
         queryDlg = pdlg.labelPropertyDialog(self.editorWindow)
@@ -552,8 +555,6 @@ class symbolScene(editorScene):
             newLabel.labelDefs()
             newLabel.setOpacity(1)
             self.undoStack.push(us.addDeleteShapeUndo(self, newLabel, item))
-        else:
-            self.addItem(item)
 
     def updateSymbolPin(self, item):
         queryDlg = pdlg.pinPropertyDialog(self.editorWindow)
@@ -627,10 +628,10 @@ class symbolScene(editorScene):
             with self.measureDuration():
                 viewDict, gridSettings, *itemData = decodedData
                 if gridSettings and gridSettings.get("snapGrid"):
-                    self.editorWindow.configureGridSettings(decodedData[1].get(
+                    self.editorWindow.configureGridSettings(gridSettings.get(
                         "snapGrid", (self.majorGrid,
                                      self.snapGrid)))
-                snapConnectDistance = decodedData[1].get("snapConnectDistance")
+                snapConnectDistance = gridSettings.get("snapConnectDistance")
                 if snapConnectDistance is not None:
                     self.editorWindow.snapConnectDistance = snapConnectDistance
                     self.snapConnectDistance = snapConnectDistance
@@ -743,7 +744,7 @@ class symbolScene(editorScene):
                             item.text(), symbolPropDialogue.attributeDefList[i].text()
                         )
                     )
-                self.attributeList = deepcopy(localAttributeList)
+            self.attributeList = deepcopy(localAttributeList)
 
     def copySelectedItems(self):
         # Only consider top-level items (same as schematic/layout editors)

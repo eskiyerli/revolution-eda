@@ -28,8 +28,11 @@ from PySide6.QtWidgets import (
     QPushButton,
     QGroupBox,
     QTableView,
-    QMenu,
+    QSpinBox,
+    QSlider,
     QCheckBox,
+    QMessageBox,
+    QMenu,
 )
 
 import revedaEditor.backend.libraryMethods as libm
@@ -1076,3 +1079,377 @@ class fileInfoDialogue(QDialog):
         layout.addWidget(self.buttonBox)
 
         self.setLayout(layout)
+
+
+class imageExportDialog(QDialog):
+    """Dialog for exporting the current editor view as an image file."""
+
+    FORMAT_FILTERS = (
+        "PNG Image (*.png)",
+        "JPEG Image (*.jpg *.jpeg)",
+        "BMP Image (*.bmp)",
+        "GIF Image (*.gif)",
+        "SVG Vector Graphic (*.svg)",
+        "PDF Document (*.pdf)",
+        "EPS Vector Graphic (*.eps)",
+    )
+
+    FORMAT_SUFFIXES = {
+        "PNG Image (*.png)": ".png",
+        "JPEG Image (*.jpg *.jpeg)": ".jpg",
+        "BMP Image (*.bmp)": ".bmp",
+        "GIF Image (*.gif)": ".gif",
+        "SVG Vector Graphic (*.svg)": ".svg",
+        "PDF Document (*.pdf)": ".pdf",
+        "EPS Vector Graphic (*.eps)": ".eps",
+    }
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Export Image")
+        self.setMinimumWidth(520)
+        self._filePath = ""
+        self._dpi = 96
+        self._scale = 1.0
+        self._backgroundColor = "white"
+        self._margin = 5.0
+        self._jpegQuality = 85
+        self._transparent = False
+        self._exportScope = "items"
+        self._includeGrid = False
+        self._antialiasing = "high"
+        self.init_UI()
+
+    def init_UI(self):
+        layout = QVBoxLayout(self)
+
+        # --- File selection ---
+        fileBox = QGroupBox("File")
+        fileLayout = QFormLayout(fileBox)
+
+        self.formatCombo = QComboBox()
+        self.formatCombo.addItems(self.FORMAT_FILTERS)
+        self.formatCombo.currentTextChanged.connect(self._onFormatChanged)
+        fileLayout.addRow(edf.boldLabel("Format:"), self.formatCombo)
+
+        self.fileEdit = QLineEdit()
+        self.fileEdit.setPlaceholderText("Select or type a file name…")
+        fileLayout.addRow(edf.boldLabel("File name:"), self.fileEdit)
+
+        self.browseButton = QPushButton("Browse…")
+        self.browseButton.clicked.connect(self._browse)
+        fileLayout.addRow("", self.browseButton)
+
+        layout.addWidget(fileBox)
+
+        # --- Colour mode ---
+        colourBox = QGroupBox("Colour Mode")
+        colourLayout = QVBoxLayout(colourBox)
+
+        self.monoRadio = QRadioButton("Monochrome (black & white)")
+        self.grayRadio = QRadioButton("Grayscale")
+        self.colourRadio = QRadioButton("Full Colour")
+        self.colourRadio.setChecked(True)
+
+        self.colourGroup = QButtonGroup(self)
+        self.colourGroup.addButton(self.monoRadio)
+        self.colourGroup.addButton(self.grayRadio)
+        self.colourGroup.addButton(self.colourRadio)
+
+        colourLayout.addWidget(self.monoRadio)
+        colourLayout.addWidget(self.grayRadio)
+        colourLayout.addWidget(self.colourRadio)
+        layout.addWidget(colourBox)
+
+        # --- Resolution & Dimensions ---
+        resBox = QGroupBox("Resolution")
+        resLayout = QFormLayout(resBox)
+
+        self.dpiSpin = QSpinBox()
+        self.dpiSpin.setRange(72, 600)
+        self.dpiSpin.setValue(96)
+        self.dpiSpin.setSuffix(" DPI")
+        self.dpiSpin.valueChanged.connect(self._onDpiChanged)
+        resLayout.addRow(edf.boldLabel("DPI:"), self.dpiSpin)
+
+        self.scaleCombo = QComboBox()
+        self.scaleCombo.addItems(["0.5x", "1x", "2x", "4x"])
+        self.scaleCombo.setCurrentIndex(1)
+        self.scaleCombo.currentTextChanged.connect(self._onScaleChanged)
+        resLayout.addRow(edf.boldLabel("Scale:"), self.scaleCombo)
+
+        layout.addWidget(resBox)
+
+        # --- Background ---
+        bgBox = QGroupBox("Background")
+        bgLayout = QVBoxLayout(bgBox)
+
+        self.bgWhiteRadio = QRadioButton("White")
+        self.bgBlackRadio = QRadioButton("Black")
+        self.bgCustomRadio = QRadioButton("Custom")
+        self.bgWhiteRadio.setChecked(True)
+
+        self.bgGroup = QButtonGroup(self)
+        self.bgGroup.addButton(self.bgWhiteRadio)
+        self.bgGroup.addButton(self.bgBlackRadio)
+        self.bgGroup.addButton(self.bgCustomRadio)
+
+        self.bgColorButton = QPushButton("Choose Color…")
+        self.bgColorButton.setEnabled(False)
+        self.bgColorButton.clicked.connect(self._chooseBackgroundColor)
+        self.bgCustomRadio.toggled.connect(self.bgColorButton.setEnabled)
+
+        bgLayout.addWidget(self.bgWhiteRadio)
+        bgLayout.addWidget(self.bgBlackRadio)
+        bgLayout.addWidget(self.bgCustomRadio)
+        bgLayout.addWidget(self.bgColorButton)
+        layout.addWidget(bgBox)
+
+        # --- Margin ---
+        marginBox = QGroupBox("Margin")
+        marginLayout = QVBoxLayout(marginBox)
+
+        self.marginSlider = QSlider(Qt.Orientation.Horizontal)
+        self.marginSlider.setRange(0, 20)
+        self.marginSlider.setValue(5)
+        self.marginSlider.valueChanged.connect(self._onMarginChanged)
+        
+        self.marginLabel = QLabel("5%")
+        self.marginLabel.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        marginLayout.addWidget(self.marginSlider)
+        marginLayout.addWidget(self.marginLabel)
+        layout.addWidget(marginBox)
+
+        # --- JPEG Quality ---
+        self.qualityBox = QGroupBox("JPEG Quality")
+        qualityLayout = QVBoxLayout(self.qualityBox)
+        
+        self.qualitySlider = QSlider(Qt.Orientation.Horizontal)
+        self.qualitySlider.setRange(1, 100)
+        self.qualitySlider.setValue(85)
+        self.qualitySlider.valueChanged.connect(self._onQualityChanged)
+        
+        self.qualityLabel = QLabel("85")
+        self.qualityLabel.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        qualityLayout.addWidget(self.qualitySlider)
+        qualityLayout.addWidget(self.qualityLabel)
+        layout.addWidget(self.qualityBox)
+        self.qualityBox.setVisible(False)
+
+        # --- Transparency ---
+        self.transBox = QGroupBox("Transparency")
+        transLayout = QVBoxLayout(self.transBox)
+        
+        self.transparentCheck = QCheckBox("Transparent background")
+        self.transparentCheck.toggled.connect(self._onTransparentChanged)
+        
+        transLayout.addWidget(self.transparentCheck)
+        layout.addWidget(self.transBox)
+        self.transBox.setVisible(False)
+
+        # --- Export Scope ---
+        scopeBox = QGroupBox("Export Scope")
+        scopeLayout = QVBoxLayout(scopeBox)
+        
+        self.scopeItemsRadio = QRadioButton("Items bounding rect")
+        self.scopeSceneRadio = QRadioButton("Entire scene")
+        self.scopeViewportRadio = QRadioButton("Current viewport")
+        self.scopeSelectedRadio = QRadioButton("Selected items only")
+        self.scopeItemsRadio.setChecked(True)
+        
+        self.scopeGroup = QButtonGroup(self)
+        self.scopeGroup.addButton(self.scopeItemsRadio)
+        self.scopeGroup.addButton(self.scopeSceneRadio)
+        self.scopeGroup.addButton(self.scopeViewportRadio)
+        self.scopeGroup.addButton(self.scopeSelectedRadio)
+        
+        scopeLayout.addWidget(self.scopeItemsRadio)
+        scopeLayout.addWidget(self.scopeSceneRadio)
+        scopeLayout.addWidget(self.scopeViewportRadio)
+        scopeLayout.addWidget(self.scopeSelectedRadio)
+        layout.addWidget(scopeBox)
+
+        # --- Grid ---
+        gridBox = QGroupBox("Grid")
+        gridLayout = QVBoxLayout(gridBox)
+        
+        self.gridCheck = QCheckBox("Include grid in export")
+        gridLayout.addWidget(self.gridCheck)
+        layout.addWidget(gridBox)
+
+        # --- Antialiasing ---
+        aaBox = QGroupBox("Antialiasing")
+        aaLayout = QVBoxLayout(aaBox)
+        
+        self.aaFastRadio = QRadioButton("Fast")
+        self.aaHighRadio = QRadioButton("High quality")
+        self.aaHighRadio.setChecked(True)
+        
+        self.aaGroup = QButtonGroup(self)
+        self.aaGroup.addButton(self.aaFastRadio)
+        self.aaGroup.addButton(self.aaHighRadio)
+        
+        aaLayout.addWidget(self.aaFastRadio)
+        aaLayout.addWidget(self.aaHighRadio)
+        layout.addWidget(aaBox)
+
+        # --- Buttons ---
+        self.buttonBox = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        self.buttonBox.accepted.connect(self._validateAndAccept)
+        self.buttonBox.rejected.connect(self.reject)
+        layout.addWidget(self.buttonBox)
+
+        self.setLayout(layout)
+
+    # ---- public accessors ------------------------------------------------
+
+    @property
+    def filePath(self) -> str:
+        return self._filePath
+
+    @property
+    def colorMode(self) -> str:
+        """Return ``"monochrome"``, ``"grayscale"`` or ``"fullColour"``."""
+        if self.monoRadio.isChecked():
+            return "monochrome"
+        if self.grayRadio.isChecked():
+            return "grayscale"
+        return "fullColour"
+
+    @property
+    def dpi(self) -> int:
+        return self._dpi
+
+    @property
+    def scale(self) -> float:
+        return self._scale
+
+    @property
+    def backgroundColor(self) -> str:
+        if self.bgBlackRadio.isChecked():
+            return "black"
+        if self.bgCustomRadio.isChecked():
+            return self._backgroundColor
+        return "white"
+
+    @property
+    def margin(self) -> float:
+        return self._margin
+
+    @property
+    def jpegQuality(self) -> int:
+        return self._jpegQuality
+
+    @property
+    def transparent(self) -> bool:
+        return self._transparent
+
+    @property
+    def exportScope(self) -> str:
+        if self.scopeSceneRadio.isChecked():
+            return "scene"
+        if self.scopeViewportRadio.isChecked():
+            return "viewport"
+        if self.scopeSelectedRadio.isChecked():
+            return "selected"
+        return "items"
+
+    @property
+    def includeGrid(self) -> bool:
+        return self._includeGrid
+
+    @property
+    def antialiasing(self) -> str:
+        return self._antialiasing
+
+    # ---- internal helpers -------------------------------------------------
+
+    def _onFormatChanged(self, filterText: str):
+        """Update the file extension when the format dropdown changes."""
+        suffix = self.FORMAT_SUFFIXES.get(filterText, "")
+        current = self.fileEdit.text().strip()
+        if current:
+            p = pathlib.Path(current)
+            if p.suffix.lower() != suffix:
+                self.fileEdit.setText(str(p.with_suffix(suffix)))
+        self.fileEdit.setFocus()
+        
+        # Show/hide format-specific options
+        isJpeg = "JPEG" in filterText
+        isRaster = any(f in filterText for f in ("PNG", "JPEG", "BMP", "GIF"))
+        self.qualityBox.setVisible(isJpeg)
+        self.transBox.setVisible(isRaster)
+
+    def _onDpiChanged(self, value: int):
+        self._dpi = value
+
+    def _onScaleChanged(self, text: str):
+        self._scale = float(text.rstrip("x"))
+
+    def _onMarginChanged(self, value: int):
+        self._margin = float(value)
+        self.marginLabel.setText(f"{value}%")
+
+    def _onQualityChanged(self, value: int):
+        self._jpegQuality = value
+        self.qualityLabel.setText(str(value))
+
+    def _onTransparentChanged(self, checked: bool):
+        self._transparent = checked
+        if checked:
+            self.bgWhiteRadio.setEnabled(False)
+            self.bgBlackRadio.setEnabled(False)
+            self.bgCustomRadio.setEnabled(False)
+            self.bgColorButton.setEnabled(False)
+        else:
+            self.bgWhiteRadio.setEnabled(True)
+            self.bgBlackRadio.setEnabled(True)
+            self.bgCustomRadio.setEnabled(True)
+            self.bgColorButton.setEnabled(self.bgCustomRadio.isChecked())
+
+    def _chooseBackgroundColor(self):
+        from PySide6.QtWidgets import QColorDialog
+        color = QColorDialog.getColor()
+        if color.isValid():
+            self._backgroundColor = color.name()
+            self.bgColorButton.setStyleSheet(f"background-color: {self._backgroundColor}")
+
+    def _browse(self):
+        fdlg = QFileDialog(self, caption="Select or create an image file")
+        fdlg.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
+        suffix = self.FORMAT_SUFFIXES.get(self.formatCombo.currentText(), ".png")
+        fdlg.setDefaultSuffix(suffix.lstrip("."))
+        fdlg.setFileMode(QFileDialog.FileMode.AnyFile)
+        fdlg.setViewMode(QFileDialog.ViewMode.Detail)
+        fdlg.setNameFilter(";;".join(self.FORMAT_FILTERS))
+        currentFilter = self.formatCombo.currentText()
+        try:
+            fdlg.selectNameFilter(currentFilter)
+        except Exception:
+            pass
+        if fdlg.exec() == QDialog.DialogCode.Accepted:
+            selected = fdlg.selectedFiles()[0]
+            self.fileEdit.setText(selected)
+            chosenFilter = fdlg.selectedNameFilter()
+            if chosenFilter:
+                idx = self.formatCombo.findText(chosenFilter)
+                if idx >= 0:
+                    self.formatCombo.blockSignals(True)
+                    self.formatCombo.setCurrentIndex(idx)
+                    self.formatCombo.blockSignals(False)
+
+    def _validateAndAccept(self):
+        path = self.fileEdit.text().strip()
+        if not path:
+            QMessageBox.warning(self, "Export Image", "Please specify a file name.")
+            return
+        suffix = self.FORMAT_SUFFIXES.get(self.formatCombo.currentText(), "")
+        p = pathlib.Path(path)
+        if p.suffix.lower() != suffix:
+            p = p.with_suffix(suffix)
+        self._filePath = str(p)
+        self.accept()

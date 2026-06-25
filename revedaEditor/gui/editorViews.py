@@ -260,7 +260,48 @@ class editorView(QGraphicsView):
             case _:
                 super().keyPressEvent(event)
 
-    def printView(self, printer, sourceRect=None):
+    def _drawJunctionDots(self, painter, sourceRect, targetRect):
+        """Draw junction dots at points where 3+ nets meet."""
+        from collections import Counter
+        import revedaEditor.common.net as net
+        
+        # Get nets in source rect
+        netsInView = [
+            item
+            for item in self.scene().items(sourceRect)
+            if isinstance(item, net.schematicNet)
+        ]
+
+        if not netsInView:
+            return
+
+        # Collect and count endpoints in one pass
+        pointCounts = Counter()
+        for netItem in netsInView:
+            pointCounts.update(netItem.sceneEndPoints)
+
+        # Filter junction points (count >= 3) and draw
+        junctionPoints = [point for point, count in pointCounts.items() if
+                          count >= 3]
+
+        if junctionPoints:
+            # Calculate transform from scene to device coordinates
+            scaleX = targetRect.width() / sourceRect.width()
+            scaleY = targetRect.height() / sourceRect.height()
+            offsetX = targetRect.x() - sourceRect.x() * scaleX
+            offsetY = targetRect.y() - sourceRect.y() * scaleY
+            
+            painter.setPen(schlyr.wirePen)
+            painter.setBrush(schlyr.wireBrush)
+            # Scale dot radius by the transform
+            scaledRadius = self._dotRadius * min(scaleX, scaleY)
+            for point in junctionPoints:
+                # Transform point from scene to device coordinates
+                transformedX = point.x() * scaleX + offsetX
+                transformedY = point.y() * scaleY + offsetY
+                painter.drawEllipse(transformedX, transformedY, scaledRadius, scaledRadius)
+
+    def printView(self, printer, sourceRect=None, includeGrid=False, antialiasing="high"):
         """
         Print view using selected Printer.
 
@@ -268,6 +309,8 @@ class editorView(QGraphicsView):
             printer: The paint device (QPrinter, QSvgGenerator, QImage, etc.).
             sourceRect (QRectF, optional): The scene rectangle to render. If None,
                 the items bounding rect with margin is used automatically.
+            includeGrid: Whether to include grid in export.
+            antialiasing: "fast" or "high" quality antialiasing.
 
         This method prints the current view using the provided paint device. It first creates
         a QPainter object using the device. Then, it stores the original states of gridbackg
@@ -278,14 +321,22 @@ class editorView(QGraphicsView):
         originalGridbackg = self.gridbackg
         originalLinebackg = self.linebackg
 
-        # Set both to False for printing
-        self.gridbackg = False
+        # Set grid based on includeGrid setting
+        self.gridbackg = includeGrid
         self.linebackg = False
         self._transparent = True
         painter = QPainter(printer)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
-        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+        
+        # Set antialiasing based on setting
+        if antialiasing == "high":
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
+            painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+        else:
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+            painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, False)
+            painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, False)
+        
         targetRect = painter.viewport()
         if sourceRect is None:
             items_rect = self.scene().itemsBoundingRect()
@@ -295,6 +346,9 @@ class editorView(QGraphicsView):
             else:
                 sourceRect = self.sceneRect()
         self.scene().render(painter, targetRect, sourceRect)
+        # Draw junction dots for schematic views
+        if hasattr(self.viewScene, 'items'):
+            self._drawJunctionDots(painter, sourceRect, targetRect)
         # Restore original states
         self.gridbackg = originalGridbackg
         self.linebackg = originalLinebackg

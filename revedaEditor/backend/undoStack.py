@@ -266,6 +266,27 @@ class undoMoveByCommand(QUndoCommand):
             item.setPos(oldPos)
 
 
+class undoStretchShape(QUndoCommand):
+    """Undo command for stretching a shape in-place.
+
+    Captures old and new geometry snapshots from the item itself and
+    restores them on undo/redo without swapping item identity.
+    """
+    def __init__(self, scene, item, oldGeometry, newGeometry):
+        super().__init__()
+        self._scene = scene
+        self._item = item
+        self._oldGeometry = oldGeometry
+        self._newGeometry = newGeometry
+        self.setText("Stretch Shape")
+
+    def undo(self):
+        self._item.restoreGeometry(self._oldGeometry)
+
+    def redo(self):
+        self._item.restoreGeometry(self._newGeometry)
+
+
 class undoGroupMove(QUndoCommand):
     def __init__(self, scene, items: List, oldPosList: List[QPoint],
                  posDiff: QPoint):

@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import base64
 import os
 import pathlib
 import shutil
@@ -24,8 +25,8 @@ from contextlib import contextmanager
 from logging import getLogger
 from typing import TYPE_CHECKING, Optional
 
-from PySide6.QtCore import (Qt, QSize, QSizeF, QMarginsF, QRectF)
-from PySide6.QtGui import (QAction, QIcon, QImage, QKeySequence, QPageSize, QPainter)
+from PySide6.QtCore import (Qt, QSize, QSizeF, QMarginsF, QRectF, QBuffer, QIODevice)
+from PySide6.QtGui import (QAction, QIcon, QImage, QKeySequence, QPageSize, QPainter, QColor)
 from PySide6.QtPrintSupport import QPrintDialog, QPrinter, QPrintPreviewDialog
 from PySide6.QtSvg import QSvgGenerator
 from PySide6.QtWidgets import (QApplication, QDialog, QFileDialog, QGraphicsScene,
@@ -38,6 +39,7 @@ import revedaEditor.backend.libraryModelView as lmview
 import revedaEditor.backend.processManager as prm
 import revedaEditor.gui.alignItems as alg
 import revedaEditor.gui.helpBrowser as hlp
+import revedaEditor.gui.fileDialogues as fdlg
 import revedaEditor.gui.propertyDialogues as pdlg
 import revedaEditor.resources.resources  # noqa: F401
 from revedaEditor.backend.startThread import startThread
@@ -641,137 +643,377 @@ class editorWindow(QMainWindow):
         ppdlg.exec()
 
     def imageExportClick(self):
-        fdlg = QFileDialog(self, caption="Select or create an image file")
-        fdlg.setAcceptMode(QFileDialog.AcceptMode.AcceptSave)
-        fdlg.setDefaultSuffix("png")
-        fdlg.setFileMode(QFileDialog.FileMode.AnyFile)
-        fdlg.setViewMode(QFileDialog.ViewMode.Detail)
-        fdlg.setNameFilter("PNG Image (*.png);;JPEG Image (*.jpg *.jpeg);;BMP Image (*.bmp);;GIF Image (*.gif);;SVG Vector Graphic (*.svg);;EPS Vector Graphic (*.eps)")
-        if fdlg.exec() == QDialog.DialogCode.Accepted:
-            imageFile = fdlg.selectedFiles()[0]
+        dlg = fdlg.imageExportDialog(self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        imageFile = dlg.filePath
+        colorMode = dlg.colorMode
+        ext = pathlib.Path(imageFile).suffix.lower()
+        settings = {
+            'dpi': dlg.dpi,
+            'scale': dlg.scale,
+            'backgroundColor': dlg.backgroundColor,
+            'margin': dlg.margin,
+            'jpegQuality': dlg.jpegQuality,
+            'transparent': dlg.transparent,
+            'exportScope': dlg.exportScope,
+            'includeGrid': dlg.includeGrid,
+            'antialiasing': dlg.antialiasing,
+        }
+        if ext == ".svg":
+            self._exportSvg(imageFile, colorMode, settings)
+        elif ext == ".eps":
+            self._exportEps(imageFile, colorMode, settings)
+        elif ext == ".pdf":
+            self._exportPdf(imageFile, colorMode, settings)
+        else:
+            self._exportRaster(imageFile, colorMode, settings)
+
+    def _computeSourceRect(self, marginPercent: float = 5.0, exportScope: str = "items"):
+        """Return the scene rectangle (with margin) to export.
+        
+        Args:
+            marginPercent: Margin as percentage of min dimension (0-20)
+            exportScope: "items", "scene", "viewport", or "selected"
+        """
+        if exportScope == "viewport":
+            return self.centralW.view.mapToScene(self.centralW.view.viewport().rect()).boundingRect()
+        elif exportScope == "selected":
+            selected = self.centralW.scene.selectedItems()
+            if selected:
+                from PySide6.QtCore import QRectF
+                rect = QRectF()
+                for item in selected:
+                    rect |= item.sceneBoundingRect()
+                if not rect.isEmpty():
+                    margin = max(20.0, min(rect.width(), rect.height()) * marginPercent / 100)
+                    return rect.adjusted(-margin, -margin, margin, margin)
+            # Fall through to items if no selection
+        
+        if exportScope == "scene":
+            items_rect = self.centralW.view.sceneRect()
+        else:  # items (default)
+            items_rect = self.centralW.view.scene().itemsBoundingRect()
+            if items_rect.isEmpty():
+                items_rect = self.centralW.view.sceneRect()
+        
+        margin = max(20.0, min(items_rect.width(), items_rect.height()) * marginPercent / 100)
+        return items_rect.adjusted(-margin, -margin, margin, margin)
+
+    @staticmethod
+    def _computeDimensions(srcW: float, srcH: float, maxDim: int = 4000, scale: float = 1.0):
+        """Return ``(width, height, aspect)`` from source dimensions.
+        
+        Args:
+            srcW: Source width
+            srcH: Source height
+            maxDim: Maximum dimension in pixels
+            scale: Scale multiplier (0.5, 1, 2, 4)
+        """
+        if srcW <= 0:
+            srcW = 800
+        if srcH <= 0:
+            srcH = 600
+        aspect = srcW / srcH
+        baseDim = maxDim * scale
+        if srcW >= srcH:
+            width = int(baseDim)
+            height = int(baseDim / aspect)
+        else:
+            height = int(baseDim)
+            width = int(baseDim * aspect)
+        return width, height, aspect
+
+    def _renderToImage(self, sourceRect, maxDim: int = 4000, scale: float = 1.0, 
+                     backgroundColor: str = "white", transparent: bool = False,
+                     includeGrid: bool = False, antialiasing: str = "high") -> QImage:
+        """Render the scene to a high-resolution ``QImage``.
+        
+        Args:
+            sourceRect: Scene rectangle to render
+            maxDim: Maximum dimension in pixels
+            scale: Scale multiplier
+            backgroundColor: Background color name or hex
+            transparent: Use transparent background
+            includeGrid: Include grid in export
+            antialiasing: "fast" or "high"
+        """
+        width, height, _ = self._computeDimensions(
+            sourceRect.width(), sourceRect.height(), maxDim, scale
+        )
+        
+        if transparent:
+            image = QImage(QSize(width, height), QImage.Format_ARGB32_Premultiplied)
+            image.fill(Qt.GlobalColor.transparent)
+        else:
+            image = QImage(QSize(width, height), QImage.Format_ARGB32_Premultiplied)
+            image.fill(QColor(backgroundColor))
+        
+        self.centralW.view.printView(image, sourceRect, includeGrid, antialiasing)
+        return image
+
+    @staticmethod
+    def _applyColorMode(image: QImage, colorMode: str) -> QImage:
+        """Transform a rendered image according to *colorMode*.
+
+        ``"monochrome"`` – threshold to pure black & white.
+        ``"grayscale"``  – convert to 8-bit grayscale.
+        ``"fullColour"`` – no change.
+        """
+        if colorMode == "fullColour":
+            return image
+        w, h = image.width(), image.height()
+        ptr = image.bits()
+        arr = np.frombuffer(ptr, dtype=np.uint8).reshape(h, w, 4).copy()
+        if colorMode == "monochrome":
+            mask = (arr[:, :, :3] < 255).any(axis=2)
+            arr[mask] = [0, 0, 0, 255]
+            arr[~mask] = [255, 255, 255, 255]
+        elif colorMode == "grayscale":
+            r, g, b = arr[:, :, 0], arr[:, :, 1], arr[:, :, 2]
+            gray = (0.299 * r + 0.587 * g + 0.114 * b).astype(np.uint8)
+            arr[:, :, 0] = gray
+            arr[:, :, 1] = gray
+            arr[:, :, 2] = gray
+        result = QImage(arr.tobytes(), w, h, image.bytesPerLine(),
+                        QImage.Format_ARGB32_Premultiplied)
+        return result.copy()
+
+    def _exportRaster(self, imageFile: str, colorMode: str, settings: dict):
+        """Export to PNG / JPEG / BMP / GIF."""
+        from revedaEditor.backend.pdkLoader import importPDKModule
+        schlyr = importPDKModule("schLayers")
+        
+        # Temporarily change text pen to black for white background export
+        originalTextPen = schlyr.textPen.color()
+        originalSelectedTextPen = schlyr.selectedTextPen.color()
+        if not settings['transparent'] and settings['backgroundColor'] == 'white':
+            schlyr.textPen.setColor(QColor("black"))
+            schlyr.selectedTextPen.setColor(QColor("black"))
+        
+        try:
+            sourceRect = self._computeSourceRect(settings['margin'], settings['exportScope'])
+            image = self._renderToImage(
+                sourceRect, 
+                maxDim=4000,
+                scale=settings['scale'],
+                backgroundColor=settings['backgroundColor'],
+                transparent=settings['transparent'],
+                includeGrid=settings['includeGrid'],
+                antialiasing=settings['antialiasing']
+            )
+            image = self._applyColorMode(image, colorMode)
+            
+            # Apply JPEG quality if applicable
             ext = pathlib.Path(imageFile).suffix.lower()
-            if ext == ".svg":
-                items_rect = self.centralW.view.scene().itemsBoundingRect()
-                if items_rect.isEmpty():
-                    items_rect = self.centralW.view.sceneRect()
-                margin = max(20.0, min(items_rect.width(), items_rect.height()) * 0.05)
-                sourceRect = items_rect.adjusted(-margin, -margin, margin, margin)
-                # Normalize to a reasonable pixel size instead of using raw scene
-                # units (which can be 100k+ for layout scenes using dbu=1000).
-                maxDim = 4000
-                srcW = sourceRect.width()
-                srcH = sourceRect.height()
-                if srcW <= 0:
-                    srcW = 800
-                if srcH <= 0:
-                    srcH = 600
-                aspect = srcW / srcH
-                if srcW >= srcH:
-                    width = maxDim
-                    height = int(maxDim / aspect)
-                else:
-                    height = maxDim
-                    width = int(maxDim * aspect)
-                generator = QSvgGenerator()
-                generator.setFileName(imageFile)
-                generator.setResolution(72)
-                generator.setSize(QSize(width, height))
-                generator.setViewBox(sourceRect)
-                generator.setTitle("Revolution EDA Export")
-                self.centralW.view.printView(generator, sourceRect)
-            elif ext == ".eps":
-                if not shutil.which("pdftops"):
-                    QMessageBox.critical(self, "Export Error", "pdftops tool is required for EPS export but was not found in the system PATH.")
-                    return
-                monoChoice = QMessageBox.question(
-                    self,
-                    "EPS Export Mode",
-                    "Export as black and white?",
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                    QMessageBox.StandardButton.No,
-                )
-                monochrome = monoChoice == QMessageBox.StandardButton.Yes
-                temp_pdf_fd, temp_pdf_path = tempfile.mkstemp(suffix=".pdf")
-                os.close(temp_pdf_fd)
-                try:
-                    items_rect = self.centralW.view.scene().itemsBoundingRect()
-                    if items_rect.isEmpty():
-                        items_rect = self.centralW.view.sceneRect()
-                    margin = max(20.0, min(items_rect.width(), items_rect.height()) * 0.05)
-                    sourceRect = items_rect.adjusted(-margin, -margin, margin, margin)
-                    srcW = sourceRect.width()
-                    srcH = sourceRect.height()
-                    if srcW <= 0:
-                        srcW = 800
-                    if srcH <= 0:
-                        srcH = 600
-                    aspect = srcW / srcH
-                    maxPoints = 720.0
-                    if srcW >= srcH:
-                        width_points = maxPoints
-                        height_points = maxPoints / aspect
-                    else:
-                        height_points = maxPoints
-                        width_points = maxPoints * aspect
-                    page_size = QPageSize(QSizeF(width_points, height_points), QPageSize.Unit.Point)
-                    if monochrome:
-                        # Render to high-res QImage, threshold to B&W, then paint to PDF
-                        maxDim = 4000
-                        if srcW >= srcH:
-                            imgW = maxDim
-                            imgH = int(maxDim / aspect)
-                        else:
-                            imgH = maxDim
-                            imgW = int(maxDim * aspect)
-                        image = QImage(QSize(imgW, imgH), QImage.Format_ARGB32_Premultiplied)
-                        image.fill(Qt.GlobalColor.white)
-                        self.centralW.view.printView(image, sourceRect)
-                        # Threshold: any non-white pixel becomes black
-                        ptr = image.bits()
-                        ptr.setsize(image.sizeInBytes())
-                        arr = np.frombuffer(ptr, dtype=np.uint8).reshape(imgH, imgW, 4)
-                        mask = (arr[:, :, :3] < 255).any(axis=2)
-                        arr[mask] = [0, 0, 0, 255]
-                        arr[~mask] = [255, 255, 255, 255]
-                        # Paint monochrome image to PDF
-                        printer = QPrinter(QPrinter.PrinterMode.ScreenResolution)
-                        printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
-                        printer.setOutputFileName(temp_pdf_path)
-                        printer.setPageSize(page_size)
-                        printer.setPageMargins(QMarginsF(0, 0, 0, 0))
-                        painter = QPainter(printer)
-                        painter.drawImage(QRectF(0, 0, width_points, height_points), image)
-                        painter.end()
-                    else:
-                        printer = QPrinter(QPrinter.PrinterMode.ScreenResolution)
-                        printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
-                        printer.setOutputFileName(temp_pdf_path)
-                        printer.setPageSize(page_size)
-                        printer.setPageMargins(QMarginsF(0, 0, 0, 0))
-                        self.centralW.view.printView(printer, sourceRect)
-                    subprocess.run(["pdftops", "-eps", temp_pdf_path, imageFile], check=True)
-                except Exception as e:
-                    QMessageBox.critical(self, "Export Error", f"Failed to export to EPS: {str(e)}")
-                finally:
-                    if os.path.exists(temp_pdf_path):
-                        os.remove(temp_pdf_path)
+            if ext in ['.jpg', '.jpeg']:
+                image.save(imageFile, quality=settings['jpegQuality'])
             else:
-                items_rect = self.centralW.view.scene().itemsBoundingRect()
-                if items_rect.isEmpty():
-                    items_rect = self.centralW.view.sceneRect()
-                aspect_ratio = items_rect.width() / items_rect.height() if items_rect.height() > 0 else 1.0
-                target_width = max(2000, self.centralW.view.viewport().width())
-                target_height = int(target_width / aspect_ratio)
-                if target_height > 10000:
-                    target_height = 10000
-                    target_width = int(target_height * aspect_ratio)
-                elif target_width > 10000:
-                    target_width = 10000
-                    target_height = int(target_width / aspect_ratio)
-                image = QImage(QSize(target_width, target_height), QImage.Format_ARGB32_Premultiplied)
-                image.fill(Qt.GlobalColor.white)
-                self.centralW.view.printView(image)
                 image.save(imageFile)
+        finally:
+            # Restore original text pen colors
+            schlyr.textPen.setColor(originalTextPen)
+            schlyr.selectedTextPen.setColor(originalSelectedTextPen)
+
+    def _exportSvg(self, imageFile: str, colorMode: str, settings: dict):
+        """Export to SVG vector format."""
+        sourceRect = self._computeSourceRect(settings['margin'], settings['exportScope'])
+        if colorMode == "fullColour":
+            width, height, _ = self._computeDimensions(
+                sourceRect.width(), sourceRect.height(), scale=settings['scale']
+            )
+            generator = QSvgGenerator()
+            generator.setFileName(imageFile)
+            generator.setResolution(settings['dpi'])
+            generator.setSize(QSize(width, height))
+            generator.setViewBox(sourceRect)
+            generator.setTitle("Revolution EDA Export")
+            self.centralW.view.printView(generator, sourceRect, settings['includeGrid'], settings['antialiasing'])
+        else:
+            # For monochrome / grayscale, render to image, convert, then
+            # embed as a raster inside an SVG wrapper.
+            from revedaEditor.backend.pdkLoader import importPDKModule
+            schlyr = importPDKModule("schLayers")
+            originalTextPen = schlyr.textPen.color()
+            originalSelectedTextPen = schlyr.selectedTextPen.color()
+            if not settings['transparent'] and settings['backgroundColor'] == 'white':
+                schlyr.textPen.setColor(QColor("black"))
+                schlyr.selectedTextPen.setColor(QColor("black"))
+            
+            try:
+                image = self._renderToImage(
+                    sourceRect,
+                    scale=settings['scale'],
+                    backgroundColor=settings['backgroundColor'],
+                    transparent=settings['transparent'],
+                    includeGrid=settings['includeGrid'],
+                    antialiasing=settings['antialiasing']
+                )
+                image = self._applyColorMode(image, colorMode)
+            finally:
+                schlyr.textPen.setColor(originalTextPen)
+                schlyr.selectedTextPen.setColor(originalSelectedTextPen)
+            
+            buffer = QBuffer()
+            buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+            image.save(buffer, "PNG")
+            buffer.close()
+            b64 = base64.b64encode(buffer.data()).decode("ascii")
+            width, height, _ = self._computeDimensions(
+                sourceRect.width(), sourceRect.height(), scale=settings['scale']
+            )
+            svg = (
+                f'<?xml version="1.0" encoding="UTF-8"?>\n'
+                f'<svg xmlns="http://www.w3.org/2000/svg" '
+                f'xmlns:xlink="http://www.w3.org/1999/xlink" '
+                f'width="{width}" height="{height}" '
+                f'viewBox="0 0 {width} {height}">\n'
+                f'  <image width="{width}" height="{height}" '
+                f'xlink:href="data:image/png;base64,{b64}"/>\n'
+                f'</svg>\n'
+            )
+            with open(imageFile, "w", encoding="utf-8") as f:
+                f.write(svg)
+
+    def _exportPdf(self, imageFile: str, colorMode: str, settings: dict):
+        """Export to PDF."""
+        sourceRect = self._computeSourceRect(settings['margin'], settings['exportScope'])
+        srcW, srcH = sourceRect.width(), sourceRect.height()
+        if srcW <= 0:
+            srcW = 800
+        if srcH <= 0:
+            srcH = 600
+        aspect = srcW / srcH
+        maxPoints = 720.0
+        if srcW >= srcH:
+            width_points = maxPoints
+            height_points = maxPoints / aspect
+        else:
+            height_points = maxPoints
+            width_points = maxPoints * aspect
+        page_size = QPageSize(
+            QSizeF(width_points, height_points), QPageSize.Unit.Point
+        )
+        if colorMode == "fullColour":
+            printer = QPrinter(QPrinter.PrinterMode.ScreenResolution)
+            printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
+            printer.setOutputFileName(imageFile)
+            printer.setPageSize(page_size)
+            printer.setPageMargins(QMarginsF(0, 0, 0, 0))
+            self.centralW.view.printView(printer, sourceRect, settings['includeGrid'], settings['antialiasing'])
+        else:
+            from revedaEditor.backend.pdkLoader import importPDKModule
+            schlyr = importPDKModule("schLayers")
+            originalTextPen = schlyr.textPen.color()
+            originalSelectedTextPen = schlyr.selectedTextPen.color()
+            if not settings['transparent'] and settings['backgroundColor'] == 'white':
+                schlyr.textPen.setColor(QColor("black"))
+                schlyr.selectedTextPen.setColor(QColor("black"))
+            
+            try:
+                image = self._renderToImage(
+                    sourceRect,
+                    scale=settings['scale'],
+                    backgroundColor=settings['backgroundColor'],
+                    transparent=settings['transparent'],
+                    includeGrid=settings['includeGrid'],
+                    antialiasing=settings['antialiasing']
+                )
+                image = self._applyColorMode(image, colorMode)
+            finally:
+                schlyr.textPen.setColor(originalTextPen)
+                schlyr.selectedTextPen.setColor(originalSelectedTextPen)
+            
+            printer = QPrinter(QPrinter.PrinterMode.ScreenResolution)
+            printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
+            printer.setOutputFileName(imageFile)
+            printer.setPageSize(page_size)
+            printer.setPageMargins(QMarginsF(0, 0, 0, 0))
+            painter = QPainter(printer)
+            painter.drawImage(
+                QRectF(0, 0, width_points, height_points), image
+            )
+            painter.end()
+
+    def _exportEps(self, imageFile: str, colorMode: str, settings: dict):
+        """Export to EPS via pdftops."""
+        if not shutil.which("pdftops"):
+            QMessageBox.critical(
+                self,
+                "Export Error",
+                "pdftops tool is required for EPS export but was not found in the system PATH.",
+            )
+            return
+        temp_pdf_fd, temp_pdf_path = tempfile.mkstemp(suffix=".pdf")
+        os.close(temp_pdf_fd)
+        try:
+            sourceRect = self._computeSourceRect(settings['margin'], settings['exportScope'])
+            srcW, srcH = sourceRect.width(), sourceRect.height()
+            if srcW <= 0:
+                srcW = 800
+            if srcH <= 0:
+                srcH = 600
+            aspect = srcW / srcH
+            maxPoints = 720.0
+            if srcW >= srcH:
+                width_points = maxPoints
+                height_points = maxPoints / aspect
+            else:
+                height_points = maxPoints
+                width_points = maxPoints * aspect
+            page_size = QPageSize(
+                QSizeF(width_points, height_points), QPageSize.Unit.Point
+            )
+            if colorMode == "fullColour":
+                printer = QPrinter(QPrinter.PrinterMode.ScreenResolution)
+                printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
+                printer.setOutputFileName(temp_pdf_path)
+                printer.setPageSize(page_size)
+                printer.setPageMargins(QMarginsF(0, 0, 0, 0))
+                self.centralW.view.printView(printer, sourceRect, settings['includeGrid'], settings['antialiasing'])
+            else:
+                from revedaEditor.backend.pdkLoader import importPDKModule
+                schlyr = importPDKModule("schLayers")
+                originalTextPen = schlyr.textPen.color()
+                originalSelectedTextPen = schlyr.selectedTextPen.color()
+                if not settings['transparent'] and settings['backgroundColor'] == 'white':
+                    schlyr.textPen.setColor(QColor("black"))
+                    schlyr.selectedTextPen.setColor(QColor("black"))
+                
+                try:
+                    image = self._renderToImage(
+                        sourceRect,
+                        scale=settings['scale'],
+                        backgroundColor=settings['backgroundColor'],
+                        transparent=settings['transparent'],
+                        includeGrid=settings['includeGrid'],
+                        antialiasing=settings['antialiasing']
+                    )
+                    image = self._applyColorMode(image, colorMode)
+                finally:
+                    schlyr.textPen.setColor(originalTextPen)
+                    schlyr.selectedTextPen.setColor(originalSelectedTextPen)
+                
+                printer = QPrinter(QPrinter.PrinterMode.ScreenResolution)
+                printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
+                printer.setOutputFileName(temp_pdf_path)
+                printer.setPageSize(page_size)
+                printer.setPageMargins(QMarginsF(0, 0, 0, 0))
+                painter = QPainter(printer)
+                painter.drawImage(
+                    QRectF(0, 0, width_points, height_points), image
+                )
+                painter.end()
+            subprocess.run(
+                ["pdftops", "-eps", temp_pdf_path, imageFile], check=True
+            )
+        except Exception as e:
+            QMessageBox.critical(
+                self, "Export Error", f"Failed to export to EPS: {str(e)}"
+            )
+        finally:
+            if os.path.exists(temp_pdf_path):
+                os.remove(temp_pdf_path)
 
     def deleteClick(self, s):
         self.centralW.scene.editModes.setMode("deleteItem")

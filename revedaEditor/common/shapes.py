@@ -114,6 +114,14 @@ class symbolShape(QGraphicsItem):
             self._stretch = value
             self.update()
 
+    def captureGeometry(self):
+        """Capture current geometry for undo. Override in subclasses."""
+        raise NotImplementedError
+
+    def restoreGeometry(self, state):
+        """Restore geometry from captured state. Override in subclasses."""
+        raise NotImplementedError
+
     @property
     def draft(self) -> bool:
         return self._draft
@@ -342,11 +350,22 @@ class symbolRectangle(symbolShape):
         self.prepareGeometryChange()
         self._stretchSide = value
 
+    def captureGeometry(self):
+        return QRectF(self._rect)
+
+    def restoreGeometry(self, state):
+        self.prepareGeometryChange()
+        self._rect = QRectF(state)
+        self._start = self._rect.topLeft()
+        self._end = self._rect.bottomRight()
+        self.update()
+
     def mousePressEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         super().mousePressEvent(event)
         eventPos = event.pos().toPoint()
         if self._stretch:
             self.setFlag(QGraphicsItem.ItemIsMovable, False)
+            self._stretchOldGeometry = self.captureGeometry()
             if (
                     eventPos.x() == self._rect.left() and self._rect.top() <= eventPos.y() <= self._rect.bottom()):
                 self.setCursor(Qt.SizeHorCursor)
@@ -365,9 +384,11 @@ class symbolRectangle(symbolShape):
                 self._stretchSide = symbolRectangle.sides[3]
 
     def mouseMoveEvent(self, event: QGraphicsSceneMouseEvent) -> None:
-        eventPos = event.pos().toPoint()
         if self.stretch:
             self.prepareGeometryChange()
+            eventPos = event.scenePos().toPoint()
+            if self.scene():
+                eventPos = self.scene().snapToGrid(eventPos)
             if self.stretchSide == symbolRectangle.sides[0]:
                 self.setCursor(Qt.SizeHorCursor)
                 self.rect.setLeft(eventPos.x())
@@ -387,6 +408,15 @@ class symbolRectangle(symbolShape):
     def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         super().mouseReleaseEvent(event)
         if self.stretch:
+            newGeometry = self.captureGeometry()
+            if (hasattr(self, '_stretchOldGeometry') and
+                    newGeometry != self._stretchOldGeometry and
+                    self.scene()):
+                import revedaEditor.backend.undoStack as us
+                self.scene().undoStack.push(
+                    us.undoStretchShape(self.scene(), self,
+                                        self._stretchOldGeometry, newGeometry))
+                del self._stretchOldGeometry
             self._stretch = False
             self._stretchSide = None
             self.setCursor(Qt.ArrowCursor)
@@ -482,10 +512,24 @@ class symbolCircle(symbolShape):
             QRectF(self._topLeft, self._rightBottom).normalized().adjusted(-2, -2,
                                                                            2, 2))
 
+    def captureGeometry(self):
+        return (QPoint(self._centre), self._radius)
+
+    def restoreGeometry(self, state):
+        centre, radius = state
+        self.prepareGeometryChange()
+        self._centre = QPoint(centre)
+        self._radius = radius
+        self._topLeft = self._centre - QPoint(self._radius, self._radius)
+        self._rightBottom = self._centre + QPoint(self._radius, self._radius)
+        self._end = self._centre + QPoint(self._radius, 0)
+        self.update()
+
     def mousePressEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         super().mousePressEvent(event)
         if self.isSelected() and self._stretch:
             self.setFlag(QGraphicsItem.ItemIsMovable, False)
+            self._stretchOldGeometry = self.captureGeometry()
             eventPos = event.pos().toPoint()
             distance = math.sqrt((eventPos.x() - self._centre.x()) ** 2 + (
                     eventPos.y() - self._centre.y()) ** 2)
@@ -515,9 +559,16 @@ class symbolCircle(symbolShape):
         super().mouseReleaseEvent(event)
         if self._startStretch:
             self._startStretch = False
-            # self._topLeft = self._centre - QPoint(self._radius, self._radius)
-            # self._rightBottom = self._centre + QPoint(self._radius, self._radius)
-            # self._end = self._centre + QPoint(self._radius, 0)
+            self._stretch = False
+            newGeometry = self.captureGeometry()
+            if (hasattr(self, '_stretchOldGeometry') and
+                    newGeometry != self._stretchOldGeometry and
+                    self.scene()):
+                import revedaEditor.backend.undoStack as us
+                self.scene().undoStack.push(
+                    us.undoStretchShape(self.scene(), self,
+                                        self._stretchOldGeometry, newGeometry))
+                del self._stretchOldGeometry
             self.setCursor(Qt.ArrowCursor)
 
     def calculateRadius(self, distance):
@@ -689,11 +740,27 @@ class symbolArc(symbolShape):
         self.prepareGeometryChange()
         self.rect.setHeight(self._height)
 
+    def captureGeometry(self):
+        return (QRectF(self._rect), self._arcType, QPoint(self._start), QPoint(self._end))
+
+    def restoreGeometry(self, state):
+        rect, arcType, start, end = state
+        self.prepareGeometryChange()
+        self._rect = QRectF(rect)
+        self._arcType = arcType
+        self._start = QPoint(start)
+        self._end = QPoint(end)
+        self._arcLine = QLineF(self._start, self._end)
+        self._arcAngle = self._arcLine.angle()
+        self._findAngle()
+        self.update()
+
     def mousePressEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         super().mousePressEvent(event)
         eventPos = event.pos().toPoint()
         if self._stretch:
             self.setFlag(QGraphicsItem.ItemIsMovable, False)
+            self._stretchOldGeometry = self.captureGeometry()
             _T = 5  # hit tolerance in pixels
             if (abs(eventPos.x() - self._rect.left()) <= _T and
                     self._rect.top() - _T <= eventPos.y() <= self._rect.bottom() + _T):
@@ -714,9 +781,11 @@ class symbolArc(symbolShape):
 
     def mouseMoveEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         super().mouseMoveEvent(event)
-        eventPos = event.pos().toPoint()
         if self._stretch and self._stretchSide is not None:
             self.prepareGeometryChange()
+            eventPos = event.scenePos().toPoint()
+            if self.scene():
+                eventPos = self.scene().snapToGrid(eventPos)
             rect = QRectF(self._rect)
             if self._stretchSide == symbolArc.sides[0]:
                 self.setCursor(Qt.CursorShape.SizeHorCursor)
@@ -774,6 +843,15 @@ class symbolArc(symbolShape):
     def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         super().mouseReleaseEvent(event)
         if self.stretch:
+            newGeometry = self.captureGeometry()
+            if (hasattr(self, '_stretchOldGeometry') and
+                    newGeometry != self._stretchOldGeometry and
+                    self.scene()):
+                import revedaEditor.backend.undoStack as us
+                self.scene().undoStack.push(
+                    us.undoStretchShape(self.scene(), self,
+                                        self._stretchOldGeometry, newGeometry))
+                del self._stretchOldGeometry
             self._stretch = False
             self._stretchSide = None
             self.setCursor(Qt.CursorShape.ArrowCursor)
@@ -861,10 +939,22 @@ class symbolLine(symbolShape):
         dy = self.start.y() - self._end.y()
         return math.hypot(dx, dy)
 
+    def captureGeometry(self):
+        return (QPoint(self._start), QPoint(self._end))
+
+    def restoreGeometry(self, state):
+        start, end = state
+        self.prepareGeometryChange()
+        self._start = QPoint(start)
+        self._end = QPoint(end)
+        self._updateGeometry()
+        self.update()
+
     def mousePressEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         super().mousePressEvent(event)
         if self.isSelected() and self._stretch:
             self.setFlag(QGraphicsItem.ItemIsMovable, False)
+            self._stretchOldGeometry = self.captureGeometry()
             eventPos = event.pos().toPoint()
             # Check if click is near start or end point
             if (eventPos - self._start).manhattanLength() <= self._ELLIPSE_SIZE:
@@ -877,7 +967,9 @@ class symbolLine(symbolShape):
     def mouseMoveEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         if self._stretchSide:
             self.prepareGeometryChange()
-            eventPos = event.pos().toPoint()
+            eventPos = event.scenePos().toPoint()
+            if self.scene():
+                eventPos = self.scene().snapToGrid(eventPos)
 
             if self._stretchSide == "start":
                 self._start = eventPos
@@ -889,6 +981,17 @@ class symbolLine(symbolShape):
             super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent) -> None:
+        if self._stretchSide:
+            newGeometry = self.captureGeometry()
+            if (hasattr(self, '_stretchOldGeometry') and
+                    newGeometry != self._stretchOldGeometry and
+                    self.scene()):
+                import revedaEditor.backend.undoStack as us
+                self.scene().undoStack.push(
+                    us.undoStretchShape(self.scene(), self,
+                                        self._stretchOldGeometry, newGeometry))
+                del self._stretchOldGeometry
+            self._stretch = False
         self._stretchSide = None
         super().mouseReleaseEvent(event)
 
