@@ -170,7 +170,7 @@ class MainWindow(QMainWindow):
             revedaPdkPathObj = getattr(self._app, "revedaPdkPathObj", None)
             if revedaPdkPathObj is not None:
                 self.pdkPath = revedaPdkPathObj
-            self.outputPrefixPath = self.runPath.parent / self.PATHS["testbenches"]
+            self.outputPrefixPath = self.runPath / self.PATHS["testbenches"]
             self.libraryPathObj = self.runPath / self.PATHS["library"]
             self.confFilePath = self.runPath / self.PATHS["config"]
             revedaPluginPathObj = getattr(self._app, "revedaPluginPathObj", None)

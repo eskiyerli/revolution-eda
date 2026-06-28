@@ -257,7 +257,7 @@ def createVaSymbol(
                 f"{key}={value}" for key, value in importedVaObj.modelParams.items()
             )
             vacaskModelLine = (
-                f"model {importedVaObj.vaModule}Model {importedVaObj.vaModule}"
+                f"model {importedVaObj.vaModule} {importedVaObj.vaModule}"
                 + (f" {modelParamsString}" if modelParamsString else "")
             )
             symbolScene.attributeList.append(

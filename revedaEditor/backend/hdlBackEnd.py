@@ -175,9 +175,9 @@ class verilogaC:
             f"{key}=@{key}" for key in self.instanceParams
         )
 
-        # VACASK netlist line: @instName (%pinOrder) {vaModule}Model w=@w l=@l
+        # VACASK netlist line: @instName (%pinOrder) {vaModule} w=@w l=@l
         self._netlistLine = (
-            f"@instName (%pinOrder) {self._vaModule}Model"
+            f"@instName (%pinOrder) {self._vaModule}"
             + (f" {instParamRefs}" if instParamRefs else "")
         )
 
