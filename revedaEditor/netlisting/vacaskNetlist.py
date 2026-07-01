@@ -296,7 +296,7 @@ class vacaskNetlist:
                             subcktContent: list[str] = []
                             self.collectSubcircuitContent(schematicObj, subcktContent)
                             subcktDef = (
-                                f"subckt {schematicObj.cellName} {expandedPinsString}\n"
+                                f"subckt {schematicObj.cellName} ( {expandedPinsString} ) \n"
                                 + "\n".join(subcktContent)
                                 + f"\nends {schematicObj.cellName}\n"
                             )
@@ -342,7 +342,7 @@ class vacaskNetlist:
             subcktContent: list[str] = []
             self.collectSubcircuitContent(schematicEdObj, subcktContent)
             subcktDef = (
-                f"\nsubckt {schematicEdObj.cellName} {expandedPinsString}\n"
+                f"\nsubckt {schematicEdObj.cellName} ( {expandedPinsString} ) \n"
                 + "\n".join(subcktContent)
                 + f"\nends {schematicEdObj.cellName}\n"
             )
@@ -565,7 +565,7 @@ class vacaskNetlist:
                     subcktContent: list[str] = []
                     self.collectSubcircuitContent(schematicObj, subcktContent)
                     subcktDef = (
-                        f"\nsubckt {schematicObj.cellName} {expandedPinsString}\n"
+                        f"\nsubckt {schematicObj.cellName} ( {expandedPinsString} )\n"
                         + "\n".join(subcktContent)
                         + f"\nends {schematicObj.cellName}\n"
                     )
@@ -778,7 +778,7 @@ class vacaskNetlist:
             return spiceLines
         except Exception as e:
             self._scene.logger.error(
-                f"Spice subckt netlist error for {elementSymbol.instanceName}: {e}"
+                f"Vacask subckt netlist error for {elementSymbol.instanceName}: {e}"
             )
             return [
                 f"// Netlist line is not defined for symbol of {elementSymbol.instanceName}"

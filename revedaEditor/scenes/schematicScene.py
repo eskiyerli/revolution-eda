@@ -136,6 +136,10 @@ class schematicScene(editorScene):
         # Initialize cache
         self._symbolCache = FileCache()
 
+        # Connect to main window's symbol changed signal
+        if self.appMainW:
+            self.appMainW.symbolChanged.connect(self._handleSymbolChanged)
+
     def _initializeFont(self):
         """Initialize fixed-width font settings."""
         fontFamilies = QFontDatabase.families(QFontDatabase.WritingSystem.Latin)
@@ -742,6 +746,18 @@ class schematicScene(editorScene):
                     furthest_points = (points[i], points[j])
 
         return furthest_points[0], furthest_points[1]
+
+    @Slot(str, str, str)
+    def _handleSymbolChanged(self, libName: str, cellName: str, viewName: str):
+        """Reload symbol instances when their definition changes."""
+        from revedaEditor.fileio.loadJSON import clear_symbol_cache
+        clear_symbol_cache()
+        for item in self.items():
+            if isinstance(item, shp.schematicSymbol):
+                if (item.libraryName == libName and
+                    item.cellName == cellName and
+                    item.viewName == viewName):
+                    item.reload()
 
     def _findNearestEndpoint(
         self, mousePos: QPoint

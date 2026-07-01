@@ -112,6 +112,7 @@ class MainWindow(QMainWindow):
     # Signal definitions
     sceneSelectionChanged = Signal(QGraphicsScene)
     keyPressedView = Signal(int)
+    symbolChanged = Signal(str, str, str)  # lib, cell, view
 
     def __init__(self) -> None:
         """Initialize the main application window."""

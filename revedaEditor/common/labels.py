@@ -205,8 +205,8 @@ class symbolLabel(QGraphicsSimpleTextItem):
     @labelValue.setter
     def labelValue(self, labelValue):
         self._labelValue = labelValue
-        # if label value is set.
         self.labelDefs()
+        self._updateVisibility()
 
     @property
     def labelText(self):
@@ -298,12 +298,8 @@ class symbolLabel(QGraphicsSimpleTextItem):
     @labelVisible.setter
     def labelVisible(self, value: bool):
         assert isinstance(value, bool)
-        if value:
-            self.setOpacity(1)
-            self._labelVisible = True
-        else:
-            self.setOpacity(0.001)
-            self._labelVisible = False
+        self._labelVisible = value
+        self._updateVisibility()
 
     @property
     def flipTuple(self):
@@ -321,6 +317,16 @@ class symbolLabel(QGraphicsSimpleTextItem):
         # Set the new transformation
         self.setTransform(transform)
         self._flipTuple = (transform.m11(), transform.m22())
+
+    def _updateVisibility(self):
+        """A label is only visible if its visibility flag is set and it either has a value or is a predefined label."""
+        isPredefined = self._labelDefinition in symbolLabel.predefinedLabels
+        hasValue = self._labelValue not in (None, "", "?")
+
+        if self._labelVisible and (hasValue or isPredefined):
+            self.setOpacity(1)
+        else:
+            self.setOpacity(0.001)  # Effectively invisible but still technically present
 
     def labelDefs(self):
         """

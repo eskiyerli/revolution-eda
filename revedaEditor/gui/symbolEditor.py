@@ -252,6 +252,7 @@ class symbolEditor(edw.editorWindow):
                 self.parentEditor.centralW.scene.reloadScene()
             cellViewNameTuple = ddef.viewNameTuple(self.libName, self.cellName,
                                                    self.viewName)
+            self.appMainW.symbolChanged.emit(self.libName, self.cellName, self.viewName)
             self.appMainW.openViews.pop(cellViewNameTuple, None)
         except Exception as e:
             self.appMainW.logger.error(

@@ -36,6 +36,10 @@ laylyr = importPDKModule('layoutLayers')
 pcells = importPDKModule('pcells')
 fabproc = importPDKModule('process')
 
+def clear_symbol_cache():
+    """Clear the symbol JSON loading cache."""
+    schematicItems._load_sym_json.cache_clear()
+
 
 class symbolItems:
     def __init__(self, scene: QGraphicsScene):
@@ -151,6 +155,7 @@ class symbolItems:
         label.labelText = item["txt"]
         label.labelVisible = item["vis"]
         label.labelValue = item["val"]
+        label._updateVisibility()  # Ensure visibility is set after all properties are loaded
         return label
 
     @staticmethod
@@ -342,11 +347,13 @@ class schematicItems:
                                     labelItem.labelName
                                 ][0]
                             )
-                            labelItem.labelVisible = (
-                                labelDict[
-                                    labelItem.labelName
-                                ][1]
-                            )
+                            # Only override visibility if it's explicitly in the schematic's label dict
+                            if len(labelDict[labelItem.labelName]) > 1:
+                                labelItem.labelVisible = (
+                                    labelDict[
+                                        labelItem.labelName
+                                    ][1]
+                                )
                     symbolInstance.symattrs = symbolAttributes
                     [
                         labelItem.labelDefs()

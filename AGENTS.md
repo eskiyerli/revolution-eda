@@ -53,4 +53,4 @@
 - Symbol instances tolerate missing libraries by creating a draft placeholder (`loadJSON.py:createDraftSymbol()`); avoid turning unresolved references into hard crashes.
 - Many UI extensions are convention-based: menus are injected by config, PDK modules are imported by fixed filenames, and callbacks are found by symbol/cell names. Renames across those boundaries break runtime discovery.
 - If you need representative examples, use `defaultPDK/` for minimal built-in behavior, and `plugins/aiTerminal`, `plugins/revedasim`, and `plugins/revedaPlot` for plugin patterns. External PDKs (`ihp_pdk/`, `gf180_pdk/`) are in separate repos but follow the same conventions.
-
+- Use camelCase convention in class, method and variable names.

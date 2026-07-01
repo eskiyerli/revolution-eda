@@ -494,13 +494,10 @@ class revedaApp(QApplication):
         self.logger = logging.getLogger("reveda")
         self.logger.setLevel(logging.INFO)
 
-        # Use a platform-specific, user-writable directory for logs.
-        # This avoids permission errors when running from read-only locations.
-        log_dir = Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppDataLocation)) / "RevolutionEDA"
-        log_file_path = log_dir / "reveda.log"
-
+        # Use the project directory for logs, falling back to a central
+        # user directory if the project directory is not writable.
+        log_file_path = self._projectDir / "reveda.log"
         try:
-            log_dir.mkdir(parents=True, exist_ok=True)
             handler = logging.FileHandler(log_file_path)
             handler.setLevel(logging.INFO)
             handler.setFormatter(

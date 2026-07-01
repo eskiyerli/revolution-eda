@@ -298,15 +298,12 @@ class schematicEditor(edw.editorWindow):
             self.centralW.scene.reapplyProbesAfterReload()
         if self.parentEditor:
             self.parentEditor.centralW.scene.reloadScene()
-            parentScene = self.parentEditor.centralW.scene
-            if hasattr(parentScene, 'reapplyProbesAfterReload'):
-                parentScene.reapplyProbesAfterReload()
+            self.parentEditor.centralW.scene.reapplyProbesAfterReload()
 
     def saveCell(self):
         self.centralW.scene.saveSchematic(self.file)
         self.centralW.scene.reloadScene()
-        if hasattr(self.centralW.scene, 'reapplyProbesAfterReload'):
-            self.centralW.scene.reapplyProbesAfterReload()
+        self.centralW.scene.reapplyProbesAfterReload()
 
     def loadSchematic(self):
         try:
@@ -657,6 +654,7 @@ class schematicEditor(edw.editorWindow):
             symenc.symbolAttribute("SpiceNetlistLine", "X@instName %pinOrder @cellName"),
             symenc.symbolAttribute("SpectreNetlistLine",
                                    "X@instName  ( %pinOrder ) @cellName"),
+            symenc.symbolAttribute("VacaskNetlistLine", "@instName ( %pinOrder ) @cellName"),
             symenc.symbolAttribute("lvsNetlistLine", "X@instName %pinOrder @cellName"),
             symenc.symbolAttribute("pinOrder", ", ".join(all_pin_names))]
 
