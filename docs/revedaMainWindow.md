@@ -357,7 +357,6 @@ This is where you configure application-level paths and defaults such as:
 - PDK path
 - simulation output path
 - plugins path
-- Verilog-A module path
 - switch view list
 - stop view list
 - thread-pool size
@@ -367,10 +366,9 @@ as:
 
 - `REVEDA_PDK_PATH`
 - `REVEDA_PLUGIN_PATH`
-- `REVEDA_VA_MODULE_PATH`
 
 Changes made in the Options dialog can be persisted to `reveda.conf` by checking the save
-checkbox. Additionally, when PDK, plugin, or VA module paths are updated, they are
+checkbox. Additionally, when PDK or plugin paths are updated, they are
 automatically written back to the project's `.env` file.
 
 <img src="assets/optionsDialogue.png" alt="Revolution EDA options dialog" class="image fit">

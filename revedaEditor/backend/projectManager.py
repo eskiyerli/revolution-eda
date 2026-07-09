@@ -237,7 +237,7 @@ class ProjectManager:
             self._copy_env_template(project_dir)
         if env_file.exists():
             # Clear project-specific environment variables to prevent leakage of base/global defaults
-            for var in ["REVEDA_PDK_PATH", "REVEDA_PLUGIN_PATH", "REVEDA_VA_MODULE_PATH"]:
+            for var in ["REVEDA_PDK_PATH", "REVEDA_PLUGIN_PATH"]:
                 os.environ.pop(var, None)
             load_dotenv(env_file, override=True)
 

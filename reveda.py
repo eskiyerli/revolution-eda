@@ -635,20 +635,6 @@ class revedaApp(QApplication):
             self.update_env_file("REVEDA_PLUGIN_PATH", str(self.revedaPluginPathObj))
             self.logger.info(f"Plugin path updated to: {self.revedaPluginPathObj}")
 
-    def updateVaModulesPath(self, newPath: str):
-        """Update plugin path and persist to .env file"""
-        if newPath:
-            # Update environment variable
-            os.environ["REVEDA_VA_MODULE_PATH"] = str(Path(newPath).resolve())
-
-            # Persist to .env file
-            self.update_env_file(
-                "REVEDA_VA_MODULE_PATH", os.environ["REVEDA_VA_MODULE_PATH"]
-            )
-            self.logger.info(
-                f"Central Verilog-A module repository path: {os.environ['REVEDA_VA_MODULE_PATH']}"
-            )
-
     def update_env_file(self, key, value):
         """Update or add environment variable in .env file"""
         env_file = self._projectDir / ".env"

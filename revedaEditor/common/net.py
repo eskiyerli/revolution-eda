@@ -274,9 +274,10 @@ class schematicNet(QGraphicsItem):
 
     def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         self.setSelected(False)
-        if self.scene().editModes.moveItem:
+        scene = self.scene()
+        if scene is not None and scene.editModes.moveItem:
             self.setFlag(QGraphicsItem.ItemIsMovable, False)
-            self.scene().wireEditFinished.emit(self)
+            scene.wireEditFinished.emit(self)
         super().mouseReleaseEvent(event)
 
     def generateEndPointNetDict(self):

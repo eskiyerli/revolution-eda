@@ -669,9 +669,12 @@ class layoutInstance(layoutShape):
         """
         Do not propagate event if shape needs to keep still.
         """
+        scene = self.scene()
+        if scene is None:
+            return False
         if not (
-                self.scene().selectModes.selectInstance
-                or self.scene().selectModes.selectAll
+                scene.selectModes.selectInstance
+                or scene.selectModes.selectAll
         ):
             return False
         else:

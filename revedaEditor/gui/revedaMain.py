@@ -87,6 +87,7 @@ class mainwContainer(QWidget):
         self.console.writeoutput(
             "Mozilla Public License v2.0"
         )
+        self.console.writeoutput("Check https://reveda.eu/plugins for plugins")
         # layout statements, using a grid layout
         gLayout = QVBoxLayout()
         gLayout.setSpacing(10)
@@ -384,7 +385,6 @@ class MainWindow(QMainWindow):
             "simInpPathEdit": str(self.pdkPath),
             "simOutPathEdit": str(self.outputPrefixPath),
             "pluginsPathEdit": self.pluginsPath,
-            "vaModulePathEdit": os.getenv("REVEDA_VA_MODULE_PATH", str(self.pdkPath)),
             "switchViewsEdit": ", ".join(self.switchViewList),
             "stopViewsEdit": ", ".join(self.stopViewList),
             "threadPoolEdit": str(self.threadPool.maxThreadCount()),
@@ -401,7 +401,6 @@ class MainWindow(QMainWindow):
                 "simInpPathEdit": dlg.simInpPathEdit.text(),
                 "simOutPathEdit": dlg.simOutPathEdit.text(),
                 "pluginsPathEdit": dlg.pluginsPathEdit.text(),
-                "vaModulePathEdit": dlg.vaModulePathEdit.text(),
                 "switchViewsEdit": dlg.switchViewsEdit.text(),
                 "stopViewsEdit": dlg.stopViewsEdit.text(),
                 "threadPoolEdit": dlg.threadPoolEdit.text(),
@@ -415,7 +414,6 @@ class MainWindow(QMainWindow):
 
             self.app.updatePDKPath(self.pdkPath)
             self.app.updatePluginsPath(text_values["pluginsPathEdit"])
-            self.app.updateVaModulesPath(text_values["vaModulePathEdit"])
 
             # Process lists in a more compact way
             self.switchViewList = [

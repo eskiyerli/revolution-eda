@@ -1513,7 +1513,10 @@ class schematicSymbol(symbolShape):
         self.setFlag(QGraphicsItem.ItemContainsChildrenInShape, True)
 
     def sceneEvent(self, event) -> bool:
-        if not (self.scene().selectModes.selectDevice or self.scene().selectModes.selectAll):
+        scene = self.scene()
+        if scene is None:
+            return False
+        if not (scene.selectModes.selectDevice or scene.selectModes.selectAll):
             return False
         return super().sceneEvent(event)
 
@@ -1847,6 +1850,104 @@ class schematicSymbol(symbolShape):
         for label in self.labels.values():
             label.setTransform(inverseTransform)
 
+    def reload(self):
+        """Reload the symbol definition from disk, preserving instance state.
+
+        Called when the underlying symbol view file has changed and this instance
+        needs to reflect the updated shapes/pins/labels.
+        """
+        scene = self.scene()
+        if scene is None:
+            return
+
+        libraryDict = scene.libraryDict
+        libraryPath = libraryDict.get(self._libraryName)
+        if libraryPath is None:
+            return
+
+        file = libraryPath.joinpath(self._cellName, f'{self._viewName}.json')
+        if not file.exists():
+            return
+
+        try:
+            import orjson
+            with open(file, "rb") as f:
+                jsonItems = orjson.loads(f.read())
+        except (Exception,):
+            return
+
+        if not jsonItems or len(jsonItems) < 3:
+            return
+
+        # Preserve instance-specific state
+        savedPos = self.pos()
+        savedAngle = self._angle
+        savedFlip = self._flipTuple
+        savedCounter = self._counter
+        savedInstanceName = self._instanceName
+        savedNetlistIgnore = self._netlistIgnore
+        savedNetlistLine = self._netlistLine
+        # Save current label values and visibility
+        savedLabelDict = {}
+        for labelName, labelItem in self._labels.items():
+            savedLabelDict[labelName] = (
+                labelItem.labelValue,
+                labelItem.labelVisible,
+            )
+
+        # Remove existing child items (shapes, labels, pins)
+        self.prepareGeometryChange()
+        for child in list(self.childItems()):
+            child.setParentItem(None)
+            if child.scene():
+                child.scene().removeItem(child)
+
+        # Reset internal collections
+        self._shapes = []
+        self._labels = {}
+        self._pins = {}
+        # Clear cached pins property so it rebuilds
+        if "pins" in self.__dict__:
+            del self.__dict__["pins"]
+
+        # Rebuild shapes from JSON
+        from revedaEditor.fileio.loadJSON import symbolItems
+        symbolAttributes = {}
+        itemShapes = []
+        symbolShape = symbolItems(scene)
+        for jsonItem in jsonItems[2:]:  # skip first two entries
+            if jsonItem.get("type") == "attr":
+                symbolAttributes[jsonItem["nam"]] = jsonItem["def"]
+            else:
+                shape = symbolShape.create(jsonItem)
+                if shape is not None:
+                    itemShapes.append(shape)
+
+        # Apply new shapes (this also sets up pins and labels via addShapes)
+        self._symattrs = symbolAttributes
+        self.shapes = itemShapes
+
+        # Restore label values from saved state
+        for labelName, labelItem in self._labels.items():
+            if labelName in savedLabelDict:
+                labelItem.labelValue = savedLabelDict[labelName][0]
+                labelItem.labelVisible = savedLabelDict[labelName][1]
+
+        # Re-run label definitions
+        for labelItem in self._labels.values():
+            labelItem.labelDefs()
+
+        # Restore instance state
+        self.setPos(savedPos)
+        self._angle = 0
+        self._flipTuple = (1, 1)
+        self.setTransform(QTransform())
+        self.angle = savedAngle
+        self.flipTuple = savedFlip
+
+        self._start = self.childrenBoundingRect().bottomLeft()
+        self.update()
+
     @property
     def start(self):
         return self._start.toPoint()
@@ -1918,7 +2019,10 @@ class schematicPin(symbolShape):
                 f"{self._pinType})")
 
     def sceneEvent(self, event) -> bool:
-        if not (self.scene().selectModes.selectPin or self.scene().selectModes.selectAll):
+        scene = self.scene()
+        if scene is None:
+            return False
+        if not (scene.selectModes.selectPin or scene.selectModes.selectAll):
             return False
         return super().sceneEvent(event)
 
