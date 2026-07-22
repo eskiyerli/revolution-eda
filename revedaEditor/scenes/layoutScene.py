@@ -13,7 +13,7 @@ import inspect
 import json
 import pathlib
 # import time
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Union, Optional
 
 import orjson
 from PySide6.QtCore import QLineF, QPoint, QPointF, QRectF, Qt, Signal
@@ -66,6 +66,7 @@ class layoutScene(editorScene):
         lshp.layoutViaArray,
         lshp.layoutInstance,
         lshp.layoutPcell,
+        lshp.layoutRuler,
     )
     alignLineFinished = Signal(lshp.alignLine)
 
@@ -349,19 +350,71 @@ class layoutScene(editorScene):
         )
         self.addUndoStack(self.arrayVia)
 
+    def snapToClosestEdge(
+        self,
+        point,
+        ruler: Optional[lshp.layoutRuler] = None,
+        snapScreenPx: float = 20.0,
+    ) -> QPointF:
+        pointF = QPointF(point)
+        # Convert screen-pixel snap radius to scene units using current view scale
+        views = self.views()
+        if views:
+            scale = views[0].transform().m11()
+            if scale > 0:
+                maxDistance = snapScreenPx / scale
+            else:
+                maxDistance = snapScreenPx
+        else:
+            maxDistance = snapScreenPx
+
+        if ruler is not None:
+            snapped = ruler.snapPointToClosestEdge(pointF, maxDistance)
+            if snapped != pointF:
+                return snapped
+        searchRect = QRectF(
+            pointF.x() - maxDistance,
+            pointF.y() - maxDistance,
+            2 * maxDistance,
+            2 * maxDistance,
+        )
+        items = self.items(searchRect)
+        bestDist = maxDistance
+        closestPoint = pointF
+        for item in items:
+            if isinstance(item, lshp.layoutRuler) or item is ruler:
+                continue
+            edges = lshp.layoutRuler._extractItemEdges(item)
+            for p1, p2 in edges:
+                ptOnEdge = lshp.layoutRuler._closestPointOnSegment(pointF, p1, p2)
+                dist = QLineF(pointF, ptOnEdge).length()
+                if dist < bestDist:
+                    bestDist = dist
+                    closestPoint = ptOnEdge
+        return closestPoint
+
     def drawLayoutRuler(self):
         if self._newRuler:
+            # Snap the endpoint before finalizing
+            endPt = self.snapToClosestEdge(
+                self.mouseReleaseLoc, ruler=self._newRuler
+            )
+            self._newRuler.draftLine = QLineF(
+                self._newRuler.draftLine.p1(), endPt
+            )
             if self._newRuler.draftLine.isNull():
                 self.undoStack.removeLastCommand()
             self._newRuler = None
-        self._newRuler = lshp.layoutRuler(
-            QLineF(self.mouseReleaseLoc, self.mouseReleaseLoc),
-            width=self.rulerWidth,
-            tickGap=self.rulerTickGap,
-            tickLength=self.rulerTickLength,
-            tickFont=self.rulerFont,
-        )
-        self.addUndoStack(self._newRuler)
+        else:
+            startPt = self.snapToClosestEdge(self.mouseReleaseLoc)
+            self._newRuler = lshp.layoutRuler(
+                QLineF(startPt, startPt),
+                width=self.rulerWidth,
+                tickGap=self.rulerTickGap,
+                tickLength=self.rulerTickLength,
+                tickFont=self.rulerFont,
+            )
+            self.addUndoStack(self._newRuler)
 
     def finishCutLine(self):
         if self._newCutLine is None:

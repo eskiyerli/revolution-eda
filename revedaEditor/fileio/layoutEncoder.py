@@ -40,6 +40,8 @@ class layoutEncoder(json.JSONEncoder):
             return self._encodeLayoutLabel(item)
         elif isinstance(item, lshp.layoutPolygon):
             return self._encodeLayoutPolygon(item)
+        elif isinstance(item, lshp.layoutRuler):
+            return self._encodeLayoutRuler(item)
 
         return super().default(item)
 
@@ -135,6 +137,15 @@ class layoutEncoder(json.JSONEncoder):
             "ln": laylyr.pdkAllLayers.index(item.layer),
             "ang": item.angle,
             "fl": item.flipTuple,
+        }
+
+    def _encodeLayoutRuler(self, item: lshp.layoutRuler) -> Dict[str, Any]:
+        return {
+            "type": "Ruler",
+            "dfl1": item.mapToScene(item.draftLine.p1()).toTuple(),
+            "dfl2": item.mapToScene(item.draftLine.p2()).toTuple(),
+            "md": item.mode,
+            "ang": item.angle,
         }
 
     def _encodePcell(self, item) -> Dict[str, Any]:

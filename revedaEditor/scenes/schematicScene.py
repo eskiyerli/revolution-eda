@@ -19,7 +19,7 @@ from typing import Dict, List, Optional, Set, Tuple, Union
 
 from PySide6.QtCore import (QLineF, QPoint, QPointF, QRect, QRectF,
                             QRegularExpression, Qt, Signal, Slot)
-from PySide6.QtGui import (QFont, QFontDatabase, QPen, QTextDocument, QUndoCommand)
+from PySide6.QtGui import (QFont, QFontDatabase, QPen, QTextDocument, )
 from PySide6.QtWidgets import (QComboBox, QDialog, QGraphicsItem,
                                QGraphicsRectItem, QGraphicsScene,
                                QGraphicsSceneMouseEvent)
@@ -160,13 +160,24 @@ class schematicScene(editorScene):
 
     def defineSnapRect(self):
         snapPointRect = QGraphicsRectItem()
-        snapPointRect.setRect(QRect(-2, -2, 4, 4))
+        snapPointRect.setRect(QRect(-4, -4, 8, 8))
         snapPointRect.setZValue(100)
         snapPointRect.setVisible(False)
         if schlyr and hasattr(schlyr, 'guideLinePen'):
-            snapPointRect.setPen(schlyr.guideLinePen)
+            snapPen = QPen(schlyr.guideLinePen)
+            snapPen.setCosmetic(False)
+            snapPointRect.setPen(snapPen)
 
         return snapPointRect
+
+    def _ensureSnapPointRect(self):
+        """Return a valid _snapPointRect, recreating it if the C++ object was deleted."""
+        try:
+            # Accessing scene() raises RuntimeError if the C++ object is dead.
+            _ = self._snapPointRect.scene()
+        except RuntimeError:
+            self._snapPointRect = self.defineSnapRect()
+        return self._snapPointRect
 
     @property
     def drawMode(self):
@@ -211,12 +222,19 @@ class schematicScene(editorScene):
         elif self._newPin and self.editModes.drawPin:
 
             self._newPin.setPos(self.mouseMoveLoc - self._newPin.start)
-        elif self._newNet and (self.editModes.drawWire or self.editModes.drawBus):
+        elif self.editModes.drawWire or self.editModes.drawBus:
+            # Show the closest snap point while drawing a net; fall back to grid
+            ignoredSet = {self._newNet} if self._newNet is not None else set()
             netEndPoint = self.snapToGrid(
-                self.findSnapPoint(self.mouseMoveLoc, {self._newNet}))
-            self._snapPointRect.setPos(netEndPoint)
-            self._newNet.draftLine = QLineF(self._newNet.draftLine.p1(),
-                                            netEndPoint)
+                self.findSnapPoint(self.mouseMoveLoc, ignoredSet))
+            snapRect = self._ensureSnapPointRect()
+            if snapRect.scene() is None:
+                self.addItem(snapRect)
+            snapRect.setVisible(True)
+            snapRect.setPos(netEndPoint)
+            if self._newNet is not None:
+                self._newNet.draftLine = QLineF(self._newNet.draftLine.p1(),
+                                                netEndPoint)
         elif self.newAlignLine and self.editModes.alignItems:
             self.newAlignLine.draftLine = QLineF(
                 self.newAlignLine.draftLine.p1(), self.mouseMoveLoc)
@@ -226,8 +244,9 @@ class schematicScene(editorScene):
             if netEndPoint == self.mouseMoveLoc:
                 # No nearby connection point found; snap cursor to grid
                 netEndPoint = self.snapToGrid(self.mouseMoveLoc)
-            self._snapPointRect.setVisible(True)
-            self._snapPointRect.setPos(netEndPoint)
+            snapRect = self._ensureSnapPointRect()
+            snapRect.setVisible(True)
+            snapRect.setPos(netEndPoint)
             self._stretchNet.draftLine = QLineF(self._stretchNet.draftLine.p1(),
                                                 netEndPoint)
         elif self._newText and self.editModes.drawText:
@@ -240,6 +259,11 @@ class schematicScene(editorScene):
                 if isinstance(item, (shp.schematicSymbol, shp.schematicPin,
                                      snet.schematicNet)):
                     item.updateSnapLines()
+
+        # Hide snap indicator when not drawing or stretching a net
+        if not (self.editModes.drawWire or self.editModes.drawBus or
+                self.editModes.stretchItem):
+            self._ensureSnapPointRect().setVisible(False)
 
         cursorPosition = self.snapToGrid(self.mouseMoveLoc - self.origin)
         self.statusLine.showMessage(
@@ -320,9 +344,14 @@ class schematicScene(editorScene):
         ignoredSet = {self._newNet} if self._newNet is not None else set()
         snapPoint = self.snapToGrid(self.findSnapPoint(eventLoc, ignoredSet))
 
+        snapRect = self._ensureSnapPointRect()
+        if snapRect.scene() is None:
+            self.addItem(snapRect)
+        snapRect.setVisible(True)
+        snapRect.setPos(snapPoint)
+
         if self._newNet is None:
             # Start new net
-            self._snapPointRect.setPos(snapPoint)
             self._newNet = snet.schematicNet(snapPoint, snapPoint, 0)
             self.addUndoStack(self._newNet)
         else:
@@ -331,7 +360,6 @@ class schematicScene(editorScene):
             self.wireEditFinished.emit(self._newNet)
 
             # Start next segment from same endpoint
-            self._snapPointRect.setPos(snapPoint)
             self._newNet = snet.schematicNet(snapPoint, snapPoint, 0)
             self.addUndoStack(self._newNet)
 
@@ -360,9 +388,14 @@ class schematicScene(editorScene):
         ignoredSet = {self._newNet} if self._newNet is not None else set()
         snapPoint = self.snapToGrid(self.findSnapPoint(eventLoc, ignoredSet))
 
+        snapRect = self._ensureSnapPointRect()
+        if snapRect.scene() is None:
+            self.addItem(snapRect)
+        snapRect.setVisible(True)
+        snapRect.setPos(snapPoint)
+
         if self._newNet is None:
             # Start new bus
-            self._snapPointRect.setPos(snapPoint)
             self._newNet = snet.schematicNet(snapPoint, snapPoint, 1)
             self.addUndoStack(self._newNet)
         else:
@@ -371,7 +404,6 @@ class schematicScene(editorScene):
             self.wireEditFinished.emit(self._newNet)
 
             # Start next segment from same endpoint
-            self._snapPointRect.setPos(snapPoint)
             self._newNet = snet.schematicNet(snapPoint, snapPoint, 1)
             self.addUndoStack(self._newNet)
 
@@ -482,7 +514,7 @@ class schematicScene(editorScene):
             self._stretchNet = None
             self._stretchOriginalNet = None
             self._stretchClickedEndpoint = None
-            self._snapPointRect.setVisible(False)
+            self._ensureSnapPointRect().setVisible(False)
             for view in self.views():
                 view.setCursor(Qt.CursorShape.ArrowCursor)
 
@@ -860,10 +892,11 @@ class schematicScene(editorScene):
                 view.setCursor(Qt.CursorShape.SizeHorCursor)
 
         # Show snap indicator rect at cursor position
-        if self._snapPointRect.scene() is None:
-            self.addItem(self._snapPointRect)
-        self._snapPointRect.setPos(mousePos)
-        self._snapPointRect.setVisible(True)
+        snapRect = self._ensureSnapPointRect()
+        if snapRect.scene() is None:
+            self.addItem(snapRect)
+        snapRect.setPos(mousePos)
+        snapRect.setVisible(True)
 
         return True
 

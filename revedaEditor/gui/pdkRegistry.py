@@ -339,14 +339,23 @@ class PDKRegistryWindow(QMainWindow):
 
     def _install_entry(self, entry: dict):
         name = re.sub(r"[^A-Za-z0-9_.-]", "_", entry.get("name", "pdk"))
-        url = (
-            self._get_binary_url(entry)
-            if entry.get("type") == "binary"
-            else entry.get("url")
-        )
+        isBinary = entry.get("type") == "binary"
+        url = self._get_binary_url(entry) if isBinary else entry.get("url")
 
         if not url:
-            QMessageBox.warning(self, "Error", "No URL for your platform.")
+            if isBinary:
+                system = platform.system().lower()
+                arch = platform.machine().lower()
+                py_ver = f"py{sys.version_info.major}{sys.version_info.minor}"
+                QMessageBox.warning(
+                    self,
+                    "Platform Not Supported",
+                    f"No binary build available for your platform:\n"
+                    f"  {system}-{arch}-{py_ver}\n\n"
+                    f"Consider installing the source version instead.",
+                )
+            else:
+                QMessageBox.warning(self, "Error", "No download URL available.")
             return
 
         target_subdir = self.pdksDir / name
@@ -362,11 +371,32 @@ class PDKRegistryWindow(QMainWindow):
             shutil.rmtree(target_subdir, ignore_errors=True)
 
         try:
+            self.progress.setValue(0)
+            QApplication.processEvents()
+
+            # Download with progress
             with urllib.request.urlopen(url) as resp:
+                total_size = int(resp.headers.get("Content-Length", 0))
                 tmp_fd, tmp_path = tempfile.mkstemp()
                 os.close(tmp_fd)
+                downloaded = 0
+                chunk_size = 65536
+
                 with open(tmp_path, "wb") as out:
-                    out.write(resp.read())
+                    while True:
+                        chunk = resp.read(chunk_size)
+                        if not chunk:
+                            break
+                        out.write(chunk)
+                        downloaded += len(chunk)
+                        if total_size > 0:
+                            self.progress.setValue(
+                                int(downloaded * 100 / total_size)
+                            )
+                            QApplication.processEvents()
+
+            self.progress.setValue(100)
+            QApplication.processEvents()
 
             self.pdksDir.mkdir(parents=True, exist_ok=True)
             if url.lower().endswith(".zip"):
@@ -379,9 +409,47 @@ class PDKRegistryWindow(QMainWindow):
                 )
 
             os.remove(tmp_path)
+
+            # Post-install verification
+            if not self._verifyPdkInstall(target_subdir, isBinary):
+                QMessageBox.warning(
+                    self,
+                    "Install Warning",
+                    f"PDK '{name}' was extracted but may not be complete.\n"
+                    f"Check that {target_subdir} contains the expected modules.",
+                )
+
+            self.logger.info(
+                f"PDK '{name}' installed successfully "
+                f"({'binary' if isBinary else 'source'})."
+            )
             self.fetch_registry()
         except Exception as e:
+            self.progress.setValue(0)
             QMessageBox.critical(self, "Error", str(e))
+
+    def _verifyPdkInstall(self, pdkDir: Path, isBinary: bool) -> bool:
+        """Verify that the installed PDK has the required entry point.
+        
+        For source PDKs, checks for __init__.py.
+        For binary PDKs, checks for __init__.pyd (Windows) or __init__.so (Linux),
+        falling back to __init__.py which may also be present in binary distributions.
+        """
+        if not pdkDir.exists():
+            return False
+
+        # Check for config.json (required for both types)
+        if not (pdkDir / "config.json").exists():
+            return False
+
+        if isBinary:
+            # Binary PDKs have compiled __init__ module (.pyd on Windows, .so on Linux)
+            has_pyd = any(pdkDir.glob("__init__*.pyd"))
+            has_so = any(pdkDir.glob("__init__*.so"))
+            has_py = (pdkDir / "__init__.py").exists()
+            return has_pyd or has_so or has_py
+        else:
+            return (pdkDir / "__init__.py").exists()
 
     def _get_binary_url(self, entry: dict) -> str:
         binary_urls = entry.get("binary_urls", {})

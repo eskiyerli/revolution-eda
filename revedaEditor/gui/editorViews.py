@@ -479,8 +479,7 @@ class schematicView(editorView):
         """
         if event.key() == Qt.Key.Key_Escape:
             # Esc key pressed, remove snap rect and reset states
-            if self.viewScene._snapPointRect is not None:
-                self.viewScene._snapPointRect.setVisible(False)
+            self.viewScene._ensureSnapPointRect().setVisible(False)
             if self.viewScene._newNet is not None:
                 self.viewScene.wireEditFinished.emit(self.viewScene._newNet)
                 self.viewScene._newNet = None

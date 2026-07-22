@@ -8,7 +8,7 @@ framework.
 
 **Application Structure**: Revolution EDA is a monolithic PySide6 desktop application.
 `reveda.py` creates the `revedaApp` class, loads `.env`, resolves `REVEDA_PDK_PATH` /
-`REVEDA_PLUGIN_PATH` / `REVEDA_VA_MODULE_PATH`, sets up `reveda.log`, and opens
+`REVEDA_PLUGIN_PATH`, sets up `reveda.log`, and opens
 `revedaEditor/gui/revedaMain.py:MainWindow`.
 
 The three primary editors are:
@@ -221,7 +221,6 @@ hard crashes.
 
 - `REVEDA_PDK_PATH`: PDK location (relative to `reveda.py` or absolute)
 - `REVEDA_PLUGIN_PATH`: Plugin directory (optional; defaults to `plugins/`)
-- `REVEDA_VA_MODULE_PATH`: Central Verilog-A module repository path
 - `POETRY_VENV_BASE`: Override Poetry virtualenv location for build scripts
 
 ## Common Workflows by Component

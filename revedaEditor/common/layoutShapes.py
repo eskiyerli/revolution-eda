@@ -11,7 +11,7 @@
 import itertools
 import math
 from pathlib import Path
-from typing import Any, List, Optional, Tuple, Union
+from typing import List, Tuple, Union
 
 import numpy as np
 from PySide6.QtCore import (
@@ -47,7 +47,7 @@ from PySide6.QtWidgets import (
 
 import revedaEditor.backend.dataDefinitions as ddef
 from revedaEditor.backend.pdkLoader import importPDKModule
-
+processDBU = importPDKModule('process').dbu
 
 class textureCache:
     _file_content_cache = {}
@@ -574,6 +574,7 @@ class layoutRect(layoutShape):
 
 
 class layoutInstance(layoutShape):
+    _lodThreshold = 0.002
     def __init__(self, shapes: list[layoutShape]):
         super().__init__()
 
@@ -610,6 +611,8 @@ class layoutInstance(layoutShape):
         for item in self._shapes:
             item.setFlags(QGraphicsItem.ItemStacksBehindParent)
             item.setFlag(QGraphicsItem.ItemIsSelectable, False)
+            if hasattr(item, "layer") and hasattr(item.layer, "visible"):
+                item.setVisible(item.layer.visible)
             item.setParentItem(self)
 
         self._shapes_set = True
@@ -624,10 +627,6 @@ class layoutInstance(layoutShape):
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}({self._libraryName}, {self._cellName}, {self._viewName}, {self._instanceName})"
 
-    # LOD threshold below which children are hidden and a simplified
-    # bounding-box is drawn instead.  Tweak to taste — lower values defer
-    # simplification to more extreme zoom-outs.
-    _lodThreshold = 0.02
 
     def boundingRect(self) -> QRectF:
         return self.childrenBoundingRect().normalized().adjusted(-2, -2, 2, 2)
@@ -637,7 +636,7 @@ class layoutInstance(layoutShape):
             painter.worldTransform()
         )
 
-        if lod < self._lodThreshold:
+        if lod < layoutInstance._lodThreshold:
             # --- Low-detail mode: hide children, draw a filled rect with outline ---
             if not getattr(self, "_childrenHidden", False):
                 for child in self.childItems():
@@ -1190,6 +1189,7 @@ class layoutRuler(layoutShape):
         # self.setCacheMode(QGraphicsItem.DeviceCoordinateCache)
         # self.update(self.boundingRect())
         self.setZValue(999)
+        self._lastBoundingScale = 1.0
 
     def __repr__(self) -> str:
         return (
@@ -1240,41 +1240,147 @@ class layoutRuler(layoutShape):
     def _createAnyAngleRuler(self, angle):
         self._angle = angle
 
+    @staticmethod
+    def _closestPointOnSegment(p, a, b) -> QPointF:
+        pF = QPointF(p)
+        aF = QPointF(a)
+        bF = QPointF(b)
+        ab = bF - aF
+        abLenSq = ab.x() * ab.x() + ab.y() * ab.y()
+        if abLenSq == 0:
+            return QPointF(aF)
+        ap = pF - aF
+        t = (ap.x() * ab.x() + ap.y() * ab.y()) / abLenSq
+        t = max(0.0, min(1.0, t))
+        return aF + ab * t
+
+    @staticmethod
+    def _extractItemEdges(item) -> List[Tuple[QPointF, QPointF]]:
+        edges = []
+        transform = item.sceneTransform()
+        if hasattr(item, "rect") and isinstance(item.rect, (QRectF, QRect)):
+            r = QRectF(item.rect)
+            poly = transform.map(r)
+            n = poly.count()
+            # Closed polygons have last point == first; skip duplicate
+            if n > 1 and poly.at(0) == poly.at(n - 1):
+                n -= 1
+            pts = [QPointF(poly.at(i)) for i in range(n)]
+            for i in range(n):
+                edges.append((pts[i], pts[(i + 1) % n]))
+        elif hasattr(item, "points") and isinstance(item.points, list) and item.points:
+            pts = [transform.map(QPointF(p)) for p in item.points]
+            n = len(pts)
+            if n >= 2:
+                for i in range(n):
+                    edges.append((pts[i], pts[(i + 1) % n]))
+        elif hasattr(item, "sceneEndPoints") and len(item.sceneEndPoints) == 2:
+            p1, p2 = QPointF(item.sceneEndPoints[0]), QPointF(item.sceneEndPoints[1])
+            edges.append((p1, p2))
+        else:
+            br = item.boundingRect()
+            if not br.isEmpty():
+                poly = transform.map(br)
+                n = poly.count()
+                if n > 1 and poly.at(0) == poly.at(n - 1):
+                    n -= 1
+                pts = [QPointF(poly.at(i)) for i in range(n)]
+                for i in range(n):
+                    edges.append((pts[i], pts[(i + 1) % n]))
+        return edges
+
+    def snapPointToClosestEdge(self, point, maxDistance: float = 50.0) -> QPointF:
+        pointF = QPointF(point)
+        scene = self.scene()
+        if scene is None:
+            return pointF
+        searchRect = QRectF(
+            pointF.x() - maxDistance,
+            pointF.y() - maxDistance,
+            2 * maxDistance,
+            2 * maxDistance,
+        )
+        items = scene.items(searchRect)
+        bestDist = maxDistance
+        closestPoint = pointF
+        for item in items:
+            if item is self or isinstance(item, layoutRuler):
+                continue
+            edges = self._extractItemEdges(item)
+            for p1, p2 in edges:
+                ptOnEdge = self._closestPointOnSegment(pointF, p1, p2)
+                dist = QLineF(pointF, ptOnEdge).length()
+                if dist < bestDist:
+                    bestDist = dist
+                    closestPoint = ptOnEdge
+        return closestPoint
+
+    @staticmethod
+    def _getNiceStep(rawStep: float) -> float:
+        if rawStep <= 0:
+            return 1.0
+        exponent = math.floor(math.log10(rawStep))
+        fraction = rawStep / (10 ** exponent)
+        if fraction < 1.5:
+            niceFraction = 1.0
+        elif fraction < 3.5:
+            niceFraction = 2.0
+        elif fraction < 7.5:
+            niceFraction = 5.0
+        else:
+            niceFraction = 10.0
+        return niceFraction * (10 ** exponent)
+
     def _createRulerTicks(self):
         self._tickTuples = []
-        direction = self._draftLine.p2() - self._draftLine.p1()
+        p1 = self._draftLine.p1()
+        p2 = self._draftLine.p2()
+        directionVec = p2 - p1
+        lineLength = self._draftLine.length()
 
-        if direction != QPointF(0, 0):
-            length = direction.manhattanLength()
-            direction = QPointF(direction.x() / length, direction.y() / length)
+        if lineLength > 0:
+            direction = QPointF(directionVec.x() / lineLength, directionVec.y() / lineLength)
             perpendicular = QPointF(-direction.y(), direction.x())
+            perpTickMajor = perpendicular * self._tickLength
+            perpTickMinor = perpendicular * (self._tickLength * 0.5)
 
-            if self._draftLine.length() >= self._tickGap:
-                # Pre-calculate common values
-                p1 = self._draftLine.p1()
-                perp_tick = perpendicular * self._tickLength
-                numberOfTicks = math.ceil(self._draftLine.length() / self._tickGap)
+            labelStep = max(self._tickGap, self._getNiceStep(lineLength / 6.0))
+            tickStep = max(self._tickGap, labelStep / 5.0)
 
-                # Generate ticks in single loop
-                for i in range(numberOfTicks):
-                    tick_pos = p1 + direction * (i * self._tickGap)
-                    tick_line = QLineF(tick_pos, tick_pos + perp_tick)
-                    self._tickTuples.append(
-                        ddef.rulerTuple(
-                            tick_pos + perp_tick,
-                            (tick_line.p1(), tick_line.p2()),
-                            str(float(i)),
-                        )
+            numberOfTicks = math.floor(lineLength / tickStep)
+            for i in range(numberOfTicks + 1):
+                distOnLine = i * tickStep
+                if distOnLine > lineLength:
+                    break
+
+                tickPos = p1 + direction * distOnLine
+                modStep = distOnLine % labelStep
+                isMajor = (modStep < (tickStep * 0.1)) or ((labelStep - modStep) < (tickStep * 0.1))
+                isNearEnd = (lineLength - distOnLine) < (0.3 * labelStep) and (lineLength - distOnLine) > 0.001
+
+                if isMajor:
+                    perpTick = perpTickMajor
+                    valStr = f"{round(distOnLine, 3):g}" if not isNearEnd else ""
+                else:
+                    perpTick = perpTickMinor
+                    valStr = ""
+
+                tickLine = QLineF(tickPos, tickPos + perpTick)
+                self._tickTuples.append(
+                    ddef.rulerTuple(
+                        tickPos + perpTick,
+                        (tickLine.p1(), tickLine.p2()),
+                        valStr,
                     )
+                )
 
-            # Final tick
-            p2 = self._draftLine.p2()
-            final_line = QLineF(p2, p2 + perpendicular * self._tickLength)
+            finalLine = QLineF(p2, p2 + perpTickMajor)
+            lengthStr = f"{round(lineLength, 3):g}"
             self._tickTuples.append(
                 ddef.rulerTuple(
                     p2 + direction * 2,
-                    (final_line.p1(), final_line.p2()),
-                    str(round(self._draftLine.length() / self._tickGap, 3)),
+                    (finalLine.p1(), finalLine.p2()),
+                    lengthStr,
                 )
             )
 
@@ -1283,7 +1389,22 @@ class layoutRuler(layoutShape):
         ).normalized()
 
     def boundingRect(self) -> QRectF:
-        margin = max(self._fontWidth, self._fontHeight, self._tickLength)
+        # The tick labels are drawn at a fixed screen size (inverse-scaled),
+        # so their footprint in scene coordinates grows as the view zooms out.
+        # We need a scale-aware margin to prevent Qt from clipping the text.
+        scale = 1.0
+        scene = self.scene()
+        if scene is not None:
+            views = scene.views()
+            if views:
+                vt = views[0].transform()
+                scale = math.hypot(vt.m11(), vt.m12())
+                if scale <= 0:
+                    scale = 1.0
+        sceneMargin = max(self._fontWidth, self._fontHeight, self._tickLength) / scale
+        # Add a fixed scene-unit margin for the tick lines themselves
+        baseMargin = self._tickLength * 2
+        margin = max(sceneMargin * 1.5, baseMargin)
         return (
             QRectF(self._rect).normalized().adjusted(-margin, -margin, margin, margin)
         )
@@ -1294,16 +1415,76 @@ class layoutRuler(layoutShape):
             painter.drawRect(self.childrenBoundingRect())
         else:
             painter.setPen(self._pen)
+
         painter.drawLine(self._draftLine)
         painter.setFont(self._tickFont)
-        for tickTuple in self._tickTuples:
+
+        worldTransform = painter.worldTransform()
+        scale = math.hypot(worldTransform.m11(), worldTransform.m12())
+        if scale <= 0:
+            scale = 1.0
+
+        # Invalidate bounding rect when zoom changes significantly so Qt
+        # repaints the full area (prevents label clipping at large zoom-outs).
+        if abs(scale - self._lastBoundingScale) / max(scale, self._lastBoundingScale) > 0.1:
+            self.prepareGeometryChange()
+            self._lastBoundingScale = scale
+
+        p1Scene = self.mapToScene(self._draftLine.p1())
+        p2Scene = self.mapToScene(self._draftLine.p2())
+        lineAngle = QLineF(p1Scene, p2Scene).angle()
+        screenAngle = -lineAngle
+        while screenAngle > 180:
+            screenAngle -= 360
+        while screenAngle <= -180:
+            screenAngle += 360
+
+        textAngle = screenAngle
+        if textAngle > 90:
+            textAngle -= 180
+        elif textAngle < -90:
+            textAngle += 180
+
+        # Determine minimum screen-pixel spacing needed between labels
+        minLabelScreenPx = self._fontWidth * 1.5
+        # Convert to scene units: labels closer than this are skipped
+        minLabelSceneDist = minLabelScreenPx / scale if scale > 0 else 0
+
+        # Determine text offset direction based on angle quadrant
+        # Positive offset places text on the tick side (away from ruler line)
+        textOffsetX = 3.0
+        textOffsetY = -self._fontHeight * 0.3
+        if 90 < abs(screenAngle) <= 180:
+            textOffsetX = -self._fontWidth - 3.0
+
+        lastLabelPos = None
+        lastTickIndex = len(self._tickTuples) - 1
+        for idx, tickTuple in enumerate(self._tickTuples):
             painter.drawLine(tickTuple.line[0], tickTuple.line[1])
-            painter.save()
-            painter.translate(tickTuple.point)
-            painter.rotate(self.angle)
-            painter.translate(-tickTuple.point)
-            painter.drawText(tickTuple.point.x(), tickTuple.point.y(), tickTuple.text)
-            painter.restore()
+            if tickTuple.text:
+                tickPos = tickTuple.point
+                # Always draw the first (0) and last (total length) labels;
+                # skip intermediate labels that are too close at current zoom.
+                isEndLabel = (idx == 0 or idx == lastTickIndex)
+                if not isEndLabel and lastLabelPos is not None:
+                    dist = QLineF(lastLabelPos, tickPos).length()
+                    if dist < minLabelSceneDist:
+                        continue
+                lastLabelPos = tickPos
+
+                painter.save()
+                painter.translate(tickPos)
+                # Clamp the inverse scale: text stays constant size down to
+                # scale=1, then shrinks proportionally (square-root) below that
+                # so it doesn't dominate the ruler at very low zoom levels.
+                if scale >= 1.0:
+                    invScale = 1.0 / scale
+                else:
+                    invScale = math.sqrt(1.0 / scale)
+                painter.scale(invScale, invScale)
+                painter.rotate(textAngle)
+                painter.drawText(QPointF(textOffsetX, textOffsetY), tickTuple.text)
+                painter.restore()
 
     @property
     def draftLine(self):
@@ -1316,6 +1497,17 @@ class layoutRuler(layoutShape):
         angle = self._draftLine.angle()
         self._determineAngle(angle)
         self._createRulerTicks()
+
+    @property
+    def angle(self) -> float:
+        return self._angle
+
+    @angle.setter
+    def angle(self, value: float):
+        self.prepareGeometryChange()
+        self._angle = value
+        self.setTransformOriginPoint(self._draftLine.p1())
+        self.setRotation(-self._angle)
 
     @property
     def width(self):
