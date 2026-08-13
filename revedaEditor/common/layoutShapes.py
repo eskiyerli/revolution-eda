@@ -72,29 +72,30 @@ class textureCache:
 
         height, width = data_scaled.shape
 
-        # Create QImage with Format_ARGB32 (not premultiplied)
+        # Create QImage with Format_ARGB32
         image = QImage(width, height, QImage.Format.Format_ARGB32)
-        # Fill with transparent pixels first
         image.fill(Qt.transparent)
 
-        # Create painter to draw on the image
-        painter = QPainter(image)
-        if not painter.isActive():  # Add this check
-            return image
-        painter.setPen(Qt.NoPen)
-        # painter.setBrush(QBrush(color))
-        # Create semi-transparent color (50% opacity)
+        # Build ARGB pixel data directly using numpy (much faster than per-pixel QPainter)
+        # Create semi-transparent color (90% opacity)
         transparent_color = QColor(color)
-        transparent_color.setAlpha(230)  # 220 is 90% opacity (range is 0-255)
-        painter.setBrush(QBrush(transparent_color))
+        transparent_color.setAlpha(230)
+        r, g, b, a = transparent_color.red(), transparent_color.green(), transparent_color.blue(), transparent_color.alpha()
 
-        # Draw solid rectangles for each pixel that should be colored
-        for i in range(height):
-            for j in range(width):
-                if data_scaled[i, j] == 1:  # Draw colored pixel
-                    painter.drawRect(j, i, 1, 1)
+        # ARGB32 layout: each pixel is 4 bytes [B, G, R, A] on little-endian
+        pixels = np.zeros((height, width, 4), dtype=np.uint8)
+        mask = data_scaled == 1
+        pixels[mask, 0] = b
+        pixels[mask, 1] = g
+        pixels[mask, 2] = r
+        pixels[mask, 3] = a
 
-        painter.end()
+        # Copy numpy buffer into QImage scanlines
+        for row in range(height):
+            ptr = image.scanLine(row)
+            row_bytes = pixels[row].tobytes()
+            ptr[0:len(row_bytes)] = row_bytes
+
         return image
 
     @classmethod
@@ -153,8 +154,12 @@ class layoutShape(QGraphicsItem):
 
     def itemChange(self, change, value):
         if change == QGraphicsItem.ItemSelectedHasChanged and self.scene():
-            # Direct z-value calculation without conditional
-            self.setZValue(self.zValue() + (20 * value - 10))
+            if value:
+                self._originalZValue = self.zValue()
+                self.setZValue(self._originalZValue + 10)
+            else:
+                if hasattr(self, "_originalZValue"):
+                    self.setZValue(self._originalZValue)
         return super().itemChange(change, value)
 
     def _definePensBrushes(self, layer):
@@ -179,12 +184,17 @@ class layoutShape(QGraphicsItem):
             yellow = self._get_cached_color("yellow")
             red = self._get_cached_color("red")
 
+            selectedPen = QPen(yellow, layer.pwidth, Qt.DashLine)
+            selectedPen.setCosmetic(True)
+            stretchPen = QPen(red, layer.pwidth, Qt.SolidLine)
+            stretchPen.setCosmetic(True)
+
             self._pen_brush_cache[cache_key] = {
                 "pen": QPen(layer.pcolor, layer.pwidth, layer.pstyle),
                 "brush": QBrush(layer.bcolor, _pixmap),
-                "selectedPen": QPen(yellow, layer.pwidth, Qt.DashLine),
+                "selectedPen": selectedPen,
                 "selectedBrush": QBrush(yellow, _pixmap),
-                "stretchPen": QPen(red, layer.pwidth, Qt.SolidLine),
+                "stretchPen": stretchPen,
                 "stretchBrush": QBrush(red, _pixmap),
             }
 
@@ -193,10 +203,8 @@ class layoutShape(QGraphicsItem):
         self._pen = cached["pen"]
         self._brush = cached["brush"]
         self._selectedPen = cached["selectedPen"]
-        self._selectedPen.setCosmetic(True)
         self._selectedBrush = cached["selectedBrush"]
         self._stretchPen = cached["stretchPen"]
-        self._stretchPen.setCosmetic(True)
         self._stretchBrush = cached["stretchBrush"]
 
     def _updateTransformedBrush(self, brush: QBrush, scale: float):
@@ -204,11 +212,7 @@ class layoutShape(QGraphicsItem):
         rounded_scale = max(round(scale, 2), 0.01)  # Prevent division by zero
 
         if self._transformedBrush is None or self._lastScale != rounded_scale:
-            if self._transformedBrush is None:
-                self._transformedBrush = QBrush(brush)
-            else:
-                self._transformedBrush = brush
-
+            self._transformedBrush = QBrush(brush)
             transform = QTransform().scale(1 / rounded_scale, 1 / rounded_scale)
             self._transformedBrush.setTransform(transform)
             self._lastScale = rounded_scale
@@ -320,10 +324,7 @@ class layoutShape(QGraphicsItem):
         if self._flipTuple == flipState:
             return
 
-        # Cache center calculation
-        if not hasattr(self, "_cached_center"):
-            self._cached_center = self.boundingRect().center()
-        center = self._cached_center
+        center = self.boundingRect().center()
 
         # Direct transform creation is faster than modifying existing
         cx, cy = center.x(), center.y()
@@ -402,7 +403,7 @@ class layoutRect(layoutShape):
         painter.drawRect(rect)
 
     def boundingRect(self) -> QRectF:
-        return self._rect.normalized().adjusted(-2, -2, 2, 2)
+        return self._rect.adjusted(-2, -2, 2, 2)
 
     @property
     def rect(self):
@@ -464,6 +465,7 @@ class layoutRect(layoutShape):
 
     @left.setter
     def left(self, left: int):
+        self.prepareGeometryChange()
         self.rect.setLeft(left)
 
     @property
@@ -619,17 +621,20 @@ class layoutInstance(layoutShape):
 
     def removeShapes(self):
         self.prepareGeometryChange()
+        scene = self.scene()
         for item in self._shapes:
             item.setParentItem(None)
-            del item
-        self._shapes = list()
+            if scene is not None:
+                scene.removeItem(item)
+        self._shapes = []
+        self._shapes_set = False
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}({self._libraryName}, {self._cellName}, {self._viewName}, {self._instanceName})"
 
 
     def boundingRect(self) -> QRectF:
-        return self.childrenBoundingRect().normalized().adjusted(-2, -2, 2, 2)
+        return self.childrenBoundingRect().adjusted(-2, -2, 2, 2)
 
     def paint(self, painter, option, widget) -> None:
         lod = QStyleOptionGraphicsItem.levelOfDetailFromTransform(
@@ -662,7 +667,8 @@ class layoutInstance(layoutShape):
             painter.setRenderHint(QPainter.NonCosmeticBrushPatterns)
             if option.state & QStyle.State_Selected:
                 painter.setPen(self._selectedPen)
-                painter.drawRect(self.childrenBoundingRect())
+                rect = self.childrenBoundingRect()
+                painter.drawRect(rect)
 
     def sceneEvent(self, event):
         """
@@ -907,7 +913,6 @@ class layoutPath(layoutShape):
             mode (int, optional): The mode. Defaults to 0.
         """
         super().__init__()
-        self.start = None
         self._draftLine = draftLine
         self._startExtend = startExtend
         self._endExtend = endExtend
@@ -925,7 +930,7 @@ class layoutPath(layoutShape):
 
     def __repr__(self) -> str:
         return (
-            f"layoutPath({self._draftLine}, {self._layer}"
+            f"layoutPath({self._draftLine}, {self._layer}, "
             f"{self._width}, {self._startExtend}, {self._endExtend}, {self._mode})"
         )
 
@@ -1077,9 +1082,9 @@ class layoutPath(layoutShape):
         return self._startExtend
 
     @startExtend.setter
-    def startExtend(self, value: str):
+    def startExtend(self, value):
         self.prepareGeometryChange()
-        self._startExtend = value
+        self._startExtend = int(value)
         self._rect = self._extractRect()
 
     @property
@@ -1087,9 +1092,9 @@ class layoutPath(layoutShape):
         return self._endExtend
 
     @endExtend.setter
-    def endExtend(self, value: str):
+    def endExtend(self, value):
         self.prepareGeometryChange()
-        self._endExtend = value
+        self._endExtend = int(value)
         self._rect = self._extractRect()
 
     @property
@@ -1765,11 +1770,11 @@ class layoutPin(layoutShape):
         else:
             painter.setPen(self._pen)
             self._updateTransformedBrush(self._brush, scale)
-        painter.setBrush(self._brush)
+        painter.setBrush(self._transformedBrush)
         painter.drawRect(self._rect)
 
     def boundingRect(self) -> QRectF:
-        return self._rect.adjusted(-2, 2, 2, 2)
+        return self._rect.adjusted(-2, -2, 2, 2)
 
     @property
     def pinName(self):
@@ -1947,7 +1952,7 @@ class layoutVia(layoutShape):
             self.setFlag(QGraphicsItem.ItemIsSelectable, False)
 
     def boundingRect(self) -> QRectF:
-        return self._rect.normalized().adjusted(-2, -2, 2, 2)
+        return self._rect.adjusted(-2, -2, 2, 2)
 
     def shape(self) -> QPainterPath:
         path = QPainterPath()
@@ -1987,6 +1992,7 @@ class layoutVia(layoutShape):
 
     @height.setter
     def height(self, value: int):
+        self.prepareGeometryChange()
         self._rect.setHeight(value)
 
     @property
@@ -2119,13 +2125,6 @@ class layoutViaArray(layoutShape):
 
 
 class layoutPolygon(layoutShape):
-    __slots__ = (
-        "_points",
-        "_layer",
-        "_polygon",
-        "_selectedCorner",
-        "_selectedCornerIndex",
-    )
 
     def __init__(self, points: list, layer: ddef.layLayer):
         super().__init__()

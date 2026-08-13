@@ -11,7 +11,6 @@
 
 import math
 from collections import OrderedDict
-from functools import cached_property
 from typing import Any, Dict, List, NamedTuple, Optional, Tuple, Union
 
 from PySide6.QtCore import (QLine, QLineF, QPoint, QRect, QRectF, Qt, )
@@ -26,6 +25,12 @@ from PySide6.QtWidgets import (QGraphicsItem, QGraphicsPolygonItem,
 import revedaEditor.common.net as net
 from revedaEditor.backend.pdkLoader import importPDKModule
 from revedaEditor.common.labels import symbolLabel
+
+
+def _undoStack():
+    """Lazy import to avoid circular dependency (undoStack references shapes)."""
+    import revedaEditor.backend.undoStack as _us
+    return _us
 
 
 def _get_schlyr():
@@ -51,10 +56,15 @@ def _get_symlyr():
 class _LazyModule:
     """Descriptor that defers PDK module loading until first attribute access."""
     def __init__(self, getter):
-        self._getter = getter
+        object.__setattr__(self, '_getter', getter)
+        object.__setattr__(self, '_module', None)
 
     def __getattr__(self, name):
-        module = self._getter()
+        module = object.__getattribute__(self, '_module')
+        if module is None:
+            getter = object.__getattribute__(self, '_getter')
+            module = getter()
+            object.__setattr__(self, '_module', module)
         return getattr(module, name)
 
 
@@ -152,9 +162,7 @@ class symbolShape(QGraphicsItem):
         if self.scene() and (
                 self.scene().editModes.changeOrigin or self.scene().drawMode):
             return False
-        else:
-            super().sceneEvent(event)
-            return True
+        return super().sceneEvent(event)
 
     def itemChange(self, change, value) -> Any:
         if change == QGraphicsItem.ItemSelectedHasChanged and self.scene():
@@ -308,6 +316,7 @@ class symbolRectangle(symbolShape):
 
     @left.setter
     def left(self, left: int):
+        self.prepareGeometryChange()
         self._rect.setLeft(left)
 
     @property
@@ -412,9 +421,8 @@ class symbolRectangle(symbolShape):
             if (hasattr(self, '_stretchOldGeometry') and
                     newGeometry != self._stretchOldGeometry and
                     self.scene()):
-                import revedaEditor.backend.undoStack as us
                 self.scene().undoStack.push(
-                    us.undoStretchShape(self.scene(), self,
+                    _undoStack().undoStretchShape(self.scene(), self,
                                         self._stretchOldGeometry, newGeometry))
                 del self._stretchOldGeometry
             self._stretch = False
@@ -564,19 +572,13 @@ class symbolCircle(symbolShape):
             if (hasattr(self, '_stretchOldGeometry') and
                     newGeometry != self._stretchOldGeometry and
                     self.scene()):
-                import revedaEditor.backend.undoStack as us
                 self.scene().undoStack.push(
-                    us.undoStretchShape(self.scene(), self,
+                    _undoStack().undoStretchShape(self.scene(), self,
                                         self._stretchOldGeometry, newGeometry))
                 del self._stretchOldGeometry
             self.setCursor(Qt.ArrowCursor)
 
     def calculateRadius(self, distance):
-        # Snap to grid if scene is available
-        if self.scene() and hasattr(self.scene(), 'snapTuple'):
-            grid = self.scene().snapTuple[0]
-            distance = round(distance / grid) * grid
-        
         self._radius = int(distance)
 
 
@@ -587,6 +589,12 @@ class symbolArc(symbolShape):
 
     arcTypes = ["Up", "Right", "Down", "Left"]
     sides = ["Left", "Right", "Top", "Bottom"]
+
+    # Class-level flip lookup dicts for stretch operations (avoids per-event allocation)
+    _H_ARC_FLIP = {"Right": "Left", "Left": "Right"}
+    _V_ARC_FLIP = {"Up": "Down", "Down": "Up"}
+    _H_SIDE_FLIP = {"Left": "Right", "Right": "Left"}
+    _V_SIDE_FLIP = {"Top": "Bottom", "Bottom": "Top"}
 
     def __init__(self, start: QPoint, end: QPoint):
         super().__init__()
@@ -806,21 +814,13 @@ class symbolArc(symbolShape):
             # smoothly and the arc renders correctly after the flip.
             if rect.width() < 0:
                 # Horizontal flip: swap "Right" ↔ "Left" arc type and "Left" ↔ "Right" side
-                _hArcFlip = {symbolArc.arcTypes[1]: symbolArc.arcTypes[3],
-                             symbolArc.arcTypes[3]: symbolArc.arcTypes[1]}
-                self._arcType = _hArcFlip.get(self._arcType, self._arcType)
-                _hSideFlip = {symbolArc.sides[0]: symbolArc.sides[1],
-                              symbolArc.sides[1]: symbolArc.sides[0]}
-                self._stretchSide = _hSideFlip.get(self._stretchSide, self._stretchSide)
+                self._arcType = symbolArc._H_ARC_FLIP.get(self._arcType, self._arcType)
+                self._stretchSide = symbolArc._H_SIDE_FLIP.get(self._stretchSide, self._stretchSide)
 
             if rect.height() < 0:
                 # Vertical flip: swap "Up" ↔ "Down" arc type and "Top" ↔ "Bottom" side
-                _vArcFlip = {symbolArc.arcTypes[0]: symbolArc.arcTypes[2],
-                             symbolArc.arcTypes[2]: symbolArc.arcTypes[0]}
-                self._arcType = _vArcFlip.get(self._arcType, self._arcType)
-                _vSideFlip = {symbolArc.sides[2]: symbolArc.sides[3],
-                              symbolArc.sides[3]: symbolArc.sides[2]}
-                self._stretchSide = _vSideFlip.get(self._stretchSide, self._stretchSide)
+                self._arcType = symbolArc._V_ARC_FLIP.get(self._arcType, self._arcType)
+                self._stretchSide = symbolArc._V_SIDE_FLIP.get(self._stretchSide, self._stretchSide)
 
             self._rect = rect.normalized()
 
@@ -847,9 +847,8 @@ class symbolArc(symbolShape):
             if (hasattr(self, '_stretchOldGeometry') and
                     newGeometry != self._stretchOldGeometry and
                     self.scene()):
-                import revedaEditor.backend.undoStack as us
                 self.scene().undoStack.push(
-                    us.undoStretchShape(self.scene(), self,
+                    _undoStack().undoStretchShape(self.scene(), self,
                                         self._stretchOldGeometry, newGeometry))
                 del self._stretchOldGeometry
             self._stretch = False
@@ -986,9 +985,8 @@ class symbolLine(symbolShape):
             if (hasattr(self, '_stretchOldGeometry') and
                     newGeometry != self._stretchOldGeometry and
                     self.scene()):
-                import revedaEditor.backend.undoStack as us
                 self.scene().undoStack.push(
-                    us.undoStretchShape(self.scene(), self,
+                    _undoStack().undoStretchShape(self.scene(), self,
                                         self._stretchOldGeometry, newGeometry))
                 del self._stretchOldGeometry
             self._stretch = False
@@ -1089,7 +1087,9 @@ class symbolPolygon(symbolShape):
 
     def mouseMoveEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         if self._stretch and self._selectedCornerIndex != self._NO_SELECTION:
-            eventPos = event.pos().toPoint()
+            eventPos = event.scenePos().toPoint()
+            if self.scene():
+                eventPos = self.scene().snapToGrid(eventPos)
             self._points[self._selectedCornerIndex] = eventPos
             self.prepareGeometryChange()
             self._updatePolygon()
@@ -1203,11 +1203,17 @@ class symbolPin(symbolShape):
     def start(self, start):
         self.prepareGeometryChange()
         self._start = start
+        # Remove old rect item to avoid orphaned children
+        if self._pinRectItem.scene():
+            self._pinRectItem.scene().removeItem(self._pinRectItem)
+        self._pinRectItem.setParentItem(None)
         self._pinRectItem = QGraphicsRectItem(
-            QRect(self._start.x() - self.PIN_WIDTH / 2,
-                  self._start.y() - self.PIN_HEIGHT / 2, self.PIN_WIDTH,
+            QRect(int(self._start.x() - self.PIN_WIDTH / 2),
+                  int(self._start.y() - self.PIN_HEIGHT / 2), self.PIN_WIDTH,
                   self.PIN_HEIGHT, ), self, )
-        self._pinRect = self._pinRectItem.rect()
+        self._pinRectItem.setPen(symlyr.symbolPinPen)
+        self._pinRectItem.setBrush(symlyr.symbolPinBrush)
+        self._pinRect = self._pinRectItem.rect().adjusted(-2, -2, 2, 2)
 
     @property
     def pinName(self):
@@ -1316,6 +1322,7 @@ class text(symbolShape):
         self._rect = self._fm.boundingRect(QRect(0, 0, 400, 400),
                                            Qt.AlignmentFlag.AlignCenter,
                                            self._textContent)
+        self._cachedBoundingRect = None
 
     def __repr__(self) -> str:
         return (
@@ -1339,14 +1346,6 @@ class text(symbolShape):
             self.setRotation(180)
         elif self._textOrient == text.textOrients[3]:
             self.setRotation(270)
-        elif self._textOrient == text.textOrients[4]:
-            self.flip("x")
-        elif self._labelOrient == text.textOrients[5]:
-            self.flip("x")
-            self.setRotation(90)
-        elif self._labelOrient == text.textOrients[6]:
-            self.flip("y")
-            self.setRotation(90)
 
     def flip(self, direction: str):
         currentTransform = self.transform()
@@ -1358,21 +1357,23 @@ class text(symbolShape):
         self.setTransform(currentTransform)
 
     def boundingRect(self) -> QRectF:
-        if self._textAlign == text.textAlignments[0]:
-            self._rect = self._fm.boundingRect(QRect(0, 0, 400, 400),
-                                               Qt.AlignmentFlag.AlignLeft,
-                                               self._textContent)
-        elif self._textAlign == text.textAlignments[1]:
-            self._rect = self._fm.boundingRect(QRect(0, 0, 400, 400),
-                                               Qt.AlignmentFlag.AlignCenter,
-                                               self._textContent)
+        if self._cachedBoundingRect is not None:
+            return self._cachedBoundingRect
+        alignFlag = Qt.AlignmentFlag.AlignLeft
+        if self._textAlign == text.textAlignments[1]:
+            alignFlag = Qt.AlignmentFlag.AlignCenter
         elif self._textAlign == text.textAlignments[2]:
-            self._rect = self._fm.boundingRect(QRect(0, 0, 400, 400),
-                                               Qt.AlignmentFlag.AlignRight,
-                                               self._textContent)
-        return (QRect(self._start.x(), self._start.y() - self._rect.height(),
-                      self._rect.width(),
-                      self._rect.height(), ).normalized().adjusted(-2, -2, 2, 2))
+            alignFlag = Qt.AlignmentFlag.AlignRight
+        self._rect = self._fm.boundingRect(QRect(0, 0, 400, 400),
+                                           alignFlag, self._textContent)
+        self._cachedBoundingRect = QRectF(
+            QRect(self._start.x(), self._start.y() - self._rect.height(),
+                  self._rect.width(),
+                  self._rect.height()).normalized().adjusted(-2, -2, 2, 2))
+        return self._cachedBoundingRect
+
+    def _invalidateBoundingRect(self):
+        self._cachedBoundingRect = None
 
     def paint(self, painter, option, widget) -> None:
         painter.setFont(self._textFont)
@@ -1394,6 +1395,7 @@ class text(symbolShape):
     def start(self, value: QPoint):
         self.prepareGeometryChange()
         self._start = value
+        self._invalidateBoundingRect()
 
     @property
     def textContent(self):
@@ -1403,6 +1405,7 @@ class text(symbolShape):
     def textContent(self, inputText: str):
         if isinstance(inputText, str):
             self._textContent = inputText
+            self._invalidateBoundingRect()
         else:
             self.scene().logger.error(f"Not a string: {inputText}")
 
@@ -1417,6 +1420,8 @@ class text(symbolShape):
                          QFontDatabase.isFixedPitch(family)]
         if familyName in fixedFamilies:
             self._textFont.setFamily(familyName)
+            self._fm = QFontMetrics(self._textFont)
+            self._invalidateBoundingRect()
         else:
             self.scene().logger.error(f"Not a valid font name: {familyName}")
 
@@ -1428,6 +1433,8 @@ class text(symbolShape):
     def fontStyle(self, value: str):
         if value in QFontDatabase.styles(self._textFont.family()):
             self._textFont.setStyleName(value)
+            self._fm = QFontMetrics(self._textFont)
+            self._invalidateBoundingRect()
         else:
             self.scene().logger.error(f"Not a valid font style: {value}")
 
@@ -1442,6 +1449,9 @@ class text(symbolShape):
                                               self._textFont.styleName())]
         if value in fontSizes:
             self._textHeight = value
+            self._textFont.setPointSize(int(float(value)))
+            self._fm = QFontMetrics(self._textFont)
+            self._invalidateBoundingRect()
         else:
             self.scene().logger.error(f"Not a valid font height: {value}")
             self.scene().logger.warning(f"Valid font heights are: {fontSizes}")
@@ -1463,6 +1473,7 @@ class text(symbolShape):
     def textAlignment(self, value):
         if value in text.textAlignments:
             self._textAlign = value
+            self._invalidateBoundingRect()
         else:
             self.scene().logger.error(
                 f"Not a valid text alignment value: {value}")
@@ -1492,8 +1503,10 @@ class schematicSymbol(symbolShape):
         self._netlistLine = ""
         self._labels: Dict[str, symbolLabel] = dict()  # dict of labels
         self._pins: Dict[str, symbolPin] = dict()  # dict of pins
+        self._pinsCache = None  # cached ordered pins dict, invalidated on addShapes
         self._netlistIgnore: bool = False
         self._draft: bool = False
+        self._instProps: dict = dict()  # instance-specific properties
         self._pinLocations: dict[
             str, Union[QRect, QRectF]] = dict()  # pinName: pinRect
         self.pinNetMap: dict[str, str] = dict()  # pinName: netName
@@ -1501,6 +1514,8 @@ class schematicSymbol(symbolShape):
 
         self._pinNetDict: dict[symbolPin, set[net.schematicNet]] = dict()
         self._removedNets: list = []
+        self._cachedShape: Optional[QPainterPath] = None
+        self._cachedBoundingRect: Optional[QRectF] = None
         self._setup_graphics()
         self.addShapes()
         self._start = self.childrenBoundingRect().bottomLeft()
@@ -1521,6 +1536,9 @@ class schematicSymbol(symbolShape):
         return super().sceneEvent(event)
 
     def addShapes(self):
+        self._pinsCache = None  # invalidate pins cache
+        self._cachedShape = None  # invalidate shape cache
+        self._cachedBoundingRect = None  # invalidate bounding rect cache
         for item in self._shapes:
             item.setFlag(QGraphicsItem.ItemIsSelectable, False)
             item.setFlag(QGraphicsItem.ItemStacksBehindParent, True)
@@ -1534,6 +1552,9 @@ class schematicSymbol(symbolShape):
         return f"schematicSymbol({self._instanceName})"
 
     def shape(self) -> QPainterPath:
+        if self._cachedShape is not None:
+            return self._cachedShape
+
         path = QPainterPath()
         validTypes = (symbolRectangle, symbolLine, symbolArc, symbolCircle,
                       symbolPolygon)
@@ -1546,6 +1567,7 @@ class schematicSymbol(symbolShape):
         if not bounding_rect.isNull():
             path.addRect(self.mapRectFromScene(bounding_rect))
 
+        self._cachedShape = path
         return path
 
     def itemChange(self, change: QGraphicsItem.GraphicsItemChange, value):
@@ -1555,6 +1577,7 @@ class schematicSymbol(symbolShape):
         # if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange:
         #     self.sceneRect = self.sceneBoundingRect().adjusted(-5,-5,5,5)
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
+            self._cachedShape = None  # invalidate on move (uses scene coords)
             self._finishSnapLines()
             self._snapLines = dict()
             # self.scene().invalidate(self.sceneRect, QGraphicsScene.BackgroundLayer)
@@ -1668,8 +1691,7 @@ class schematicSymbol(symbolShape):
                 # The removed original nets were stored during initializeSnapLines.
                 removedNets = getattr(self, '_removedNets', [])
                 if allNewNets or removedNets:
-                    from revedaEditor.backend import undoStack as us
-                    undoCommand = us.addDeleteShapesUndo(
+                    undoCommand = _undoStack().addDeleteShapesUndo(
                         scene, allNewNets, removedNets)
                     scene.undoStack.push(undoCommand)
                 self._snapLines = dict()
@@ -1702,7 +1724,10 @@ class schematicSymbol(symbolShape):
                              shapeBoundingRect.topRight())
 
     def boundingRect(self) -> QRectF:
-        return self.childrenBoundingRect()
+        if self._cachedBoundingRect is not None:
+            return self._cachedBoundingRect
+        self._cachedBoundingRect = self.childrenBoundingRect()
+        return self._cachedBoundingRect
 
     def mousePressEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         super().mousePressEvent(event)
@@ -1777,22 +1802,25 @@ class schematicSymbol(symbolShape):
     def labels(self):
         return self._labels  # dictionary
 
-    @cached_property
+    @property
     def pins(self):
         """
         Returns a dictionary of pins, ordered by the pinOrder attribute if it exists.
         """
+        if self._pinsCache is not None:
+            return self._pinsCache
 
         pinOrder = self.symattrs.get("pinOrder")
         if not pinOrder:
-            return self._pins
+            self._pinsCache = self._pins
+            return self._pinsCache
         outputDict = OrderedDict()
         for key in pinOrder.split(", "):
             key = key.strip()
-            if key in pinOrder:
-                if key in self._pins:
-                    outputDict[key] = self._pins[key]
-        return outputDict
+            if key in self._pins:
+                outputDict[key] = self._pins[key]
+        self._pinsCache = outputDict
+        return self._pinsCache
 
     @property
     def shapes(self):
@@ -1907,19 +1935,18 @@ class schematicSymbol(symbolShape):
         self._labels = {}
         self._pins = {}
         # Clear cached pins property so it rebuilds
-        if "pins" in self.__dict__:
-            del self.__dict__["pins"]
+        self._pinsCache = None
 
         # Rebuild shapes from JSON
         from revedaEditor.fileio.loadJSON import symbolItems
         symbolAttributes = {}
         itemShapes = []
-        symbolShape = symbolItems(scene)
+        symbolItemFactory = symbolItems(scene)
         for jsonItem in jsonItems[2:]:  # skip first two entries
             if jsonItem.get("type") == "attr":
                 symbolAttributes[jsonItem["nam"]] = jsonItem["def"]
             else:
-                shape = symbolShape.create(jsonItem)
+                shape = symbolItemFactory.create(jsonItem)
                 if shape is not None:
                     itemShapes.append(shape)
 
@@ -2178,8 +2205,7 @@ class schematicPin(symbolShape):
                 # Push a single addDeleteShapesUndo capturing all net replacements.
                 removedNets = getattr(self, '_removedNets', [])
                 if allNewNets or removedNets:
-                    from revedaEditor.backend import undoStack as us
-                    undoCommand = us.addDeleteShapesUndo(
+                    undoCommand = _undoStack().addDeleteShapesUndo(
                         scene, allNewNets, removedNets)
                     scene.undoStack.push(undoCommand)
                 self._snapLines = set()
