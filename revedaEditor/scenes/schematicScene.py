@@ -252,8 +252,6 @@ class schematicScene(editorScene):
         elif self._newText and self.editModes.drawText:
 
             self._newText.start = self.mouseMoveLoc
-        elif self.editModes.nameNet and self._newNetNameObj:
-            self._newNetNameObj.setPos(self.mouseMoveLoc)
         elif self.editModes.moveItem and self.selectedItemGroup:
             for item in self.selectedItemGroup.childItems():
                 if isinstance(item, (shp.schematicSymbol, shp.schematicPin,
@@ -520,17 +518,17 @@ class schematicScene(editorScene):
 
     def _handleNameNet(self, mouseReleaseLoc):
         if self.netNameString:
-            self._newNetNameObj = snet.netName(self.netNameString)
-            self._newNetNameObj.setPos(mouseReleaseLoc)
-            self.addUndoStack(self._newNetNameObj)
+            # Find the schematicNet under the cursor in a single click
+            clickedNet = next(
+                (item for item in self.items(mouseReleaseLoc)
+                 if isinstance(item, snet.schematicNet)), None)
+            if clickedNet:
+                clickedNet.name = self.netNameString
+                clickedNet.nameStrength = snet.netNameStrengthEnum.SET
+                clickedNet.setSelected(False)
             self.netNameString = None
-        elif self._newNetNameObj and self.selectedNet:
-            self.selectedNet.name = self._newNetNameObj.name
-            self.undoStack.undo()
-            # self.undoStack.removeLastCommand()
-            self.selectedNet.nameStrength = snet.netNameStrengthEnum.SET
-            self.selectedNet.setSelected(False)
-            self.selectedNet = None
+            self._newNetNameObj = None
+            self.editModes.setMode("selectItem")
 
     def updateStretchNet(self):
         netEndPoint = self.findSnapPoint(self.mouseMoveLoc, set())

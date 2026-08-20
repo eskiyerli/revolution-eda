@@ -275,6 +275,13 @@ class vacaskNetlist:
 
                 if "schematic" in netlistView:
                     lines = self.createVacaskSymbolLine(elementSymbol)
+                    # Append NLP label parameters to instance lines for subcircuit calls
+                    subcktParams = self._getSubcktParams(elementSymbol)
+                    if subcktParams:
+                        paramSuffix = " ".join(
+                            f"{name}={instVal}" for name, instVal, _ in subcktParams
+                        )
+                        lines = [f"{line} {paramSuffix}" for line in lines]
                     content.extend(lines if isinstance(lines, list) else [lines])
                     if netlistView not in self._stopViewList:
                         viewTuple = ddef.viewNameTuple(
@@ -295,8 +302,15 @@ class vacaskNetlist:
                             )
                             subcktContent: list[str] = []
                             self.collectSubcircuitContent(schematicObj, subcktContent)
+                            # Build parameters line from NLP labels using default values
+                            paramsLine = ""
+                            if subcktParams:
+                                paramsLine = "parameters " + " ".join(
+                                    f"{name}={defVal}" for name, _, defVal in subcktParams
+                                ) + "\n"
                             subcktDef = (
-                                f"subckt {schematicObj.cellName} ( {expandedPinsString} ) \n"
+                                f"subckt {schematicObj.cellName} ( {expandedPinsString} )\n"
+                                + paramsLine
                                 + "\n".join(subcktContent)
                                 + f"\nends {schematicObj.cellName}\n"
                             )
@@ -474,6 +488,60 @@ class vacaskNetlist:
             self._cellItemCache[key] = libm.getCellItem(libItem, cellName)
         return self._cellItemCache[key]
 
+    @staticmethod
+    def _getSubcktParams(elementSymbol: shp.schematicSymbol) -> list[tuple[str, str, str]]:
+        """Extract NLP label parameters suitable for subcircuit parameter passing.
+
+        Returns a list of (paramName, instanceValue, defaultValue) tuples for NLP
+        labels that are NOT predefined labels (instName, cellName, etc.) and whose
+        token is not already consumed by the VacaskNetlistLine template.  These
+        represent user-defined subcircuit parameters like ``r=1k`` or ``c=1n``.
+
+        The *instanceValue* is used on the instance call line while *defaultValue*
+        is used in the ``parameters`` declaration inside the subcircuit definition.
+
+        Args:
+            elementSymbol: The symbol instance to extract parameters from.
+
+        Returns:
+            List of (name, instanceValue, defaultValue) tuples for subcircuit parameters.
+        """
+        from revedaEditor.common.labels import symbolLabel
+
+        predefinedNames = {
+            "@instName", "@cellName", "@libName",
+            "@viewName", "@modelName", "@elementNum",
+        }
+        netlistLine = elementSymbol.symattrs.get("VacaskNetlistLine", "")
+        params: list[tuple[str, str, str]] = []
+        for label in elementSymbol.labels.values():
+            if label.labelType != "NLPLabel":
+                continue
+            if label.labelName in predefinedNames:
+                continue
+            # Skip labels whose token already appears in the netlist line template
+            if label.labelName in netlistLine:
+                continue
+            # Strip the leading '@' for the parameter name
+            paramName = label.labelName.lstrip("@")
+            if not paramName or not label.labelValue:
+                continue
+            # Extract default value from the label definition
+            defaultValue = label.labelValue
+            labelDef = label.labelDefinition
+            if labelDef.startswith("[@"):
+                endIdx = labelDef.find("]")
+                if endIdx != -1:
+                    parts = labelDef[1:endIdx].split(":")
+                    if len(parts) >= 3:
+                        defStr = parts[2].strip()
+                        if "=" in defStr:
+                            defaultValue = defStr.split("=", 1)[1].strip()
+                        else:
+                            defaultValue = defStr
+            params.append((paramName, label.labelValue, defaultValue))
+        return params
+
     def determineNetlistView(self, elementSymbol, cellItem) -> str:
         """Determine which view to use for netlisting a symbol instance.
 
@@ -537,6 +605,13 @@ class vacaskNetlist:
         """Create the appropriate VACASK netlist line(s) for a symbol based on its view type."""
         if "schematic" in netlistView:
             elementLines = self.createVacaskSymbolLine(elementSymbol)
+            # Append NLP label parameters to instance lines for subcircuit calls
+            subcktParams = self._getSubcktParams(elementSymbol)
+            if subcktParams:
+                paramSuffix = " ".join(
+                    f"{name}={instVal}" for name, instVal, _ in subcktParams
+                )
+                elementLines = [f"{line} {paramSuffix}" for line in elementLines]
             for line in elementLines:
                 cirFile.write(f"{line}\n")
 
@@ -564,8 +639,15 @@ class vacaskNetlist:
                     )
                     subcktContent: list[str] = []
                     self.collectSubcircuitContent(schematicObj, subcktContent)
+                    # Build parameters line from NLP labels using default values
+                    paramsLine = ""
+                    if subcktParams:
+                        paramsLine = "parameters " + " ".join(
+                            f"{name}={defVal}" for name, _, defVal in subcktParams
+                        ) + "\n"
                     subcktDef = (
                         f"\nsubckt {schematicObj.cellName} ( {expandedPinsString} )\n"
+                        + paramsLine
                         + "\n".join(subcktContent)
                         + f"\nends {schematicObj.cellName}\n"
                     )

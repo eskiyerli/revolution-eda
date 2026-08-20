@@ -61,6 +61,16 @@ import sys
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
+
+class resilientFileHandler(logging.FileHandler):
+    """FileHandler that silently retries on transient I/O errors (e.g. OneDrive sync)."""
+
+    def emit(self, record):
+        try:
+            super().emit(record)
+        except OSError:
+            pass
+
 # Add ~/.reveda/ to sys.path early so that the compiled revedaLicense module
 # (installed there by the plugin registry) is discoverable before any module
 # triggers `from revedaLicense.licenseManager import ...`.
@@ -498,7 +508,7 @@ class revedaApp(QApplication):
         # user directory if the project directory is not writable.
         log_file_path = self._projectDir / "reveda.log"
         try:
-            handler = logging.FileHandler(log_file_path)
+            handler = resilientFileHandler(log_file_path)
             handler.setLevel(logging.INFO)
             handler.setFormatter(
                 logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")

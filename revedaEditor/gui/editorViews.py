@@ -17,9 +17,11 @@ from PySide6.QtCore import (
     Signal,
 )
 from PySide6.QtGui import (
+    QBrush,
     QColor,
     QKeyEvent,
     QPainter,
+    QPen,
     QPolygon,
     QWheelEvent,
 )
@@ -34,6 +36,7 @@ from revedaEditor.scenes.schematicScene import schematicScene
 from revedaEditor.scenes.symbolScene import symbolScene
 
 schlyr = importPDKModule("schLayers")
+symlyr = importPDKModule("symLayers")
 fabproc = importPDKModule("process")
 
 
@@ -260,47 +263,6 @@ class editorView(QGraphicsView):
             case _:
                 super().keyPressEvent(event)
 
-    def _drawJunctionDots(self, painter, sourceRect, targetRect):
-        """Draw junction dots at points where 3+ nets meet."""
-        from collections import Counter
-        import revedaEditor.common.net as net
-        
-        # Get nets in source rect
-        netsInView = [
-            item
-            for item in self.scene().items(sourceRect)
-            if isinstance(item, net.schematicNet)
-        ]
-
-        if not netsInView:
-            return
-
-        # Collect and count endpoints in one pass
-        pointCounts = Counter()
-        for netItem in netsInView:
-            pointCounts.update(netItem.sceneEndPoints)
-
-        # Filter junction points (count >= 3) and draw
-        junctionPoints = [point for point, count in pointCounts.items() if
-                          count >= 3]
-
-        if junctionPoints:
-            # Calculate transform from scene to device coordinates
-            scaleX = targetRect.width() / sourceRect.width()
-            scaleY = targetRect.height() / sourceRect.height()
-            offsetX = targetRect.x() - sourceRect.x() * scaleX
-            offsetY = targetRect.y() - sourceRect.y() * scaleY
-            
-            painter.setPen(schlyr.wirePen)
-            painter.setBrush(schlyr.wireBrush)
-            # Scale dot radius by the transform
-            scaledRadius = self._dotRadius * min(scaleX, scaleY)
-            for point in junctionPoints:
-                # Transform point from scene to device coordinates
-                transformedX = point.x() * scaleX + offsetX
-                transformedY = point.y() * scaleY + offsetY
-                painter.drawEllipse(transformedX, transformedY, scaledRadius, scaledRadius)
-
     def printView(self, printer, sourceRect=None, includeGrid=False, antialiasing="high"):
         """
         Print view using selected Printer.
@@ -326,7 +288,7 @@ class editorView(QGraphicsView):
         self.linebackg = False
         self._transparent = True
         painter = QPainter(printer)
-        
+
         # Set antialiasing based on setting
         if antialiasing == "high":
             painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
@@ -336,19 +298,87 @@ class editorView(QGraphicsView):
             painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
             painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, False)
             painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, False)
-        
-        targetRect = painter.viewport()
-        if sourceRect is None:
-            items_rect = self.scene().itemsBoundingRect()
-            if not items_rect.isEmpty():
-                margin = max(20.0, min(items_rect.width(), items_rect.height()) * 0.05)
-                sourceRect = items_rect.adjusted(-margin, -margin, margin, margin)
-            else:
-                sourceRect = self.sceneRect()
-        self.scene().render(painter, targetRect, sourceRect)
-        # Draw junction dots for schematic views
-        if hasattr(self.viewScene, 'items'):
-            self._drawJunctionDots(painter, sourceRect, targetRect)
+
+        # Replace light-colored pens with black for B&W print visibility.
+        # Scale cosmetic pen widths by printer-to-screen DPI ratio so lines
+        # maintain the same physical width on paper as on screen.
+        dpiScale = 1.0
+        device = painter.device()
+        if device and device.logicalDpiX() > 0:
+            dpiScale = device.logicalDpiX() / 96.0
+
+        _printPenNames = ('wirePen', 'textPen', 'schematicPinPen',
+                          'selectedSchematicPinPen', 'errorWirePen')
+        _printBrushNames = ('wireBrush', 'schematicPinBrush')
+        _savedPens = {}
+        _savedBrushes = {}
+
+        for name in _printPenNames:
+            orig = getattr(schlyr, name, None)
+            if orig is not None:
+                _savedPens[name] = orig
+                p = QPen(QColor("black"),
+                         max(1, round(orig.width() * dpiScale)),
+                         orig.style())
+                p.setCosmetic(True)
+                setattr(schlyr, name, p)
+
+        for name in _printBrushNames:
+            orig = getattr(schlyr, name, None)
+            if orig is not None:
+                _savedBrushes[name] = orig
+                setattr(schlyr, name, QBrush(QColor("black")))
+
+        # Symbol layer pens/brushes (green, red, yellow, light yellow, gray)
+        _printSymPenNames = ('symbolPen', 'selectedSymbolPen',
+                             'stretchSymbolPen', 'draftPen', 'defaultPen',
+                             'symbolPinPen', 'selectedSymbolPinPen',
+                             'labelPen', 'selectedLabelPen')
+        _printSymBrushNames = ('symbolPinBrush', 'selectedSymbolPinBrush',
+                               'labelBrush', 'selectedLabelBrush')
+
+        for name in _printSymPenNames:
+            orig = getattr(symlyr, name, None)
+            if orig is not None:
+                _savedPens[f"symlyr.{name}"] = orig
+                p = QPen(QColor("black"),
+                         max(1, round(orig.width() * dpiScale)),
+                         orig.style())
+                p.setCosmetic(True)
+                setattr(symlyr, name, p)
+
+        for name in _printSymBrushNames:
+            orig = getattr(symlyr, name, None)
+            if orig is not None:
+                _savedBrushes[f"symlyr.{name}"] = orig
+                setattr(symlyr, name, QBrush(QColor("black")))
+
+        try:
+            targetRect = painter.viewport()
+            if sourceRect is None:
+                items_rect = self.scene().itemsBoundingRect()
+                if not items_rect.isEmpty():
+                    margin = max(20.0,
+                                 min(items_rect.width(),
+                                     items_rect.height()) * 0.05)
+                    sourceRect = items_rect.adjusted(-margin, -margin,
+                                                     margin, margin)
+                else:
+                    sourceRect = self.sceneRect()
+            self.scene().render(painter, targetRect, sourceRect)
+        finally:
+            # Restore original pens and brushes
+            for key, orig in _savedPens.items():
+                if key.startswith("symlyr."):
+                    setattr(symlyr, key[len("symlyr."):], orig)
+                else:
+                    setattr(schlyr, key, orig)
+            for key, orig in _savedBrushes.items():
+                if key.startswith("symlyr."):
+                    setattr(symlyr, key[len("symlyr."):], orig)
+                else:
+                    setattr(schlyr, key, orig)
+
         # Restore original states
         self.gridbackg = originalGridbackg
         self.linebackg = originalLinebackg

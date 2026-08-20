@@ -136,8 +136,9 @@ class schematicNet(QGraphicsItem):
 
         # Clear the cached _extractRect and calculate new bounding boxes
         self.__dict__.pop("_extractRect", None)
-        self._shapeRect = self._extractRect.adjusted(-2, -2, 2, 2)
-        self._boundingRect = self._extractRect.adjusted(-10, -10, 10, 10)
+        margin = self._clickMargin()
+        self._shapeRect = self._extractRect.adjusted(-margin, -margin, margin, margin)
+        self._boundingRect = self._shapeRect.adjusted(-margin, -margin, margin, margin)
 
         # Apply transform/rotation (setRotation internally handles prepareGeometryChange as needed)
         self.setTransformOriginPoint(origin_point)
@@ -178,6 +179,14 @@ class schematicNet(QGraphicsItem):
         point2 = QPoint(round(p2.x() - perp_x), round(p2.y() - perp_y))
 
         return QRectF(point1, point2).normalized()
+
+    def _clickMargin(self) -> int:
+        """Return the hit-test margin around the net line, scaled to half the
+        scene snap distance so adjacent nets never share clickable area."""
+        scene = self.scene()
+        if scene and hasattr(scene, "snapDistance"):
+            return max(scene.snapDistance // 2, 2)
+        return 5  # sensible fallback before the net is added to a scene
 
     def shape(self) -> QPainterPath:
         path = QPainterPath()
@@ -617,7 +626,10 @@ class schematicNet(QGraphicsItem):
     @property
     def name(self) -> str:
         if self._nameItem:
-            return self._nameItem.name
+            try:
+                return self._nameItem.name
+            except RuntimeError:
+                return ""
         else:
             return ""
 
@@ -631,7 +643,10 @@ class schematicNet(QGraphicsItem):
 
     @property
     def nameStrength(self) -> int:
-        return self._nameItem.nameStrength
+        try:
+            return self._nameItem.nameStrength
+        except RuntimeError:
+            return netNameStrengthEnum.NONAME
 
     @nameStrength.setter
     def nameStrength(self, value: netNameStrengthEnum):
@@ -695,8 +710,9 @@ class schematicNet(QGraphicsItem):
         if "_extractRect" in self.__dict__:
             del self.__dict__["_extractRect"]
         # Recalculate bounding boxes for the new width
-        self._shapeRect = self._extractRect.adjusted(-2, -2, 2, 2)
-        self._boundingRect = self._extractRect.adjusted(-10, -10, 10, 10)
+        margin = self._clickMargin()
+        self._shapeRect = self._extractRect.adjusted(-margin, -margin, margin, margin)
+        self._boundingRect = self._shapeRect.adjusted(-margin, -margin, margin, margin)
         self.prepareGeometryChange()
         self.update()
 
