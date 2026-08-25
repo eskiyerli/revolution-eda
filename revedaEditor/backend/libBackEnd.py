@@ -325,8 +325,9 @@ def renameCell(parent, oldCell: cellItem, newName: str) -> bool:
         QMessageBox.warning(parent, "Error", "Please enter a cell name")
         return False
     else:
-        cellPath.rename(cellPath.parent / newName)
+        newPath = cellPath.rename(cellPath.parent / newName)
         oldCell.setText(newName)
+        oldCell.setData(newPath, Qt.ItemDataRole.UserRole + 2)
         return True
 
 

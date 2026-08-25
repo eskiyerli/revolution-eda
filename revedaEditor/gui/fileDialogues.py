@@ -1292,6 +1292,10 @@ class imageExportDialog(QDialog):
 
         self.setLayout(layout)
 
+        # Apply initial format-dependent visibility (PNG is selected by default
+        # but currentTextChanged won't fire until the user changes it).
+        self._onFormatChanged(self.formatCombo.currentText())
+
     # ---- public accessors ------------------------------------------------
 
     @property

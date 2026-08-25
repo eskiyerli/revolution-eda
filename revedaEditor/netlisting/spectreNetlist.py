@@ -512,7 +512,9 @@ class spectreNetlist:
                 line = line.replace("%pinOrder", netsList)
                 for token, value in attr_replacements:
                     line = line.replace(token, value)
-                return spectreNetlist._PARAM_RE.sub('', line)
+                line = spectreNetlist._PARAM_RE.sub('', line)
+                line = line.replace('{', '').replace('}', '')
+                return line
 
             def createInstanceLine(instanceName: str) -> str:
                 line = baseNetlistLine.replace(instNameToken, instanceName)

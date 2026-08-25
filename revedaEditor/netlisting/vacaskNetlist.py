@@ -275,13 +275,6 @@ class vacaskNetlist:
 
                 if "schematic" in netlistView:
                     lines = self.createVacaskSymbolLine(elementSymbol)
-                    # Append NLP label parameters to instance lines for subcircuit calls
-                    subcktParams = self._getSubcktParams(elementSymbol)
-                    if subcktParams:
-                        paramSuffix = " ".join(
-                            f"{name}={instVal}" for name, instVal, _ in subcktParams
-                        )
-                        lines = [f"{line} {paramSuffix}" for line in lines]
                     content.extend(lines if isinstance(lines, list) else [lines])
                     if netlistView not in self._stopViewList:
                         viewTuple = ddef.viewNameTuple(
@@ -303,6 +296,7 @@ class vacaskNetlist:
                             subcktContent: list[str] = []
                             self.collectSubcircuitContent(schematicObj, subcktContent)
                             # Build parameters line from NLP labels using default values
+                            subcktParams = self._getSubcktParams(elementSymbol)
                             paramsLine = ""
                             if subcktParams:
                                 paramsLine = "parameters " + " ".join(
@@ -490,15 +484,16 @@ class vacaskNetlist:
 
     @staticmethod
     def _getSubcktParams(elementSymbol: shp.schematicSymbol) -> list[tuple[str, str, str]]:
-        """Extract NLP label parameters suitable for subcircuit parameter passing.
+        """Extract NLP label parameters suitable for subcircuit parameter declaration.
 
-        Returns a list of (paramName, instanceValue, defaultValue) tuples for NLP
-        labels that are NOT predefined labels (instName, cellName, etc.) and whose
-        token is not already consumed by the VacaskNetlistLine template.  These
-        represent user-defined subcircuit parameters like ``r=1k`` or ``c=1n``.
+        Returns a list of (paramName, instanceValue, defaultValue) tuples for all
+        NLP labels that are NOT predefined (instName, cellName, etc.).
 
-        The *instanceValue* is used on the instance call line while *defaultValue*
-        is used in the ``parameters`` declaration inside the subcircuit definition.
+        These are used to build the ``parameters`` line inside the subcircuit
+        definition (with default values).  The instance line is fully handled by
+        the VacaskNetlistLine template — no extra appending is done here.
+
+        If a value is wrapped in ``{...}``, the braces are stripped for output.
 
         Args:
             elementSymbol: The symbol instance to extract parameters from.
@@ -506,28 +501,27 @@ class vacaskNetlist:
         Returns:
             List of (name, instanceValue, defaultValue) tuples for subcircuit parameters.
         """
-        from revedaEditor.common.labels import symbolLabel
-
         predefinedNames = {
             "@instName", "@cellName", "@libName",
             "@viewName", "@modelName", "@elementNum",
         }
-        netlistLine = elementSymbol.symattrs.get("VacaskNetlistLine", "")
         params: list[tuple[str, str, str]] = []
         for label in elementSymbol.labels.values():
             if label.labelType != "NLPLabel":
                 continue
             if label.labelName in predefinedNames:
                 continue
-            # Skip labels whose token already appears in the netlist line template
-            if label.labelName in netlistLine:
-                continue
-            # Strip the leading '@' for the parameter name
             paramName = label.labelName.lstrip("@")
-            if not paramName or not label.labelValue:
+            if not paramName:
                 continue
-            # Extract default value from the label definition
-            defaultValue = label.labelValue
+            # Strip braces if present (expression marker)
+            value = label.labelValue.strip() if label.labelValue else ""
+            if value.startswith("{") and value.endswith("}"):
+                instanceValue = value[1:-1].strip()
+            else:
+                instanceValue = value
+            # Extract default value from label definition
+            defaultValue = instanceValue
             labelDef = label.labelDefinition
             if labelDef.startswith("[@"):
                 endIdx = labelDef.find("]")
@@ -539,7 +533,7 @@ class vacaskNetlist:
                             defaultValue = defStr.split("=", 1)[1].strip()
                         else:
                             defaultValue = defStr
-            params.append((paramName, label.labelValue, defaultValue))
+            params.append((paramName, instanceValue, defaultValue))
         return params
 
     def determineNetlistView(self, elementSymbol, cellItem) -> str:
@@ -605,13 +599,6 @@ class vacaskNetlist:
         """Create the appropriate VACASK netlist line(s) for a symbol based on its view type."""
         if "schematic" in netlistView:
             elementLines = self.createVacaskSymbolLine(elementSymbol)
-            # Append NLP label parameters to instance lines for subcircuit calls
-            subcktParams = self._getSubcktParams(elementSymbol)
-            if subcktParams:
-                paramSuffix = " ".join(
-                    f"{name}={instVal}" for name, instVal, _ in subcktParams
-                )
-                elementLines = [f"{line} {paramSuffix}" for line in elementLines]
             for line in elementLines:
                 cirFile.write(f"{line}\n")
 
@@ -640,6 +627,7 @@ class vacaskNetlist:
                     subcktContent: list[str] = []
                     self.collectSubcircuitContent(schematicObj, subcktContent)
                     # Build parameters line from NLP labels using default values
+                    subcktParams = self._getSubcktParams(elementSymbol)
                     paramsLine = ""
                     if subcktParams:
                         paramsLine = "parameters " + " ".join(

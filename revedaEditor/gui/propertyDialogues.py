@@ -480,9 +480,12 @@ class instanceProperties(QDialog):
         self.setWindowTitle("Instance Properties")
         tabWidget = QTabWidget()
         mainLayout = QVBoxLayout()
-        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        QBtn = (QDialogButtonBox.StandardButton.Ok
+                | QDialogButtonBox.StandardButton.Apply
+                | QDialogButtonBox.StandardButton.Cancel)
 
         self.buttonBox = QDialogButtonBox(QBtn)
+        self.applyButton = self.buttonBox.button(QDialogButtonBox.StandardButton.Apply)
         formLayout = QFormLayout()
         self.libNameEdit = edf.longLineEdit()
         self.libNameEdit.setReadOnly(True)

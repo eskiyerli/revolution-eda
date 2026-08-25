@@ -25,7 +25,7 @@ from contextlib import contextmanager
 from logging import getLogger
 from typing import TYPE_CHECKING, Optional
 
-from PySide6.QtCore import (Qt, QSize, QSizeF, QMarginsF, QRectF, QBuffer, QIODevice)
+from PySide6.QtCore import (Qt, QSize, QSizeF, QMarginsF, QRect, QRectF, QBuffer, QIODevice)
 from PySide6.QtGui import (QAction, QIcon, QImage, QKeySequence, QPageSize, QPainter, QColor)
 from PySide6.QtPrintSupport import QPrintDialog, QPrinter, QPrintPreviewDialog
 from PySide6.QtSvg import QSvgGenerator
@@ -826,7 +826,7 @@ class editorWindow(QMainWindow):
             generator.setFileName(imageFile)
             generator.setResolution(settings['dpi'])
             generator.setSize(QSize(width, height))
-            generator.setViewBox(sourceRect)
+            generator.setViewBox(QRect(0, 0, width, height))
             generator.setTitle("Revolution EDA Export")
             self.centralW.view.printView(generator, sourceRect, settings['includeGrid'], settings['antialiasing'])
         else:

@@ -35,9 +35,57 @@ except ImportError:
     import hashlib
     import platform
     import uuid
+    from pathlib import Path
+
+    def _stableMachineId() -> str | None:
+        system = platform.system()
+        try:
+            if system == "Windows":
+                import winreg
+
+                with winreg.OpenKey(
+                    winreg.HKEY_LOCAL_MACHINE,
+                    r"SOFTWARE\Microsoft\Cryptography",
+                    0,
+                    winreg.KEY_READ | winreg.KEY_WOW64_64KEY,
+                ) as regKey:
+                    value, _ = winreg.QueryValueEx(regKey, "MachineGuid")
+                    machineId = str(value).strip()
+                    return machineId or None
+
+            if system == "Linux":
+                for idPath in ("/etc/machine-id", "/var/lib/dbus/machine-id"):
+                    path = Path(idPath)
+                    if path.exists():
+                        machineId = path.read_text().strip()
+                        if machineId:
+                            return machineId
+                return None
+
+            if system == "Darwin":
+                import re
+                import subprocess
+
+                output = subprocess.check_output(
+                    ["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"],
+                    text=True,
+                    timeout=5,
+                )
+                match = re.search(r'"IOPlatformUUID"\s*=\s*"([^"]+)"', output)
+                if match:
+                    return match.group(1).strip()
+                return None
+        except Exception:
+            return None
+
+        return None
 
     def get_machine_fingerprint() -> str:
-        raw = f"{uuid.getnode()}:{platform.node()}"
+        machineId = _stableMachineId()
+        if machineId:
+            raw = f"reveda:{machineId}"
+        else:
+            raw = f"{uuid.getnode()}:{platform.node()}"
         return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
     def has_valid_license(plugin_name: str) -> bool:

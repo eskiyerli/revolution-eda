@@ -72,11 +72,11 @@ class layerDataModel(QStandardItemModel):
             self.setItem(row, 2, QStandardItem(layer.purpose))
             item = QStandardItem()
             item.setCheckable(True)
-            item.setCheckState(Qt.CheckState.Checked if layer.selectable else Qt.CheckState.Unchecked)
+            item.setCheckState(Qt.CheckState.Checked if layer.visible else Qt.CheckState.Unchecked)
             self.setItem(row, 3, item)
             item = QStandardItem()
             item.setCheckable(True)
-            item.setCheckState(Qt.CheckState.Checked if layer.visible else Qt.CheckState.Unchecked)
+            item.setCheckState(Qt.CheckState.Checked if layer.selectable else Qt.CheckState.Unchecked)
             self.setItem(row, 4, item)
 
     def createData(self, layerlist: list) -> list:

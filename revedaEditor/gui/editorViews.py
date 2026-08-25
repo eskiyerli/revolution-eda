@@ -23,6 +23,7 @@ from PySide6.QtGui import (
     QPainter,
     QPen,
     QPolygon,
+    QTransform,
     QWheelEvent,
 )
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
@@ -366,6 +367,9 @@ class editorView(QGraphicsView):
                 else:
                     sourceRect = self.sceneRect()
             self.scene().render(painter, targetRect, sourceRect)
+            # Draw any view-level overlays (e.g. junction dots) that
+            # scene.render() does not include.
+            self._drawPrintOverlays(painter, sourceRect, targetRect)
         finally:
             # Restore original pens and brushes
             for key, orig in _savedPens.items():
@@ -384,6 +388,15 @@ class editorView(QGraphicsView):
         self.linebackg = originalLinebackg
         self._transparent = False
         painter.end()
+
+    def _drawPrintOverlays(self, painter, sourceRect, targetRect):
+        """Hook for subclasses to draw view-level overlays during print/export.
+
+        Called after scene.render() while the painter is still active.
+        The painter is in device coordinates; subclasses must set up their own
+        transform from scene to target coordinates.
+        """
+        pass
 
     def cycleSelection(self, event):
         if self.viewScene.itemCycler:
@@ -498,6 +511,44 @@ class schematicView(editorView):
             painter.setBrush(schlyr.wireBrush)
             for point in junctionPoints:
                 painter.drawEllipse(point, self._dotRadius, self._dotRadius)
+
+    def _drawPrintOverlays(self, painter, sourceRect, targetRect):
+        """Draw junction dots on printed/exported output.
+
+        Replicates the drawBackground logic but maps scene coordinates to
+        the target (device) coordinate space used by the painter.
+        """
+        netsInScene = [
+            item for item in self.viewScene.items()
+            if isinstance(item, net.schematicNet)
+        ]
+        if not netsInScene:
+            return
+
+        pointCounts = Counter()
+        for netItem in netsInScene:
+            pointCounts.update(netItem.sceneEndPoints)
+
+        junctionPoints = [point for point, count in pointCounts.items()
+                          if count >= 3]
+        if not junctionPoints:
+            return
+
+        # Build the scene-to-device transform (same mapping scene.render uses)
+        sx = targetRect.width() / sourceRect.width()
+        sy = targetRect.height() / sourceRect.height()
+        tx = targetRect.x() - sourceRect.x() * sx
+        ty = targetRect.y() - sourceRect.y() * sy
+        transform = QTransform(sx, 0.0, 0.0, sy, tx, ty)
+
+        painter.save()
+        painter.setTransform(transform)
+        painter.setPen(QPen(QColor("black")))
+        painter.setBrush(QBrush(QColor("black")))
+        # Use a fixed dot radius in scene coordinates
+        for point in junctionPoints:
+            painter.drawEllipse(point, self._dotRadius, self._dotRadius)
+        painter.restore()
 
     def keyPressEvent(self, event: QKeyEvent):
         """

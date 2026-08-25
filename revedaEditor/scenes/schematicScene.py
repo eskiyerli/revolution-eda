@@ -19,7 +19,7 @@ from typing import Dict, List, Optional, Set, Tuple, Union
 
 from PySide6.QtCore import (QLineF, QPoint, QPointF, QRect, QRectF,
                             QRegularExpression, Qt, Signal, Slot)
-from PySide6.QtGui import (QFont, QFontDatabase, QPen, QTextDocument, )
+from PySide6.QtGui import (QFont, QFontDatabase, QPen, )
 from PySide6.QtWidgets import (QComboBox, QDialog, QGraphicsItem,
                                QGraphicsRectItem, QGraphicsScene,
                                QGraphicsSceneMouseEvent)
@@ -1332,81 +1332,138 @@ class schematicScene(editorScene):
         dlg.xLocationEdit.setText(str(location[0]))
         dlg.yLocationEdit.setText(str(location[1]))
         dlg.angleEdit.setText(str(item.angle))
-        row_index = 0
-        # iterate through the item labels.
-        for label in item.labels.values():
-            if label.labelDefinition not in lbl.symbolLabel.predefinedLabels:
-                dlg.instanceLabelsLayout.addWidget(
-                    edf.boldLabel(label.labelName[1:], dlg), row_index, 0)
-                labelValueEdit = edf.longLineEdit()
-                labelValueEdit.setText(str(label.labelValue))
-                dlg.instanceLabelsLayout.addWidget(labelValueEdit, row_index, 1)
-                visibleCombo = QComboBox(dlg)
-                visibleCombo.setInsertPolicy(QComboBox.NoInsert)
-                visibleCombo.addItems(["True", "False"])
-                if label.labelVisible:
-                    visibleCombo.setCurrentIndex(0)
-                else:
-                    visibleCombo.setCurrentIndex(1)
-                dlg.instanceLabelsLayout.addWidget(visibleCombo, row_index, 2)
-                row_index += 1
+
+        # Build the label rows in a stable, deterministic order and remember
+        # the widgets so that Apply/OK can share the same read-back path.
+        self._buildInstanceLabelRows(dlg, item)
+
         # now list instance attributes
         for counter, name in enumerate(item.symattrs.keys()):
             dlg.instanceAttributesLayout.addWidget(edf.boldLabel(name, dlg),
                                                    counter, 0)
-            labelType = edf.longLineEdit()
-            labelType.setReadOnly(True)
             labelNameEdit = edf.longLineEdit()
+            labelNameEdit.setReadOnly(True)
             labelNameEdit.setText(item.symattrs.get(name))
             labelNameEdit.setToolTip(f"{name} attribute (Read Only)")
             dlg.instanceAttributesLayout.addWidget(labelNameEdit, counter, 1)
+
+        # Apply recomputes pyLabels live without committing to the undo stack.
+        dlg.applyButton.clicked.connect(
+            lambda: self._applyInstanceProperties(dlg, item))
+
         if dlg.exec() == QDialog.DialogCode.Accepted:
-            libraryName = dlg.libNameEdit.text().strip()
-            cellName = dlg.cellNameEdit.text().strip()
-            netlistViewName = dlg.viewNameEdit.currentText().strip()
             location = QPoint(int(float(dlg.xLocationEdit.text().strip())),
                               int(float(dlg.yLocationEdit.text().strip())), )
-            
-            # Create new instance with symbol view (for display)
-            # but store the netlist view separately
-            symbolViewTuple = ddef.viewNameTuple(libraryName, cellName, "symbol")
-            newInstance = self.instSymbol(symbolViewTuple, location)
-
+            newInstance = self._buildInstanceFromDialog(dlg, item, location)
             if newInstance:
-                # Set the netlisting view (this is what matters for netlisting)
-                newInstance.viewName = netlistViewName
-                
-                newInstance.instanceName = dlg.instNameEdit.text().strip()
-                newInstance.angle = float(dlg.angleEdit.text().strip())
-                newInstance.counter = item.counter
-
-                tempDoc = QTextDocument()
-                for i in range(dlg.instanceLabelsLayout.rowCount()):
-                    # first create label name document with HTML annotations
-                    label_item = dlg.instanceLabelsLayout.itemAtPosition(i, 0)
-                    if label_item is None or label_item.widget() is None:
-                        continue
-                    tempDoc.setHtml(label_item.widget().text())
-                    # now strip html annotations
-                    tempLabelName = f"@{tempDoc.toPlainText().strip()}"
-                    # check if label name is in label dictionary of item.
-                    if newInstance.labels.get(tempLabelName):
-                        # this is where the label value is set.
-                        newInstance.labels[tempLabelName].labelValue = (
-                            dlg.instanceLabelsLayout.itemAtPosition(i,
-                                                                    1).widget().text())
-                        visible = (dlg.instanceLabelsLayout.itemAtPosition(i,
-                                                                           2).widget().currentText())
-                        if visible == "True":
-                            newInstance.labels[tempLabelName].labelVisible = True
-                        else:
-                            newInstance.labels[tempLabelName].labelVisible = False
-                [labelItem.labelDefs() for labelItem in
-                 newInstance.labels.values()]
                 newInstance.setPos(self.snapToGrid(location - self.origin))
                 newInstance.flipTuple = item.flipTuple
                 self.undoStack.push(
                     us.addDeleteShapeUndo(self, newInstance, item))
+
+    def _buildInstanceLabelRows(self, dlg, item: shp.schematicSymbol):
+        """Populate the instance labels layout in a stable order.
+
+        Editable labels (Normal/NLPLabel) are listed first, then computed
+        pyLabels, alphabetically within each group. This keeps the row order
+        consistent across invocations of the dialog for the same instance.
+        pyLabel value fields are read-only because their value is computed by
+        the cell callback rather than typed by the user; Apply refreshes them.
+        """
+        pyLabelType = lbl.symbolLabel.labelTypes[2]
+
+        def sortKey(label):
+            isPyLabel = label.labelType == pyLabelType
+            return (isPyLabel, label.labelName.lower())
+
+        editableLabels = [
+            label for label in item.labels.values()
+            if label.labelDefinition not in lbl.symbolLabel.predefinedLabels]
+        editableLabels.sort(key=sortKey)
+
+        dlg.labelRows = []
+        for rowIndex, label in enumerate(editableLabels):
+            isPyLabel = label.labelType == pyLabelType
+            dlg.instanceLabelsLayout.addWidget(
+                edf.boldLabel(label.labelName[1:], dlg), rowIndex, 0)
+            labelValueEdit = edf.longLineEdit()
+            labelValueEdit.setText(str(label.labelValue))
+            if isPyLabel:
+                labelValueEdit.setReadOnly(True)
+                labelValueEdit.setToolTip("Computed pyLabel (Read Only)")
+            dlg.instanceLabelsLayout.addWidget(labelValueEdit, rowIndex, 1)
+            visibleCombo = QComboBox(dlg)
+            visibleCombo.setInsertPolicy(QComboBox.NoInsert)
+            visibleCombo.addItems(["True", "False"])
+            visibleCombo.setCurrentIndex(0 if label.labelVisible else 1)
+            dlg.instanceLabelsLayout.addWidget(visibleCombo, rowIndex, 2)
+            dlg.labelRows.append({
+                "labelName": label.labelName,
+                "isPyLabel": isPyLabel,
+                "valueEdit": labelValueEdit,
+                "visibleCombo": visibleCombo, })
+
+    def _buildInstanceFromDialog(self, dlg, item: shp.schematicSymbol,
+                                 location: QPoint):
+        """Create a new instance from the dialog state and apply label edits.
+
+        Reused by both Apply (throwaway preview) and OK (committed instance).
+        Returns the new instance with NLP/pyLabels recomputed, or None.
+        """
+        libraryName = dlg.libNameEdit.text().strip()
+        cellName = dlg.cellNameEdit.text().strip()
+        netlistViewName = dlg.viewNameEdit.currentText().strip()
+        symbolViewTuple = ddef.viewNameTuple(libraryName, cellName, "symbol")
+        newInstance = self.instSymbol(symbolViewTuple, location)
+        if newInstance is None:
+            return None
+        newInstance.viewName = netlistViewName
+        newInstance.instanceName = dlg.instNameEdit.text().strip()
+        newInstance.angle = float(dlg.angleEdit.text().strip())
+        newInstance.counter = item.counter
+
+        # Copy edited values from the dialog into the new instance labels.
+        for row in dlg.labelRows:
+            if row["isPyLabel"]:
+                # pyLabel values are computed, not taken from the dialog.
+                continue
+            label = newInstance.labels.get(row["labelName"])
+            if label is None:
+                continue
+            label.labelValue = row["valueEdit"].text()
+            label.labelVisible = row["visibleCombo"].currentText() == "True"
+
+        # Recompute derived labels: NLPLabels first, then pyLabels which may
+        # depend on them.
+        for label in newInstance.labels.values():
+            if label.labelType == lbl.symbolLabel.labelTypes[1]:
+                label.labelDefs()
+        for label in newInstance.labels.values():
+            if label.labelType == lbl.symbolLabel.labelTypes[2]:
+                label.labelDefs()
+        return newInstance
+
+    def _applyInstanceProperties(self, dlg, item: shp.schematicSymbol):
+        """Recompute pyLabels from the current dialog values and refresh them.
+
+        Builds a throwaway instance so nothing is committed to the scene or the
+        undo stack, then writes the recomputed pyLabel values back into their
+        read-only fields for live feedback.
+        """
+        try:
+            location = QPoint(int(float(dlg.xLocationEdit.text().strip())),
+                              int(float(dlg.yLocationEdit.text().strip())), )
+        except ValueError:
+            location = QPoint(0, 0)
+        previewInstance = self._buildInstanceFromDialog(dlg, item, location)
+        if previewInstance is None:
+            return
+        for row in dlg.labelRows:
+            if not row["isPyLabel"]:
+                continue
+            label = previewInstance.labels.get(row["labelName"])
+            if label is not None:
+                row["valueEdit"].setText(str(label.labelValue))
 
     def setNetProperties(self, netItem: snet.schematicNet):
         dlg = pdlg.netProperties(self.editorWindow)

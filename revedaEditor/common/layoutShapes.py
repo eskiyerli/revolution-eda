@@ -661,7 +661,10 @@ class layoutInstance(layoutShape):
             # --- Full-detail mode: ensure children are visible ---
             if getattr(self, "_childrenHidden", False):
                 for child in self.childItems():
-                    child.setVisible(True)
+                    if hasattr(child, "layer") and hasattr(child.layer, "visible"):
+                        child.setVisible(child.layer.visible)
+                    else:
+                        child.setVisible(True)
                 self._childrenHidden = False
 
             painter.setRenderHint(QPainter.NonCosmeticBrushPatterns)

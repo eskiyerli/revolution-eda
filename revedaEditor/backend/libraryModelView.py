@@ -601,9 +601,11 @@ class designLibrariesColumnView(BaseDesignLibrariesView):
             libName = cellItem.parent().libraryName
             if dlg.exec() == QDialog.DialogCode.Accepted:
                 newName = dlg.nameEdit.text().strip()
-                libb.renameCell(self, cloneCellItem, newName)
-                # update the original cell item
-                libb.renameCell(self, cellItem, dlg.nameEdit.text().strip(), )
+                success = libb.renameCell(self, cellItem, newName)
+                if success:
+                    cloneCellItem.setText(newName)
+                    cloneCellItem.setData(cellItem.data(Qt.ItemDataRole.UserRole + 2),
+                                          Qt.ItemDataRole.UserRole + 2)
                 updateJSONFieldInCell(self.libraryModel, libName, 'cell', oldName, newName)
                 self.logger.info(f"Renamed {oldName} to {newName}")
         except OSError as e:
