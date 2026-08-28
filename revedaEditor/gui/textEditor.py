@@ -454,6 +454,183 @@ class spiceEditor(textEditor):
                     file.write(text)
 
 
+class SpectreHighlighter(BaseHighlighter):
+    """Syntax highlighter for Spectre netlist files."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        keywordFormat = QTextCharFormat()
+        keywordFormat.setForeground(QColor("#0000FF"))
+        keywordFormat.setFontWeight(QFont.Bold)
+
+        keywords = ["subckt", "ends", "include", "parameters", "model",
+                    "section", "endsection", "global", "ahdl_include",
+                    "simulator", "library", "endlibrary", "real", "integer"]
+        self.highlightingRules.append((r'\b(' + '|'.join(keywords) + r')\b', keywordFormat))
+
+        analysisFormat = QTextCharFormat()
+        analysisFormat.setForeground(QColor("#00FF0F"))
+        analysisFormat.setFontWeight(QFont.Bold)
+
+        analyses = ["ac", "dc", "tran", "noise", "sp", "pss", "pnoise",
+                    "pac", "psp", "hb", "shooting", "stb"]
+        self.highlightingRules.append(
+            (r'\b(' + '|'.join(analyses) + r')\b', analysisFormat))
+
+        componentFormat = QTextCharFormat()
+        componentFormat.setForeground(QColor("#FF0000"))
+        components = ["resistor", "capacitor", "inductor", "vsource", "isource",
+                      "vcvs", "vccs", "ccvs", "cccs", "port", "nmos", "pmos",
+                      "npn", "pnp", "diode"]
+        self.highlightingRules.append(
+            (r'\b(' + '|'.join(components) + r')\b', componentFormat))
+
+    def highlightComments(self, text):
+        self.highlightSingleLineComments(text, '//')
+        self.highlightMultiLineComments(text, r'/\*', r'\*/')
+
+    def highlightSingleLineComments(self, text, commentStart):
+        expression = re.compile(commentStart + '.*$')
+        for match in expression.finditer(text):
+            start, end = match.span()
+            self.setFormat(start, end - start, self.commentFormat)
+
+    def highlightMultiLineComments(self, text, commentStart, commentEnd):
+        startIndex = 0
+        if self.previousBlockState() != 1:
+            startIndex = text.find(commentStart)
+        while startIndex >= 0:
+            endIndex = text.find(commentEnd, startIndex)
+            if endIndex == -1:
+                self.setCurrentBlockState(1)
+                commentLength = len(text) - startIndex
+            else:
+                commentLength = endIndex - startIndex + len(commentEnd)
+            self.setFormat(startIndex, commentLength, self.commentFormat)
+            startIndex = text.find(commentStart, startIndex + commentLength)
+
+
+class VacaskHighlighter(BaseHighlighter):
+    """Syntax highlighter for VACASK netlist files."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        keywordFormat = QTextCharFormat()
+        keywordFormat.setForeground(QColor("#0000FF"))
+        keywordFormat.setFontWeight(QFont.Bold)
+
+        keywords = ["subckt", "ends", "include", "parameters", "model",
+                    "section", "endsection", "ground", "global", "load",
+                    "control", "endc", "embed", "simulator", "library",
+                    "endlibrary", "real", "integer"]
+        self.highlightingRules.append((r'\b(' + '|'.join(keywords) + r')\b', keywordFormat))
+
+        analysisFormat = QTextCharFormat()
+        analysisFormat.setForeground(QColor("#00FF0F"))
+        analysisFormat.setFontWeight(QFont.Bold)
+
+        analyses = ["ac", "dc", "tran", "noise", "sp", "pss", "pnoise",
+                    "pac", "psp", "hb", "shooting", "stb"]
+        self.highlightingRules.append(
+            (r'\b(' + '|'.join(analyses) + r')\b', analysisFormat))
+
+        componentFormat = QTextCharFormat()
+        componentFormat.setForeground(QColor("#FF0000"))
+        components = ["resistor", "capacitor", "inductor", "vsource", "isource",
+                      "vcvs", "vccs", "ccvs", "cccs", "port", "nmos", "pmos",
+                      "npn", "pnp", "diode", "mutual"]
+        self.highlightingRules.append(
+            (r'\b(' + '|'.join(components) + r')\b', componentFormat))
+
+    def highlightComments(self, text):
+        self.highlightSingleLineComments(text, '//')
+        self.highlightMultiLineComments(text, r'/\*', r'\*/')
+
+    def highlightSingleLineComments(self, text, commentStart):
+        expression = re.compile(commentStart + '.*$')
+        for match in expression.finditer(text):
+            start, end = match.span()
+            self.setFormat(start, end - start, self.commentFormat)
+
+    def highlightMultiLineComments(self, text, commentStart, commentEnd):
+        startIndex = 0
+        if self.previousBlockState() != 1:
+            startIndex = text.find(commentStart)
+        while startIndex >= 0:
+            endIndex = text.find(commentEnd, startIndex)
+            if endIndex == -1:
+                self.setCurrentBlockState(1)
+                commentLength = len(text) - startIndex
+            else:
+                commentLength = endIndex - startIndex + len(commentEnd)
+            self.setFormat(startIndex, commentLength, self.commentFormat)
+            startIndex = text.find(commentStart, startIndex + commentLength)
+
+
+class spectreEditor(textEditor):
+    def __init__(self, filePathObj: Path):
+        super().__init__(filePathObj)
+        self.initEditor()
+        self.setWindowTitle("Spectre Editor")
+
+    def initEditor(self):
+        self.highlighter = SpectreHighlighter(self.textEdit.document())
+        super().initEditor()
+
+    def openFile(self):
+        (fileName, _) = QFileDialog.getOpenFileName(self, "Open File", "",
+                                                    "Spectre Files (*.scs);;All Files (*)")
+        if fileName:
+            self.filePathObj = Path(fileName)
+            if self.filePathObj.exists():
+                with self.filePathObj.open("r") as file:
+                    text = file.read()
+                    self.textEdit.setPlainText(text)
+
+    def saveAsFile(self):
+        (fileName, _) = QFileDialog.getSaveFileName(self, "Save File",
+                                                    str(self.filePathObj),
+                                                    "Spectre Files (*.scs);;All Files (*)")
+        if fileName:
+            self.filePathObj = Path(fileName)
+            if self.filePathObj:
+                with self.filePathObj.open("w") as file:
+                    text = self.textEdit.toPlainText()
+                    file.write(text)
+
+
+class vacaskEditor(textEditor):
+    def __init__(self, filePathObj: Path):
+        super().__init__(filePathObj)
+        self.initEditor()
+        self.setWindowTitle("VACASK Editor")
+
+    def initEditor(self):
+        self.highlighter = VacaskHighlighter(self.textEdit.document())
+        super().initEditor()
+
+    def openFile(self):
+        (fileName, _) = QFileDialog.getOpenFileName(self, "Open File", "",
+                                                    "VACASK Files (*.vacask);;All Files (*)")
+        if fileName:
+            self.filePathObj = Path(fileName)
+            if self.filePathObj.exists():
+                with self.filePathObj.open("r") as file:
+                    text = file.read()
+                    self.textEdit.setPlainText(text)
+
+    def saveAsFile(self):
+        (fileName, _) = QFileDialog.getSaveFileName(self, "Save File",
+                                                    str(self.filePathObj),
+                                                    "VACASK Files (*.vacask);;All Files (*)")
+        if fileName:
+            self.filePathObj = Path(fileName)
+            if self.filePathObj:
+                with self.filePathObj.open("w") as file:
+                    text = self.textEdit.toPlainText()
+                    file.write(text)
+
+
 def main():
     app = QApplication(sys.argv)
     editor = verilogaEditor(None, '')

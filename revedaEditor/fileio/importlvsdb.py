@@ -13,8 +13,8 @@ import logging
 import re
 from typing import List, Dict, Any, Optional, Iterator, Tuple
 
-from PySide6.QtGui import (QBrush, QColor, QPen)
-from PySide6.QtCore import (QRect, Qt)
+# from PySide6.QtGui import (QBrush, QColor, QPen)
+from PySide6.QtCore import (QRect)
 from PySide6.QtWidgets import QGraphicsRectItem
 
 # from revedaEditor.backend.pdkLoader import importPDKModule
@@ -775,75 +775,85 @@ class LVSDBParser:
         """
         Returns extracted schematic with resolved net names for creating a schematic view.
 
+        Uses layout-side devices (the actual extracted topology) rather than
+        schematic-side devices, so that unconnected multi-finger devices appear
+        as individual transistors matching the extracted netlist.
+
         Returns dict with:
         - 'name': schematic cell name
-        - 'nets': list of {id, name, layout_net_id}  # schematic nets with names resolved
-        - 'devices': list of {id, name, type, params, terminals}  # devices with terminal net names
+        - 'nets': list of {id, name, layout_net_id}  # layout nets with resolved names
+        - 'devices': list of {id, name, type, params, terminals}  # layout devices with net names
         - 'equivalent': True/False/None  # LVS equivalence status
         """
+        layout_cell_data = self._get_layout_cell(layout_cell_name)
+        if not layout_cell_data:
+            return None
+
         xref = self.get_crossref(layout_cell_name)
-        if not xref:
-            return None
 
-        schematic_name = xref.get('schematic_name', layout_cell_name.upper())
-        cell_data = self._get_schematic_cell(schematic_name)
-        if not cell_data:
-            return None
+        # Build layout net ID -> display name mapping.
+        # Prefer schematic net names (via crossref) for user-friendliness;
+        # fall back to layout net names when no crossref exists.
+        layout_net_id_to_name = {}
+        for net in layout_cell_data.get('nets', []):
+            layout_net_id_to_name[net['net_id']] = net.get('name', '')
 
-        # Build net ID -> name lookup from schematic nets
-        net_id_to_name = {}
-        for net in cell_data.get('nets', []):
-            net_id_to_name[net['net_id']] = net.get('name', '')
+        if xref:
+            schematic_name = xref.get('schematic_name', layout_cell_name.upper())
+            schem_cell_data = self._get_schematic_cell(schematic_name)
 
-        # Build layout net ID -> schematic net name mapping from crossref
-        layout_to_schem_net = {}
-        for mapping in xref.get('mapping', {}).get('nets', []):
-            layout_net = mapping.get('layout_net')
-            schem_net = mapping.get('schem_net')
-            if layout_net and schem_net:
-                # schem_net is an ID, look up its name
-                layout_to_schem_net[layout_net] = net_id_to_name.get(schem_net, schem_net)
+            # Build schematic net ID -> schematic net name lookup
+            schem_net_id_to_name = {}
+            if schem_cell_data:
+                for net in schem_cell_data.get('nets', []):
+                    schem_net_id_to_name[net['net_id']] = net.get('name', '')
 
-        # Process devices - resolve terminal net IDs to names
+            # Map layout net ID -> schematic net name via crossref
+            for mapping in xref.get('mapping', {}).get('nets', []):
+                layout_net = mapping.get('layout_net')
+                schem_net = mapping.get('schem_net')
+                if layout_net and schem_net:
+                    resolved_name = schem_net_id_to_name.get(schem_net, '')
+                    if resolved_name:
+                        layout_net_id_to_name[layout_net] = resolved_name
+        else:
+            schematic_name = layout_cell_name
+
+        # Process layout devices - resolve terminal net IDs to names
         devices = []
-        for dev in cell_data.get('devices', []):
+        for dev in layout_cell_data.get('devices', []):
+            device_type = self._normalize_device_type(dev.get('type'))
             resolved_dev = {
                 'id': dev['id'],
                 'name': dev.get('name', ''),
-                'type': dev['type'],
+                'type': device_type,
                 'params': dev.get('params', {}),
                 'terminals': {}
             }
-            # Resolve terminal net IDs to names
             for term_name, net_id in dev.get('terminals', {}).items():
-                net_name = net_id_to_name.get(net_id, net_id)
+                # Skip connection entries (conn_*) that aren't real terminals
+                if term_name.startswith('conn_'):
+                    continue
+                net_name = layout_net_id_to_name.get(net_id, net_id)
                 resolved_dev['terminals'][term_name] = net_name
             devices.append(resolved_dev)
 
-        # Build reverse lookup: schematic net ID -> layout net ID
-        schem_to_layout_net = {
-            m['schem_net']: m['layout_net']
-            for m in xref.get('mapping', {}).get('nets', [])
-            if m.get('schem_net') and m.get('layout_net')
-        }
-
-        # Process nets with their layout mapping
+        # Process nets
         nets = []
-        for net in cell_data.get('nets', []):
+        for net in layout_cell_data.get('nets', []):
             net_id = net['net_id']
-            net_name = net.get('name', '')
-            layout_net_id = schem_to_layout_net.get(net_id)
+            net_name = layout_net_id_to_name.get(net_id, net.get('name', ''))
             nets.append({
                 'id': net_id,
                 'name': net_name,
-                'layout_net_id': layout_net_id
+                'layout_net_id': net_id
             })
 
         return {
             'name': schematic_name,
             'nets': nets,
             'devices': devices,
-            'equivalent': xref.get('equivalent')
+            'equivalent': xref.get('equivalent') if xref else None
         }
 
     def get_crossref(self, cell_name: str) -> Optional[Dict]:

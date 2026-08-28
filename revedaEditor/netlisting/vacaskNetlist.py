@@ -205,12 +205,16 @@ class vacaskNetlist:
             self.recursiveNetlisting(self.schematic, contentBuffer)
 
             # Write global directive with collected non-ground global net names.
-            globalNets = " ".join(sorted(self.globalNets))
+            globalNets = " ".join(
+                sorted(vacaskNetlist._quoteId(n) for n in self.globalNets)
+            )
             if globalNets:
                 cirFile.write(f"global {globalNets}\n\n")
 
             # Write ground directive with collected ground net names (once).
-            groundNets = " ".join(sorted(self.groundNets))
+            groundNets = " ".join(
+                sorted(vacaskNetlist._quoteId(n) for n in self.groundNets)
+            )
             if groundNets:
                 cirFile.write(f"ground 0 {groundNets}\n\n")
             else:
@@ -714,10 +718,10 @@ class vacaskNetlist:
             def expandNet(netName: str) -> list[str]:
                 baseName, netTuple = self.parseArrayNotation(netName)
                 if netTuple[0] == netTuple[1] == -1:
-                    return [baseName]
+                    return [vacaskNetlist._quoteId(baseName)]
                 netStep = 1 if netTuple[1] >= netTuple[0] else -1
                 return [
-                    f"{baseName}<{i}>"
+                    vacaskNetlist._quoteId(f"{baseName}<{i}>")
                     for i in range(netTuple[0], netTuple[1] + netStep, netStep)
                 ]
 
@@ -752,13 +756,14 @@ class vacaskNetlist:
                         break
 
             if canUseVectorNotation:
-                # Preserve vector notation: I5<0:3> (OUT<0:3> INP<0:3>) resistor r=1k
+                # Preserve vector notation: 'I5<0:3>' ('OUT<0:3>' 'INP<0:3>') resistor r=1k
+                _q = vacaskNetlist._quoteId
                 vectorNetsList = " ".join([
-                    f"{baseName}<{netTuple[0]}:{netTuple[1]}>"
+                    _q(f"{baseName}<{netTuple[0]}:{netTuple[1]}>")
                     if netTuple else baseName
                     for baseName, netTuple in netVectorInfos
                 ])
-                vectorInstName = f"{baseInstName}<{arrayTuple[0]}:{arrayTuple[1]}>"
+                vectorInstName = _q(f"{baseInstName}<{arrayTuple[0]}:{arrayTuple[1]}>")
                 symbolLines.append(
                     processLine(createInstanceLine(vectorInstName), vectorNetsList)
                 )
@@ -796,7 +801,9 @@ class vacaskNetlist:
                         specificNetsList = " ".join(instanceNets)
                         symbolLines.append(
                             processLine(
-                                createInstanceLine(f"{baseInstName}<{i}>"),
+                                createInstanceLine(
+                                    vacaskNetlist._quoteId(f"{baseInstName}<{i}>")
+                                ),
                                 specificNetsList,
                             )
                         )
@@ -922,6 +929,21 @@ class vacaskNetlist:
     # ------------------------------------------------------------------
 
     @staticmethod
+    def _quoteId(name: str) -> str:
+        """Quote an identifier with single quotes if it contains ``<`` or ``>``.
+
+        VACASK treats ``<`` and ``>`` as operators, so net/instance names that
+        use angle-bracket bus notation must be wrapped in single quotes to form
+        a valid quoted identifier.  Plain identifiers are returned unchanged.
+
+        Any embedded single quotes in *name* are escaped as ``''`` per VACASK
+        quoted-identifier rules.
+        """
+        if '<' in name or '>' in name:
+            return "'" + name.replace("'", "''") + "'"
+        return name
+
+    @staticmethod
     @functools.lru_cache(maxsize=1024)
     def parseArrayNotation(name: str) -> tuple[str, tuple[int, int]]:
         """Parse net/instance array notation like ``'name<0:5>'`` into base name and index range.
@@ -968,15 +990,17 @@ class vacaskNetlist:
 
         Example:
             >>> vacaskNetlist.expandPinNames(["a<0:1>", "b"])
-            'a<0> a<1> b'
+            "'a<0>' 'a<1>' b"
         """
         expandedPinNameList: list[str] = []
         for pinName in pinNamesList:
             pinBaseName, pinTuple = vacaskNetlist.parseArrayNotation(pinName)
             if pinTuple[0] == pinTuple[1] == -1:
-                expandedPinNameList.append(pinBaseName)
+                expandedPinNameList.append(vacaskNetlist._quoteId(pinBaseName))
             else:
                 pinStep = 1 if pinTuple[1] >= pinTuple[0] else -1
                 for i in range(pinTuple[0], pinTuple[1] + pinStep):
-                    expandedPinNameList.append(f'{pinBaseName}<{i}>')
+                    expandedPinNameList.append(
+                        vacaskNetlist._quoteId(f'{pinBaseName}<{i}>')
+                    )
         return ' '.join(expandedPinNameList)

@@ -532,6 +532,22 @@ class importCellDialogue(QDialog):
             self.file_label = "Select Spice file:"
             self.view_label = "Spice  cellview:"
             self.caption = "Select Spice file."
+        elif file_type == "Spectre":
+            self.setWindowTitle("Import a Spectre Subcircuit File")
+            self.setMinimumSize(500, 200)
+            self.file_extension = ".scs"
+            self.file_filter = "Spectre files (*.scs)"
+            self.file_label = "Select Spectre file:"
+            self.view_label = "Spectre cellview:"
+            self.caption = "Select Spectre file."
+        elif file_type == "VACASK":
+            self.setWindowTitle("Import a VACASK Subcircuit File")
+            self.setMinimumSize(500, 200)
+            self.file_extension = ".vacask"
+            self.file_filter = "VACASK files (*.vacask)"
+            self.file_label = "Select VACASK file:"
+            self.view_label = "VACASK cellview:"
+            self.caption = "Select VACASK file."
 
         self._setup_ui()
         self.show()
@@ -667,6 +683,36 @@ class importSpiceCellDialogue(importCellDialogue):
     @spiceFileName.setter
     def spiceFileName(self, value):
         self._fileName = value
+
+
+class importSpectreCellDialogue(importCellDialogue):
+    def __init__(self, model, parent):
+        super().__init__(model, parent, "Spectre")
+
+    @property
+    def spectreFileEdit(self):
+        """Compatibility property for existing code"""
+        return self.fileEdit
+
+    @property
+    def spectreViewName(self):
+        """Compatibility property for existing code"""
+        return self.viewName
+
+
+class importVacaskCellDialogue(importCellDialogue):
+    def __init__(self, model, parent):
+        super().__init__(model, parent, "VACASK")
+
+    @property
+    def vacaskFileEdit(self):
+        """Compatibility property for existing code"""
+        return self.fileEdit
+
+    @property
+    def vacaskViewName(self):
+        """Compatibility property for existing code"""
+        return self.viewName
 
 
 class createConfigViewDialogue(QDialog):

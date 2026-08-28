@@ -40,6 +40,8 @@ import revedaEditor.backend.libraryMethods as libm
 import revedaEditor.fileio.importGDS as igds
 import revedaEditor.fileio.importLayp as imlyp
 import revedaEditor.fileio.importSpice as impspice
+import revedaEditor.fileio.importSpectre as impspectre
+import revedaEditor.fileio.importVacask as impvacask
 import revedaEditor.fileio.importVeriloga as impvlga
 import revedaEditor.fileio.importXschemSym as impxsym
 import revedaEditor.gui.fileDialogues as fd
@@ -99,7 +101,7 @@ class MainWindow(QMainWindow):
     # Class-level constants
     WINDOW_SIZE = QSize(900, 300)
     VIEW_TYPES = {
-        "switch": ["schematic", "veriloga", "spice", "symbol"],
+        "switch": ["schematic", "veriloga", "spice", "spectre", "vacask", "symbol"],
         "stop": ["symbol"],
     }
     PATHS = {
@@ -247,6 +249,8 @@ class MainWindow(QMainWindow):
         self.menuTools.addAction(self.createStippleAction)
         self.importTools.addAction(self.importVerilogaAction)
         self.importTools.addAction(self.importSpiceAction)
+        self.importTools.addAction(self.importSpectreAction)
+        self.importTools.addAction(self.importVacaskAction)
         self.importTools.addAction(self.importLaypFileAction)
         self.importTools.addAction((self.importXschSymAction))
         self.importTools.addAction(self.importGDSAction)
@@ -271,6 +275,12 @@ class MainWindow(QMainWindow):
         )
         self.importSpiceAction = QAction(
             importVerilogaIcon, "Import Spice file...", self
+        )
+        self.importSpectreAction = QAction(
+            importVerilogaIcon, "Import Spectre file...", self
+        )
+        self.importVacaskAction = QAction(
+            importVerilogaIcon, "Import VACASK file...", self
         )
         self.importLaypFileAction = QAction(
             importVerilogaIcon, "Import KLayout Layer Prop. " "File...", self
@@ -300,6 +310,8 @@ class MainWindow(QMainWindow):
         self.libraryBrowserAction.triggered.connect(self.libraryBrowserClick)
         self.importVerilogaAction.triggered.connect(self.importVerilogaClick)
         self.importSpiceAction.triggered.connect(self.importSpiceClick)
+        self.importSpectreAction.triggered.connect(self.importSpectreClick)
+        self.importVacaskAction.triggered.connect(self.importVacaskClick)
         self.importLaypFileAction.triggered.connect(self.importLaypClick)
         self.importXschSymAction.triggered.connect(self.importXschSymClick)
         self.optionsAction.triggered.connect(self.optionsClick)
@@ -451,6 +463,18 @@ class MainWindow(QMainWindow):
             None
         """
         impspice.importSpiceSubckt(ddef.viewNameTuple("", "", ""), "")
+
+    def importSpectreClick(self):
+        """
+        Import a Spectre view and add it to a design library.
+        """
+        impspectre.importSpectreSubckt(ddef.viewNameTuple("", "", ""), "")
+
+    def importVacaskClick(self):
+        """
+        Import a VACASK view and add it to a design library.
+        """
+        impvacask.importVacaskSubckt(ddef.viewNameTuple("", "", ""), "")
 
     def importLaypClick(self):
         importDlg = fd.klayoutLaypImportDialogue(self)

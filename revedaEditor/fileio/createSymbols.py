@@ -358,3 +358,157 @@ def createSpiceSymbol(
                 symbolViewItem.viewName,
             )
             symbolWindow.libraryView.openViews[symbolViewTuple] = symbolWindow
+
+
+def createSpectreSymbol(
+        parent: QMainWindow,
+        spectreItemTuple: ddef.viewItemTuple,
+        libraryDict: dict,
+        libraryBrowser: libw.libraryBrowser,
+        importedSpectreObj: hdl.spectreC,
+):
+    symbolNameDlg = fd.newCellViewDialog(
+        parent, libraryBrowser.designView.libraryModel
+    )
+    symbolNameDlg.libNamesCB.setCurrentText(spectreItemTuple.libraryItem.libraryName)
+    symbolNameDlg.cellCB.setCurrentText(spectreItemTuple.cellItem.cellName)
+    symbolNameDlg.viewType.addItems(["symbol"])
+    symbolNameDlg.viewName.setText("symbol")
+    if symbolNameDlg.exec() == QDialog.DialogCode.Accepted:
+        symbolViewName = symbolNameDlg.viewName.text().strip()
+        symbolViewItem = scb.createCellView(
+            parent, symbolViewName, spectreItemTuple.cellItem
+        )
+        symbolWindow = syed.symbolEditor(
+            symbolViewItem,
+            libraryDict,
+            libraryBrowser.libBrowserCont.designView,
+        )
+        symbolScene = symbolWindow.centralW.scene
+        dlg = pdlg.symbolCreateDialog(parent)
+        dlg.leftPinsEdit.setText(", ".join(importedSpectreObj.subcktParams["pins"]))
+
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            rectXDim, rectYDim = drawBaseSymbol(symbolScene, dlg)
+            symbolFileLabel = symbolScene.labelDraw(
+                QPoint(int(0.25 * rectXDim), int(-0.2 * rectYDim)),
+                f"[@subcktName:subcktName=%:subcktName={importedSpectreObj.subcktParams['name']}]",
+                "NLPLabel",
+                "12",
+                "Center",
+                "R0",
+                "Instance",
+            )
+            symbolFileLabel.labelVisible = False
+            instParamNum = len(importedSpectreObj.subcktParams["params"])
+            for index, (key, value) in enumerate(
+                    importedSpectreObj.subcktParams["params"].items()
+            ):
+                symbolScene.labelDraw(
+                    QPoint(
+                        int(rectXDim),
+                        int(index * 0.2 * rectYDim / instParamNum) if instParamNum else 0,
+                    ),
+                    f"[@{key}:{key}=%:{key}={value}]",
+                    "NLPLabel",
+                    "12",
+                    "Center",
+                    "R0",
+                    "Instance",
+                )
+            symbolScene.attributeList = list()
+            symbolScene.attributeList.append(
+                se.symbolAttribute("pinOrder", importedSpectreObj.pinOrder)
+            )
+            symbolScene.attributeList.append(
+                se.symbolAttribute("incLine", importedSpectreObj.pathObj.name)
+            )
+            symbolScene.attributeList.append(
+                se.symbolAttribute("SpectreNetlistLine",
+                                   importedSpectreObj.netlistLine)
+            )
+
+            symbolWindow.show()
+            symbolViewTuple = ddef.viewNameTuple(
+                spectreItemTuple.libraryItem.libraryName,
+                spectreItemTuple.cellItem.cellName,
+                symbolViewItem.viewName,
+            )
+            symbolWindow.libraryView.openViews[symbolViewTuple] = symbolWindow
+
+
+def createVacaskSymbol(
+        parent: QMainWindow,
+        vacaskItemTuple: ddef.viewItemTuple,
+        libraryDict: dict,
+        libraryBrowser: libw.libraryBrowser,
+        importedVacaskObj: hdl.vacaskC,
+):
+    symbolNameDlg = fd.newCellViewDialog(
+        parent, libraryBrowser.designView.libraryModel
+    )
+    symbolNameDlg.libNamesCB.setCurrentText(vacaskItemTuple.libraryItem.libraryName)
+    symbolNameDlg.cellCB.setCurrentText(vacaskItemTuple.cellItem.cellName)
+    symbolNameDlg.viewType.addItems(["symbol"])
+    symbolNameDlg.viewName.setText("symbol")
+    if symbolNameDlg.exec() == QDialog.DialogCode.Accepted:
+        symbolViewName = symbolNameDlg.viewName.text().strip()
+        symbolViewItem = scb.createCellView(
+            parent, symbolViewName, vacaskItemTuple.cellItem
+        )
+        symbolWindow = syed.symbolEditor(
+            symbolViewItem,
+            libraryDict,
+            libraryBrowser.libBrowserCont.designView,
+        )
+        symbolScene = symbolWindow.centralW.scene
+        dlg = pdlg.symbolCreateDialog(parent)
+        dlg.leftPinsEdit.setText(", ".join(importedVacaskObj.subcktParams["pins"]))
+
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            rectXDim, rectYDim = drawBaseSymbol(symbolScene, dlg)
+            symbolFileLabel = symbolScene.labelDraw(
+                QPoint(int(0.25 * rectXDim), int(-0.2 * rectYDim)),
+                f"[@subcktName:subcktName=%:subcktName={importedVacaskObj.subcktParams['name']}]",
+                "NLPLabel",
+                "12",
+                "Center",
+                "R0",
+                "Instance",
+            )
+            symbolFileLabel.labelVisible = False
+            instParamNum = len(importedVacaskObj.subcktParams["params"])
+            for index, (key, value) in enumerate(
+                    importedVacaskObj.subcktParams["params"].items()
+            ):
+                symbolScene.labelDraw(
+                    QPoint(
+                        int(rectXDim),
+                        int(index * 0.2 * rectYDim / instParamNum) if instParamNum else 0,
+                    ),
+                    f"[@{key}:{key}=%:{key}={value}]",
+                    "NLPLabel",
+                    "12",
+                    "Center",
+                    "R0",
+                    "Instance",
+                )
+            symbolScene.attributeList = list()
+            symbolScene.attributeList.append(
+                se.symbolAttribute("pinOrder", importedVacaskObj.pinOrder)
+            )
+            symbolScene.attributeList.append(
+                se.symbolAttribute("incLine", importedVacaskObj.pathObj.name)
+            )
+            symbolScene.attributeList.append(
+                se.symbolAttribute("VacaskNetlistLine",
+                                   importedVacaskObj.netlistLine)
+            )
+
+            symbolWindow.show()
+            symbolViewTuple = ddef.viewNameTuple(
+                vacaskItemTuple.libraryItem.libraryName,
+                vacaskItemTuple.cellItem.cellName,
+                symbolViewItem.viewName,
+            )
+            symbolWindow.libraryView.openViews[symbolViewTuple] = symbolWindow

@@ -1128,6 +1128,12 @@ class lvsResultsDialogue(QDialog):
         parts = [part for part in norm.split('.') if part]
         variants = {norm, *parts}
         variants.update(self._ref_tokens(norm))
+        # Also add $-suffix variants for SPICE instance name matching
+        # e.g., "M$2" → also adds "$2", and "$2" stays as "$2"
+        for part in list(variants):
+            dollar_idx = part.find('$')
+            if dollar_idx > 0:
+                variants.add(part[dollar_idx:])  # "$2" from "M$2"
         return {variant for variant in variants if variant}
 
     def _symbol_matches_device_ref(self, symbol_item: shp.schematicSymbol, refs: set[str],
@@ -1243,6 +1249,14 @@ class lvsResultsDialogue(QDialog):
             f"{device.get('type', '?')} ({device.get('id', '?')}) - {device.get('name', '?')}"
         )
         self.layoutEditor.handleLVSRectSelection([rect_item])
+
+        # Also highlight corresponding device in lvs_schematic
+        # Layout device ID (e.g., 2) maps to SPICE instance "$2" or "M$2"
+        dev_id = device.get('id')
+        if dev_id is not None:
+            schem_device = dict(device)
+            schem_device['name'] = f"${dev_id}"
+            self._highlight_schematic_device(schem_device)
 
     def onCellSelected(self, cell):
         """Handle cell selection from cells table."""
@@ -1935,7 +1949,7 @@ class lvsResultsDialogue(QDialog):
             scene.addItem(rect_item)
             self._schematic_highlight_rects.append(rect_item)
 
-    def _extract_device_ids_for_view(self, extracted: dict | None) -> set[str]:
+    def _extract_device_ids_for_view(self, extracted: dict | None) -> set[str] | None:
         """Extract device IDs that belong to the current extracted hierarchy level.
 
         When drilling into a nested lvs_schematic, only devices at that hierarchy level
@@ -1947,20 +1961,27 @@ class lvsResultsDialogue(QDialog):
                       or None if no extraction data available.
 
         Returns:
-            Set of device ID strings that exist in the current hierarchy level. Always returns
-            a set (possibly empty); never None.
+            Set of device ID strings that exist in the current hierarchy level,
+            or None if no hierarchy filtering is needed (flat extraction).
         """
-        device_ids: set[str] = set()
         if not isinstance(extracted, dict):
-            return device_ids
+            return None
 
+        # If there's no hierarchy (no primitive_device_ids or primitive_devices keys),
+        # return None to signal "no filtering" - all devices can be highlighted.
+        has_primitive_ids = 'primitive_device_ids' in extracted
+        has_primitive_devs = 'primitive_devices' in extracted
+        if not has_primitive_ids and not has_primitive_devs:
+            return None
+
+        device_ids: set[str] = set()
         for device_id in extracted.get('primitive_device_ids', []):
             device_ids.add(str(device_id))
         for device in extracted.get('primitive_devices', []):
             if isinstance(device, dict) and device.get('id') is not None:
                 device_ids.add(str(device.get('id')))
 
-        return device_ids
+        return device_ids if device_ids else None
 
     def _relative_device_refs(self, device: dict) -> set[str]:
         """Extract and normalize device references relative to current hierarchy level.

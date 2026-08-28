@@ -30,7 +30,7 @@ import revedaEditor.common.net as snet
 
 SYMBOL_PIN_DISTANCE = 80
 SYMBOL_STUB_LENGHT = 20
-LAYOUT_TO_SCHEMATIC_SCALE = 100  # schematic scene units per µm of layout position
+LAYOUT_TO_SCHEMATIC_SCALE = 800  # schematic scene units per µm of layout position
 
 
 class klayoutSchematicGenerator:
@@ -202,36 +202,29 @@ class klayoutSchematicGenerator:
         return enrichedExtracted
 
     def buildPositionMapping(self) -> dict:
-        """Build mapping from schematic device IDs to layout positions."""
+        """Build mapping from device IDs to layout positions."""
         self.schem_to_layout_pos = {}
         layout_devices = self.parser.get_layout_devices(self.layoutEditor.cellName)
         xref = self.parser.get_crossref(self.layoutEditor.cellName)
 
-        # print(f"DEBUG: layout_devices count: {len(layout_devices) if layout_devices else 0}")
-        # print(f"DEBUG: xref: {xref}")
-
-        if xref and layout_devices:
+        if layout_devices:
             layout_pos_by_id = {
                 self._make_hashable(d["id"]): d.get("position") for d in layout_devices
             }
-            # print(f"DEBUG: layout_pos_by_id sample: {list(layout_pos_by_id.items())[:3]}")
-            # print(f"DEBUG: xref mappings count: {len(xref.get('mapping', {}).get('devices', []))}")
-            for mapping in xref.get("mapping", {}).get("devices", []):
-                layout_dev = self._make_hashable(mapping.get("layout_dev"))
-                schem_dev = self._make_hashable(mapping.get("schem_dev"))
-                if layout_dev in layout_pos_by_id and schem_dev is not None:
-                    self.schem_to_layout_pos[schem_dev] = layout_pos_by_id[layout_dev]
-        
-        # Fallback: if xref mapping is sparse, use direct ID match
-        # (extracted schematic devices should have IDs matching layout devices)
-        if len(self.schem_to_layout_pos) < len(layout_devices) if layout_devices else 0:
-            # print(f"DEBUG: xref sparse ({len(self.schem_to_layout_pos)} matches), using direct ID fallback")
-            for d in layout_devices:
-                dev_id = self._make_hashable(d["id"])
-                if dev_id not in self.schem_to_layout_pos:
-                    self.schem_to_layout_pos[dev_id] = d.get("position")
-        
-        # print(f"DEBUG: schem_to_layout_pos count: {len(self.schem_to_layout_pos)}")
+
+            # Direct mapping: layout device ID -> position
+            for dev_id, pos in layout_pos_by_id.items():
+                if pos is not None:
+                    self.schem_to_layout_pos[dev_id] = pos
+
+            # Also add xref-based schematic ID -> position mapping for compatibility
+            if xref:
+                for mapping in xref.get("mapping", {}).get("devices", []):
+                    layout_dev = self._make_hashable(mapping.get("layout_dev"))
+                    schem_dev = self._make_hashable(mapping.get("schem_dev"))
+                    if layout_dev in layout_pos_by_id and schem_dev is not None:
+                        self.schem_to_layout_pos[schem_dev] = layout_pos_by_id[layout_dev]
+
         return self.schem_to_layout_pos
 
     def _findCellItem(self, cellName: str):
@@ -385,9 +378,8 @@ class klayoutSchematicGenerator:
             else:
                 return None
 
-            x = int(round(float(x_raw)/self.tempSchematicEditor.majorGrid))
-            y = int(round(float(y_raw)/self.tempSchematicEditor.majorGrid))
-            # print(f"Layout position: {layout_pos}, Scene position: ({x}, {y})")
+            x = int(round(float(x_raw) * LAYOUT_TO_SCHEMATIC_SCALE))
+            y = int(round(float(y_raw) * LAYOUT_TO_SCHEMATIC_SCALE))
             return snapToGrid(QPoint(x, y))
         except (TypeError, ValueError):
             return None
@@ -411,6 +403,8 @@ class klayoutSchematicGenerator:
 
         schem_dev_id = device.get("id")
         layout_pos = self._getMappedLayoutPosition(schem_dev_id)
+        if layout_pos is None:
+            layout_pos = device.get("position")
         if layout_pos is None:
             layout_pos = self._getAggregateLayoutPosition(device.get("source_device_ids", []))
         snapToGrid = scene.snapToGrid

@@ -426,7 +426,8 @@ class PCellCache:
     def clear_caches(cls):
         cls.getPCellDef.cache_clear()
         cls.getPCellClass.cache_clear()
-        cls._instance.layout_file_cache.clear()
+        if cls._instance is not None:
+            cls._instance.layout_file_cache.clear()
 
 
 class layoutItems:

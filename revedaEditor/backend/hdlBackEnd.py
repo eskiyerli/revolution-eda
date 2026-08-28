@@ -261,3 +261,251 @@ class spiceC:
     @property
     def pathObj(self):
         return self._pathObj
+
+
+class spectreC:
+    """Parse a Spectre subcircuit file to extract name, pins, and parameters.
+
+    Spectre subcircuit syntax:
+        subckt name (pin1 pin2 ...) [parameters key=val ...]
+        ...
+        ends name
+    """
+
+    def __init__(self, pathObj: pathlib.Path):
+        self._pathObj = pathObj
+        self._pins = []
+        self._pinOrder = ""
+        with self._pathObj.open("r", encoding="utf-8") as f:
+            self._fileLines = f.readlines()
+        self.subcktParams = self.extractSubcktParams()
+        self._netlistLine = ""
+
+    @property
+    def pinOrder(self):
+        self._pinOrder = ", ".join(self._pins)
+        return self._pinOrder
+
+    @property
+    def netlistLine(self):
+        """Spectre instance line: instName (pins) cellName key=value ..."""
+        instParamRefs = " ".join(
+            f"{k}=@{k}" for k in self.subcktParams.get("params", {})
+        )
+        name = self.subcktParams.get("name", "")
+        if instParamRefs.strip():
+            self._netlistLine = f"@instName (%pinOrder) {name} {instParamRefs}"
+        else:
+            self._netlistLine = f"@instName (%pinOrder) {name}"
+        return self._netlistLine
+
+    def subcktLineExtract(self):
+        """Extract the full subckt declaration, handling line continuations with backslash."""
+        subcktLine = ""
+        for lineno, line in enumerate(self._fileLines):
+            stripped = line.strip()
+            # Skip comments
+            if stripped.startswith("//") or stripped.startswith("*"):
+                continue
+            if stripped.lower().startswith("subckt ") or stripped.lower().startswith("subckt\t"):
+                subcktLine = stripped
+                # Handle backslash continuations
+                while subcktLine.endswith("\\"):
+                    subcktLine = subcktLine[:-1].strip()
+                    lineno += 1
+                    if lineno < len(self._fileLines):
+                        subcktLine = f"{subcktLine} {self._fileLines[lineno].strip()}"
+                break
+        return subcktLine
+
+    def extractSubcktParams(self):
+        """Parse subckt line: subckt name (pin1 pin2 ...) [parameters p1=v1 ...]"""
+        subcktDict = {"params": {}, "name": "", "pins": []}
+        subcktLine = self.subcktLineExtract()
+        if not subcktLine:
+            self._pins = []
+            self._pinOrder = ""
+            return subcktDict
+
+        # Extract subcircuit name (first token after 'subckt')
+        afterSubckt = subcktLine.split(None, 1)
+        if len(afterSubckt) < 2:
+            self._pins = []
+            self._pinOrder = ""
+            return subcktDict
+
+        remainder = afterSubckt[1]
+
+        # Extract name (up to '(' or whitespace)
+        if "(" in remainder:
+            name = remainder[:remainder.index("(")].strip()
+            afterName = remainder[remainder.index("("):]
+        else:
+            parts = remainder.split()
+            name = parts[0]
+            afterName = " ".join(parts[1:])
+
+        subcktDict["name"] = name
+
+        # Extract pins (inside parentheses)
+        if "(" in afterName and ")" in afterName:
+            pinSection = afterName[afterName.index("(") + 1:afterName.index(")")]
+            pins = [p.strip() for p in pinSection.split() if p.strip()]
+            subcktDict["pins"] = pins
+            afterPins = afterName[afterName.index(")") + 1:].strip()
+        else:
+            # Pins without parentheses — tokens before 'parameters' keyword
+            tokens = afterName.split()
+            paramIdx = None
+            for i, t in enumerate(tokens):
+                if t.lower() == "parameters":
+                    paramIdx = i
+                    break
+            if paramIdx is not None:
+                pins = tokens[:paramIdx]
+                afterPins = " ".join(tokens[paramIdx:])
+            else:
+                pins = tokens
+                afterPins = ""
+            subcktDict["pins"] = [p.strip() for p in pins if p.strip()]
+
+        self._pins = subcktDict["pins"]
+        self._pinOrder = ", ".join(self._pins)
+
+        # Extract parameters (after 'parameters' keyword or inline key=val)
+        if afterPins:
+            paramStr = afterPins
+            # Remove leading 'parameters' keyword if present
+            if paramStr.lower().startswith("parameters"):
+                paramStr = paramStr[len("parameters"):].strip()
+            for m in re.finditer(r'([A-Za-z_][\w]*)\s*=\s*([^\s]+)', paramStr):
+                subcktDict["params"][m.group(1)] = m.group(2)
+
+        return subcktDict
+
+    @property
+    def pathObj(self):
+        return self._pathObj
+
+
+class vacaskC:
+    """Parse a VACASK subcircuit file to extract name, pins, and parameters.
+
+    VACASK subcircuit syntax (same structure as Spectre):
+        subckt name (pin1 pin2 ...) [parameters key=val ...]
+        ...
+        ends name
+    """
+
+    def __init__(self, pathObj: pathlib.Path):
+        self._pathObj = pathObj
+        self._pins = []
+        self._pinOrder = ""
+        with self._pathObj.open("r", encoding="utf-8") as f:
+            self._fileLines = f.readlines()
+        self.subcktParams = self.extractSubcktParams()
+        self._netlistLine = ""
+
+    @property
+    def pinOrder(self):
+        self._pinOrder = ", ".join(self._pins)
+        return self._pinOrder
+
+    @property
+    def netlistLine(self):
+        """VACASK instance line: instName (pins) cellName key=value ..."""
+        instParamRefs = " ".join(
+            f"{k}=@{k}" for k in self.subcktParams.get("params", {})
+        )
+        name = self.subcktParams.get("name", "")
+        if instParamRefs.strip():
+            self._netlistLine = f"@instName (%pinOrder) {name} {instParamRefs}"
+        else:
+            self._netlistLine = f"@instName (%pinOrder) {name}"
+        return self._netlistLine
+
+    def subcktLineExtract(self):
+        """Extract the full subckt declaration, handling line continuations with backslash."""
+        subcktLine = ""
+        for lineno, line in enumerate(self._fileLines):
+            stripped = line.strip()
+            # Skip comments
+            if stripped.startswith("//") or stripped.startswith("*"):
+                continue
+            if stripped.lower().startswith("subckt ") or stripped.lower().startswith("subckt\t"):
+                subcktLine = stripped
+                # Handle backslash continuations
+                while subcktLine.endswith("\\"):
+                    subcktLine = subcktLine[:-1].strip()
+                    lineno += 1
+                    if lineno < len(self._fileLines):
+                        subcktLine = f"{subcktLine} {self._fileLines[lineno].strip()}"
+                break
+        return subcktLine
+
+    def extractSubcktParams(self):
+        """Parse subckt line: subckt name (pin1 pin2 ...) [parameters p1=v1 ...]"""
+        subcktDict = {"params": {}, "name": "", "pins": []}
+        subcktLine = self.subcktLineExtract()
+        if not subcktLine:
+            self._pins = []
+            self._pinOrder = ""
+            return subcktDict
+
+        # Extract subcircuit name (first token after 'subckt')
+        afterSubckt = subcktLine.split(None, 1)
+        if len(afterSubckt) < 2:
+            self._pins = []
+            self._pinOrder = ""
+            return subcktDict
+
+        remainder = afterSubckt[1]
+
+        # Extract name (up to '(' or whitespace)
+        if "(" in remainder:
+            name = remainder[:remainder.index("(")].strip()
+            afterName = remainder[remainder.index("("):]
+        else:
+            parts = remainder.split()
+            name = parts[0]
+            afterName = " ".join(parts[1:])
+
+        subcktDict["name"] = name
+
+        # Extract pins (inside parentheses)
+        if "(" in afterName and ")" in afterName:
+            pinSection = afterName[afterName.index("(") + 1:afterName.index(")")]
+            pins = [p.strip() for p in pinSection.split() if p.strip()]
+            subcktDict["pins"] = pins
+            afterPins = afterName[afterName.index(")") + 1:].strip()
+        else:
+            tokens = afterName.split()
+            paramIdx = None
+            for i, t in enumerate(tokens):
+                if t.lower() == "parameters":
+                    paramIdx = i
+                    break
+            if paramIdx is not None:
+                pins = tokens[:paramIdx]
+                afterPins = " ".join(tokens[paramIdx:])
+            else:
+                pins = tokens
+                afterPins = ""
+            subcktDict["pins"] = [p.strip() for p in pins if p.strip()]
+
+        self._pins = subcktDict["pins"]
+        self._pinOrder = ", ".join(self._pins)
+
+        # Extract parameters
+        if afterPins:
+            paramStr = afterPins
+            if paramStr.lower().startswith("parameters"):
+                paramStr = paramStr[len("parameters"):].strip()
+            for m in re.finditer(r'([A-Za-z_][\w]*)\s*=\s*([^\s]+)', paramStr):
+                subcktDict["params"][m.group(1)] = m.group(2)
+
+        return subcktDict
+
+    @property
+    def pathObj(self):
+        return self._pathObj

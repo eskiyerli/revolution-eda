@@ -110,6 +110,10 @@ class BaseDesignLibrariesView(QWidget):
             self._handle_veriloga_view(itemTuple)
         elif itemTuple.viewItem.viewType == "spice":
             self._handle_spice_view(itemTuple)
+        elif itemTuple.viewItem.viewType == "spectre":
+            self._handle_spectre_view(itemTuple)
+        elif itemTuple.viewItem.viewType == "vacask":
+            self._handle_vacask_view(itemTuple)
         elif itemTuple.viewItem.viewType == "config":
             schViewsList = [itemTuple.cellItem.child(row).viewName for row in
                             range(itemTuple.cellItem.rowCount()) if
@@ -166,6 +170,14 @@ class BaseDesignLibrariesView(QWidget):
                     filePath = pathlib.Path(viewItemT.cellItem.cellPath.joinpath(
                         viewNameT.cellName).with_suffix(".va"))
                     filePath.touch(exist_ok=True)
+                elif viewItemT.viewItem.viewType == 'spectre':
+                    filePath = pathlib.Path(viewItemT.cellItem.cellPath.joinpath(
+                        viewNameT.cellName).with_suffix(".scs"))
+                    filePath.touch(exist_ok=True)
+                elif viewItemT.viewItem.viewType == 'vacask':
+                    filePath = pathlib.Path(viewItemT.cellItem.cellPath.joinpath(
+                        viewNameT.cellName).with_suffix(".vacask"))
+                    filePath.touch(exist_ok=True)
         
         if filePath:
             filePath = filePath.resolve()
@@ -185,6 +197,14 @@ class BaseDesignLibrariesView(QWidget):
     def _handle_veriloga_view(self, viewItemT: ddef.viewItemTuple):
         """Handle veriloga view opening."""
         self._handle_text_view(viewItemT, ted.verilogaEditor, self.verilogaEditFinished)
+
+    def _handle_spectre_view(self, viewItemT: ddef.viewItemTuple):
+        """Handle spectre view opening."""
+        self._handle_text_view(viewItemT, ted.spectreEditor, self.spectreEditFinished)
+
+    def _handle_vacask_view(self, viewItemT: ddef.viewItemTuple):
+        """Handle vacask view opening."""
+        self._handle_text_view(viewItemT, ted.vacaskEditor, self.vacaskEditFinished)
 
     def _handle_pcell_view(self, viewItemT: ddef.viewItemTuple):
         """Handle pcell view opening by displaying a default instance in the layout editor."""
@@ -303,6 +323,10 @@ class BaseDesignLibrariesView(QWidget):
             self._handle_spice_view(viewItemT)
         elif view_type == "veriloga":
             self._handle_veriloga_view(viewItemT)
+        elif view_type == "spectre":
+            self._handle_spectre_view(viewItemT)
+        elif view_type == "vacask":
+            self._handle_vacask_view(viewItemT)
         elif view_type == "pcell":
             self._handle_pcell_view(viewItemT)
         else:
@@ -324,6 +348,14 @@ class BaseDesignLibrariesView(QWidget):
         import revedaEditor.fileio.importSpice as imsp
         imsp.importSpiceSubckt(editor.cellViewTuple, str(editor.filePathObj))
         # self.appMainW.openViews.pop(editor.cellViewTuple)
+
+    def spectreEditFinished(self, editor: ted.spectreEditor):
+        import revedaEditor.fileio.importSpectre as imspectre
+        imspectre.importSpectreSubckt(editor.cellViewTuple, str(editor.filePathObj))
+
+    def vacaskEditFinished(self, editor: ted.vacaskEditor):
+        import revedaEditor.fileio.importVacask as imvacask
+        imvacask.importVacaskSubckt(editor.cellViewTuple, str(editor.filePathObj))
 
 
 class designLibrariesColumnView(BaseDesignLibrariesView):
