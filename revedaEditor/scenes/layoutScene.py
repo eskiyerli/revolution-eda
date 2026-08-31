@@ -210,6 +210,15 @@ class layoutScene(editorScene):
         return returnPoint
 
     @staticmethod
+    def toLayoutDistance(distance: float) -> float:
+        """
+        Converts a scalar distance in scene units to layout units by dividing it
+        by fabproc.dbu.
+        """
+        scale = fabproc.dbu if fabproc else 1000
+        return distance / scale
+
+    @staticmethod
     def toSceneCoord(point: Union[QPoint | QPointF]) -> QPoint:
         """
         Converts a point in layout coordinates to scene coordinates by multiplying it with
@@ -1186,6 +1195,8 @@ class layoutScene(editorScene):
             dlg.singleViaNamesCB.setCurrentText(item.via.viaDefTuple.name)
             dlg.singleViaWidthEdit.setText(str(item.width / fabproc.dbu))
             dlg.singleViaHeightEdit.setText(str(item.via.height / fabproc.dbu))
+            dlg.singleBottomEncEdit.setText(str(item.via.bottomEnclosure))
+            dlg.singleTopEncEdit.setText(str(item.via.topEnclosure))
         else:
             dlg.arrayViaRB.setChecked(True)
             dlg.arrayViaClicked()
@@ -1194,9 +1205,11 @@ class layoutScene(editorScene):
             dlg.arrayViaWidthEdit.setText(str(item.via.width / fabproc.dbu))
             dlg.arrayViaHeightEdit.setText(str(item.via.height / fabproc.dbu))
             dlg.arrayXspacingEdit.setText(str(item.xs / fabproc.dbu))
-            dlg.arrayYspacingEdit.setText(str(item.xs / fabproc.dbu))
+            dlg.arrayYspacingEdit.setText(str(item.ys / fabproc.dbu))
             dlg.arrayXNumEdit.setText(str(item.xnum))
             dlg.arrayYNumEdit.setText(str(item.ynum))
+            dlg.arrayBottomEncEdit.setText(str(item.via.bottomEnclosure))
+            dlg.arrayTopEncEdit.setText(str(item.via.topEnclosure))
         dlg.startXEdit.setText(str(self.toLayoutCoord(item.mapToScene(item.start)).x()))
         dlg.startYEdit.setText(str(self.toLayoutCoord(item.mapToScene(item.start)).y()))
         if dlg.exec() == QDialog.DialogCode.Accepted:
@@ -1211,6 +1224,8 @@ class layoutScene(editorScene):
                     selViaDefTuple,
                     float(dlg.singleViaWidthEdit.text().strip()) * fabproc.dbu,
                     float(dlg.singleViaHeightEdit.text().strip()) * fabproc.dbu,
+                    float(dlg.singleBottomEncEdit.text().strip()),
+                    float(dlg.singleTopEncEdit.text().strip()),
                 )
                 arrayViaTuple = ddef.arrayViaTuple(
                     singleViaTuple,
@@ -1230,6 +1245,8 @@ class layoutScene(editorScene):
                     selViaDefTuple,
                     float(dlg.arrayViaWidthEdit.text().strip()) * fabproc.dbu,
                     float(dlg.arrayViaHeightEdit.text().strip()) * fabproc.dbu,
+                    float(dlg.arrayBottomEncEdit.text().strip()),
+                    float(dlg.arrayTopEncEdit.text().strip()),
                 )
                 arrayViaTuple = ddef.arrayViaTuple(
                     singleViaTuple,

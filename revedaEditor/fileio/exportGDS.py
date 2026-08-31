@@ -22,6 +22,7 @@ from revedaEditor.backend.pdkLoader import importPDKModule
 
 logger = logging.getLogger("reveda")
 pcells = importPDKModule('pcells')
+_process = importPDKModule('process')
 
 # Module-level cache: maps a pcell class -> list of __init__ param names to extract.
 # Avoids repeated inspect.signature() calls for identical pcell types.
@@ -40,7 +41,7 @@ class gdsExporter:
     def __init__(self, cellname: str, items: List[Any], outputFileObj: Path):
         self._unit = gdsExporter.DEFAULT_UNIT
         self._precision = gdsExporter.DEFAULT_PRECISION
-        self._dbu: int = gdsExporter.DEFAULT_DBU
+        self._dbu: int = getattr(_process, 'dbu', gdsExporter.DEFAULT_DBU)
         self._cellname = cellname
         self._items = items
         self._outputFileObj = outputFileObj
@@ -200,6 +201,47 @@ class gdsExporter:
             spacing=(item.xs + item.width, item.ys + item.height),
         )
         parentCell.add(viaArray)
+        self._processViaEnclosure(item, parentCell, offset)
+
+    def _processViaEnclosure(self, item, parentCell,
+                             offset: Tuple[float, float] = (0.0, 0.0)):
+        """Emit the connecting-metal layers of a via/via array as GDS rectangles.
+
+        A single metal rectangle per connecting layer spans the whole array of
+        cuts (from the first cut to the last), grown by that layer's enclosure
+        margin. This mirrors the on-screen rendering, where enclosure metal is a
+        derived property of the via definition rather than a stored shape."""
+        viaDef = item.via.viaDefTuple
+        # Use the via's effective enclosure (per-instance override when set,
+        # otherwise the via definition value) so exported metal matches what is
+        # drawn on screen.
+        enclosureLayers = (
+            (getattr(viaDef, "bottomLayer", None), item.via.bottomEnclosure),
+            (getattr(viaDef, "topLayer", None), item.via.topEnclosure),
+        )
+        if not any(layer is not None for layer, _enc in enclosureLayers):
+            return
+
+        ox, oy = offset
+        # Extent covering every cut, in the same (dbu) coordinate space as cuts.
+        xStep = item.xs + item.via.width
+        yStep = item.ys + item.via.height
+        left = item.start.x() - ox
+        top = item.start.y() - oy
+        right = left + (item.xnum - 1) * xStep + item.via.width
+        bottom = top + (item.ynum - 1) * yStep + item.via.height
+
+        for layer, enclosure in enclosureLayers:
+            if layer is None or enclosure <= 0:
+                continue
+            margin = enclosure * self._dbu
+            metal = gdstk.rectangle(
+                (left - margin, top - margin),
+                (right + margin, bottom + margin),
+                layer=layer.gdsLayer,
+                datatype=layer.datatype,
+            )
+            parentCell.add(metal)
 
     def _process_custom_layout(self, library, item, parentCell):
         if pcells is not None and isinstance(item, pcells.baseCell):

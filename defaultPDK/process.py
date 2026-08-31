@@ -27,11 +27,21 @@ gdsPrecision = Quantity("1 nm")
 
 # Some predefined rules
 # via defintions
+# The optional bottomLayer/topLayer plus enclosure values (in um) let a via
+# render its connecting metal layers with enough coverage around the cut.
 con = ddef.viaDefTuple(
-    "con", laylyr.contactLayer_drw, "", "0.1", "10", "0.1", "10", "0.1", "10"
+    "con", laylyr.contactLayer_drw, "", "0.1", "10", "0.1", "10", "0.1", "10",
+    bottomLayer=laylyr.activeLayer_drw,
+    topLayer=laylyr.m1Layer_drw,
+    bottomEnclosure=0.0,
+    topEnclosure=0.06,
 )
 v1 = ddef.viaDefTuple(
-    "v1", laylyr.via1Layer_drw, "", "0.2", "10", "0.2", "10", "0.1", "10"
+    "v1", laylyr.via1Layer_drw, "", "0.2", "10", "0.2", "10", "0.1", "10",
+    bottomLayer=laylyr.m1Layer_drw,
+    topLayer=laylyr.m2Layer_drw,
+    bottomEnclosure=0.06,
+    topEnclosure=0.06,
 )
 processVias = [con, v1]
 processViaNames = [item.name for item in processVias]

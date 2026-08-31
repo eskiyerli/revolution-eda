@@ -364,6 +364,18 @@ class layoutEditor(edw.editorWindow):
         dlg.arrayViaHeightEdit.setText(str(fabproc.processVias[0].minHeight))
         dlg.arrayXspacingEdit.setText(str(fabproc.processVias[0].minSpacing))
         dlg.arrayYspacingEdit.setText(str(fabproc.processVias[0].minSpacing))
+        dlg.singleBottomEncEdit.setText(
+            str(getattr(fabproc.processVias[0], "bottomEnclosure", 0.0))
+        )
+        dlg.singleTopEncEdit.setText(
+            str(getattr(fabproc.processVias[0], "topEnclosure", 0.0))
+        )
+        dlg.arrayBottomEncEdit.setText(
+            str(getattr(fabproc.processVias[0], "bottomEnclosure", 0.0))
+        )
+        dlg.arrayTopEncEdit.setText(
+            str(getattr(fabproc.processVias[0], "topEnclosure", 0.0))
+        )
         if dlg.exec() == QDialog.DialogCode.Accepted:
             self.centralW.scene.editModes.setMode("addVia")
             self.centralW.scene.addVia = True
@@ -376,6 +388,8 @@ class layoutEditor(edw.editorWindow):
                     selViaDefTuple,
                     fabproc.dbu * float(dlg.singleViaWidthEdit.text().strip()),
                     fabproc.dbu * float(dlg.singleViaHeightEdit.text().strip()),
+                    float(dlg.singleBottomEncEdit.text().strip()),
+                    float(dlg.singleTopEncEdit.text().strip()),
                 )
                 self.centralW.scene.arrayViaTuple = ddef.arrayViaTuple(
                     singleViaTuple,
@@ -395,6 +409,8 @@ class layoutEditor(edw.editorWindow):
                     selViaDefTuple,
                     fabproc.dbu * float(dlg.arrayViaWidthEdit.text().strip()),
                     fabproc.dbu * float(dlg.arrayViaHeightEdit.text().strip()),
+                    float(dlg.arrayBottomEncEdit.text().strip()),
+                    float(dlg.arrayTopEncEdit.text().strip()),
                 )
                 self.centralW.scene.arrayViaTuple = ddef.arrayViaTuple(
                     singleViaTuple,
@@ -713,7 +729,14 @@ class layoutContainer(edw.editorContainer):
         selectedLayer.visible = layerVisible
 
         for item in self.scene.items():
-            if hasattr(item, "layer") and item.layer == selectedLayer:
+            # Vias/via arrays are composite: a single item draws its cut layer
+            # plus the connecting-metal enclosure layers. Visibility is honoured
+            # per layer inside paint(), so these items are only repainted (not
+            # setVisible'd, which would hide the whole composite at once).
+            if hasattr(item, "usesLayer"):
+                if item.usesLayer(selectedLayer):
+                    item.update()
+            elif hasattr(item, "layer") and item.layer == selectedLayer:
                 item.setVisible(layerVisible)
 
 

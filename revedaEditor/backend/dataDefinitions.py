@@ -221,13 +221,29 @@ class viaDefTuple(NamedTuple):
     maxHeight: float
     minSpacing: float
     maxSpacing: float
+    # Optional connecting metal layers and their enclosure of the via cut.
+    # bottomLayer / topLayer are the two metals the via stitches together
+    # (e.g. m1 and m2 for via1). Enclosure values are in layout units (um) and
+    # describe how far each metal extends beyond the cut on every side.
+    # Left as None / 0.0 for legacy PDK definitions that omit them.
+    bottomLayer: Optional[layLayer] = None
+    topLayer: Optional[layLayer] = None
+    bottomEnclosure: float = 0.0
+    topEnclosure: float = 0.0
 
 
-# Used to define the via prototype
+# Used to define the via prototype.
+# NOTE: the field order after viaDefTuple must match layoutVia.__init__ args
+# after `start`, because this tuple is unpacked positionally as
+# layoutVia(start, *singleViaTuple).
+# bottomEnclosure / topEnclosure are per-instance metal overlap overrides in um.
+# When None, the via definition's enclosure value is used.
 class singleViaTuple(NamedTuple):
     viaDefTuple: viaDefTuple
     width: float
     height: float
+    bottomEnclosure: Optional[float] = None
+    topEnclosure: Optional[float] = None
 
 
 # both single vias and vias arrays are defined by this

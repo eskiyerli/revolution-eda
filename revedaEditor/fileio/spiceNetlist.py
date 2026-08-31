@@ -468,6 +468,7 @@ def parse_extracted_netlist(
 
     return {
         "name": target["name"],
+        "pins": target.get("pins", []),
         "devices": devices,
         "nets": nets,
     }

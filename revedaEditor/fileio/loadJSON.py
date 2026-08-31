@@ -626,9 +626,12 @@ class layoutItems:
         via_info = item["via"]
         via_def = self._get_via_def(via_info["vdt"])
         via_st = via_info["st"]
+        # Enclosure overrides are optional: files saved before the feature omit
+        # them, in which case the via definition's enclosure is used.
         via = lshp.layoutVia(
             QPoint(via_st[0], via_st[1]), via_def,
-            via_info["w"], via_info["h"]
+            via_info["w"], via_info["h"],
+            via_info.get("be"), via_info.get("te")
         )
         st = item["st"]
         via_array = lshp.layoutViaArray(

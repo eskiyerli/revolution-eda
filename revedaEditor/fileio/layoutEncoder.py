@@ -91,6 +91,10 @@ class layoutEncoder(json.JSONEncoder):
             "h": item.via.height,
             "ang": item.angle,
             "fl": item.flipTuple,
+            # Per-instance metal enclosure overrides (um). Persisted so a via
+            # keeps its drawn coverage even if the PDK default later changes.
+            "be": item.via.bottomEnclosure,
+            "te": item.via.topEnclosure,
         }
         return {
             "type": "Via",
@@ -189,8 +193,11 @@ class gdsImportEncoder(json.JSONEncoder):
             case lshp.layoutViaArray:
                 return {"type": "Via", "st": item.mapToScene(item.start).toTuple(),
                         "via": {"st": item.via.mapToScene(item.via.start).toTuple(),
-                                "vdt": item.via.viaDefTuple.netName, "w": item.via.width,
-                                "h": item.via.height, **common},
+                                "vdt": item.via.viaDefTuple.name, "w": item.via.width,
+                                "h": item.via.height,
+                                "be": item.via.bottomEnclosure,
+                                "te": item.via.topEnclosure,
+                                **common},
                         "xs": item.xs, "ys": item.ys, "xn": item.xnum, "yn": item.ynum}
             case lshp.layoutPin:
                 return {"type": "Pin", "tl": item.mapToScene(item.rect.topLeft()).toTuple(),

@@ -446,6 +446,20 @@ class createLayoutViaDialog(QDialog):
 
         self.singleViaHeightEdit.editingFinished.connect(self.singleViaHeightChanged)
         singleViaPropsLayout.addRow(edf.boldLabel("Via Height"), self.singleViaHeightEdit)
+        self.singleBottomEncEdit = edf.shortLineEdit()
+        self.singleBottomEncEdit.editingFinished.connect(
+            lambda: self.enclosureChanged(self.singleBottomEncEdit, self.singleViaNamesCB, "bottom")
+        )
+        singleViaPropsLayout.addRow(
+            edf.boldLabel("Bottom Enclosure"), self.singleBottomEncEdit
+        )
+        self.singleTopEncEdit = edf.shortLineEdit()
+        self.singleTopEncEdit.editingFinished.connect(
+            lambda: self.enclosureChanged(self.singleTopEncEdit, self.singleViaNamesCB, "top")
+        )
+        singleViaPropsLayout.addRow(
+            edf.boldLabel("Top Enclosure"), self.singleTopEncEdit
+        )
         mainLayout.addWidget(self.singleViaPropsGroup)
         self.arrayViaPropsGroup = QGroupBox("Single Via Properties")
         arrayViaPropsLayout = QFormLayout()
@@ -462,6 +476,20 @@ class createLayoutViaDialog(QDialog):
 
         self.singleViaHeightEdit.editingFinished.connect(self.arrayViaHeightChanged)
         arrayViaPropsLayout.addRow(edf.boldLabel("Via Height"), self.arrayViaHeightEdit)
+        self.arrayBottomEncEdit = edf.shortLineEdit()
+        self.arrayBottomEncEdit.editingFinished.connect(
+            lambda: self.enclosureChanged(self.arrayBottomEncEdit, self.arrayViaNamesCB, "bottom")
+        )
+        arrayViaPropsLayout.addRow(
+            edf.boldLabel("Bottom Enclosure"), self.arrayBottomEncEdit
+        )
+        self.arrayTopEncEdit = edf.shortLineEdit()
+        self.arrayTopEncEdit.editingFinished.connect(
+            lambda: self.enclosureChanged(self.arrayTopEncEdit, self.arrayViaNamesCB, "top")
+        )
+        arrayViaPropsLayout.addRow(
+            edf.boldLabel("Top Enclosure"), self.arrayTopEncEdit
+        )
         self.arrayXspacingEdit = edf.shortLineEdit()
         self.arrayXspacingEdit.editingFinished.connect(
             lambda: self.arrayViaSpacingChanged(self.arrayXspacingEdit)
@@ -515,11 +543,42 @@ class createLayoutViaDialog(QDialog):
         via = [item for item in process.processVias if item.name == text][0]
         self.singleViaWidthEdit.setText(str(via.minWidth))
         self.singleViaHeightEdit.setText(str(via.minHeight))
+        self.singleBottomEncEdit.setText(str(getattr(via, "bottomEnclosure", 0.0)))
+        self.singleTopEncEdit.setText(str(getattr(via, "topEnclosure", 0.0)))
 
     def arrayViaNameChanged(self, text: str):
         via = [item for item in process.processVias if item.name == text][0]
         self.arrayViaWidthEdit.setText(str(via.minWidth))
-        self.arrayViaHeightEdit.setText(str(via.minWidth))
+        self.arrayViaHeightEdit.setText(str(via.minHeight))
+        self.arrayBottomEncEdit.setText(str(getattr(via, "bottomEnclosure", 0.0)))
+        self.arrayTopEncEdit.setText(str(getattr(via, "topEnclosure", 0.0)))
+
+    def enclosureChanged(self, encEditField, viaNamesCB, side: str):
+        """Validate a metal-enclosure entry: it must be a number no smaller than
+        the via definition's minimum enclosure for that side. Larger values
+        (extra coverage) are allowed."""
+        viaDefTuple = [
+            item
+            for item in process.processVias
+            if item.name == viaNamesCB.currentText()
+        ][0]
+        minEnc = getattr(
+            viaDefTuple, "bottomEnclosure" if side == "bottom" else "topEnclosure", 0.0
+        )
+        text = encEditField.text().strip()
+        if not text:
+            encEditField.setText(str(minEnc))
+            return
+        try:
+            value = float(text)
+            if value < minEnc:
+                self._parent.logger.warning(
+                    f"Enclosure below minimum, set back to {minEnc}"
+                )
+                encEditField.setText(str(minEnc))
+        except ValueError:
+            self._parent.logger.warning(f"Invalid number format, set back to {minEnc}")
+            encEditField.setText(str(minEnc))
 
     def singleViaWidthChanged(self):
         text = self.singleViaWidthEdit.text()

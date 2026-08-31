@@ -11,7 +11,7 @@
 import itertools
 import math
 from pathlib import Path
-from typing import List, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
 import numpy as np
 from PySide6.QtCore import (
@@ -1339,6 +1339,18 @@ class layoutRuler(layoutShape):
             niceFraction = 10.0
         return niceFraction * (10 ** exponent)
 
+    def _lengthToLayoutUnits(self, length: float) -> float:
+        """Convert a scalar length in scene units to layout units.
+
+        Uses the scene's ``toLayoutDistance`` when the ruler is already part of a
+        scene, otherwise falls back to the process dbu (used while ticks are
+        built in ``__init__`` before the item joins a scene).
+        """
+        scene = self.scene()
+        if scene is not None and hasattr(scene, "toLayoutDistance"):
+            return scene.toLayoutDistance(length)
+        return length / processDBU
+
     def _createRulerTicks(self):
         self._tickTuples = []
         p1 = self._draftLine.p1()
@@ -1368,7 +1380,11 @@ class layoutRuler(layoutShape):
 
                 if isMajor:
                     perpTick = perpTickMajor
-                    valStr = f"{round(distOnLine, 3):g}" if not isNearEnd else ""
+                    valStr = (
+                        f"{round(self._lengthToLayoutUnits(distOnLine), 3):g}"
+                        if not isNearEnd
+                        else ""
+                    )
                 else:
                     perpTick = perpTickMinor
                     valStr = ""
@@ -1383,7 +1399,7 @@ class layoutRuler(layoutShape):
                 )
 
             finalLine = QLineF(p2, p2 + perpTickMajor)
-            lengthStr = f"{round(lineLength, 3):g}"
+            lengthStr = f"{round(self._lengthToLayoutUnits(lineLength), 3):g}"
             self._tickTuples.append(
                 ddef.rulerTuple(
                     p2 + direction * 2,
@@ -1914,8 +1930,10 @@ class layoutVia(layoutShape):
             self,
             start: QPoint,
             viaDefTuple: ddef.viaDefTuple,
-            width: int,
-            height: int,
+            width: float,
+            height: float,
+            bottomEnclosure: Optional[float] = None,
+            topEnclosure: Optional[float] = None,
     ):
         super().__init__()
         end = start + QPoint(width, height)
@@ -1927,14 +1945,105 @@ class layoutVia(layoutShape):
         self._type = viaDefTuple.type
         self._width = width
         self._height = height
+        # Per-instance metal enclosure overrides (in um). None means "fall back
+        # to the enclosure declared on the via definition".
+        self._bottomEnclosure = bottomEnclosure
+        self._topEnclosure = topEnclosure
         self._definePensBrushes(self._layer)
         self.setZValue(self._layer.z)
+        # Enclosure metal is normally drawn by an individual via. When a via is
+        # a member of a layoutViaArray, the array draws a single enclosure that
+        # spans every cut, so per-cut enclosure is suppressed to avoid overdraw.
+        self._drawEnclosure = True
+        self._buildEnclosureLayers()
 
     def __repr__(self) -> str:
         return f"layoutVia({self._start}, {self._end}, {self._layer})"
 
+    def _buildEnclosureLayers(self) -> None:
+        """Precompute pen/brush and enclosure margins (in scene units) for the
+        connecting metal layers declared on the via definition. A per-instance
+        override (self._bottomEnclosure / self._topEnclosure) takes precedence
+        over the via definition's value when set."""
+        self._enclosureLayers = []
+        defBottom = getattr(self._viaDefTuple, "bottomEnclosure", 0.0)
+        defTop = getattr(self._viaDefTuple, "topEnclosure", 0.0)
+        bottomEnc = self._bottomEnclosure if self._bottomEnclosure is not None else defBottom
+        topEnc = self._topEnclosure if self._topEnclosure is not None else defTop
+        for layer, enclosure in (
+            (getattr(self._viaDefTuple, "bottomLayer", None), bottomEnc),
+            (getattr(self._viaDefTuple, "topLayer", None), topEnc),
+        ):
+            if layer is None or enclosure <= 0:
+                continue
+            margin = int(round(enclosure * processDBU))
+            pen = QPen(layer.pcolor, layer.pwidth, layer.pstyle)
+            pen.setCosmetic(True)
+            texturePath = self._enclosureTexturePath(layer)
+            pixmap = textureCache.getCachedPixmap(texturePath, layer.bcolor)
+            brush = QBrush(layer.bcolor, pixmap)
+            # Keep a reference to the layer so visibility is honoured live at
+            # paint time (the layer object is mutated in place when the user
+            # toggles a layer in the LSW).
+            self._enclosureLayers.append((margin, pen, brush, layer))
+
+    @staticmethod
+    def _enclosureTexturePath(layer) -> Path:
+        laylyr = importPDKModule("layoutLayers")
+        return Path(laylyr.__file__).parent.joinpath(layer.btexture)
+
+    def usesLayer(self, layer) -> bool:
+        """True if this via draws on the given layer, either as the cut layer or
+        as one of its connecting-metal enclosure layers. Used to decide whether
+        a layer-visibility toggle must repaint this item."""
+        if layer is self._layer:
+            return True
+        return any(
+            encLayer is layer
+            for _margin, _pen, _brush, encLayer in getattr(self, "_enclosureLayers", [])
+        )
+
+    @property
+    def enclosureRect(self) -> QRect:
+        """The via cut rect grown by the largest metal enclosure margin."""
+        maxMargin = 0
+        for margin, _pen, _brush, _layer in getattr(self, "_enclosureLayers", []):
+            maxMargin = max(maxMargin, margin)
+        if maxMargin == 0:
+            return QRect(self._rect)
+        return self._rect.adjusted(-maxMargin, -maxMargin, maxMargin, maxMargin)
+
+    @staticmethod
+    def _scaledBrush(brush: QBrush, scale: float) -> QBrush:
+        """Return a copy of brush whose texture is inverse-scaled so the stipple
+        keeps a constant on-screen density. Built locally (not via the shared
+        single-slot cache) because several metal brushes are drawn per paint at
+        the same scale."""
+        roundedScale = max(round(scale, 2), 0.01)
+        scaledBrush = QBrush(brush)
+        scaledBrush.setTransform(
+            QTransform().scale(1 / roundedScale, 1 / roundedScale)
+        )
+        return scaledBrush
+
+    def paintEnclosure(self, painter, scale: float) -> None:
+        """Draw the connecting metal rectangles that enclose the via cut,
+        skipping any metal layer that is currently hidden."""
+        for margin, pen, brush, layer in getattr(self, "_enclosureLayers", []):
+            if not layer.visible:
+                continue
+            metalRect = self._rect.adjusted(-margin, -margin, margin, margin)
+            painter.setPen(pen)
+            painter.setBrush(self._scaledBrush(brush, scale))
+            painter.drawRect(metalRect)
+
     def paint(self, painter, option, widget) -> None:
         scale = self.scene().views()[0].transform().m11()
+        if self._drawEnclosure:
+            self.paintEnclosure(painter, scale)
+        # The via cut itself is only drawn when its own layer is visible.
+        if not self._layer.visible:
+            return
         if self.isSelected():
             painter.setPen(self._selectedPen)
         else:
@@ -1955,7 +2064,10 @@ class layoutVia(layoutShape):
             self.setFlag(QGraphicsItem.ItemIsSelectable, False)
 
     def boundingRect(self) -> QRectF:
-        return self._rect.adjusted(-2, -2, 2, 2)
+        # Include the enclosure metal (when drawn) so the item repaints and
+        # hit-tests over the whole metal extent, not just the cut.
+        base = self.enclosureRect if self._drawEnclosure else self._rect
+        return QRectF(base).adjusted(-2, -2, 2, 2)
 
     def shape(self) -> QPainterPath:
         path = QPainterPath()
@@ -2006,6 +2118,33 @@ class layoutVia(layoutShape):
     def type(self):
         return self._type
 
+    @property
+    def bottomEnclosure(self) -> float:
+        """Effective bottom-metal enclosure (um): the per-instance override when
+        set, otherwise the via definition's value."""
+        if self._bottomEnclosure is not None:
+            return self._bottomEnclosure
+        return getattr(self._viaDefTuple, "bottomEnclosure", 0.0)
+
+    @bottomEnclosure.setter
+    def bottomEnclosure(self, value):
+        self.prepareGeometryChange()
+        self._bottomEnclosure = value
+        self._buildEnclosureLayers()
+
+    @property
+    def topEnclosure(self) -> float:
+        """Effective top-metal enclosure (um)."""
+        if self._topEnclosure is not None:
+            return self._topEnclosure
+        return getattr(self._viaDefTuple, "topEnclosure", 0.0)
+
+    @topEnclosure.setter
+    def topEnclosure(self, value):
+        self.prepareGeometryChange()
+        self._topEnclosure = value
+        self._buildEnclosureLayers()
+
 
 class layoutViaArray(layoutShape):
     def __init__(
@@ -2029,6 +2168,8 @@ class layoutViaArray(layoutShape):
             self._prototype_via.viaDefTuple,
             self._prototype_via.width,
             self._prototype_via.height,
+            self._prototype_via.bottomEnclosure,
+            self._prototype_via.topEnclosure,
         )
         self._via_array = []
         self._create_array()
@@ -2072,20 +2213,77 @@ class layoutViaArray(layoutShape):
     def _create_via(self, x, y, via_def, width, height):
         via = layoutVia(QPoint(x, y), via_def, width, height)
         via.setFlag(QGraphicsItem.ItemIsSelectable, False)
-        via.setFlag(QGraphicsItem.ItemStacksBehindParent, True)
+        # The enclosure metal for the whole array is drawn once by the parent
+        # (see paintEnclosure below) so each cut suppresses its own enclosure to
+        # avoid overlapping semi-transparent metal. The cuts must paint on top
+        # of that metal, so they are NOT stacked behind the parent.
+        via._drawEnclosure = False
         via.setParentItem(self)
         return via
 
+    def _cutsSceneRect(self) -> QRect:
+        """Bounding rect (in this item's coordinates) that covers every via cut
+        in the array, from the first cut's top-left to the last cut's
+        bottom-right."""
+        x_step = self._xs + self._prototype_via.width
+        y_step = self._ys + self._prototype_via.height
+        left = self._start.x()
+        top = self._start.y()
+        right = left + (self._xnum - 1) * x_step + self._prototype_via.width
+        bottom = top + (self._ynum - 1) * y_step + self._prototype_via.height
+        return QRect(
+            int(round(left)),
+            int(round(top)),
+            int(round(right - left)),
+            int(round(bottom - top)),
+        )
+
+    def paintEnclosure(self, painter, scale: float) -> None:
+        """Draw one connecting-metal rectangle per metal layer spanning the
+        entire array of cuts, grown by that layer's enclosure margin."""
+        cutsRect = self._cutsSceneRect()
+        for margin, pen, brush, layer in getattr(self._via, "_enclosureLayers", []):
+            if not layer.visible:
+                continue
+            metalRect = cutsRect.adjusted(-margin, -margin, margin, margin)
+            painter.setPen(pen)
+            painter.setBrush(layoutVia._scaledBrush(brush, scale))
+            painter.drawRect(metalRect)
+
+    def usesLayer(self, layer) -> bool:
+        """True if any cut or enclosure metal in the array draws on the given
+        layer, so a visibility toggle can repaint the whole array."""
+        return self._via.usesLayer(layer)
+
+    def _enclosureBoundingRect(self) -> QRectF:
+        """Union of the children bounds and the spanning enclosure metal, so the
+        item repaints and hit-tests over the full metal extent."""
+        rect = QRectF(self.childrenBoundingRect())
+        maxMargin = 0
+        for margin, _pen, _brush, _layer in getattr(self._via, "_enclosureLayers", []):
+            maxMargin = max(maxMargin, margin)
+        if maxMargin:
+            cutsRect = QRectF(self._cutsSceneRect()).adjusted(
+                -maxMargin, -maxMargin, maxMargin, maxMargin
+            )
+            rect = rect.united(cutsRect)
+        return rect
+
     def boundingRect(self) -> QRectF:
-        return self.childrenBoundingRect()
+        return self._enclosureBoundingRect()
 
     def shape(self) -> QPainterPath:
         path = QPainterPath()
-        path.addRect(self.childrenBoundingRect())
+        path.addRect(self._enclosureBoundingRect())
         return path
 
     def paint(self, painter, option, widget) -> None:
         painter.setRenderHint(QPainter.NonCosmeticBrushPatterns)
+        view = self.scene().views()[0] if self.scene() and self.scene().views() else None
+        scale = view.transform().m11() if view else 1.0
+        # Parent paints first, so the enclosure metal sits behind the cuts,
+        # which are child items painted afterwards.
+        self.paintEnclosure(painter, scale)
         if option.state & QStyle.State_Selected:
             painter.setPen(self._selectedPen)
             painter.drawRect(self.childrenBoundingRect())
