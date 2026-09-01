@@ -1583,6 +1583,7 @@ class layoutLabel(layoutShape):
         self._labelAlign = labelAlign
         self._labelOrient = labelOrient
         self._layer = layer
+        self._placementMarkerVisible = False
         self._definePensBrushes(self._layer)
         self._labelFont = QFont(fontFamily)
         self._labelFont.setStyleName(fontStyle)
@@ -1636,7 +1637,7 @@ class layoutLabel(layoutShape):
                 self._rect.height(),
             )
             .normalized()
-            .adjusted(-2, -2, 2, 2)
+            .adjusted(-8, -8, 8, 8)
         )  #
 
     def shape(self) -> QPainterPath:
@@ -1651,11 +1652,30 @@ class layoutLabel(layoutShape):
             painter.drawRect(self.boundingRect())
         else:
             painter.setPen(self._pen)
+        if self._placementMarkerVisible:
+            halfSize = 6.0 / (abs(painter.worldTransform().m11()) or 1.0)
+            markerPen = QPen(QColor(255, 255, 0), 0)
+            markerPen.setCosmetic(True)
+            painter.save()
+            painter.setPen(markerPen)
+            painter.drawLine(
+                QPointF(self._start.x() - halfSize, self._start.y()),
+                QPointF(self._start.x() + halfSize, self._start.y()),
+            )
+            painter.drawLine(
+                QPointF(self._start.x(), self._start.y() - halfSize),
+                QPointF(self._start.x(), self._start.y() + halfSize),
+            )
+            painter.restore()
         painter.drawText(
             QPoint(self._start.x(), self._start.y() + self._rect.height()),
             self._labelText,
         )
         painter.drawPoint(self._start)
+
+    def setPlacementMarkerVisible(self, visible: bool) -> None:
+        self._placementMarkerVisible = visible
+        self.update()
 
     def mousePressEvent(self, event):
         super().mousePressEvent(event)

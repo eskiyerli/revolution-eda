@@ -218,8 +218,12 @@ def _join_continuation_lines(lines: list[str]) -> list[str]:
         stripped = line.strip()
         if not stripped:
             continue
-        # Preserve device-instance comments for position extraction
-        if stripped.startswith("*device instance") or stripped.startswith("* device instance"):
+        # Preserve device-instance comments for position extraction.
+        if (
+            stripped.startswith("*device instance")
+            or stripped.startswith("* device instance")
+            or re.match(r"\*\s*(?:pin|net)\b", stripped, re.IGNORECASE)
+        ):
             joined.append(stripped)
             continue
         if stripped.startswith("*"):
@@ -367,30 +371,73 @@ def parse_extracted_netlist(
     current_name: str | None = None
     current_devices: list[dict] = []
     current_pins: list[str] = []
+    current_pin_comments: list[str] = []
+    current_net_names: dict[str, str] = {}
+    pending_pin_comments: list[str] = []
     pending_positions: dict[str, dict] = {}
 
     for line in logical_lines:
         upper = line.upper()
 
+        pin_match = re.match(r"^\*\s*pin(?:\s+(.*))?$", line, re.IGNORECASE)
+        if pin_match:
+            pin_name = (pin_match.group(1) or "").strip()
+            if current_name is None:
+                pending_pin_comments.append(pin_name)
+            else:
+                current_pin_comments.append(pin_name)
+            continue
+
+        net_match = re.match(r"^\*\s*net\s+(\S+)(?:\s+(.*))?$", line, re.IGNORECASE)
+        if net_match and current_name is not None:
+            net_id = net_match.group(1)
+            net_name = (net_match.group(2) or "").strip()
+            if net_name:
+                current_net_names[net_id] = net_name
+            continue
+
         if upper.startswith(".SUBCKT"):
             tokens = line.split()
             if len(tokens) >= 2:
                 current_name = tokens[1]
-                # Pins might have params mixed in on .SUBCKT line
+                # Pins might have params mixed in on .SUBCKT line.
                 current_pins = [t for t in tokens[2:] if "=" not in t]
+                current_pin_comments = pending_pin_comments
+                pending_pin_comments = []
+                current_net_names = {}
                 current_devices = []
             continue
 
         if upper.startswith(".ENDS"):
             if current_name is not None:
+                for device in current_devices:
+                    terminals = device.get("terminals", {})
+                    device["terminals"] = {
+                        terminal: current_net_names.get(str(net), net)
+                        for terminal, net in terminals.items()
+                    }
+
+                named_pins = []
+                for index, pin_id in enumerate(current_pins):
+                    comment_name = (
+                        current_pin_comments[index]
+                        if index < len(current_pin_comments)
+                        else ""
+                    )
+                    named_pins.append(
+                        current_net_names.get(str(pin_id), comment_name or pin_id)
+                    )
+
                 subckts[current_name] = {
                     "name": current_name,
-                    "pins": current_pins,
+                    "pins": named_pins,
                     "devices": current_devices,
                 }
             current_name = None
             current_devices = []
             current_pins = []
+            current_pin_comments = []
+            current_net_names = {}
             continue
 
         # Skip non-device lines

@@ -145,6 +145,7 @@ class layoutScene(editorScene):
         self.newPinTuple = None
         self.newLabelTuple = None
         self.newLabel = None
+        self._labelPlacementMarker = None
         self.newRect = None
         self.newPolygon = None
         self.arrayViaTuple = None
@@ -236,6 +237,34 @@ class layoutScene(editorScene):
             self.startCutLine()
         super().mousePressEvent(event)
 
+    def _updateLabelPlacementMarker(self, point: QPoint) -> None:
+        scale = abs(self.views()[0].transform().m11()) if self.views() else 1.0
+        halfSize = 6.0 / (scale or 1.0)
+        if self._labelPlacementMarker is None:
+            pen = QPen(QColor(255, 255, 0), 0)
+            pen.setCosmetic(True)
+            self._labelPlacementMarker = (QGraphicsLineItem(), QGraphicsLineItem())
+            for markerLine in self._labelPlacementMarker:
+                markerLine.setPen(pen)
+                markerLine.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
+                markerLine.setZValue(1e9)
+                self.addItem(markerLine)
+        horizontal, vertical = self._labelPlacementMarker
+        horizontal.setLine(QLineF(
+            QPointF(point.x() - halfSize, point.y()),
+            QPointF(point.x() + halfSize, point.y()),
+        ))
+        vertical.setLine(QLineF(
+            QPointF(point.x(), point.y() - halfSize),
+            QPointF(point.x(), point.y() + halfSize),
+        ))
+
+    def _removeLabelPlacementMarker(self) -> None:
+        if self._labelPlacementMarker is not None:
+            for markerLine in self._labelPlacementMarker:
+                self.removeItem(markerLine)
+            self._labelPlacementMarker = None
+
     def mouseMoveEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         """
         Handle the mouse move event.
@@ -262,8 +291,12 @@ class layoutScene(editorScene):
         elif self.editModes.drawPin:
             if self._newPin is not None:
                 self._newPin.end = self.mouseMoveLoc
-        elif self.editModes.addLabel and self.newLabel is not None:
-            self.newLabel.start = self.mouseMoveLoc
+        elif self.editModes.addLabel:
+            if self.newLabel is not None:
+                self.newLabel.start = self.mouseMoveLoc
+                self.newLabel.update()
+            else:
+                self._updateLabelPlacementMarker(self.mouseMoveLoc)
         elif self.editModes.addInstance and self.newInstance is not None:
             self.newInstance.setPos(
                 self.snapToGrid(self.mouseMoveLoc - self.newInstance.start))
@@ -563,9 +596,12 @@ class layoutScene(editorScene):
     def addLayoutLabel(self):
         if self.newLabel is not None:
             self.newLabelTuple = None
+            self.newLabel.setPlacementMarkerVisible(False)
             self.newLabel = None
         if self.newLabelTuple is not None:
+            self._removeLabelPlacementMarker()
             self.newLabel = lshp.layoutLabel(self.mouseReleaseLoc, *self.newLabelTuple)
+            self.newLabel.setPlacementMarkerVisible(True)
             self.addUndoStack(self.newLabel)
 
     def drawLayoutPin(self):
@@ -576,9 +612,11 @@ class layoutScene(editorScene):
                 self.undoStack.removeLastCommand()
             else:
                 self.editModes.setMode("addLabel")
+                self._removeLabelPlacementMarker()
                 self.newLabel = lshp.layoutLabel(
                     self.mouseReleaseLoc, *self.newLabelTuple
                 )
+                self.newLabel.setPlacementMarkerVisible(True)
                 self._newPin.label = self.newLabel
                 self.addUndoStack(self.newLabel)
             self._newPin = None

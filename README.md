@@ -21,14 +21,17 @@ Current version is **0.9.0**.
 5. **Configuration-Driven Netlisting**: Config view support similar to commercial tools for
    choosing simulation views.
 6. **Hierarchical Netlisting**: Full hierarchical netlisting capability with support for
-   Xyce, Spectre, and VACASK simulators (the support for the last are work-in-progress), 
-   including bus and instance array netlisting.
+   Xyce, Spectre, and VACASK simulators, including bus and instance array netlisting.
+   Subcircuits can be parsed directly from Spectre (`.scs`) and VACASK (`.vacask`) files
+   to generate symbols automatically.
 7. **Python-Powered Labels**: Labels support Python functions enabling professional PDK
    development.
 8. **Layout Editor**: Full-featured hierarchical layout editor with support for rectangles,
-   polygons, paths, pins, labels, vias (single and array), and python-based parametric
-   layout cells. Includes layer management (selectability and visibility management), rulers,
-   GDS/OAS import/export, and initial Schematic Driven Layout (SDL) support.
+   polygons, paths, pins, labels, vias (single and array, with per-via bottom/top metal
+   enclosure and min-enclosure validation), and python-based parametric layout cells.
+   Includes layer management (selectability and visibility management, plus a "show only
+   used layers" filter), edge-snapping rulers, GDS/OAS import/export, and initial
+   Schematic Driven Layout (SDL) support.
 9. **Comprehensive Library Management**: Familiar library browser for creating, renaming,
    copying, and deleting libraries, cells, and views.
 10. **Library Registry**: Built-in registry UI (`Tools → Libraries`) for downloading
@@ -39,20 +42,29 @@ Current version is **0.9.0**.
     files manually.
 13. **AI Terminal**: Natural-language design modification through Claude (Anthropic),
     Gemini (Google), Mistral AI backends and experimental support for AWS Bedrock; API keys are stored in encrypted form.
-14. **Integrated Python Console**: Full Python REPL in the main window for automation and
+14. **Parasitic Extraction (PEX)**: Built-in RC extraction engine
+    (`revedaEditor/rcextraction/`) that computes parasitic resistance and capacitance from
+    an LVS "Export for PEX" database (`.rcx.json`). The engine is pure Python, independent
+    of the GUI, and writes extracted netlists in SPICE, SPEF, Spectre, and VACASK formats
+    with technology/corner support.
+15. **Integrated Python Console**: Full Python REPL in the main window for automation and
     scripting against Revolution EDA's internal APIs.
-15. **Stipple Pattern Editor**: Built-in editor for creating custom layer fill stipple
+16. **Stipple Pattern Editor**: Built-in editor for creating custom layer fill stipple
     patterns.
-16. **Persistent Configuration**: Save and restore configuration parameters per project.
-17. **Project Management**: Project-directory-based workflow with per-project `.env`,
+17. **Persistent Configuration**: Save and restore configuration parameters per project.
+18. **Project Management**: Project-directory-based workflow with per-project `.env`,
     `library.json`, and `reveda.conf`. Switching projects triggers a clean application
     restart to ensure PDK and plugin modules are loaded fresh. Recent projects are tracked
     and accessible from the File menu.
-18. **Constrained Move**: Move items with orthogonal and diagonal constraints across all
+19. **Constrained Move**: Move items with orthogonal and diagonal constraints across all
     editors using `Shift+M` shortcuts.
-19. **Plugin Licensing**: Ed255-signature-based license validation for commercial plugins with
+20. **Net Probing**: Probe nets with multi-color highlighting over the circuit schematic hierarchy, 
+21. **Export Graphics** Export
+    schematics/layouts to SVG, EPS, and high-quality raster images (including black-and-white
+    output for printing) for publication-quality schematic, layout and plot output.
+22. **Plugin Licensing**: Ed255-signature-based license validation for commercial plugins with
     machine-fingerprint activation and checkout workflow.
-20. **Comprehensive Logging**: Error, warning, and info message logging to `reveda.log`.
+23. **Comprehensive Logging**: Error, warning, and info message logging to `reveda.log`.
 
 ## Plugin Architecture
 
@@ -68,9 +80,14 @@ source-available plugins.
 
 ### Revolution EDA Simulation and Analysis Environment (revedasim)
 
-- **Multi-Simulator Netlisting**: Full support for Xyce, Spectre, and VACASK circuit simulators
+- **Multi-Simulator Netlisting**: Full support for Xyce,  and VACASK circuit
+  simulators, including subcircuit parsing and automatic symbol generation from Spectre
+  (`.scs`) and VACASK (`.vacask`) source files.
 - **Parameter Sweeps**: Multi-dimensional parameter sweep capabilities
-- **Analysis Types**: Support for DC, AC, transient, noise, and harmonic balance analyses
+- **Analysis Types**: Xyce supports DC, AC, transient, noise, and harmonic balance
+  analyses. VACASK additionally supports transient noise (`trannoise`), DC incremental
+  (`dcinc`), DC transfer function (`dcxf`), AC transfer function (`acxf`), AC stability
+  (`acstb`), and AC S-parameter (`acsp`) analyses.
 - **Output Management**: Flexible output signal selection and processing
 - **Process Management**: Efficient simulation job management
 
@@ -95,6 +112,21 @@ source-available plugins.
   restore via the `undo` command or **Undo Changes** button.
 - **Read & Inspect**: Run `read` to display the current design JSON directly in the
   terminal.
+
+### Parasitic Extraction (RCX/PEX)
+
+Revolution EDA ships a vendored RC parasitic extraction engine in
+`revedaEditor/rcextraction/`. It is pure Python with no third-party runtime dependency and
+is intentionally free of any `revedaEditor` imports so the extraction logic stays
+independent of the GUI.
+
+- **Extraction Database**: Consumes a `.rcx.json` database produced by the LVS
+  "Export for PEX" step (`rcxExport`).
+- **Technology and Corners**: Layer R/C models and corners are loaded from a technology
+  file (`tech`).
+- **Engine**: The `extractor.extract` entry point computes parasitic R and C.
+- **Output Writers**: `netlist.get_writer` produces extracted netlists in SPICE, SPEF,
+  Spectre, and VACASK formats.
 
 ## Installation
 

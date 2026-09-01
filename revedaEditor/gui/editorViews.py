@@ -617,6 +617,8 @@ class layoutView(editorView):
                 self.viewScene.layoutInstanceTuple = None
                 self.viewScene.editModes.setMode("selectItem")
             elif self.viewScene.editModes.addLabel:
+                if self.viewScene.newLabel is not None:
+                    self.viewScene.newLabel.setPlacementMarkerVisible(False)
                 self.viewScene.newLabel = None
                 self.viewScene.newLabelTuple = None
                 self.viewScene.editModes.setMode("selectItem")

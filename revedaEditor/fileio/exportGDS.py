@@ -151,11 +151,18 @@ class gdsExporter:
 
     def _processLabel(self, item, parentCell, offset: Tuple[float, float] = (0.0, 0.0)):
         ox, oy = offset
-        centre = item.boundingRect().center()
+        # Use the label's placement anchor (item.start) as the GDS origin.
+        # boundingRect().center() cannot be used here: boundingRect() mixes
+        # scene-dbu coordinates (start) with font-pixel dimensions
+        # (QFontMetrics width/height at point size fontHeight*10), so its centre
+        # is offset by half the font-pixel size in wrong units — this is the
+        # shift seen in the exported GDS.  The export items are recreated from
+        # JSON (layoutScene._exportCell round-trips through layoutEncoder), so
+        # item.start is already in the parent-local coordinate system that the
+        # GDS cell is built in, with pos()=(0,0).
         label = gdstk.Label(
             text=item.labelText,
-            # origin=(item.start.x() - ox, item.start.y() - oy),
-            origin=(centre.x()-ox, centre.y()-oy),
+            origin=(item.start.x() - ox, item.start.y() - oy),
             magnification=float(item.fontHeight * self._dbu),
             rotation=item.angle,
             layer=item.layer.gdsLayer,

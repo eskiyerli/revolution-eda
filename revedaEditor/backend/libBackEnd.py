@@ -148,6 +148,10 @@ class viewItem(QStandardItem):
             return "xyce"
         elif "spice" in self.viewPath.stem:
             return "spice"
+        elif "spectre" in self.viewPath.stem:
+            return "spectre"
+        elif "vacask" in self.viewPath.stem:
+            return "vacask"
         elif "myhdl" in self.viewPath.stem:
             return "myhdl"
         elif "layout" in self.viewPath.stem:

@@ -41,6 +41,7 @@ from .layoutGeometry import (
     LayoutGeometryReader,
     LayRect,
     NetGroup,
+    PcellBridge,
     buildConnectivity,
 )
 from .rcx_schema import (
@@ -260,6 +261,7 @@ def buildRcxDatabase(
     devicePinAnchors: Optional[list[tuple[str, LayRect]]] = None,
     portFootprints: Optional[list[tuple[str, LayRect]]] = None,
     touchTolerance: float = 1.0,
+    pcellBridges: Optional[list[list[PcellBridge]]] = None,
 ) -> RcxDatabase:
     """Assemble the :class:`RcxDatabase` for ``layoutCellName``.
 
@@ -272,6 +274,8 @@ def buildRcxDatabase(
         processModule: PDK ``process`` module (via definitions).
         dbu: database units per micron.
         lvsEquivalent: whether LVS passed.
+        pcellBridges: optional Pcell terminal footprints used to connect
+            routing geometry landing on the same terminal.
         devicePinAnchors: (net_id, LayRect) list built from device (Pcell)
             terminal pins in the scene; the net_id is the terminal's net from
             the extracted netlist. Drives net naming so parasitics connect to
@@ -283,14 +287,13 @@ def buildRcxDatabase(
     elements = layoutElements[2:] if len(layoutElements) > 2 else []
     shapes, vias = reader.read(elements)
 
-    # Connectivity uses only physical geometry (touching metal + vias). Pcell
-    # pins are deliberately NOT used to merge groups: a device pin footprint
-    # can overlap several of the device's own terminals' routing, which would
-    # falsely short drain/gate/source together. Instead, device pins are used
-    # only to *name* groups (below); routing pieces that share a terminal get
-    # the same net name and are merged by name afterwards.
+    # Connectivity uses physical geometry (touching metal + vias), with
+    # optional Pcell terminal bridges for routing that lands on the same pin.
     groups = buildConnectivity(
-        shapes, vias, touchTolerance=touchTolerance
+        shapes,
+        vias,
+        pcellBridges=pcellBridges,
+        touchTolerance=touchTolerance,
     )
 
     naming = _nameGroups(
@@ -305,11 +308,6 @@ def buildRcxDatabase(
             f"{len(devicePinAnchors or [])} device-pin anchors, "
             f"{len(portFootprints or [])} port pins"
         )
-        for netId, r in (devicePinAnchors or []):
-            logger.info(
-                f"  device-pin anchor net={netId} "
-                f"rect=[{r.x1:.0f},{r.y1:.0f},{r.x2:.0f},{r.y2:.0f}]"
-            )
         for gi, group in enumerate(groups):
             fps = [s.footprint for s in group.shapes]
             if fps:
@@ -373,6 +371,7 @@ def exportRcxDatabase(
     devicePinAnchors: Optional[list[tuple[str, LayRect]]] = None,
     portFootprints: Optional[list[tuple[str, LayRect]]] = None,
     touchTolerance: float = 1.0,
+    pcellBridges: Optional[list[list[PcellBridge]]] = None,
 ) -> pathlib.Path:
     """Build and write the ``.rcx.json`` extraction database.
 
@@ -387,6 +386,7 @@ def exportRcxDatabase(
         processModule,
         dbu,
         lvsEquivalent,
+        pcellBridges=pcellBridges,
         devicePinAnchors=devicePinAnchors,
         portFootprints=portFootprints,
         touchTolerance=touchTolerance,

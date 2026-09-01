@@ -55,6 +55,7 @@ class klayoutSchematicGenerator:
         self.schem_to_layout_pos = {}
         self._symbol_view_cache: dict[str, Optional[ddef.viewNameTuple]] = {}
         self._generated_hierarchy_cells: set[tuple[str, str]] = set()
+        self._generated_net_endpoints: dict[str, list[QPoint]] = {}
 
     @staticmethod
     def _make_hashable(obj):
@@ -75,6 +76,7 @@ class klayoutSchematicGenerator:
     ) -> dict[str, Any]:
         node = {
             "name": cellName,
+            "pins": list(subcktMap.get(cellName.casefold(), {}).get("pins", [])),
             "instances": [],
             "primitive_devices": [],
             "source_device_ids": [],
@@ -114,6 +116,7 @@ class klayoutSchematicGenerator:
                 {
                     "name": instanceName,
                     "cell_name": childCellName,
+                    "pins": list(childPins),
                     "terminals": dict(zip(childPins, connections)),
                     "source_device_ids": childNode["source_device_ids"],
                     "extracted": childNode,
@@ -186,6 +189,7 @@ class klayoutSchematicGenerator:
                 {
                     "name": instanceName,
                     "cell_name": childCellName,
+                    "pins": list(childPins),
                     "terminals": dict(zip(childPins, connections)),
                     "source_device_ids": childNode["source_device_ids"],
                     "extracted": childNode,
@@ -558,6 +562,9 @@ class klayoutSchematicGenerator:
         name = terminals.get(pinItem.pinName) if isinstance(terminals, dict) else None
         if name:
             pinNetItem.name = name
+            self._generated_net_endpoints.setdefault(str(name), []).append(
+                pinNetItem.sceneEndPoints[1]
+            )
         return pinNetItem
 
     def addDeviceNets(self, symbolItem, device: dict):
@@ -570,6 +577,35 @@ class klayoutSchematicGenerator:
         for pinItem in symbolItem.pins.values():
             pinNetItem = self.createPinNet(pinItem, symbolItem, device)
             scene.addItem(pinNetItem)
+
+    def addExtractedPins(self, extracted: dict):
+        """Add named extracted top-level pins to the generated schematic.
+
+        KLayout emits pin names as metadata and uses numeric net IDs in the
+        SPICE body.  The parser normalizes device terminals to those names;
+        here each named pin is attached to the free end of its matching wire.
+        """
+        scene = self._getScene()
+        pins = extracted.get("pins", [])
+        if scene is None or not isinstance(pins, list):
+            return
+
+        added_names = set()
+        for pin_name in pins:
+            name = str(pin_name).strip()
+            if not name or name in added_names:
+                continue
+            endpoints = self._generated_net_endpoints.get(name, [])
+            if not endpoints:
+                self.logger.warning(
+                    f"Could not place extracted pin {name!r}: matching net not found."
+                )
+                continue
+
+            pin_item = shp.schematicPin(QPoint(0, 0), name, "Inout", "Signal")
+            pin_item.setPos(endpoints[0])
+            scene.addItem(pin_item)
+            added_names.add(name)
 
     def generateSchematic(
         self,
@@ -601,6 +637,7 @@ class klayoutSchematicGenerator:
 
         # Restore this cell's editor after child views have been generated.
         self.tempSchematicEditor = currentEditor
+        self._generated_net_endpoints = {}
 
         devices: Any = extracted.get("primitive_devices", extracted.get("devices", []))
         if not isinstance(devices, list):
@@ -628,6 +665,8 @@ class klayoutSchematicGenerator:
             symbolItem = self.addDeviceToSchematic(device)
             if symbolItem:
                 self.addDeviceNets(symbolItem, device)
+
+        self.addExtractedPins(extracted)
 
         if callable(self.highlight_callback):
             self.highlight_callback(self.tempSchematicEditor, extracted, hierarchy_path)
