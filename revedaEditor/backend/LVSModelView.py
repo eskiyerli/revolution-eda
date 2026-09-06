@@ -8,7 +8,7 @@
 # Add-ons and extensions developed for this software may be distributed
 # under their own separate licenses.
 
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 from PySide6.QtCore import (QAbstractTableModel, Qt, QModelIndex, QPersistentModelIndex,
                             Signal)
@@ -414,3 +414,334 @@ class LVSCrossrefsTableView(QTableView):
             mismatch_type = 'all'
 
         self.crossrefSelected.emit(crossref, mismatch_type)
+
+
+class LVSDeviceParamMismatchTableModel(QAbstractTableModel):
+    def __init__(self, rows: List[Dict[str, Any]]):
+        super().__init__()
+        self._data = rows
+        self._headers = [
+            'Layout Dev', 'Schem Dev', 'Type', 'Parameter',
+            'Layout Value', 'Schem Value', 'Delta / Diff', 'Status'
+        ]
+
+    def rowCount(self, parent: QModelIndex | QPersistentModelIndex = QModelIndex()) -> int:
+        return len(self._data)
+
+    def columnCount(self, parent: QModelIndex | QPersistentModelIndex = QModelIndex()) -> int:
+        return len(self._headers)
+
+    def data(self, index, role=Qt.ItemDataRole.DisplayRole):
+        if not index.isValid() or not (0 <= index.row() < len(self._data)):
+            return None
+
+        row = self._data[index.row()]
+        col = index.column()
+
+        if role == Qt.ItemDataRole.DisplayRole:
+            if col == 0:
+                return str(row.get('layout_dev', ''))
+            elif col == 1:
+                return str(row.get('schem_dev', ''))
+            elif col == 2:
+                return str(row.get('device_type', ''))
+            elif col == 3:
+                return str(row.get('param_name', ''))
+            elif col == 4:
+                return str(row.get('layout_val_str', ''))
+            elif col == 5:
+                return str(row.get('schem_val_str', ''))
+            elif col == 6:
+                return str(row.get('delta_str', ''))
+            elif col == 7:
+                return str(row.get('status', ''))
+        elif role == Qt.ItemDataRole.TextAlignmentRole:
+            if col in (4, 5, 6):
+                return int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            elif col == 7:
+                return int(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
+
+        return None
+
+    def headerData(self, section, orientation, role=Qt.ItemDataRole.DisplayRole):
+        if orientation == Qt.Orientation.Horizontal:
+            if role == Qt.ItemDataRole.DisplayRole:
+                return self._headers[section]
+            elif role == Qt.ItemDataRole.FontRole:
+                font = QFont()
+                font.setBold(True)
+                return font
+        return None
+
+    def getRow(self, row: int) -> Optional[Dict[str, Any]]:
+        if 0 <= row < len(self._data):
+            return self._data[row]
+        return None
+
+    def updateData(self, rows: List[Dict[str, Any]]):
+        self.beginResetModel()
+        self._data = rows
+        self.endResetModel()
+
+
+class LVSDeviceParamMismatchTableView(QTableView):
+    itemSelected = Signal(dict)
+
+    def __init__(self, rows: List[Dict[str, Any]] = None):
+        super().__init__()
+        self.paramModel = LVSDeviceParamMismatchTableModel(rows or [])
+        self.setModel(self.paramModel)
+        self.clicked.connect(self.onCellClicked)
+        self.setAlternatingRowColors(True)
+        self.header = self.horizontalHeader()
+        for i in range(len(self.paramModel._headers)):
+            self.header.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
+        self.header.setStretchLastSection(False)
+
+    def onCellClicked(self, index):
+        if index.isValid():
+            row_data = self.paramModel.getRow(index.row())
+            if row_data:
+                self.itemSelected.emit(row_data)
+
+
+class LVSTerminalMismatchTableModel(QAbstractTableModel):
+    def __init__(self, rows: List[Dict[str, Any]]):
+        super().__init__()
+        self._data = rows
+        self._headers = [
+            'Device / Instance', 'Terminal', 'Layout Net', 'Schematic Net', 'Status'
+        ]
+
+    def rowCount(self, parent: QModelIndex | QPersistentModelIndex = QModelIndex()) -> int:
+        return len(self._data)
+
+    def columnCount(self, parent: QModelIndex | QPersistentModelIndex = QModelIndex()) -> int:
+        return len(self._headers)
+
+    def data(self, index, role=Qt.ItemDataRole.DisplayRole):
+        if not index.isValid() or not (0 <= index.row() < len(self._data)):
+            return None
+
+        row = self._data[index.row()]
+        col = index.column()
+
+        if role == Qt.ItemDataRole.DisplayRole:
+            if col == 0:
+                return str(row.get('device_name', ''))
+            elif col == 1:
+                return str(row.get('terminal', ''))
+            elif col == 2:
+                return str(row.get('layout_net', ''))
+            elif col == 3:
+                return str(row.get('schem_net', ''))
+            elif col == 4:
+                return str(row.get('status', ''))
+        elif role == Qt.ItemDataRole.TextAlignmentRole:
+            if col == 4:
+                return int(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
+
+        return None
+
+    def headerData(self, section, orientation, role=Qt.ItemDataRole.DisplayRole):
+        if orientation == Qt.Orientation.Horizontal:
+            if role == Qt.ItemDataRole.DisplayRole:
+                return self._headers[section]
+            elif role == Qt.ItemDataRole.FontRole:
+                font = QFont()
+                font.setBold(True)
+                return font
+        return None
+
+    def getRow(self, row: int) -> Optional[Dict[str, Any]]:
+        if 0 <= row < len(self._data):
+            return self._data[row]
+        return None
+
+    def updateData(self, rows: List[Dict[str, Any]]):
+        self.beginResetModel()
+        self._data = rows
+        self.endResetModel()
+
+
+class LVSTerminalMismatchTableView(QTableView):
+    itemSelected = Signal(dict)
+
+    def __init__(self, rows: List[Dict[str, Any]] = None):
+        super().__init__()
+        self.terminalModel = LVSTerminalMismatchTableModel(rows or [])
+        self.setModel(self.terminalModel)
+        self.clicked.connect(self.onCellClicked)
+        self.setAlternatingRowColors(True)
+        self.header = self.horizontalHeader()
+        for i in range(len(self.terminalModel._headers)):
+            self.header.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
+        self.header.setStretchLastSection(False)
+
+    def onCellClicked(self, index):
+        if index.isValid():
+            row_data = self.terminalModel.getRow(index.row())
+            if row_data:
+                self.itemSelected.emit(row_data)
+
+
+class LVSNetMismatchTableModel(QAbstractTableModel):
+    def __init__(self, rows: List[Dict[str, Any]]):
+        super().__init__()
+        self._data = rows
+        self._headers = [
+            'Type', 'Layout Net / Pin', 'Schematic Net / Pin', 'Status', 'Diagnostic Details'
+        ]
+
+    def rowCount(self, parent: QModelIndex | QPersistentModelIndex = QModelIndex()) -> int:
+        return len(self._data)
+
+    def columnCount(self, parent: QModelIndex | QPersistentModelIndex = QModelIndex()) -> int:
+        return len(self._headers)
+
+    def data(self, index, role=Qt.ItemDataRole.DisplayRole):
+        if not index.isValid() or not (0 <= index.row() < len(self._data)):
+            return None
+
+        row = self._data[index.row()]
+        col = index.column()
+
+        if role == Qt.ItemDataRole.DisplayRole:
+            if col == 0:
+                return str(row.get('item_type', ''))
+            elif col == 1:
+                return str(row.get('layout_ref', ''))
+            elif col == 2:
+                return str(row.get('schem_ref', ''))
+            elif col == 3:
+                return str(row.get('status', ''))
+            elif col == 4:
+                return str(row.get('details', ''))
+        elif role == Qt.ItemDataRole.TextAlignmentRole:
+            if col == 3:
+                return int(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
+
+        return None
+
+    def headerData(self, section, orientation, role=Qt.ItemDataRole.DisplayRole):
+        if orientation == Qt.Orientation.Horizontal:
+            if role == Qt.ItemDataRole.DisplayRole:
+                return self._headers[section]
+            elif role == Qt.ItemDataRole.FontRole:
+                font = QFont()
+                font.setBold(True)
+                return font
+        return None
+
+    def getRow(self, row: int) -> Optional[Dict[str, Any]]:
+        if 0 <= row < len(self._data):
+            return self._data[row]
+        return None
+
+    def updateData(self, rows: List[Dict[str, Any]]):
+        self.beginResetModel()
+        self._data = rows
+        self.endResetModel()
+
+
+class LVSNetMismatchTableView(QTableView):
+    itemSelected = Signal(dict)
+
+    def __init__(self, rows: List[Dict[str, Any]] = None):
+        super().__init__()
+        self.netMismatchModel = LVSNetMismatchTableModel(rows or [])
+        self.setModel(self.netMismatchModel)
+        self.clicked.connect(self.onCellClicked)
+        self.setAlternatingRowColors(True)
+        self.header = self.horizontalHeader()
+        for i in range(len(self.netMismatchModel._headers)):
+            self.header.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
+        self.header.setStretchLastSection(False)
+
+    def onCellClicked(self, index):
+        if index.isValid():
+            row_data = self.netMismatchModel.getRow(index.row())
+            if row_data:
+                self.itemSelected.emit(row_data)
+
+
+class LVSMissingItemTableModel(QAbstractTableModel):
+    def __init__(self, rows: List[Dict[str, Any]]):
+        super().__init__()
+        self._data = rows
+        self._headers = [
+            'Category', 'Name / ID', 'Type', 'Parameters / Details', 'Terminals / Location', 'Status'
+        ]
+
+    def rowCount(self, parent: QModelIndex | QPersistentModelIndex = QModelIndex()) -> int:
+        return len(self._data)
+
+    def columnCount(self, parent: QModelIndex | QPersistentModelIndex = QModelIndex()) -> int:
+        return len(self._headers)
+
+    def data(self, index, role=Qt.ItemDataRole.DisplayRole):
+        if not index.isValid() or not (0 <= index.row() < len(self._data)):
+            return None
+
+        row = self._data[index.row()]
+        col = index.column()
+
+        if role == Qt.ItemDataRole.DisplayRole:
+            if col == 0:
+                return str(row.get('category', ''))
+            elif col == 1:
+                return str(row.get('name', ''))
+            elif col == 2:
+                return str(row.get('type', ''))
+            elif col == 3:
+                return str(row.get('details', ''))
+            elif col == 4:
+                return str(row.get('terminals', ''))
+            elif col == 5:
+                return str(row.get('status', ''))
+        elif role == Qt.ItemDataRole.TextAlignmentRole:
+            if col in (0, 5):
+                return int(Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter)
+
+        return None
+
+    def headerData(self, section, orientation, role=Qt.ItemDataRole.DisplayRole):
+        if orientation == Qt.Orientation.Horizontal:
+            if role == Qt.ItemDataRole.DisplayRole:
+                return self._headers[section]
+            elif role == Qt.ItemDataRole.FontRole:
+                font = QFont()
+                font.setBold(True)
+                return font
+        return None
+
+    def getRow(self, row: int) -> Optional[Dict[str, Any]]:
+        if 0 <= row < len(self._data):
+            return self._data[row]
+        return None
+
+    def updateData(self, rows: List[Dict[str, Any]]):
+        self.beginResetModel()
+        self._data = rows
+        self.endResetModel()
+
+
+class LVSMissingItemTableView(QTableView):
+    itemSelected = Signal(dict)
+
+    def __init__(self, rows: List[Dict[str, Any]] = None):
+        super().__init__()
+        self.missingModel = LVSMissingItemTableModel(rows or [])
+        self.setModel(self.missingModel)
+        self.clicked.connect(self.onCellClicked)
+        self.setAlternatingRowColors(True)
+        self.header = self.horizontalHeader()
+        for i in range(len(self.missingModel._headers)):
+            self.header.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
+        self.header.setStretchLastSection(False)
+
+    def onCellClicked(self, index):
+        if index.isValid():
+            row_data = self.missingModel.getRow(index.row())
+            if row_data:
+                self.itemSelected.emit(row_data)

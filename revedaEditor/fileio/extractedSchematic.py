@@ -383,7 +383,7 @@ class klayoutSchematicGenerator:
                 return None
 
             x = int(round(float(x_raw) * LAYOUT_TO_SCHEMATIC_SCALE))
-            y = int(round(float(y_raw) * LAYOUT_TO_SCHEMATIC_SCALE))
+            y = int(round(float(y_raw) * -LAYOUT_TO_SCHEMATIC_SCALE))
             return snapToGrid(QPoint(x, y))
         except (TypeError, ValueError):
             return None
@@ -559,9 +559,18 @@ class klayoutSchematicGenerator:
             pinNetItem = snet.schematicNet(pinScenePos, endPos, 1, 0)
 
         terminals = device.get("terminals", {})
-        name = terminals.get(pinItem.pinName) if isinstance(terminals, dict) else None
+        name = None
+        if isinstance(terminals, dict):
+            name = terminals.get(pinItem.pinName)
+            if name is None:
+                target_cf = str(pinItem.pinName).casefold()
+                for k, v in terminals.items():
+                    if str(k).casefold() == target_cf:
+                        name = v
+                        break
         if name:
             pinNetItem.name = name
+            pinNetItem.nameStrength = snet.netNameStrengthEnum.SET
             self._generated_net_endpoints.setdefault(str(name), []).append(
                 pinNetItem.sceneEndPoints[1]
             )

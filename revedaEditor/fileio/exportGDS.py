@@ -16,12 +16,12 @@ from pathlib import Path
 from typing import List, Any, Tuple
 
 import gdstk
+from PySide6.QtCore import QPointF
 
 import revedaEditor.common.layoutShapes as lshp
 from revedaEditor.backend.pdkLoader import importPDKModule
 
 logger = logging.getLogger("reveda")
-pcells = importPDKModule('pcells')
 _process = importPDKModule('process')
 
 # Module-level cache: maps a pcell class -> list of __init__ param names to extract.
@@ -32,7 +32,7 @@ _pcell_param_cache: dict = {}
 class gdsExporter:
     __slots__ = ('_cellname', '_items', '_outputFileObj', '_libraryName',
                  '_unit', '_precision', '_dbu', '_topCell', '_itemCounter',
-                 '_cellCache', '_instanceCache')
+                 '_cellCache', '_instanceCache', '_pcellCache')
 
     DEFAULT_UNIT = 1e-9
     DEFAULT_PRECISION = 1e-9
@@ -50,6 +50,7 @@ class gdsExporter:
         self._itemCounter = 0
         self._cellCache = {}
         self._instanceCache: dict = {}  # (lib, cell, view) -> gdstk.Cell
+        self._pcellCache: dict = {}
 
     def _buildLibrary(self) -> gdstk.Library:
         """Build and populate the gdstk.Library from self._items. Shared by all exporters."""
@@ -63,6 +64,13 @@ class gdsExporter:
     def gdsExport(self):
         lib = self._buildLibrary()
         lib.write_gds(self._outputFileObj)
+
+    @staticmethod
+    def _gdstk_transform(angle: float, flip_tuple: tuple[int, int]) -> tuple[float, bool]:
+        """Convert the editor's scale flip and rotation to gdstk parameters."""
+        flip_x, flip_y = flip_tuple
+        extra_angle = 180.0 if flip_x == -1 else 0.0
+        return math.radians(angle + extra_angle), flip_x != flip_y
 
     def gdsExportThreaded(self, threadPool):
         lib = self._buildLibrary()
@@ -91,6 +99,8 @@ class gdsExporter:
             self._processPolygon(item, parentCell, offset)
         elif item_type == lshp.layoutViaArray:
             self._processViaArray(library, item, parentCell, offset)
+        elif item_type == lshp.layoutRuler:
+            return
         else:
             self._process_custom_layout(library, item, parentCell)
 
@@ -108,10 +118,10 @@ class gdsExporter:
         else:
             cellGDS = self._instanceCache[cache_key]
 
-        # Qt rotation is clockwise-positive; GDS is counter-clockwise-positive.
-        angle_rad = math.radians(-item.angle)
-        # flipTuple = (sx, sy); x_reflection in GDS means flip around X axis (negate Y).
-        x_reflection = (item.flipTuple[1] == -1)
+        # Both Qt (in the editor's Y-down scene coordinates) and gdstk apply the
+        # same right-handed rotation matrix, so a positive angle rotates (1,0)
+        # towards (0,1); no sign flip is needed.
+        angle_rad, x_reflection = self._gdstk_transform(item.angle, item.flipTuple)
         pos = item.pos()
         ref = gdstk.Reference(
             cellGDS,
@@ -123,9 +133,17 @@ class gdsExporter:
 
     def _processRectPin(self, item, parentCell, offset: Tuple[float, float] = (0.0, 0.0)):
         ox, oy = offset
-        rect = gdstk.rectangle(
-            corner1=(item.start.x() - ox, item.start.y() - oy),
-            corner2=(item.end.x() - ox, item.end.y() - oy),
+        corners = (
+            item.rect.topLeft(), item.rect.topRight(),
+            item.rect.bottomRight(), item.rect.bottomLeft(),
+        )
+        transformed = [
+            (point.x() - ox, point.y() - oy)
+            for point in (item.mapToParent(corner) for corner in corners)
+        ]
+
+        rect = gdstk.Polygon(
+            points=transformed,
             layer=item.layer.gdsLayer,
             datatype=item.layer.datatype,
         )
@@ -160,11 +178,14 @@ class gdsExporter:
         # JSON (layoutScene._exportCell round-trips through layoutEncoder), so
         # item.start is already in the parent-local coordinate system that the
         # GDS cell is built in, with pos()=(0,0).
+        angle_rad, x_reflection = self._gdstk_transform(item.angle, item.flipTuple)
+        origin = item.mapToParent(item.start)
         label = gdstk.Label(
             text=item.labelText,
-            origin=(item.start.x() - ox, item.start.y() - oy),
+            origin=(origin.x() - ox, origin.y() - oy),
             magnification=float(item.fontHeight * self._dbu),
-            rotation=item.angle,
+            rotation=angle_rad,
+            x_reflection=x_reflection,
             layer=item.layer.gdsLayer,
             texttype=item.layer.datatype,
         )
@@ -172,9 +193,13 @@ class gdsExporter:
 
     def _processPolygon(self, item, parentCell, offset: Tuple[float, float] = (0.0, 0.0)):
         ox, oy = offset
-        points = [(pt.x() - ox, pt.y() - oy) for pt in item.points]
+        transformed = [
+            (point.x() - ox, point.y() - oy)
+            for point in (item.mapToParent(point) for point in item.points)
+        ]
+
         polygon = gdstk.Polygon(
-            points=points,
+            points=transformed,
             layer=item.layer.gdsLayer,
             datatype=item.layer.datatype,
         )
@@ -200,9 +225,17 @@ class gdsExporter:
             viaCell = self._cellCache[via_key]
 
         ox, oy = offset
+        # Place the array using the scene position of its first cut.  gdstk's
+        # rotation/flip are applied to the repetition spacing as well, so we
+        # decompose the item's flip into an x_reflection and an extra 180°
+        # rotation when the X axis is mirrored.
+        origin = item.mapToParent(item.start)
+        angle_rad, x_reflection = self._gdstk_transform(item.angle, item.flipTuple)
         viaArray = gdstk.Reference(
             cell=viaCell,
-            origin=(item.start.x() - ox, item.start.y() - oy),
+            origin=(origin.x() - ox, origin.y() - oy),
+            rotation=angle_rad,
+            x_reflection=x_reflection,
             columns=item.xnum,
             rows=item.ynum,
             spacing=(item.xs + item.width, item.ys + item.height),
@@ -212,12 +245,13 @@ class gdsExporter:
 
     def _processViaEnclosure(self, item, parentCell,
                              offset: Tuple[float, float] = (0.0, 0.0)):
-        """Emit the connecting-metal layers of a via/via array as GDS rectangles.
+        """Emit the connecting-metal layers of a via/via array as GDS polygons.
 
-        A single metal rectangle per connecting layer spans the whole array of
+        A single metal polygon per connecting layer spans the whole array of
         cuts (from the first cut to the last), grown by that layer's enclosure
-        margin. This mirrors the on-screen rendering, where enclosure metal is a
-        derived property of the via definition rather than a stored shape."""
+        margin. The corners are mapped through the item's scene transform so the
+        exported metal matches the on-screen rendering even when the array is
+        rotated, flipped, or pivoted away from its start point."""
         viaDef = item.via.viaDefTuple
         # Use the via's effective enclosure (per-instance override when set,
         # otherwise the via definition value) so exported metal matches what is
@@ -233,39 +267,56 @@ class gdsExporter:
         # Extent covering every cut, in the same (dbu) coordinate space as cuts.
         xStep = item.xs + item.via.width
         yStep = item.ys + item.via.height
-        left = item.start.x() - ox
-        top = item.start.y() - oy
-        right = left + (item.xnum - 1) * xStep + item.via.width
-        bottom = top + (item.ynum - 1) * yStep + item.via.height
+        arrayWidth = (item.xnum - 1) * xStep + item.via.width
+        arrayHeight = (item.ynum - 1) * yStep + item.via.height
+
+        base = item.start
 
         for layer, enclosure in enclosureLayers:
             if layer is None or enclosure <= 0:
                 continue
             margin = enclosure * self._dbu
-            metal = gdstk.rectangle(
-                (left - margin, top - margin),
-                (right + margin, bottom + margin),
+            # Grow the local rectangle by the margin, then map each corner through
+            # the array's scene transform.  This keeps the enclosure axis-aligned
+            # with the cuts in local coordinates and matches on-screen rendering
+            # for arbitrary rotation/flip/pivot.
+            margin_offsets = [
+                (-margin, -margin),
+                (arrayWidth + margin, -margin),
+                (arrayWidth + margin, arrayHeight + margin),
+                (-margin, arrayHeight + margin),
+            ]
+            points = []
+            for dx, dy in margin_offsets:
+                parent_pt = item.mapToParent(QPointF(base.x() + dx, base.y() + dy))
+                points.append((parent_pt.x() - ox, parent_pt.y() - oy))
+            metal = gdstk.Polygon(
+                points=points,
                 layer=layer.gdsLayer,
                 datatype=layer.datatype,
             )
             parentCell.add(metal)
 
     def _process_custom_layout(self, library, item, parentCell):
-        if pcells is not None and isinstance(item, pcells.baseCell):
+        if isinstance(item, lshp.layoutPcell):
             pcellParamDict = self.extractPcellInstanceParameters(item)
-            pcellNameSuffix = "_".join(
-                f"{key}_{value}".replace(".", "p") for key, value in pcellParamDict.items()
+            pcellCacheKey = (
+                type(item),
+                tuple((key, repr(value)) for key, value in pcellParamDict.items()),
             )
-            pcellName = (f"{item.libraryName}_{type(item).__name__}_"
-                         f"{pcellNameSuffix}_{self._itemCounter}")
-            self._itemCounter += 1
-            pcellGDS = library.new_cell(pcellName)
-            # Pcell shapes store coordinates in the pcell's local coordinate system
-            # (Qt child items; toSceneCoord only scales by dbu, no translation).
-            # Place them in the GDS cell without any offset, then put the Reference
-            # at the pcell's scene position.
-            for shape in item.shapes:
-                self.createCells(library, shape, pcellGDS)
+            pcellGDS = self._pcellCache.get(pcellCacheKey)
+            if pcellGDS is None:
+                pcellNameSuffix = "_".join(
+                    f"{key}_{value}".replace(".", "p")
+                    for key, value in pcellParamDict.items()
+                )
+                pcellName = (f"{item.libraryName}_{type(item).__name__}_"
+                             f"{pcellNameSuffix}_{self._itemCounter}")
+                self._itemCounter += 1
+                pcellGDS = library.new_cell(pcellName)
+                for shape in item.shapes:
+                    self.createCells(library, shape, pcellGDS)
+                self._pcellCache[pcellCacheKey] = pcellGDS
 
             # Use pos() (local coords relative to Qt parent) not scenePos().
             # The Reference lives inside the parent GDS cell whose own Reference
@@ -273,8 +324,10 @@ class gdsExporter:
             # would double-offset.  pos() == scenePos() when the pcell is at
             # the top level, so this is correct in both cases.
             pos = item.pos()
-            angle_rad = math.radians(-getattr(item, 'angle', 0.0))
-            x_reflection = (getattr(item, 'flipTuple', (1, 1))[1] == -1)
+            angle_rad, x_reflection = self._gdstk_transform(
+                getattr(item, 'angle', 0.0),
+                getattr(item, 'flipTuple', (1, 1)),
+            )
             ref = gdstk.Reference(
                 pcellGDS,
                 origin=(pos.x(), pos.y()),

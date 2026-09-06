@@ -383,13 +383,14 @@ class layoutScene(editorScene):
             *self.arrayViaTuple.singleViaTuple,
         )
         self.arrayVia = lshp.layoutViaArray(
-            self.mouseReleaseLoc,
+            QPoint(0, 0),
             singleVia,
             self.arrayViaTuple.xs,
             self.arrayViaTuple.ys,
             self.arrayViaTuple.xnum,
             self.arrayViaTuple.ynum,
         )
+        self.arrayVia.setPos(self.mouseReleaseLoc)
         self.addUndoStack(self.arrayVia)
 
     def snapToClosestEdge(
@@ -709,7 +710,11 @@ class layoutScene(editorScene):
                 # valid_items = filter(
                 #     lambda item: isinstance(item, dict) and item.get(
                 #         "type") in self.LAYOUT_SHAPES, decodedData[2:])
-                instanceShapes = [factory_create(item) for item in decodedData[2:]]
+                instanceShapes = [
+                    shape
+                    for item in decodedData[2:]
+                    if (shape := factory_create(item)) is not None
+                ]
                 return setup_instance(lshp.layoutInstance(instanceShapes))
 
             elif (
@@ -1028,7 +1033,6 @@ class layoutScene(editorScene):
         export_path = export_dir / f"{self.cellName}{file_extension}"
 
         try:
-            # reprocess the layout to get the layout positions right.
             topLevelItems = [
                 item
                 for item in self.itemsRefSet
@@ -1036,13 +1040,7 @@ class layoutScene(editorScene):
                    and isinstance(item, tuple(self.LAYOUT_SHAPES))
             ]
 
-            decodedData = json.loads(
-                json.dumps(topLevelItems, cls=layenc.layoutEncoder)
-            )
-
-            layoutItems = [lj.layoutItems(self).create(item) for item in decodedData]
-
-            exportObj = gdse.gdsExporter(self.cellName, layoutItems, export_path)
+            exportObj = gdse.gdsExporter(self.cellName, topLevelItems, export_path)
             exportObj.unit = unit
             exportObj.precision = precision
             exportObj.dbu = dbu
@@ -1130,12 +1128,19 @@ class layoutScene(editorScene):
             return
 
         factory_create = lj.layoutItems(self).create
-        for item in decoded_data:
-            if isinstance(item, dict):
-                try:
-                    self.addItem(factory_create(item))
-                except Exception:
-                    pass
+        index_method = self.itemIndexMethod()
+        self.setItemIndexMethod(QGraphicsScene.ItemIndexMethod.NoIndex)
+        try:
+            for item in decoded_data:
+                if isinstance(item, dict):
+                    try:
+                        shape = factory_create(item)
+                        if shape is not None:
+                            self.addItem(shape)
+                    except Exception:
+                        pass
+        finally:
+            self.setItemIndexMethod(index_method)
 
     def deleteSelectedItems(self):
         for item in self.selectedItems():
@@ -1298,13 +1303,14 @@ class layoutScene(editorScene):
                 *arrayViaTuple.singleViaTuple,
             )
             arrayVia = lshp.layoutViaArray(
-                start,
+                QPoint(0, 0),
                 singleVia,
                 arrayViaTuple.xs,
                 arrayViaTuple.ys,
                 arrayViaTuple.xnum,
                 arrayViaTuple.ynum,
             )
+            arrayVia.setPos(start)
             self.undoStack.push(us.addDeleteShapeUndo(self, arrayVia, item))
 
     def layoutPathProperties(self, item):

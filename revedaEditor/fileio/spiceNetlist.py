@@ -424,9 +424,18 @@ def parse_extracted_netlist(
                         if index < len(current_pin_comments)
                         else ""
                     )
-                    named_pins.append(
-                        current_net_names.get(str(pin_id), comment_name or pin_id)
-                    )
+                    if current_net_names:
+                        # use_net_names=false with comments: map numeric IDs
+                        # to net names via * net comments.  Fall back to pin
+                        # name from * pin comment, then to the raw ID.
+                        named_pins.append(
+                            current_net_names.get(str(pin_id), comment_name or pin_id)
+                        )
+                    else:
+                        # use_net_names=true (or no comments): the .SUBCKT line
+                        # already carries net names, so pin_id IS the net name.
+                        # Do NOT override it with the pin name from * pin comments.
+                        named_pins.append(str(pin_id))
 
                 subckts[current_name] = {
                     "name": current_name,

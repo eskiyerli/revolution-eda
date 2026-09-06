@@ -8,7 +8,6 @@
 # If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #
-import itertools
 import math
 from pathlib import Path
 from typing import List, Optional, Tuple, Union
@@ -47,7 +46,26 @@ from PySide6.QtWidgets import (
 
 import revedaEditor.backend.dataDefinitions as ddef
 from revedaEditor.backend.pdkLoader import importPDKModule
-processDBU = importPDKModule('process').dbu
+
+# Resolve the PDK ``process.dbu`` lazily rather than at import time.
+#
+# Resolving it here at module top-level created a circular import: importing a
+# PDK package (e.g. ihp_pdk) triggers revedaEditor initialisation, which reaches
+# this module and calls importPDKModule('process') while the PDK is still
+# partially initialised, so it returns None and ``.dbu`` raises. Deferring the
+# lookup to first use (by which point both revedaEditor and the PDK are fully
+# loaded) breaks that cycle.
+_processDBUCache = None
+
+
+def getProcessDBU():
+    """Return the active PDK's database units, caching after first resolution."""
+    global _processDBUCache
+    if _processDBUCache is None:
+        processModule = importPDKModule('process')
+        if processModule is not None:
+            _processDBUCache = processModule.dbu
+    return _processDBUCache
 
 class textureCache:
     _file_content_cache = {}
@@ -1349,7 +1367,7 @@ class layoutRuler(layoutShape):
         scene = self.scene()
         if scene is not None and hasattr(scene, "toLayoutDistance"):
             return scene.toLayoutDistance(length)
-        return length / processDBU
+        return length / getProcessDBU()
 
     def _createRulerTicks(self):
         self._tickTuples = []
@@ -1784,7 +1802,7 @@ class layoutPin(layoutShape):
         self._pinDir = pinDir
         self._pinType = pinType
         self._connected = False  # True if the pin is connected to a net.
-        self._rect = QRect(start, end).normalized()
+        self._rect = QRectF(start, end).normalized()
         self._start = self._rect.topLeft()
         self._end = self._rect.bottomRight()
         self._layer = layer
@@ -1996,7 +2014,7 @@ class layoutVia(layoutShape):
         ):
             if layer is None or enclosure <= 0:
                 continue
-            margin = int(round(enclosure * processDBU))
+            margin = int(round(enclosure * getProcessDBU()))
             pen = QPen(layer.pcolor, layer.pwidth, layer.pstyle)
             pen.setCosmetic(True)
             texturePath = self._enclosureTexturePath(layer)
@@ -2175,6 +2193,7 @@ class layoutViaArray(layoutShape):
             ys: float,
             xnum: int,
             ynum: int,
+            legacyStart: bool = False,
     ):
         super().__init__()
         self._prototype_via = prototype_via
@@ -2182,7 +2201,8 @@ class layoutViaArray(layoutShape):
         self._xnum = xnum  # number of columns
         self._xs = xs  # column spacing
         self._ys = ys  # row spacing
-        self._start = start  # top-left corner location
+        self._legacyStart = legacyStart
+        self._start = start if legacyStart else QPoint(0, 0)
         self._via = layoutVia(
             self._start,
             self._prototype_via.viaDefTuple,
@@ -2205,29 +2225,24 @@ class layoutViaArray(layoutShape):
                 f"{self._ys}, {self._start}, {self._via})")
 
     def _create_array(self):
-        # Pre-calculate constants
         x_step = self._xs + self._prototype_via.width
         y_step = self._ys + self._prototype_via.height
-        start_x, start_y = self._start.x(), self._start.y()
         via_def = self._prototype_via.viaDefTuple
         via_width = self._prototype_via.width
         via_height = self._prototype_via.height
 
-        # Create flat list using itertools.product
-        vias = [
-            self._create_via(
-                start_x + col * x_step,
-                start_y + row * y_step,
-                via_def,
-                via_width,
-                via_height,
-            )
-            for row, col in itertools.product(range(self._ynum), range(self._xnum))
-        ]
-
-        # Reshape into 2D array
         self._via_array = [
-            vias[i: i + self._xnum] for i in range(0, len(vias), self._xnum)
+            [
+                self._create_via(
+                    col * x_step,
+                    row * y_step,
+                    via_def,
+                    via_width,
+                    via_height,
+                )
+                for col in range(self._xnum)
+            ]
+            for row in range(self._ynum)
         ]
 
     def _create_via(self, x, y, via_def, width, height):

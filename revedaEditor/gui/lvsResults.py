@@ -13,7 +13,7 @@ from collections import Counter, defaultdict
 import functools
 import logging
 import re
-from typing import Optional, cast
+from typing import Any, Optional, cast
 
 from PySide6.QtCore import QEvent, QRect, QRectF, Qt
 from PySide6.QtGui import (
@@ -27,12 +27,14 @@ from PySide6.QtWidgets import (
     QDialogButtonBox,
     QLabel,
     QPlainTextEdit,
+    QSplitter,
     QTabWidget,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
 )
+from quantiphy import Quantity
 
 import revedaEditor.backend.LVSModelView as lvsmv
 import revedaEditor.common.layoutShapes as lshp
@@ -51,7 +53,7 @@ class lvsResultsDialogue(QDialog):
     def __init__(self, parent, nets: list, devices: list, cells: Optional[list] = None, parser=None,
                  crossrefs: Optional[list] = None, schem_nets: Optional[list] = None,
                  schem_devices: Optional[list] = None, schematic_editor=None,
-                 source_netlist_path=None):
+                 source_netlist_path=None, extracted_netlist_path=None):
         super().__init__(parent)
         self.layoutEditor = parent
         self.parser = parser
@@ -62,6 +64,12 @@ class lvsResultsDialogue(QDialog):
         self._schematic_highlight_scenes: list = []
         self.mismatchSummaryLabel: QLabel | None = None
         self.mismatchDetailsBox: QPlainTextEdit | None = None
+        self.mismatchSubTabWidget: QTabWidget | None = None
+        self.mismatchParamTable: lvsmv.LVSDeviceParamMismatchTableView | None = None
+        self.mismatchTerminalTable: lvsmv.LVSTerminalMismatchTableView | None = None
+        self.mismatchNetsTable: lvsmv.LVSNetMismatchTableView | None = None
+        self.missingInLayoutTable: lvsmv.LVSMissingItemTableView | None = None
+        self.missingInSchemTable: lvsmv.LVSMissingItemTableView | None = None
         self._current_layout_cell: str | None = None
         self._current_schem_cell: str | None = None
         self._pending_schematic_device_highlights: list[dict] | None = None
@@ -98,6 +106,7 @@ class lvsResultsDialogue(QDialog):
             c.get('name', ''): c for c in (cells or []) if isinstance(c, dict)
         }
         self._source_netlist_path = source_netlist_path
+        self._extracted_netlist_path = extracted_netlist_path
         self._schem_to_xref: dict[str, dict] = {
             cr.get('schem_cell', ''): cr for cr in (crossrefs or []) if isinstance(cr, dict)
         }
@@ -124,8 +133,7 @@ class lvsResultsDialogue(QDialog):
         self.tabWidget.addTab(*self._build_schematic_hierarchy_tab(crossrefs))
         self.tabWidget.addTab(*self._build_nets_tab(nets))
         self.tabWidget.addTab(*self._build_devices_tab(devices))
-        self.tabWidget.addTab(*self._build_schem_nets_tab(schem_nets))
-        self.tabWidget.addTab(*self._build_schem_devices_tab(schem_devices))
+        self.tabWidget.addTab(*self._build_extracted_netlist_tab(extracted_netlist_path))
         self.tabWidget.addTab(*self._build_cells_tab(cells))
         self.tabWidget.addTab(*self._build_mismatches_tab(crossrefs))
         layout.addWidget(self.tabWidget)
@@ -139,13 +147,22 @@ class lvsResultsDialogue(QDialog):
 
         self.setLayout(layout)
 
-    def closeEvent(self, event):
-        """Clean up highlight shapes when dialog is closed."""
+    def _cleanup_highlights(self):
+        """Remove all LVS highlights and disable future highlight replay."""
         self._clear_layout_highlights()
         self._clear_schematic_highlights()
         self._uninstall_lvs_schematic_open_hook()
         self._schematic_highlight_replay_by_view.clear()
+        self._schematic_view_contexts.clear()
 
+    def done(self, result):
+        """Clean up highlights when the dialog is accepted or rejected."""
+        self._cleanup_highlights()
+        super().done(result)
+
+    def closeEvent(self, event):
+        """Clean up highlight shapes when dialog is closed."""
+        self._cleanup_highlights()
         super().closeEvent(event)
 
     # ------------------------------------------------------------------
@@ -224,6 +241,7 @@ class lvsResultsDialogue(QDialog):
         layout = QVBoxLayout()
         self.lvsTable = lvsmv.LVSNetsTableView(nets)
         self.lvsTable.netSelected.connect(self.onNetSelected)
+        self.lvsTable.netDataSelected.connect(self.onNetDataSelected)
         layout.addWidget(self.lvsTable)
         tab.setLayout(layout)
         return tab, "Nets"
@@ -236,6 +254,29 @@ class lvsResultsDialogue(QDialog):
         layout.addWidget(self.devicesTable)
         tab.setLayout(layout)
         return tab, "Devices"
+
+    def _build_extracted_netlist_tab(self, netlist_path) -> tuple[QWidget, str]:
+        tab = QWidget()
+        layout = QVBoxLayout()
+        netlist_box = QPlainTextEdit()
+        netlist_box.setReadOnly(True)
+        netlist_box.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+        netlist_box.setFont(QFont("Courier New"))
+
+        if netlist_path:
+            try:
+                with open(netlist_path, "r", encoding="utf-8") as netlist_file:
+                    netlist_box.setPlainText(netlist_file.read())
+            except OSError as exc:
+                netlist_box.setPlainText(
+                    f"Unable to read extracted circuit netlist:\n{exc}"
+                )
+        else:
+            netlist_box.setPlainText("No extracted circuit netlist available.")
+
+        layout.addWidget(netlist_box)
+        tab.setLayout(layout)
+        return tab, "Extracted Netlist"
 
     def _extract_nets_from_schematic(self, schematic_editor) -> list[dict]:
         """Extract nets from the original design schematic editor scene.
@@ -299,30 +340,6 @@ class lvsResultsDialogue(QDialog):
         except Exception:
             return []
 
-    def _build_schem_nets_tab(self, schem_nets: Optional[list]) -> tuple[QWidget, str]:
-        tab = QWidget()
-        layout = QVBoxLayout()
-        if schem_nets:
-            self.schemNetsTable = lvsmv.LVSNetsTableView(schem_nets)
-            self.schemNetsTable.netDataSelected.connect(self.onSchemNetSelected)
-            layout.addWidget(self.schemNetsTable)
-        else:
-            layout.addWidget(QLabel("No schematic net data available."))
-        tab.setLayout(layout)
-        return tab, "Schem Nets"
-
-    def _build_schem_devices_tab(self, schem_devices: Optional[list]) -> tuple[QWidget, str]:
-        tab = QWidget()
-        layout = QVBoxLayout()
-        if schem_devices:
-            self.schemDevicesTable = lvsmv.LVSDevicesTableView(schem_devices)
-            self.schemDevicesTable.deviceSelected.connect(self.onSchemDeviceSelected)
-            layout.addWidget(self.schemDevicesTable)
-        else:
-            layout.addWidget(QLabel("No schematic device data available."))
-        tab.setLayout(layout)
-        return tab, "Schem Devices"
-
     def _build_cells_tab(self, cells: Optional[list]) -> tuple[QWidget, str]:
         tab = QWidget()
         layout = QVBoxLayout()
@@ -341,22 +358,57 @@ class lvsResultsDialogue(QDialog):
         total_mismatches = self._determine_lvs_status(crossrefs).get("total_mismatches", 0)
 
         if crossrefs and total_mismatches > 0:
+            splitter = QSplitter(Qt.Orientation.Vertical)
+
+            # Top widget: crossrefs table and summary header
+            topWidget = QWidget()
+            topLayout = QVBoxLayout()
+            topLayout.setContentsMargins(0, 0, 0, 0)
             self.crossrefsTable = lvsmv.LVSCrossrefsTableView(crossrefs)
             self.crossrefsTable.crossrefSelected.connect(self.onCrossrefSelected)
-            layout.addWidget(self.crossrefsTable)
+            topLayout.addWidget(self.crossrefsTable)
 
             self.mismatchSummaryLabel = QLabel(
-                "Select a mismatch count cell to see details and highlight corresponding items."
+                "Select a cell in the table above to inspect structured device parameters, terminal connections, and diagnostics."
             )
             self.mismatchSummaryLabel.setWordWrap(True)
-            self.mismatchSummaryLabel.setStyleSheet("font-weight: 600; color: #334155; padding-top: 8px;")
-            layout.addWidget(self.mismatchSummaryLabel)
+            self.mismatchSummaryLabel.setStyleSheet("font-weight: 600; color: #334155; padding-top: 4px; padding-bottom: 4px;")
+            topLayout.addWidget(self.mismatchSummaryLabel)
+            topWidget.setLayout(topLayout)
+            splitter.addWidget(topWidget)
+
+            # Bottom widget: structured tabs
+            self.mismatchSubTabWidget = QTabWidget()
+
+            self.mismatchParamTable = lvsmv.LVSDeviceParamMismatchTableView()
+            self.mismatchParamTable.itemSelected.connect(self.onMismatchParamRowSelected)
+            self.mismatchSubTabWidget.addTab(self.mismatchParamTable, "Device Parameters")
+
+            self.mismatchTerminalTable = lvsmv.LVSTerminalMismatchTableView()
+            self.mismatchTerminalTable.itemSelected.connect(self.onMismatchTerminalRowSelected)
+            self.mismatchSubTabWidget.addTab(self.mismatchTerminalTable, "Terminal Connections")
+
+            self.mismatchNetsTable = lvsmv.LVSNetMismatchTableView()
+            self.mismatchNetsTable.itemSelected.connect(self.onMismatchNetRowSelected)
+            self.mismatchSubTabWidget.addTab(self.mismatchNetsTable, "Nets & Pins")
+
+            self.missingInLayoutTable = lvsmv.LVSMissingItemTableView()
+            self.missingInLayoutTable.itemSelected.connect(self.onMissingInLayoutRowSelected)
+            self.mismatchSubTabWidget.addTab(self.missingInLayoutTable, "Missing in Layout")
+
+            self.missingInSchemTable = lvsmv.LVSMissingItemTableView()
+            self.missingInSchemTable.itemSelected.connect(self.onMissingInSchemRowSelected)
+            self.mismatchSubTabWidget.addTab(self.missingInSchemTable, "Missing in Schematic")
 
             self.mismatchDetailsBox = QPlainTextEdit()
             self.mismatchDetailsBox.setReadOnly(True)
-            self.mismatchDetailsBox.setMinimumHeight(150)
-            self.mismatchDetailsBox.setPlainText("Mismatch details will appear here.")
-            layout.addWidget(self.mismatchDetailsBox)
+            self.mismatchDetailsBox.setFont(QFont("Courier New"))
+            self.mismatchDetailsBox.setPlainText("Mismatch details and diagnostic logs will appear here.")
+            self.mismatchSubTabWidget.addTab(self.mismatchDetailsBox, "Diagnostic Log")
+
+            splitter.addWidget(self.mismatchSubTabWidget)
+            splitter.setSizes([180, 320])
+            layout.addWidget(splitter)
         elif crossrefs:
             noMismatchesLabel = QLabel(
                 "✓ No mismatches found!\n\n"
@@ -687,8 +739,12 @@ class lvsResultsDialogue(QDialog):
                 self.lvsTable.lvsNetsModel.updateData(cell_nets)
             if hasattr(self, 'devicesTable'):
                 self.devicesTable.lvsDevicesModel.updateData(cell_devices)
-            if hasattr(self, 'crossrefsTable'):
-                self.crossrefsTable.lvsCrossrefsModel.updateData([crossref])
+            if hasattr(self, 'crossrefsTable') and self.crossrefsTable is not None:
+                for r in range(self.crossrefsTable.lvsCrossrefsModel.rowCount()):
+                    cr = self.crossrefsTable.lvsCrossrefsModel.getCrossref(r)
+                    if cr and (cr.get('layout_cell') == crossref.get('layout_cell') or cr.get('schem_cell') == crossref.get('schem_cell')):
+                        self.crossrefsTable.selectRow(r)
+                        break
 
     def onSchematicHierarchyCellSelected(self, item: QTreeWidgetItem):
         crossref = item.data(0, Qt.ItemDataRole.UserRole)
@@ -723,8 +779,12 @@ class lvsResultsDialogue(QDialog):
                 self.schemNetsTable.lvsNetsModel.updateData(cell_nets)
             if cell_devices is not None and hasattr(self, 'schemDevicesTable'):
                 self.schemDevicesTable.lvsDevicesModel.updateData(cell_devices)
-            if hasattr(self, 'crossrefsTable'):
-                self.crossrefsTable.lvsCrossrefsModel.updateData([crossref])
+            if hasattr(self, 'crossrefsTable') and self.crossrefsTable is not None:
+                for r in range(self.crossrefsTable.lvsCrossrefsModel.rowCount()):
+                    cr = self.crossrefsTable.lvsCrossrefsModel.getCrossref(r)
+                    if cr and (cr.get('layout_cell') == crossref.get('layout_cell') or cr.get('schem_cell') == crossref.get('schem_cell')):
+                        self.crossrefsTable.selectRow(r)
+                        break
 
     def _show_hierarchy_cell_details(
         self, crossref: dict, details_widget: QPlainTextEdit, side: str = 'layout'
@@ -803,10 +863,19 @@ class lvsResultsDialogue(QDialog):
         details_widget.setPlainText(details)
 
     def _clear_layout_highlights(self):
-        if hasattr(self.layoutEditor, 'centralW') and hasattr(self.layoutEditor.centralW, 'scene'):
-            scene = self.layoutEditor.centralW.scene
-            items_to_remove = [item for item in scene.items() if item.__class__.__name__ == 'LVSErrorRect']
-            for item in items_to_remove:
+        central_widget = getattr(self.layoutEditor, "centralW", None)
+        scene = getattr(central_widget, "scene", None)
+        if scene is None:
+            return
+
+        clear_lvs_rectangles = getattr(
+            self.layoutEditor, "handleLVSRectSelection", None
+        )
+        if callable(clear_lvs_rectangles):
+            clear_lvs_rectangles([])
+
+        for item in scene.items():
+            if item.__class__.__name__ == "LVSErrorRect":
                 scene.removeItem(item)
 
     def _schematic_scene(self):
@@ -1193,6 +1262,11 @@ class lvsResultsDialogue(QDialog):
             self._net_color_by_signature[signature] = self._next_highlight_color()
         return self._net_color_by_signature[signature]
 
+    def onNetDataSelected(self, net_data: dict):
+        """Highlight the selected layout net in the extracted schematic."""
+        if isinstance(net_data, dict):
+            self._highlight_schematic_nets({"name": net_data.get("name", "")})
+
     def onNetSelected(self, shapes):
         dx, dy, y_sign = self._infer_lvs_transform(shapes)
         color = self._color_for_shapes(shapes)
@@ -1379,6 +1453,51 @@ class lvsResultsDialogue(QDialog):
                                    mismatched_devices if show_devices else [],
                                    device_mismatch_details if show_devices else [])
 
+        # Populate structured mismatch tables
+        param_rows, terminal_rows, net_rows, missing_layout_rows, missing_schem_rows = self._compute_structured_mismatches(crossref)
+        if self.mismatchParamTable is not None:
+            self.mismatchParamTable.paramModel.updateData(param_rows)
+        if self.mismatchTerminalTable is not None:
+            self.mismatchTerminalTable.terminalModel.updateData(terminal_rows)
+        if self.mismatchNetsTable is not None:
+            self.mismatchNetsTable.netMismatchModel.updateData(net_rows)
+        if self.missingInLayoutTable is not None:
+            self.missingInLayoutTable.missingModel.updateData(missing_layout_rows)
+        if self.missingInSchemTable is not None:
+            self.missingInSchemTable.missingModel.updateData(missing_schem_rows)
+
+        # Switch to the most relevant sub-tab if specified
+        if self.mismatchSubTabWidget is not None:
+            if mismatch_type == 'devices':
+                if any(r.get('status', '').startswith('❌') for r in param_rows):
+                    self.mismatchSubTabWidget.setCurrentIndex(0)
+                elif missing_layout_rows:
+                    self.mismatchSubTabWidget.setCurrentIndex(3)
+                elif missing_schem_rows:
+                    self.mismatchSubTabWidget.setCurrentIndex(4)
+                else:
+                    self.mismatchSubTabWidget.setCurrentIndex(0)
+            elif mismatch_type in ('pins', 'nets'):
+                if any(r.get('status', '').startswith('❌') for r in net_rows):
+                    self.mismatchSubTabWidget.setCurrentIndex(2)
+                elif missing_layout_rows:
+                    self.mismatchSubTabWidget.setCurrentIndex(3)
+                elif missing_schem_rows:
+                    self.mismatchSubTabWidget.setCurrentIndex(4)
+                else:
+                    self.mismatchSubTabWidget.setCurrentIndex(2)
+            elif mismatch_type == 'all':
+                if any(r.get('status', '').startswith('❌') for r in param_rows):
+                    self.mismatchSubTabWidget.setCurrentIndex(0)
+                elif missing_layout_rows:
+                    self.mismatchSubTabWidget.setCurrentIndex(3)
+                elif missing_schem_rows:
+                    self.mismatchSubTabWidget.setCurrentIndex(4)
+                elif any(r.get('status', '').startswith('❌') for r in net_rows):
+                    self.mismatchSubTabWidget.setCurrentIndex(2)
+                elif any(r.get('status', '').startswith('❌') for r in terminal_rows):
+                    self.mismatchSubTabWidget.setCurrentIndex(1)
+
         if show_nets or show_pins or show_devices:
             self._update_mismatch_details(title, details, severity="warning")
         else:
@@ -1389,6 +1508,495 @@ class lvsResultsDialogue(QDialog):
                 "All items matched correctly between layout and schematic.",
                 severity="info",
             )
+
+    def onMismatchParamRowSelected(self, row_data: dict):
+        """Highlight layout and schematic devices from parameter mismatch table row."""
+        ldev = row_data.get('layout_dev_dict')
+        sdev = row_data.get('schem_dev_dict')
+        if ldev:
+            self.onDeviceSelected(ldev)
+        if sdev:
+            self.onSchemDeviceSelected(sdev)
+
+    def onMismatchTerminalRowSelected(self, row_data: dict):
+        """Highlight device/terminal from terminal mismatch table row."""
+        ldev = row_data.get('layout_dev_dict')
+        sdev = row_data.get('schem_dev_dict')
+        if ldev:
+            self.onDeviceSelected(ldev)
+        if sdev:
+            self.onSchemDeviceSelected(sdev)
+
+    def onMismatchNetRowSelected(self, row_data: dict):
+        """Highlight net or pin from net/pin mismatch table row."""
+        lnet = row_data.get('layout_net_dict')
+        snet = row_data.get('schem_net_dict')
+        if lnet:
+            self.onNetDataSelected(lnet)
+        if snet:
+            self.onSchemNetSelected(snet)
+
+    def onMissingInLayoutRowSelected(self, row_data: dict):
+        """Highlight missing schematic item in schematic editor."""
+        item = row_data.get('item_dict')
+        cat = row_data.get('category')
+        if cat == 'Device' and item:
+            self.onSchemDeviceSelected(item)
+        elif cat == 'Net' and item:
+            self.onSchemNetSelected(item)
+
+    def onMissingInSchemRowSelected(self, row_data: dict):
+        """Highlight extra layout item in layout editor."""
+        item = row_data.get('item_dict')
+        cat = row_data.get('category')
+        if cat == 'Device' and item:
+            self.onDeviceSelected(item)
+        elif cat == 'Net' and item:
+            self.onNetDataSelected(item)
+
+    @staticmethod
+    def _parse_numeric_param(val: Any) -> Optional[float]:
+        """Convert a parameter value (int, float, string with unit) to a float."""
+        if val is None:
+            return None
+        if isinstance(val, (int, float)):
+            return float(val)
+        if isinstance(val, str):
+            val_str = val.strip()
+            if not val_str:
+                return None
+            try:
+                return float(val_str)
+            except ValueError:
+                try:
+                    return float(Quantity(val_str).real)
+                except Exception:
+                    return None
+        return None
+
+    def _format_param_val(self, param_name: str, val: Any) -> str:
+        """Format parameter value with appropriate engineering units."""
+        if val is None:
+            return "-"
+        if isinstance(val, (int, float)):
+            try:
+                name_lower = param_name.lower()
+                if name_lower in ('w', 'l', 'ps', 's', 'd', 'we', 'le'):
+                    if 0 < abs(val) < 1e-2:
+                        return Quantity(val, 'm').render(prec=3)
+                    elif abs(val) >= 1e-2:
+                        return f"{val:g} µm"
+                elif name_lower in ('a', 'as', 'ad', 'area'):
+                    if 0 < abs(val) < 1e-6:
+                        return Quantity(val, 'm²').render(prec=3)
+                    return f"{val:g} µm²"
+                elif name_lower in ('p', 'ps', 'pd', 'perim'):
+                    if 0 < abs(val) < 1e-2:
+                        return Quantity(val, 'm').render(prec=3)
+                    return f"{val:g} µm"
+                elif name_lower in ('r', 'res'):
+                    return Quantity(val, 'Ω').render(prec=3)
+                elif name_lower in ('c', 'cap'):
+                    return Quantity(val, 'F').render(prec=3)
+                elif name_lower in ('ind', 'l_ind'):
+                    return Quantity(val, 'H').render(prec=3)
+                elif name_lower in ('ng', 'm', 'b', 'nr_r', 'nx', 'ny'):
+                    return f"{int(round(val)) if isinstance(val, float) and val.is_integer() else val:g}"
+                return f"{val:g}"
+            except Exception:
+                return f"{val}"
+        return str(val)
+
+    def _compute_structured_mismatches(self, crossref: dict) -> tuple[list[dict], list[dict], list[dict], list[dict], list[dict]]:
+        """Compute structured device parameter, terminal connection, net mismatch, and missing items tables."""
+        layout_cell = crossref.get("layout_cell", "")
+        schem_cell = crossref.get("schem_cell", "")
+        xref_data = crossref.get("crossref", {})
+        mapping = xref_data.get("mapping", {})
+
+        layout_devices = self.parser.get_layout_devices(layout_cell) if self.parser else []
+        schem_devices = self.parser.get_schematic_devices(schem_cell) if self.parser else []
+        if not schem_devices and self.schematicEditor is not None:
+            schem_devices = self._extract_devices_from_schematic(self.schematicEditor)
+
+        layout_nets = self.parser.get_nets(layout_cell) if self.parser else []
+        schem_nets = self.parser.get_schematic_nets(schem_cell) if self.parser else []
+        if not schem_nets and self.schematicEditor is not None:
+            schem_nets = self._extract_nets_from_schematic(self.schematicEditor)
+
+        layout_dev_map = {}
+        for d in layout_devices:
+            dev_id = str(d.get("id", ""))
+            layout_dev_map[dev_id] = d
+            layout_dev_map[dev_id.lstrip("$")] = d
+            if d.get("name"):
+                layout_dev_map[str(d.get("name"))] = d
+
+        schem_dev_map = {}
+        for d in schem_devices:
+            dev_id = str(d.get("id", ""))
+            schem_dev_map[dev_id] = d
+            schem_dev_map[dev_id.lstrip("$")] = d
+            if d.get("name"):
+                schem_dev_map[str(d.get("name"))] = d
+
+        layout_net_map = {str(n.get("net_id", "")): n for n in layout_nets}
+        schem_net_map = {str(n.get("net_id", "")): n for n in schem_nets}
+
+        layout_net_name_map = {}
+        for n in layout_nets:
+            nid = str(n.get("net_id", ""))
+            name = n.get("name") or n.get("layout_name") or nid
+            layout_net_name_map[nid] = name
+
+        schem_net_name_map = {}
+        for n in schem_nets:
+            nid = str(n.get("net_id", ""))
+            name = n.get("name") or nid
+            schem_net_name_map[nid] = name
+
+        net_xref_layout_to_schem = {}
+        net_xref_schem_to_layout = {}
+        matched_layout_nets = set()
+        matched_schem_nets = set()
+        for nm in mapping.get("nets", []):
+            ln = nm.get("layout_net")
+            sn = nm.get("schem_net")
+            status = nm.get("status", "")
+            if ln is not None and sn is not None:
+                net_xref_layout_to_schem[str(ln)] = str(sn)
+                net_xref_schem_to_layout[str(sn)] = str(ln)
+                if status == "1":
+                    matched_layout_nets.add(str(ln))
+                    matched_schem_nets.add(str(sn))
+
+        param_rows = []
+        terminal_rows = []
+        net_rows = []
+        missing_in_layout_rows = []
+        missing_in_schem_rows = []
+
+        paired_devices = []
+        seen_pairs = set()
+        matched_layout_devs = set()
+        matched_schem_devs = set()
+
+        for dm in mapping.get("devices", []):
+            ldev_ref = dm.get("layout_dev")
+            sdev_ref = dm.get("schem_dev")
+            status = dm.get("status", "")
+            ldev = layout_dev_map.get(str(ldev_ref)) if ldev_ref is not None else None
+            sdev = schem_dev_map.get(str(sdev_ref)) if sdev_ref is not None else None
+
+            pair_key = (str(ldev_ref), str(sdev_ref))
+            if pair_key not in seen_pairs:
+                seen_pairs.add(pair_key)
+                paired_devices.append((ldev, sdev, ldev_ref, sdev_ref, status))
+                if ldev is not None and sdev is not None and status == "1":
+                    matched_layout_devs.add(str(ldev.get("id")))
+                    matched_layout_devs.add(str(ldev_ref))
+                    matched_schem_devs.add(str(sdev.get("id")))
+                    matched_schem_devs.add(str(sdev_ref))
+
+        for detail in crossref.get("device_mismatch_details", []):
+            ldevs = detail.get("layout_devices", [])
+            sdevs = detail.get("schematic_devices", [])
+            for ldev, sdev in zip(ldevs, sdevs):
+                pair_key = (str(ldev.get("id")), str(sdev.get("id")))
+                if pair_key not in seen_pairs:
+                    seen_pairs.add(pair_key)
+                    paired_devices.append((ldev, sdev, ldev.get("id"), sdev.get("id"), "0"))
+
+        for ldev, sdev, ldev_ref, sdev_ref, status in paired_devices:
+            if ldev is not None and sdev is not None:
+                ldev_name = ldev.get("name") or str(ldev.get("id", ldev_ref))
+                sdev_name = sdev.get("name") or str(sdev.get("id", sdev_ref))
+                dev_type = ldev.get("type") or sdev.get("type", "?")
+
+                lparams = dict(ldev.get("params", {}) or {})
+                sparams = dict(sdev.get("params", {}) or {})
+
+                param_keys = []
+                param_key_map = {}
+                for k in lparams:
+                    kl = k.lower()
+                    if kl not in param_key_map:
+                        param_keys.append(k)
+                        param_key_map[kl] = (k, None)
+                    else:
+                        param_key_map[kl] = (k, param_key_map[kl][1])
+                for k in sparams:
+                    kl = k.lower()
+                    if kl not in param_key_map:
+                        param_keys.append(k)
+                        param_key_map[kl] = (None, k)
+                    else:
+                        param_key_map[kl] = (param_key_map[kl][0], k)
+
+                order_priority = {"w": 0, "l": 1, "ng": 2, "m": 3, "r": 4, "c": 5, "a": 6, "p": 7, "we": 8, "le": 9, "nx": 10, "rfmode": 11}
+                param_keys.sort(key=lambda k: order_priority.get(k.lower(), 50))
+
+                param_defaults = {
+                    'rfmode': 0.0,
+                    'm': 1.0,
+                    'ng': 1.0,
+                    'b': 0.0,
+                    'nx': 1.0,
+                    'ny': 1.0,
+                }
+
+                for pkey in param_keys:
+                    kl = pkey.lower()
+                    orig_l, orig_s = param_key_map[kl]
+                    lval = lparams.get(orig_l) if orig_l else None
+                    sval = sparams.get(orig_s) if orig_s else None
+
+                    lnum = self._parse_numeric_param(lval)
+                    snum = self._parse_numeric_param(sval)
+
+                    # Apply known defaults if one side omitted it
+                    if lnum is None and kl in param_defaults and snum is not None:
+                        lnum = param_defaults[kl]
+                    if snum is None and kl in param_defaults and lnum is not None:
+                        snum = param_defaults[kl]
+
+                    lval_str = self._format_param_val(pkey, lval if lval is not None else lnum)
+                    sval_str = self._format_param_val(pkey, sval if sval is not None else snum)
+
+                    # Parameters compared by KLayout LVS rule deck vs informational parameters
+                    mos_types = ('nmos', 'pmos', 'sg13_lv_nmos', 'sg13_hv_nmos', 'sg13_lv_pmos', 'sg13_hv_pmos', 'rfnmos', 'rfpmos')
+                    is_mos = any(t in dev_type.lower() for t in mos_types) or 'mos' in dev_type.lower()
+                    is_uncompared_mos_param = is_mos and kl in ('as', 'ad', 'ps', 'pd', 'ng')
+
+                    if lnum is not None and snum is not None:
+                        delta = lnum - snum
+                        delta_str = self._format_param_val(pkey, delta)
+                        if abs(snum) > 1e-12:
+                            pct = (delta / snum) * 100.0
+                            delta_str = f"{delta_str} ({pct:+.1f}%)" if abs(pct) > 0.001 else "0"
+
+                        is_match = abs(delta) < 1e-9 or (abs(snum) > 1e-12 and abs(delta / snum) < 0.01)
+                        if is_match:
+                            p_status = "✓ Match"
+                            delta_str = "0"
+                        elif is_uncompared_mos_param:
+                            p_status = "ℹ️ Info (Unchecked in LVS)"
+                        else:
+                            p_status = "❌ Mismatch"
+                    elif lval is not None and sval is not None:
+                        if str(lval).strip() == str(sval).strip():
+                            p_status = "✓ Match"
+                            delta_str = "0"
+                        elif is_uncompared_mos_param:
+                            p_status = "ℹ️ Info (Unchecked in LVS)"
+                            delta_str = "-"
+                        else:
+                            p_status = "❌ Mismatch"
+                            delta_str = "-"
+                    elif is_uncompared_mos_param:
+                        p_status = "ℹ️ Info (Unchecked in LVS)"
+                        delta_str = "-"
+                    elif lval is not None:
+                        p_status = "ℹ️ Layout only"
+                        delta_str = "-"
+                    else:
+                        p_status = "ℹ️ Schem only"
+                        delta_str = "-"
+
+                    param_rows.append({
+                        "layout_dev": ldev_name,
+                        "schem_dev": sdev_name,
+                        "device_type": dev_type,
+                        "param_name": pkey.upper(),
+                        "layout_val_str": lval_str,
+                        "schem_val_str": sval_str,
+                        "delta_str": delta_str,
+                        "status": p_status,
+                        "layout_dev_dict": ldev,
+                        "schem_dev_dict": sdev,
+                    })
+
+                lterms = ldev.get("terminals", {}) or {}
+                sterms = sdev.get("terminals", {}) or {}
+                term_names = sorted(set(lterms.keys()).union(sterms.keys()))
+                for tname in term_names:
+                    lnid = lterms.get(tname)
+                    snid = sterms.get(tname)
+                    lnet_name = layout_net_name_map.get(str(lnid), str(lnid) if lnid is not None else "-")
+                    snet_name = schem_net_name_map.get(str(snid), str(snid) if snid is not None else "-")
+
+                    if lnid is not None and snid is not None:
+                        mapped_snid = net_xref_layout_to_schem.get(str(lnid))
+                        if mapped_snid == str(snid) or lnet_name == snet_name:
+                            t_status = "✓ Match"
+                        else:
+                            t_status = "❌ Mismatch"
+                    elif lnid is not None:
+                        t_status = "❌ Open in Schem"
+                    else:
+                        t_status = "❌ Open in Layout"
+
+                    terminal_rows.append({
+                        "device_name": f"{ldev_name} ↔ {sdev_name}",
+                        "terminal": tname,
+                        "layout_net": lnet_name,
+                        "schem_net": snet_name,
+                        "status": t_status,
+                        "layout_dev_dict": ldev,
+                        "schem_dev_dict": sdev,
+                    })
+
+            elif ldev is not None:
+                ldev_name = ldev.get("name") or str(ldev.get("id", ldev_ref))
+                param_rows.append({
+                    "layout_dev": ldev_name,
+                    "schem_dev": "(unmatched)",
+                    "device_type": ldev.get("type", "?"),
+                    "param_name": "ALL",
+                    "layout_val_str": f"{len(ldev.get('params', {}))} params",
+                    "schem_val_str": "Missing in Schem",
+                    "delta_str": "-",
+                    "status": "❌ Extra in Layout",
+                    "layout_dev_dict": ldev,
+                    "schem_dev_dict": None,
+                })
+            elif sdev is not None:
+                sdev_name = sdev.get("name") or str(sdev.get("id", sdev_ref))
+                param_rows.append({
+                    "layout_dev": "(unmatched)",
+                    "schem_dev": sdev_name,
+                    "device_type": sdev.get("type", "?"),
+                    "param_name": "ALL",
+                    "layout_val_str": "Missing in Layout",
+                    "schem_val_str": f"{len(sdev.get('params', {}))} params",
+                    "delta_str": "-",
+                    "status": "❌ Missing in Layout",
+                    "layout_dev_dict": None,
+                    "schem_dev_dict": sdev,
+                })
+
+        # 2. Nets & Pins Mismatches
+        for nm in mapping.get("nets", []):
+            lnid = nm.get("layout_net")
+            snid = nm.get("schem_net")
+            status = nm.get("status", "")
+            is_mismatch = LVSDBParser._is_mismatch(nm)
+            lnet_name = layout_net_name_map.get(str(lnid), str(lnid) if lnid is not None else "-")
+            snet_name = schem_net_name_map.get(str(snid), str(snid) if snid is not None else "-")
+
+            net_rows.append({
+                "item_type": "Net",
+                "layout_ref": lnet_name,
+                "schem_ref": snet_name,
+                "status": "❌ Mismatch" if is_mismatch else "✓ Match",
+                "details": f"Status code: {status or '0'}" if is_mismatch else "Equivalent",
+                "layout_net_dict": layout_net_map.get(str(lnid)),
+                "schem_net_dict": schem_net_map.get(str(snid)),
+            })
+
+        for pm in mapping.get("pins", []):
+            lpid = pm.get("layout_pin")
+            spid = pm.get("schem_pin")
+            status = pm.get("status", "")
+            is_mismatch = LVSDBParser._is_mismatch(pm)
+
+            net_rows.append({
+                "item_type": "Pin",
+                "layout_ref": str(lpid) if lpid is not None else "-",
+                "schem_ref": str(spid) if spid is not None else "-",
+                "status": "❌ Mismatch" if is_mismatch else "✓ Match",
+                "details": f"Status code: {status or '0'}" if is_mismatch else "Equivalent",
+                "layout_net_dict": None,
+                "schem_net_dict": None,
+            })
+
+        # 3. Missing in Layout (Schematic devices and nets not matched in layout)
+        for sdev in schem_devices:
+            sdev_id = str(sdev.get("id", ""))
+            if sdev_id not in matched_schem_devs and sdev.get("name") not in matched_schem_devs:
+                sdev_name = sdev.get("name") or sdev_id
+                dtype = sdev.get("type", "?")
+                params_str = ", ".join(
+                    f"{k.upper()}={self._format_param_val(k, v)}"
+                    for k, v in (sdev.get("params", {}) or {}).items()
+                ) or "No parameters"
+                terms_str = ", ".join(
+                    f"{k}: {schem_net_name_map.get(str(v), str(v))}"
+                    for k, v in (sdev.get("terminals", {}) or {}).items()
+                ) or "No terminals"
+                missing_in_layout_rows.append({
+                    "category": "Device",
+                    "name": sdev_name,
+                    "type": dtype,
+                    "details": params_str,
+                    "terminals": terms_str,
+                    "status": "❌ Missing in Layout",
+                    "item_dict": sdev,
+                })
+
+        for snet in schem_nets:
+            snid = str(snet.get("net_id", ""))
+            sname = snet.get("name") or snid
+            if snid not in matched_schem_nets and sname not in matched_schem_nets:
+                connected = []
+                for d in schem_devices:
+                    for term, nid in (d.get("terminals", {}) or {}).items():
+                        if str(nid) in (snid, sname):
+                            connected.append(f"{d.get('name') or d.get('id')}.{term}")
+                conn_str = f"Connected: {', '.join(connected)}" if connected else "No connected device terminals"
+                missing_in_layout_rows.append({
+                    "category": "Net",
+                    "name": sname,
+                    "type": "Schematic Net",
+                    "details": conn_str,
+                    "terminals": "-",
+                    "status": "❌ Missing in Layout",
+                    "item_dict": snet,
+                })
+
+        # 4. Missing in Schematic (Layout devices and nets not matched in schematic)
+        for ldev in layout_devices:
+            ldev_id = str(ldev.get("id", ""))
+            if ldev_id not in matched_layout_devs and ldev_id.lstrip("$") not in matched_layout_devs and ldev.get("name") not in matched_layout_devs:
+                ldev_name = ldev.get("name") or ldev_id
+                dtype = ldev.get("type", "?")
+                pos = ldev.get("position")
+                pos_str = f"Pos: ({pos[0]:g}, {pos[1]:g})" if isinstance(pos, (list, tuple)) and len(pos) >= 2 else ""
+                params_str = ", ".join(
+                    f"{k.upper()}={self._format_param_val(k, v)}"
+                    for k, v in (ldev.get("params", {}) or {}).items()
+                ) or "No parameters"
+                terms_str = ", ".join(
+                    f"{k}: {layout_net_name_map.get(str(v), str(v))}"
+                    for k, v in (ldev.get("terminals", {}) or {}).items()
+                )
+                loc_terms = f"{pos_str} | {terms_str}".strip(" |") if pos_str else (terms_str or "No terminals")
+                missing_in_schem_rows.append({
+                    "category": "Device",
+                    "name": ldev_name,
+                    "type": dtype,
+                    "details": params_str,
+                    "terminals": loc_terms,
+                    "status": "❌ Extra in Layout",
+                    "item_dict": ldev,
+                })
+
+        for lnet in layout_nets:
+            lnid = str(lnet.get("net_id", ""))
+            lname = lnet.get("name") or lnid
+            if lnid not in matched_layout_nets and lname not in matched_layout_nets:
+                shapes_count = len(lnet.get("shapes", []))
+                missing_in_schem_rows.append({
+                    "category": "Net",
+                    "name": lname,
+                    "type": "Layout Net",
+                    "details": f"{shapes_count} geometric shapes in layout",
+                    "terminals": "-",
+                    "status": "❌ Extra in Layout",
+                    "item_dict": lnet,
+                })
+
+        return param_rows, terminal_rows, net_rows, missing_in_layout_rows, missing_in_schem_rows
 
     def _highlight_mismatches(self, nets: list, pins: list, devices: list,
                               device_details: Optional[list] = None):

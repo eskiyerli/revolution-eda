@@ -10,15 +10,13 @@
 ##
 
 # Load symbol and maybe later schematic from json file.
-# import pathlib
 
 import functools
-import json
 import pathlib
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Optional
 
 import orjson
-from PySide6.QtCore import QPoint, QLineF, QRect
+from PySide6.QtCore import QPoint, QPointF, QLineF, QRect
 from PySide6.QtWidgets import (
     QGraphicsScene,
     QGraphicsRectItem,
@@ -392,21 +390,13 @@ class schematicItems:
 
 
 class PCellCache:
-    _instance = None
-
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super(PCellCache, cls).__new__(cls)
-            cls._instance.layout_file_cache = {}
-        return cls._instance
-
     @classmethod
     @functools.lru_cache(maxsize=100)
     def getPCellDef(cls, file_path: str) -> dict:
         try:
-            with open(file_path, "r") as temp:
-                return json.load(temp)
-        except (json.JSONDecodeError, FileNotFoundError):
+            with open(file_path, "rb") as temp:
+                return orjson.loads(temp.read())
+        except (orjson.JSONDecodeError, FileNotFoundError, OSError):
             return {}
 
     @classmethod
@@ -415,19 +405,9 @@ class PCellCache:
         return pcells.pcells.get(pcell_class_name)
 
     @classmethod
-    def getLayoutFileContents(cls, file_path: str) -> List:
-        return cls._instance.layout_file_cache.get(file_path)
-
-    @classmethod
-    def setLayoutFileContents(cls, file_path: str, contents: List):
-        cls._instance.layout_file_cache[file_path] = contents
-
-    @classmethod
     def clear_caches(cls):
         cls.getPCellDef.cache_clear()
         cls.getPCellClass.cache_clear()
-        if cls._instance is not None:
-            cls._instance.layout_file_cache.clear()
 
 
 class layoutItems:
@@ -439,7 +419,13 @@ class layoutItems:
         self.snapTuple = scene.snapTuple
         self.rulerWidth = scene.rulerWidth
         self.rulerTickGap = scene.rulerTickGap
-        self.cache = PCellCache()
+        self._library_paths = {}
+        self._active_layout_paths = set()
+        for name, path in self.libraryDict.items():
+            if path:
+                library_path = pathlib.Path(path)
+                if library_path.exists():
+                    self._library_paths[name] = library_path
 
         # Pre-create method mapping for faster dispatch
         self._creators = {
@@ -460,32 +446,25 @@ class layoutItems:
         return self._creators.get(item.get("type"), self.unknownItem)(item)
 
     def _get_library_path(self, lib_name):
-        """Common method to get and validate library path"""
-        return self._get_library_path_cached(lib_name, tuple(self.libraryDict.items()))
-
-    @functools.lru_cache(maxsize=32)
-    def _get_library_path_cached(self, lib_name, library_dict_items):
-        """Cached library path lookup"""
-        library_dict = dict(library_dict_items)
-        library_path = pathlib.Path(library_dict.get(lib_name, ""))
-        if not library_path.exists():
-            return None
-        return library_path
+        return self._library_paths.get(lib_name)
 
     @staticmethod
     @functools.lru_cache(maxsize=128)
     def _load_json_file(file_path_str):
-        """Cached JSON file loading with error handling"""
         try:
-            with open(file_path_str, "rb") as f:
-                return orjson.loads(f.read())
-        except (orjson.JSONDecodeError, FileNotFoundError):
+            with open(file_path_str, "rb") as file:
+                return orjson.loads(file.read())
+        except (orjson.JSONDecodeError, FileNotFoundError, OSError):
             return None
 
-    def _set_common_attrs(self, obj, item):
-        """Set common attributes for layout objects"""
+    @staticmethod
+    def _set_common_attrs(obj, item):
+        if "top" in item:
+            obj.setTransformOriginPoint(QPointF(*item["top"]))
+        # flipTuple replaces the item's custom transform. Set it before the
+        # rotation property so a saved combined transform is restored intact.
+        obj.flipTuple = tuple(item.get("fl", (1, 1)))
         obj.angle = item.get("ang", 0)
-        obj.flipTuple = item.get('fl', (1, 1))
 
     def createPcellInstance(self, item):
         library_path = self._get_library_path(item["lib"])
@@ -493,12 +472,12 @@ class layoutItems:
             return None
 
         file_path = library_path / item["cell"] / f"{item['view']}.json"
-        pcell_def = self._load_json_file(str(file_path))
+        pcell_def = PCellCache.getPCellDef(str(file_path))
         if not pcell_def or pcell_def[0].get("cellView") != "pcell":
             self.scene.logger.error("Not a PCell cell")
             return None
 
-        pcell_class = pcells.pcells.get(pcell_def[1].get("reference"))
+        pcell_class = PCellCache.getPCellClass(pcell_def[1].get("reference"))
         if not pcell_class:
             self.scene.logger.error(
                 f"Unknown PCell class: {pcell_def[1].get('reference')}")
@@ -512,7 +491,7 @@ class layoutItems:
             instance.viewName = item["view"]
             instance.counter = item["ic"]
             instance.instanceName = item["nam"]
-            instance.setPos(QPoint(*item["loc"]))
+            instance.setPos(QPointF(*item["loc"]))
             self._set_common_attrs(instance, item)
             return instance
         except Exception as e:
@@ -525,29 +504,28 @@ class layoutItems:
             return None
 
         file_path = library_path / item["cell"] / f"{item['view']}.json"
-        file_path_str = str(file_path)
+        file_contents = self._load_json_file(str(file_path))
+        if not file_contents:
+            return None
 
-        # Use cache
-        file_contents = self.cache.getLayoutFileContents(file_path_str)
-        if file_contents is None:
-            file_contents = self._load_json_file(file_path_str)
-            if file_contents is None:
-                return None
-            self.cache.setLayoutFileContents(file_path_str, file_contents)
+        file_path_key = str(file_path.resolve())
+        if file_path_key in self._active_layout_paths:
+            self.scene.logger.error(f"Recursive layout reference: {file_path}")
+            return None
 
-        # Create shapes with cached factory and pre-allocated list
-        shapes_data = file_contents[2:]
         item_shapes = []
-        item_shapes_append = item_shapes.append  # Cache method
-
-        for shape in shapes_data:
-            try:
-                created_shape = self.create(
-                    shape)  # Reuse self instead of creating new instance
-                if created_shape:
-                    item_shapes_append(created_shape)
-            except Exception:
-                pass  # Skip logging for performance
+        append_shape = item_shapes.append
+        self._active_layout_paths.add(file_path_key)
+        try:
+            for shape_data in file_contents[2:]:
+                try:
+                    shape = self.create(shape_data)
+                except Exception:
+                    continue
+                if shape:
+                    append_shape(shape)
+        finally:
+            self._active_layout_paths.remove(file_path_key)
 
         instance = lshp.layoutInstance(item_shapes)
         loc = item["loc"]
@@ -562,9 +540,11 @@ class layoutItems:
 
     def createRectShape(self, item):
         tl, br, ln = item["tl"], item["br"], item["ln"]
+        # Geometry is saved pos-folded (pos() + local).  pos() stays at the
+        # origin; _set_common_attrs restores ang/fl around the saved top.
         rect = lshp.layoutRect(
-            QPoint(tl[0], tl[1]),
-            QPoint(br[0], br[1]),
+            QPointF(tl[0], tl[1]),
+            QPointF(br[0], br[1]),
             laylyr.pdkAllLayers[ln]
         )
         self._set_common_attrs(rect, item)
@@ -572,8 +552,9 @@ class layoutItems:
 
     def createPathShape(self, item):
         dfl1, dfl2 = item["dfl1"], item["dfl2"]
+        # Geometry is saved pos-folded (pos() + local); see createRectShape.
         path = lshp.layoutPath(
-            QLineF(QPoint(dfl1[0], dfl1[1]), QPoint(dfl2[0], dfl2[1])),
+            QLineF(QPointF(dfl1[0], dfl1[1]), QPointF(dfl2[0], dfl2[1])),
             laylyr.pdkAllLayers[item["ln"]],
             item["w"], item["se"], item["ee"], item["md"]
         )
@@ -582,66 +563,77 @@ class layoutItems:
         return path
 
     def createRulerShape(self, item):
+        # Geometry is saved pos-folded (pos() + local); see createRectShape.
         ruler = lshp.layoutRuler(
-            QLineF(QPoint(*item["dfl1"]), QPoint(*item["dfl2"])),
+            QLineF(QPointF(*item["dfl1"]), QPointF(*item["dfl2"])),
             self.rulerWidth, self.rulerTickGap, self.rulerTickLength,
             self.rulerFont, item["md"]
         )
-        ruler.angle = item.get("ang", 0)
+        self._set_common_attrs(ruler, item)
         return ruler
 
     def createLabelShape(self, item):
+        # Labels set their own rotation/flip from labelOrient in __init__;
+        # generic ang/fl would override that.  Anchor is saved pos-folded.
         label = lshp.layoutLabel(
-            QPoint(*item["st"]), item["lt"], item["ff"], item["fs"],
+            QPointF(*item["st"]), item["lt"], item["ff"], item["fs"],
             item["fh"], item["la"], item["lo"], laylyr.pdkAllLayers[item["ln"]]
         )
-        self._set_common_attrs(label, item)
         return label
 
     def createPinShape(self, item):
+        # Geometry is saved pos-folded (pos() + local); see createRectShape.
         pin = lshp.layoutPin(
-            QPoint(*item["tl"]), QPoint(*item["br"]), item["pn"],
+            QPointF(*item["tl"]), QPointF(*item["br"]), item["pn"],
             item["pd"], item["pt"], laylyr.pdkAllLayers[item["ln"]]
         )
         self._set_common_attrs(pin, item)
         return pin
 
-    @functools.lru_cache(maxsize=64)
-    def _create_polygon_points(self, points_tuple):
-        """Cache polygon point creation for repeated patterns"""
-        return [QPoint(p[0], p[1]) for p in points_tuple]
-
     def createPolygonShape(self, item):
-        points = self._create_polygon_points(tuple(tuple(p) for p in item["ps"]))
+        points = [QPointF(x, y) for x, y in item["ps"]]
         polygon = lshp.layoutPolygon(points, laylyr.pdkAllLayers[item["ln"]])
         self._set_common_attrs(polygon, item)
         return polygon
 
+    @staticmethod
     @functools.lru_cache(maxsize=16)
-    def _get_via_def(self, via_name):
-        """Cache via definition lookup"""
+    def _get_via_def(via_name):
         return fabproc.processVias[fabproc.processViaNames.index(via_name)]
 
     def createViaArrayShape(self, item):
         via_info = item["via"]
         via_def = self._get_via_def(via_info["vdt"])
-        via_st = via_info["st"]
-        # Enclosure overrides are optional: files saved before the feature omit
-        # them, in which case the via definition's enclosure is used.
         via = lshp.layoutVia(
-            QPoint(via_st[0], via_st[1]), via_def,
-            via_info["w"], via_info["h"],
-            via_info.get("be"), via_info.get("te")
+            QPointF(*via_info.get("st", (0, 0))),
+            via_def,
+            via_info["w"],
+            via_info["h"],
+            via_info.get("be"),
+            via_info.get("te"),
         )
-        st = item["st"]
+        is_legacy = item.get("coordMode") != "parent"
         via_array = lshp.layoutViaArray(
-            QPoint(st[0], st[1]), via,
-            item["xs"], item["ys"], item["xn"], item["yn"]
+            QPointF(*via_info.get("st", (0, 0))) if is_legacy else QPoint(0, 0),
+            via,
+            item["xs"],
+            item["ys"],
+            item["xn"],
+            item["yn"],
+            legacyStart=is_legacy,
         )
+
+        if is_legacy:
+            self._set_common_attrs(via_array, item)
+            return via_array
+
+        anchor = QPointF(*item["st"])
+        via_array.setPos(anchor)
         self._set_common_attrs(via_array, item)
+        # st is the first-cut scene anchor. Rotation and flip can move the
+        # item's local origin away from that cut, so correct the parent once.
+        via_array.setPos(via_array.pos() + anchor - via_array.mapToScene(QPointF(0, 0)))
         return via_array
 
-    def unknownItem(self):
-        rect_item = QGraphicsRectItem(QRect(0, 0, *self.snapTuple))
-        rect_item.setVisible(False)
-        return rect_item
+    def unknownItem(self, item=None):
+        return None
