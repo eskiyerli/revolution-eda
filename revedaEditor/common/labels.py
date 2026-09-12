@@ -319,14 +319,21 @@ class symbolLabel(QGraphicsSimpleTextItem):
         self._flipTuple = (transform.m11(), transform.m22())
 
     def _updateVisibility(self):
-        """A label is only visible if its visibility flag is set and it either has a value or is a predefined label."""
+        """Show a label only when its visibility flag is set and it has a value (or is a
+        predefined label). In the symbol editor (no parent instance) the label is the
+        definition being edited, so it is always shown.
+
+        We use setVisible() rather than a near-zero opacity: a 0.001-opacity label is not
+        reliably invisible because the font scales with the scene, so at high zoom or during
+        the parent's hover repaint the faint text leaked through and flickered into view.
+        Labels are edited via the instance properties dialog, so they don't need to remain
+        pickable on the canvas while hidden."""
+        if self.parentItem() is None:
+            self.setVisible(True)
+            return
         isPredefined = self._labelDefinition in symbolLabel.predefinedLabels
         hasValue = self._labelValue not in (None, "", "?")
-
-        if self._labelVisible and (hasValue or isPredefined):
-            self.setOpacity(1)
-        else:
-            self.setOpacity(0.001)  # Effectively invisible but still technically present
+        self.setVisible(self._labelVisible and (hasValue or isPredefined))
 
     def labelDefs(self):
         """
@@ -346,6 +353,10 @@ class symbolLabel(QGraphicsSimpleTextItem):
         elif self._labelType == symbolLabel.labelTypes[2]:  # pyLabel
             self.createPyLabel()
         self.setText(self._labelText)
+        # labelDefs() finalizes _labelValue/_labelText (e.g. NLP/pyLabel resolution during
+        # load). Recompute visibility here so it reflects the final value regardless of
+        # caller ordering.
+        self._updateVisibility()
 
     def createNLPLabel(self, labelDefinition: str, labelValue: str = "") -> Tuple[
         str, str, str]:

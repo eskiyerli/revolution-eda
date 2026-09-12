@@ -1121,7 +1121,12 @@ class schematicScene(editorScene):
                         [label.labelDefs() for label in shape.labels.values()]
                     copyShapesList.append(shape)
             self.addListUndoStack(copyShapesList)
+            # Record each copy's pre-group pos()/transform() so the base class
+            # mouseReleaseEvent can restore them after destroyItemGroup().
+            for shape in copyShapesList:
+                shape._groupInitialState = (shape.pos(), shape.transform())
             self.selectedItemGroup = self.createItemGroup(copyShapesList)
+            self._initialGroupPos = self.selectedItemGroup.pos()
             self.selectedItemGroup.setSelected(True)
 
     def saveSchematic(self, file: pathlib.Path) -> bool:
@@ -1257,6 +1262,7 @@ class schematicScene(editorScene):
                 finally:
                     self.blockSignals(False)
             self.itemsRefSet = set(self.items())
+            return True
 
         except (orjson.JSONDecodeError, FileNotFoundError) as e:
             self.logger.error(f"File error while loading schematic: {e}")

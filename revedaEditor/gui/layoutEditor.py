@@ -54,8 +54,10 @@ class layoutEditor(edw.editorWindow):
         self.setWindowIcon(QIcon(":/icons/edLayer-shape.png"))
         self.layoutViews = ["layout", "pcell"]
         self.dbu = fabproc.dbu
-        self.majorGrid = fabproc.majorGrid
-        self.snapGrid = fabproc.snapGrid
+        # PDK grid values are in layout units (e.g. µm); convert to scene
+        # units (dbu-scaled integers) for snapping and grid drawing.
+        self.majorGrid = round(fabproc.majorGrid * self.dbu)
+        self.snapGrid = round(fabproc.snapGrid * self.dbu)
         self.snapTuple = (self.snapGrid, self.snapGrid)
         self.lodThreshold = 0.02  # default instance LOD threshold
         self.layoutChooser = None
@@ -232,15 +234,23 @@ class layoutEditor(edw.editorWindow):
         # paths are created on path layers
         processPathNames = [f"{pathTuple.name}" for pathTuple in fabproc.processPaths]
         dlg.pathLayerCB.addItems(processPathNames)
-        dlg.pathLayerCB.setCurrentIndex(0)
-        defaultPathTuple = fabproc.processPaths[0]
+        selectedPathIndex = next(
+            (
+                index
+                for index, pathTuple in enumerate(fabproc.processPaths)
+                if pathTuple.layer == self.centralW.scene.selectEdLayer
+            ),
+            0,
+        )
+        dlg.pathLayerCB.setCurrentIndex(selectedPathIndex)
+        defaultPathTuple = fabproc.processPaths[selectedPathIndex]
         dlg.pathLayerCB.currentIndexChanged.connect(lambda: pathLayerChanged(dlg))
-        dlg.pathWidth.setText(fabproc.processPaths[0].minWidth.__str__())
+        dlg.pathWidth.setText(defaultPathTuple.minWidth.__str__())
         dlg.pathWidthValidator.setRange(
             defaultPathTuple.minWidth, defaultPathTuple.maxWidth
         )
-        dlg.startExtendEdit.setText(str(fabproc.processPaths[0].minWidth / 2))
-        dlg.endExtendEdit.setText(str(fabproc.processPaths[0].minWidth / 2))
+        dlg.startExtendEdit.setText(str(defaultPathTuple.minWidth / 2))
+        dlg.endExtendEdit.setText(str(defaultPathTuple.minWidth / 2))
 
         if dlg.exec() == QDialog.DialogCode.Accepted:
             self.centralW.scene.editModes.setMode("drawPath")
@@ -275,9 +285,10 @@ class layoutEditor(edw.editorWindow):
     def createPinClick(self):
         dlg = ldlg.createLayoutPinDialog(self)
         pinLayersNames = [f"{item.name} [{item.purpose}]" for item in laylyr.pdkPinLayers]
-        textLayersNames = [f"{item.name} [{item.purpose}]" for item in laylyr.pdkTextLayers]
+        labelLayers = getattr(laylyr, "pdkLabelLayers", laylyr.pdkTextLayers)
+        labelLayersNames = [f"{item.name} [{item.purpose}]" for item in labelLayers]
         dlg.pinLayerCB.addItems(pinLayersNames)
-        dlg.labelLayerCB.addItems(textLayersNames)
+        dlg.labelLayerCB.addItems(labelLayersNames)
 
         if self.centralW.scene.newPinTuple is not None:
             dlg.pinLayerCB.setCurrentText(
@@ -306,8 +317,10 @@ class layoutEditor(edw.editorWindow):
                 0
             ]
             labelLayerName = dlg.labelLayerCB.currentText().split()[0]
+            labelLayerPurpose = dlg.labelLayerCB.currentText().split()[1].strip("[]")
             labelLayer = [
-                item for item in laylyr.pdkTextLayers if item.name == labelLayerName
+                item for item in labelLayers
+                if item.name == labelLayerName and item.purpose == labelLayerPurpose
             ][0]
             fontFamily = dlg.familyCB.currentText()
             fontStyle = dlg.fontStyleCB.currentText()
@@ -329,14 +342,17 @@ class layoutEditor(edw.editorWindow):
 
     def createLabelClick(self):
         dlg = ldlg.createLayoutLabelDialog(self)
-        textLayersNames = [f"{item.name} [{item.purpose}]" for item in laylyr.pdkTextLayers]
-        dlg.labelLayerCB.addItems(textLayersNames)
+        labelLayers = getattr(laylyr, "pdkLabelLayers", laylyr.pdkTextLayers)
+        labelLayersNames = [f"{item.name} [{item.purpose}]" for item in labelLayers]
+        dlg.labelLayerCB.addItems(labelLayersNames)
         if dlg.exec() == QDialog.DialogCode.Accepted:
             self.centralW.scene.editModes.setMode("addLabel")
             labelName = dlg.labelName.text()
             labelLayerName = dlg.labelLayerCB.currentText().split()[0]
+            labelLayerPurpose = dlg.labelLayerCB.currentText().split()[1].strip("[]")
             labelLayer = [
-                item for item in laylyr.pdkTextLayers if item.name == labelLayerName
+                item for item in labelLayers
+                if item.name == labelLayerName and item.purpose == labelLayerPurpose
             ][0]
             fontFamily = dlg.familyCB.currentText()
             fontStyle = dlg.fontStyleCB.currentText()
@@ -463,11 +479,7 @@ class layoutEditor(edw.editorWindow):
     def createInstClick(self, s):
         # create a designLibrariesView
         libraryModel = lmview.layoutViewsModel(self.libraryDict, self.layoutViews)
-        if self.layoutChooser is None:
-            self.layoutChooser = fd.selectCellViewDialog(self, libraryModel)
-            self.layoutChooser.show()
-        else:
-            self.layoutChooser.raise_()
+        self.layoutChooser = fd.selectCellViewDialog(self, libraryModel)
         if self.layoutChooser.exec() == QDialog.DialogCode.Accepted:
             self.centralW.scene.editModes.setMode("addInstance")
             libItem = libm.getLibItem(
@@ -522,8 +534,12 @@ class layoutEditor(edw.editorWindow):
     def handlePolygonSelection(self, polygons):
         # Remove previous polygons and reset their transforms
         for polygon in self._drcPolygons:
-            polygon.setTransform(QTransform())
-            self.centralW.scene.removeItem(polygon)
+            try:
+                polygon.setTransform(QTransform())
+                self.centralW.scene.removeItem(polygon)
+            except RuntimeError:
+                # The scene or Qt has already destroyed the C++ object.
+                pass
 
         # Add new polygons, applying instance transforms for sub-cell violations.
         # KLayout reports DRC violations in the cell's local coordinate system.
@@ -589,6 +605,8 @@ class layoutEditor(edw.editorWindow):
         """Open dialog to select schematic and create layout instances from it."""
         libraryModel = lmview.schematicViewsModel(self.libraryDict)
         dialog = fd.selectCellViewDialog(self, libraryModel)
+        dialog.libNamesCB.setCurrentText(self.libName)
+        dialog.cellCB.setCurrentText(self.cellName)
 
         if dialog.exec() == QDialog.DialogCode.Accepted:
 
@@ -606,15 +624,21 @@ class layoutEditor(edw.editorWindow):
 
         dcd = pdlg.layoutDisplayConfigDialog(self)
         dcd.dbuEntry.setText(str(self.dbu))
-        dcd.majorGridEntry.setText(str(self.majorGrid))
-        dcd.snapGridEdit.setText(str(self.snapGrid))
-        dcd.snapConnectEdit.setText(str(self.snapConnectDistance))
+        # Display grid values in layout units (e.g. µm).
+        dcd.majorGridEntry.setText(str(self.majorGrid / self.dbu))
+        dcd.snapGridEdit.setText(str(self.snapGrid / self.dbu))
+        dcd.snapConnectEdit.setText(str(self.snapConnectDistance / self.dbu))
         dcd.lodThresholdEdit.setText(str(self.lodThreshold))
         if dcd.exec() == QDialog.DialogCode.Accepted:
             self.configureGridSettings(
-                (int(dcd.majorGridEntry.text()), int(dcd.snapGridEdit.text()))
+                (
+                    round(float(dcd.majorGridEntry.text()) * self.dbu),
+                    round(float(dcd.snapGridEdit.text()) * self.dbu),
+                )
             )
-            self.snapConnectDistance = int(dcd.snapConnectEdit.text())
+            self.snapConnectDistance = round(
+                float(dcd.snapConnectEdit.text()) * self.dbu
+            )
             if hasattr(self, 'centralW') and self.centralW:
                 self.centralW.scene.snapConnectDistance = self.snapConnectDistance
             if dcd.dotType.isChecked():

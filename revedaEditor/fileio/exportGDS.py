@@ -118,14 +118,15 @@ class gdsExporter:
         else:
             cellGDS = self._instanceCache[cache_key]
 
-        # Both Qt (in the editor's Y-down scene coordinates) and gdstk apply the
-        # same right-handed rotation matrix, so a positive angle rotates (1,0)
-        # towards (0,1); no sign flip is needed.
+        # Use the parent coordinate of the item's local origin (0,0), not just
+        # pos(). This captures the translation from pos(), rotation about the
+        # transform origin, and any flip offset, keeping the GDS reference in
+        # sync with Qt's scene placement.
         angle_rad, x_reflection = self._gdstk_transform(item.angle, item.flipTuple)
-        pos = item.pos()
+        origin = item.mapToParent(QPointF(0, 0))
         ref = gdstk.Reference(
             cellGDS,
-            origin=(pos.x(), pos.y()),
+            origin=(origin.x(), origin.y()),
             rotation=angle_rad,
             x_reflection=x_reflection,
         )
@@ -318,19 +319,18 @@ class gdsExporter:
                     self.createCells(library, shape, pcellGDS)
                 self._pcellCache[pcellCacheKey] = pcellGDS
 
-            # Use pos() (local coords relative to Qt parent) not scenePos().
-            # The Reference lives inside the parent GDS cell whose own Reference
-            # already carries the parent's scene translation; using scenePos()
-            # would double-offset.  pos() == scenePos() when the pcell is at
-            # the top level, so this is correct in both cases.
-            pos = item.pos()
+            # Use the parent coordinate of the item's local origin (0,0), not
+            # just pos(). This captures the translation from pos(), rotation
+            # about the transform origin, and any flip offset, keeping the GDS
+            # reference in sync with Qt's scene placement.
+            origin = item.mapToParent(QPointF(0, 0))
             angle_rad, x_reflection = self._gdstk_transform(
                 getattr(item, 'angle', 0.0),
                 getattr(item, 'flipTuple', (1, 1)),
             )
             ref = gdstk.Reference(
                 pcellGDS,
-                origin=(pos.x(), pos.y()),
+                origin=(origin.x(), origin.y()),
                 rotation=angle_rad,
                 x_reflection=x_reflection,
             )

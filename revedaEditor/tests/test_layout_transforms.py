@@ -89,6 +89,29 @@ def test_gds_export_skips_layout_rulers():
     assert not cell.references
 
 
+def test_delete_all_rulers_cancels_in_progress_ruler():
+    inProgress = lshp.layoutRuler(QLineF(0, 0, 0, 0), 1, 10, 5, QFont())
+    completed = lshp.layoutRuler(QLineF(0, 0, 100, 0), 1, 10, 5, QFont())
+
+    class RulerScene:
+        def __init__(self):
+            self._newRuler = inProgress
+            self.deletedItems = []
+
+        @staticmethod
+        def items():
+            return [inProgress, completed]
+
+        def deleteListUndoStack(self, items):
+            self.deletedItems = items
+
+    scene = RulerScene()
+    layoutScene.deleteAllRulers(scene)
+
+    assert scene._newRuler is None
+    assert set(scene.deletedItems) == {inProgress, completed}
+
+
 def test_gds_export_reuses_identical_pcell_geometry():
     first = nmos()
     second = nmos()

@@ -245,11 +245,7 @@ class schematicEditor(edw.editorWindow):
     def createInstClick(self, s):
         # create a designLibrariesView
         libraryModel = lmview.symbolViewsModel(self.libraryDict, self.symbolViews)
-        if self.symbolChooser is None:
-            self.symbolChooser = fd.selectCellViewDialog(self, libraryModel)
-            self.symbolChooser.show()
-        else:
-            self.symbolChooser.raise_()
+        self.symbolChooser = fd.selectCellViewDialog(self, libraryModel)
         if self.symbolChooser.exec() == QDialog.DialogCode.Accepted:
             instanceTuple = ddef.viewNameTuple(self.symbolChooser.libNamesCB.currentText(),
                                                self.symbolChooser.cellCB.currentText(),

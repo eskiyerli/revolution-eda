@@ -343,7 +343,7 @@ def createSpiceSymbol(
                 se.symbolAttribute("pinOrder", importedSpiceObj.pinOrder)
             )
             symbolScene.attributeList.append(
-                se.symbolAttribute("incLine", importedSpiceObj.pathObj.name)
+                se.symbolAttribute("SpiceIncludeLine", importedSpiceObj.pathObj.name)
             )
 
             symbolScene.attributeList.append(
@@ -421,7 +421,7 @@ def createSpectreSymbol(
                 se.symbolAttribute("pinOrder", importedSpectreObj.pinOrder)
             )
             symbolScene.attributeList.append(
-                se.symbolAttribute("incLine", importedSpectreObj.pathObj.name)
+                se.symbolAttribute("SpectreIncludeLine", importedSpectreObj.pathObj.name)
             )
             symbolScene.attributeList.append(
                 se.symbolAttribute("SpectreNetlistLine",
@@ -498,11 +498,12 @@ def createVacaskSymbol(
                 se.symbolAttribute("pinOrder", importedVacaskObj.pinOrder)
             )
             symbolScene.attributeList.append(
-                se.symbolAttribute("incLine", importedVacaskObj.pathObj.name)
-            )
-            symbolScene.attributeList.append(
                 se.symbolAttribute("VacaskNetlistLine",
                                    importedVacaskObj.netlistLine)
+            )
+            symbolScene.attributeList.append(
+                se.symbolAttribute("VacaskIncludeFile",
+                                   importedVacaskObj.pathObj.name)
             )
 
             symbolWindow.show()

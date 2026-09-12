@@ -638,6 +638,7 @@ class symbolScene(editorScene):
                 self.attributeList = []
                 self.createSymbolItems(itemData)
             self.itemsRef = set(self.items())
+            return True
         except (orjson.JSONDecodeError, FileNotFoundError) as e:
             self.logger.error(f"File error while loading symbol: {e}")
             self.attributeList = []
@@ -762,7 +763,12 @@ class symbolScene(editorScene):
         if copyShapesList:
             # Add to undo stack before grouping (matches schematic/layout pattern)
             self.addListUndoStack(copyShapesList)
+            # Record each copy's pre-group pos()/transform() so the base class
+            # mouseReleaseEvent can restore them after destroyItemGroup().
+            for shape in copyShapesList:
+                shape._groupInitialState = (shape.pos(), shape.transform())
             # Use base-class attribute so mouseMoveEvent/mouseReleaseEvent can move
             # the group as the cursor moves and place it on mouse button release
             self.selectedItemGroup = self.createItemGroup(copyShapesList)
+            self._initialGroupPos = self.selectedItemGroup.pos()
             self.selectedItemGroup.setSelected(True)

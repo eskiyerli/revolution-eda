@@ -12,6 +12,7 @@
 # Load symbol and maybe later schematic from json file.
 
 import functools
+import itertools
 import pathlib
 from typing import Any, Optional
 
@@ -50,29 +51,28 @@ class symbolItems:
         """
         self.scene = scene
         self.snapTuple = scene.snapTuple
+        # Pre-create method mapping for faster dispatch
+        self._creators = {
+            "rect": self.createRectItem,
+            "circle": self.createCircleItem,
+            "arc": self.createArcItem,
+            "line": self.createLineItem,
+            "pin": self.createPinItem,
+            "label": self.createLabelItem,
+            "text": self.createTextItem,
+            "polygon": self.createPolygonItem,
+        }
 
     def create(self, item: dict) -> Optional[shp.symbolShape]:
         """
         Create symbol items from json file.
         """
-        if isinstance(item, dict):
-            match item.get("type"):
-                case "rect":
-                    return self.createRectItem(item)
-                case "circle":
-                    return self.createCircleItem(item)
-                case "arc":
-                    return self.createArcItem(item)
-                case "line":
-                    return self.createLineItem(item)
-                case "pin":
-                    return self.createPinItem(item)
-                case "label":
-                    return self.createLabelItem(item)
-                case "text":
-                    return self.createTextItem(item)
-                case "polygon":
-                    return self.createPolygonItem(item)
+        if not isinstance(item, dict):
+            return None
+        creator = self._creators.get(item.get("type"))
+        if creator is not None:
+            return creator(item)
+        return None
 
     @staticmethod
     def createRectItem(item: dict) -> shp.symbolRectangle:
@@ -203,6 +203,15 @@ class schematicItems:
         self.scene = scene
         self.libraryDict = scene.libraryDict
         self.snapTuple = scene.snapTuple
+        self._snapToGrid = scene.snapToGrid
+        self._symbolItems = symbolItems(scene)
+        # Pre-create method mapping for faster dispatch
+        self._creators = {
+            "sys": self._createSymbolShape,
+            "scn": self._createNet,
+            "scp": self._createPin,
+            "txt": self._createText,
+        }
 
     @staticmethod
     @functools.lru_cache(maxsize=256)
@@ -216,18 +225,10 @@ class schematicItems:
 
     def create(self, item: dict):
         if isinstance(item, dict):
-            match item["type"]:
-                case "sys":
-                    return self._createSymbolShape(item)
-                case "scn":
-                    return self._createNet(item)
-                case "scp":
-                    return self._createPin(item)
-                case "txt":
-                    return self._createText(item)
-                case _:
-                    pass
-                    # return self.unknownItem()
+            creator = self._creators.get(item.get("type"))
+            if creator is not None:
+                return creator(item)
+        return None
 
     def _createText(self, item):
         start = QPoint(0, 0)
@@ -267,8 +268,8 @@ class schematicItems:
         end = QPoint(item["end"][0], item["end"][1])
         width = item.get('w', 0)
         # Snap coordinates to grid to ensure nets are properly aligned
-        start = self.scene.snapToGrid(start)
-        end = self.scene.snapToGrid(end)
+        start = self._snapToGrid(start)
+        end = self._snapToGrid(end)
         netItem = net.schematicNet(start, end, width)
         netItem.name = item["nam"]
         match item["ns"]:
@@ -298,10 +299,8 @@ class schematicItems:
         symbolInstance.netlistIgnore = bool(item.get("ign", 0))
         labelDict = item["ld"]
         symbolInstance.setPos(*item["loc"])
-        [
+        for labelItem in symbolInstance.labels.values():
             labelItem.labelDefs()
-            for labelItem in symbolInstance.labels.values()
-        ]
         libraryPath = self.libraryDict.get(item["lib"])
         if libraryPath is None:
             self.createDraftSymbol(item, symbolInstance)
@@ -324,8 +323,8 @@ class schematicItems:
                     self.scene.logger.error("Error: Invalid or missing Symbol file")
                     return None
                 try:
-                    symbolShape = symbolItems(self.scene)
-                    for jsonItem in jsonItems[2:]:  # skip first two entries.
+                    symbolShape = self._symbolItems
+                    for jsonItem in itertools.islice(jsonItems, 2, None):
                         if jsonItem["type"] == "attr":
                             symbolAttributes[jsonItem["nam"]] = (
                                 jsonItem["def"]
@@ -336,27 +335,15 @@ class schematicItems:
                             )
                     symbolInstance.shapes = itemShapes
                     for labelItem in symbolInstance.labels.values():
-                        if (
-                                labelItem.labelName
-                                in labelDict.keys()
-                        ):
-                            labelItem.labelValue = (
-                                labelDict[
-                                    labelItem.labelName
-                                ][0]
-                            )
+                        entry = labelDict.get(labelItem.labelName)
+                        if entry is not None:
+                            labelItem.labelValue = entry[0]
                             # Only override visibility if it's explicitly in the schematic's label dict
-                            if len(labelDict[labelItem.labelName]) > 1:
-                                labelItem.labelVisible = (
-                                    labelDict[
-                                        labelItem.labelName
-                                    ][1]
-                                )
+                            if len(entry) > 1:
+                                labelItem.labelVisible = entry[1]
                     symbolInstance.symattrs = symbolAttributes
-                    [
+                    for labelItem in symbolInstance.labels.values():
                         labelItem.labelDefs()
-                        for labelItem in symbolInstance.labels.values()
-                    ]
                     symbolInstance.angle = item.get("ang", 0)
                     symbolInstance.flipTuple = item.get('fl', (1, 1))
                     return symbolInstance
@@ -426,6 +413,7 @@ class layoutItems:
                 library_path = pathlib.Path(path)
                 if library_path.exists():
                     self._library_paths[name] = library_path
+        self._pdkLayers = laylyr.pdkAllLayers
 
         # Pre-create method mapping for faster dispatch
         self._creators = {
@@ -459,12 +447,19 @@ class layoutItems:
 
     @staticmethod
     def _set_common_attrs(obj, item):
-        if "top" in item:
-            obj.setTransformOriginPoint(QPointF(*item["top"]))
         # flipTuple replaces the item's custom transform. Set it before the
         # rotation property so a saved combined transform is restored intact.
         obj.flipTuple = tuple(item.get("fl", (1, 1)))
-        obj.angle = item.get("ang", 0)
+        ang = item.get("ang", 0)
+        # Avoid the geometry-change/rotation overhead for the common case where
+        # there is no saved rotation; the default _angle is already 0.
+        if ang != 0:
+            obj.angle = ang
+        # Path and ruler angle setters reset their pivot to the first endpoint.
+        # Restore the saved local pivot last so all shape types retain the
+        # original rotation center.
+        if "top" in item:
+            obj.setTransformOriginPoint(QPointF(*item["top"]))
 
     def createPcellInstance(self, item):
         library_path = self._get_library_path(item["lib"])
@@ -508,7 +503,7 @@ class layoutItems:
         if not file_contents:
             return None
 
-        file_path_key = str(file_path.resolve())
+        file_path_key = str(file_path)
         if file_path_key in self._active_layout_paths:
             self.scene.logger.error(f"Recursive layout reference: {file_path}")
             return None
@@ -517,7 +512,7 @@ class layoutItems:
         append_shape = item_shapes.append
         self._active_layout_paths.add(file_path_key)
         try:
-            for shape_data in file_contents[2:]:
+            for shape_data in itertools.islice(file_contents, 2, None):
                 try:
                     shape = self.create(shape_data)
                 except Exception:
@@ -545,7 +540,7 @@ class layoutItems:
         rect = lshp.layoutRect(
             QPointF(tl[0], tl[1]),
             QPointF(br[0], br[1]),
-            laylyr.pdkAllLayers[ln]
+            self._pdkLayers[ln]
         )
         self._set_common_attrs(rect, item)
         return rect
@@ -555,7 +550,7 @@ class layoutItems:
         # Geometry is saved pos-folded (pos() + local); see createRectShape.
         path = lshp.layoutPath(
             QLineF(QPointF(dfl1[0], dfl1[1]), QPointF(dfl2[0], dfl2[1])),
-            laylyr.pdkAllLayers[item["ln"]],
+            self._pdkLayers[item["ln"]],
             item["w"], item["se"], item["ee"], item["md"]
         )
         path.name = item.get("nam", "")
@@ -577,7 +572,7 @@ class layoutItems:
         # generic ang/fl would override that.  Anchor is saved pos-folded.
         label = lshp.layoutLabel(
             QPointF(*item["st"]), item["lt"], item["ff"], item["fs"],
-            item["fh"], item["la"], item["lo"], laylyr.pdkAllLayers[item["ln"]]
+            item["fh"], item["la"], item["lo"], self._pdkLayers[item["ln"]]
         )
         return label
 
@@ -585,14 +580,14 @@ class layoutItems:
         # Geometry is saved pos-folded (pos() + local); see createRectShape.
         pin = lshp.layoutPin(
             QPointF(*item["tl"]), QPointF(*item["br"]), item["pn"],
-            item["pd"], item["pt"], laylyr.pdkAllLayers[item["ln"]]
+            item["pd"], item["pt"], self._pdkLayers[item["ln"]]
         )
         self._set_common_attrs(pin, item)
         return pin
 
     def createPolygonShape(self, item):
         points = [QPointF(x, y) for x, y in item["ps"]]
-        polygon = lshp.layoutPolygon(points, laylyr.pdkAllLayers[item["ln"]])
+        polygon = lshp.layoutPolygon(points, self._pdkLayers[item["ln"]])
         self._set_common_attrs(polygon, item)
         return polygon
 
@@ -603,9 +598,10 @@ class layoutItems:
 
     def createViaArrayShape(self, item):
         via_info = item["via"]
+        via_start = via_info.get("st", (0, 0))
         via_def = self._get_via_def(via_info["vdt"])
         via = lshp.layoutVia(
-            QPointF(*via_info.get("st", (0, 0))),
+            QPointF(*via_start),
             via_def,
             via_info["w"],
             via_info["h"],
@@ -614,7 +610,7 @@ class layoutItems:
         )
         is_legacy = item.get("coordMode") != "parent"
         via_array = lshp.layoutViaArray(
-            QPointF(*via_info.get("st", (0, 0))) if is_legacy else QPoint(0, 0),
+            QPointF(*via_start) if is_legacy else QPoint(0, 0),
             via,
             item["xs"],
             item["ys"],

@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import List, Optional, Tuple, Union
 
 import numpy as np
+import shiboken6
 from PySide6.QtCore import (
     QLineF,
     QPoint,
@@ -20,6 +21,7 @@ from PySide6.QtCore import (
     QRect,
     QRectF,
     Qt,
+    QTimer,
 )
 from PySide6.QtGui import (
     QBrush,
@@ -292,7 +294,6 @@ class layoutShape(QGraphicsItem):
     #         self.setFlag(QGraphicsItem.ItemIsMovable, True)
 
     def mousePressEvent(self, event: QGraphicsSceneMouseEvent) -> None:
-        self.setSelected(True)
         if self.scene() and self.scene().editModes.moveItem:
             self.setFlag(QGraphicsItem.ItemIsMovable, True)
 
@@ -329,8 +330,10 @@ class layoutShape(QGraphicsItem):
         self.clearFocus()
 
     def contextMenuEvent(self, event):
-        self.setSelected(True)
-        self.scene().itemContextMenu.exec_(event.screenPos())
+        scene = self.scene()
+        if scene is not None:
+            scene.setSelectedItems(set(scene.selectedItems()) | {self})
+            scene.itemContextMenu.exec_(event.screenPos())
 
     @property
     def flipTuple(self):
@@ -539,7 +542,11 @@ class layoutRect(layoutShape):
         super().mousePressEvent(event)
 
         if self._layer.selectable:
-            self.setFlag(QGraphicsItem.ItemIsMovable, True)
+            scene = self.scene()
+            movable = scene is not None and (
+                scene.editModes.moveItem or scene.editModes.constrainedMoveItem
+            )
+            self.setFlag(QGraphicsItem.ItemIsMovable, movable)
             self.setFlag(QGraphicsItem.ItemIsSelectable, True)
             eventPos = event.pos().toPoint()
             if self._stretch:
@@ -585,7 +592,7 @@ class layoutRect(layoutShape):
             super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent) -> None:
-        self.setFlag(QGraphicsItem.ItemIsMovable, True)
+        self.setFlag(QGraphicsItem.ItemIsMovable, False)
         super().mouseReleaseEvent(event)
         if self.stretch:
             self._stretch = False
@@ -1161,7 +1168,17 @@ class layoutPath(layoutShape):
                 ).manhattanLength() <= self.scene().snapDistance:
                     self._stretchSide = "p2"
                     self.setCursor(Qt.SizeHorCursor)
-                self.scene().stretchPath(self, self._stretchSide)
+                if self._stretchSide in {"p1", "p2"}:
+                    scene = self.scene()
+                    stretchSide = self._stretchSide
+                    QTimer.singleShot(
+                        0,
+                        lambda: (
+                            scene.stretchPath(self, stretchSide)
+                            if shiboken6.isValid(self) and self.scene() is scene
+                            else None
+                        ),
+                    )
 
 
 class layoutRuler(layoutShape):
@@ -1330,7 +1347,7 @@ class layoutRuler(layoutShape):
         bestDist = maxDistance
         closestPoint = pointF
         for item in items:
-            if item is self or isinstance(item, layoutRuler):
+            if item is self or isinstance(item, layoutRuler) or getattr(item, "drcError", False):
                 continue
             edges = self._extractItemEdges(item)
             for p1, p2 in edges:
@@ -1430,6 +1447,20 @@ class layoutRuler(layoutShape):
             self._draftLine.p1().toPoint(), self._draftLine.p2().toPoint()
         ).normalized()
 
+        # Rebuild the hit-shape path here (once per geometry change) so
+        # shape() stays O(1) for scene hit-testing.
+        path = QPainterPath()
+        path.moveTo(self._draftLine.p1())
+        path.lineTo(self._draftLine.p2())
+        for tickTuple in self._tickTuples:
+            path.moveTo(tickTuple.line[0])
+            path.lineTo(tickTuple.line[1])
+        margin = max(self._tickLength, self._width * 2.0)
+        self._shapePath = QPainterPath()
+        self._shapePath.addRect(
+            path.boundingRect().adjusted(-margin, -margin, margin, margin)
+        )
+
     def boundingRect(self) -> QRectF:
         # The tick labels are drawn at a fixed screen size (inverse-scaled),
         # so their footprint in scene coordinates grows as the view zooms out.
@@ -1450,6 +1481,16 @@ class layoutRuler(layoutShape):
         return (
             QRectF(self._rect).normalized().adjusted(-margin, -margin, margin, margin)
         )
+
+    def shape(self) -> QPainterPath:
+        # The default QGraphicsItem shape is the full boundingRect, which grows
+        # unbounded at low zoom because the labels are inverse-scaled. Keep the
+        # hit region tight (ruler line + tick marks plus a small margin) so the
+        # ruler does not steal clicks from other items.
+        return self._shapePath
+
+    def _labelRotation(self) -> float:
+        return self._angle
 
     def paint(self, painter, option, widget=None) -> None:
         if self.isSelected():
@@ -1481,11 +1522,9 @@ class layoutRuler(layoutShape):
         while screenAngle <= -180:
             screenAngle += 360
 
-        textAngle = screenAngle
-        if textAngle > 90:
-            textAngle -= 180
-        elif textAngle < -90:
-            textAngle += 180
+        # The painter already includes this item's rotation. Counter-rotate
+        # labels so their glyphs remain upright in the viewport.
+        textAngle = self._labelRotation()
 
         # Determine minimum screen-pixel spacing needed between labels
         minLabelScreenPx = self._fontWidth * 1.5

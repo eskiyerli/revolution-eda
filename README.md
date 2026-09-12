@@ -40,8 +40,7 @@ Current version is **0.9.0**.
     that downloads and installs plugins from the Revolution EDA plugin registry.
 12. **PDK Registry**: GUI for registering and switching PDKs without editing configuration
     files manually.
-13. **AI Terminal**: Natural-language design modification through Claude (Anthropic),
-    Gemini (Google), Mistral AI backends and experimental support for AWS Bedrock; API keys are stored in encrypted form.
+13. **AI Terminal**: Natural-language design modification through the latest-generation ChatGPT (OpenAI), Gemini (Google), and Claude (Anthropic) backends; API keys are stored in encrypted form.
 14. **Parasitic Extraction (PEX)**: Built-in RC extraction engine
     (`revedaEditor/rcextraction/`) that computes parasitic resistance and capacitance from
     an LVS "Export for PEX" database (`.rcx.json`). The engine is pure Python, independent
@@ -105,8 +104,7 @@ source-available plugins.
 
 - **Natural-Language Design Editing**: Modify schematics, symbols, and layouts using
   conversational requests sent to an AI model.
-- **Multiple AI Backends**: Claude (Anthropic), Gemini (Google), and Mistral AI supported;
-  OpenAI planned.
+- **Multiple AI Backends**: Latest-generation ChatGPT (OpenAI), Gemini (Google), and Claude (Anthropic) supported.
 - **Secure API Key Storage**: Keys encrypted with Fernet and stored under `~/.reveda/`.
 - **Automatic Backup & Undo**: A backup is created before every AI modification; one-click
   restore via the `undo` command or **Undo Changes** button.

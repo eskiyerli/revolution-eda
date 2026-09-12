@@ -93,3 +93,10 @@ def test_ruler_text_angle_upright():
     p1_2 = r2.mapToScene(r2._draftLine.p1())
     p2_2 = r2.mapToScene(r2._draftLine.p2())
     assert QLineF(p1_2, p2_2).angle() == 180.0
+
+    verticalRuler = lshp.layoutRuler(
+        QLineF(0, 0, 0, -100), 1.0, 10.0, 5, QFont()
+    )
+    scene.addItem(verticalRuler)
+    # Label rotation must cancel the item transform so the text is upright.
+    assert verticalRuler.rotation() + verticalRuler._labelRotation() == 0.0

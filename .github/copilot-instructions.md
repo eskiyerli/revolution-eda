@@ -41,7 +41,7 @@ via `pluginsLoader.openCellView()` / `createCellView()`.
 imports packages by folder name, then reads each plugin's `config.json` for menu wiring.
 Plugins are standalone Python packages that can be proprietary. Current plugins:
 
-- `aiTerminal` — AI-assisted design modification (Claude, Gemini, Mistral agents)
+- `aiTerminal` — AI-assisted design modification (ChatGPT, Gemini, Claude agents)
 - `revedasim` — Xyce circuit simulation with custom view type (`revbench`)
 - `revedaPlot` — PyQtGraph waveform viewing
 
@@ -183,7 +183,7 @@ hard crashes.
 - **Scene Management**: Uses Qt graphics scenes (`QGraphicsScene` subclasses) with custom
   shapes inheriting from `symbolShape` base class.
 - **AI Agent Integration**: The `aiTerminal` plugin provides AI-assisted design
-  modification. Agents (`claudeAiAgent.py`, `geminiAiAgent.py`, `mistralAiAgent.py`)
+  modification. Agents (`openaiAiAgent.py`, `claudeAiAgent.py`, `geminiAiAgent.py`)
   inherit from `baseAiAgent.py`, read/write design JSON, and validate paths against library
   directories. Agents communicate via design JSON mutations.
 
@@ -213,7 +213,7 @@ hard crashes.
 | **lxml**           | XML parsing   | Used by import plugins                                       |
 | **anthropic**      | AI agent      | Claude integration in aiTerminal plugin                      |
 | **google-genai**   | AI agent      | Gemini integration in aiTerminal plugin                      |
-| **mistralai**      | AI agent      | Mistral integration in aiTerminal plugin                     |
+| **openai**         | AI agent      | ChatGPT integration in aiTerminal plugin                    |
 | **httpx**          | HTTP client   | Used by AI agent APIs                                        |
 | **python-dotenv**  | Config        | Loads `.env` for path configuration                          |
 

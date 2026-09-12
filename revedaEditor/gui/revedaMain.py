@@ -50,12 +50,9 @@ import revedaEditor.gui.libraryBrowser as libw
 import revedaEditor.gui.pythonConsole as pcon
 import revedaEditor.gui.revinit as revinit
 import revedaEditor.gui.stippleEditor as stip
-from revedaEditor.backend.pdkLoader import importPDKModule
 from revedaEditor.backend.projectManager import ProjectManager
 
 from revedaEditor.resources import resources  # noqa: F401
-
-process = importPDKModule("process")
 
 
 class EventLoopMonitor(QObject):
@@ -86,9 +83,7 @@ class mainwContainer(QWidget):
             f"Welcome to Revolution EDA version {revinit.__version__}"
         )
         self.console.writeoutput("Revolution Semiconductor (C) 2026.")
-        self.console.writeoutput(
-            "Mozilla Public License v2.0"
-        )
+        self.console.writeoutput("Mozilla Public License v2.0")
         self.console.writeoutput("Check https://reveda.eu/plugins for plugins")
         # layout statements, using a grid layout
         gLayout = QVBoxLayout()
@@ -420,8 +415,11 @@ class MainWindow(QMainWindow):
 
             # Update paths
             self.runPath = Path(text_values["rootPathEdit"])
-            self.pdkPath = Path(text_values["simInpPathEdit"]) if Path(text_values[
-                        "simInpPathEdit"]).joinpath('config.json').exists() else self.pdkPath
+            self.pdkPath = (
+                Path(text_values["simInpPathEdit"])
+                if Path(text_values["simInpPathEdit"]).joinpath("config.json").exists()
+                else self.pdkPath
+            )
             self.outputPrefixPath = Path(text_values["simOutPathEdit"])
 
             self.app.updatePDKPath(self.pdkPath)
@@ -506,8 +504,6 @@ class MainWindow(QMainWindow):
 
     def importGDSClick(self):
         dlg = fd.gdsImportDialogue(self)
-        dlg.unitEdit.setText(str(process.gdsUnit))
-        dlg.precisionEdit.setText(str(process.gdsPrecision))
         dlg.libNameEdit.setText("importLib")
         if dlg.exec() == QDialog.DialogCode.Accepted:
             gdsImportLibName = dlg.libNameEdit.text().strip()
@@ -588,6 +584,7 @@ class MainWindow(QMainWindow):
 
     def setupPDKsClick(self):
         from revedaEditor.gui.pdkRegistry import PDKRegistryWindow
+
         pdkRegistry = PDKRegistryWindow(self)
         pdkRegistry.show()
 
@@ -596,8 +593,7 @@ class MainWindow(QMainWindow):
 
         # Open the library registry window
         libRegistry = LibraryRegistryWindow(
-            parent=self,
-            libraries_dir=Path.cwd().parent  # or any default path
+            parent=self, libraries_dir=Path.cwd().parent  # or any default path
         )
         libRegistry.show()
 

@@ -830,17 +830,41 @@ class displayConfigDialog(QDialog):
 
         self.vLayout.addWidget(self.buttonBox)
         self.setLayout(self.vLayout)
-        self.show()
 
 
-class layoutDisplayConfigDialog(displayConfigDialog):
+
+class layoutDisplayConfigDialog(QDialog):
     def __init__(self, parent):
         super().__init__(parent)
         self.setWindowTitle("Layout Display Options")
+        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+
+        self.buttonBox = QDialogButtonBox(QBtn)
+        self.buttonBox.accepted.connect(self.accept)
+        self.buttonBox.rejected.connect(self.reject)
+        self.vLayout = QVBoxLayout()
+        gridValueGroup = QGroupBox("Grid Values")
+        self.fLayout = QFormLayout()
+        gridValueGroup.setLayout(self.fLayout)
         self.dbuEntry = edf.shortLineEdit()
         self.dbuEntry.setToolTip("Number of points per um")
         self.dbuEntry.setReadOnly(True)
-        self.fLayout.insertRow(0, "Process Points per um:", self.dbuEntry)
+        self.fLayout.addRow("Process Points per um:", self.dbuEntry)
+        self.majorGridEntry = QLineEdit()
+        self.majorGridEntry.setToolTip(
+            "Enter Dot or Line Grid Spacing Value in um"
+        )
+        self.fLayout.addRow("GridSpacing (um):", self.majorGridEntry)
+        self.snapGridEdit = QLineEdit()
+        self.snapGridEdit.setToolTip(
+            "Enter the Snap Grid Value in um"
+        )
+        self.fLayout.addRow("Snap Distance (um):", self.snapGridEdit)
+        self.snapConnectEdit = QLineEdit()
+        self.snapConnectEdit.setToolTip(
+            "Enter the Snap Connect Distance in um for wire/pin endpoint snapping"
+        )
+        self.fLayout.addRow("Snap Connect Distance (um):", self.snapConnectEdit)
         self.lodThresholdEdit = edf.shortLineEdit()
         self.lodThresholdEdit.setToolTip(
             "Level-of-detail threshold for instance simplification when zooming out.\n"
@@ -848,6 +872,28 @@ class layoutDisplayConfigDialog(displayConfigDialog):
             "Typical range: 0.001 – 0.1  (default 0.02)"
         )
         self.fLayout.addRow("Instance LOD Threshold:", self.lodThresholdEdit)
+        gridTypeGroup = QGroupBox("Grid Type")
+        gridTypeLayout = QHBoxLayout()
+        self.dotType = QRadioButton("Dot Grid")
+        self.dotType.setChecked(True)
+        self.dotType.setToolTip("Display grid as dots")
+        self.lineType = QRadioButton("Line Grid")
+        self.lineType.setToolTip("Display grid as lines")
+        self.noType = QRadioButton("No Grid")
+        self.noType.setToolTip("Hide grid")
+        gridTypeLayout.addWidget(self.dotType)
+        gridTypeLayout.addWidget(self.lineType)
+        gridTypeLayout.addWidget(self.noType)
+        gridTypeGroup.setLayout(gridTypeLayout)
+
+        self.vLayout.addWidget(gridValueGroup)
+        self.vLayout.addWidget(gridTypeGroup)
+        self.vLayout.addStretch(1)
+
+        self.vLayout.addWidget(self.buttonBox)
+        self.setLayout(self.vLayout)
+
+
 
 
 class selectConfigDialogue(QDialog):

@@ -11,6 +11,7 @@
 import datetime
 import pathlib
 
+import gdstk
 from PySide6.QtCore import Qt, QDir
 from PySide6.QtGui import QStandardItemModel, QStandardItem
 from PySide6.QtWidgets import (
@@ -59,11 +60,14 @@ class createCellDialog(QDialog):
         self.cellCB = QComboBox()
         libItem = libm.getLibItem(self.model, self.libNamesCB.currentText())
         self.cellList = sorted(
-            [libItem.child(i).cellName for i in range(libItem.rowCount())])
+            [libItem.child(i).cellName for i in range(libItem.rowCount())]
+        )
         self.cellCB.addItems(self.cellList)
         self.cellCB.setEditable(True)
         self.layout.addRow(edf.boldLabel("Cell Name:"), self.cellCB)
-        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        QBtn = (
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
 
         self.buttonBox = QDialogButtonBox(QBtn)
         self.buttonBox.accepted.connect(self.accept)
@@ -73,7 +77,9 @@ class createCellDialog(QDialog):
 
     def selectLibrary(self):
         libItem = libm.getLibItem(self.model, self.libNamesCB.currentText())
-        cellList = sorted([libItem.child(i).cellName for i in range(libItem.rowCount())])
+        cellList = sorted(
+            [libItem.child(i).cellName for i in range(libItem.rowCount())]
+        )
         self.cellCB.clear()
         self.cellCB.addItems(cellList)
 
@@ -150,7 +156,9 @@ class renameCellDialog(QDialog):
         self.nameEdit.setPlaceholderText("Cell Name")
         self.nameEdit.setFixedWidth(200)
         layout.addRow(edf.boldLabel("Cell Name:"), self.nameEdit)
-        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        QBtn = (
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
 
         self.buttonBox = QDialogButtonBox(QBtn)
         self.buttonBox.accepted.connect(self.accept)
@@ -179,7 +187,9 @@ class copyCellDialog(QDialog):
         self.copyName.setPlaceholderText("Enter Cell Name")
         self.copyName.setFixedWidth(130)
         layout.addRow(edf.boldLabel("Cell Name:"), self.copyName)
-        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        QBtn = (
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
 
         self.buttonBox = QDialogButtonBox(QBtn)
         self.buttonBox.accepted.connect(self.accept)
@@ -211,7 +221,9 @@ class closeLibDialog(QDialog):
         super().__init__(parent, *args)
         self.libraryDict = libraryDict
         self.setWindowTitle("Select Library to close")
-        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        QBtn = (
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
 
         self.buttonBox = QDialogButtonBox(QBtn)
         self.buttonBox.accepted.connect(self.accept)
@@ -233,7 +245,9 @@ class renameLibDialog(QDialog):
         super().__init__(parent, *args)
         self.oldLibraryName = oldLibraryName
         self.setWindowTitle(f"Change {oldLibraryName} to:")
-        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        QBtn = (
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
 
         self.buttonBox = QDialogButtonBox(QBtn)
 
@@ -266,7 +280,9 @@ class renameViewDialog(QDialog):
         formLayout.addRow(edf.boldLabel("New View Name:"), self.newViewNameEdit)
         self.layout.addLayout(formLayout)
         self.layout.setSpacing(10)
-        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        QBtn = (
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
 
         self.buttonBox = QDialogButtonBox(QBtn)
         self.buttonBox.accepted.connect(self.accept)
@@ -280,7 +296,9 @@ class deleteSymbolDialog(QDialog):
     def __init__(self, cellName, viewName, *args):
         super().__init__(*args)
         self.setWindowTitle(f"Delete {cellName}-{viewName} CellView?")
-        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        QBtn = (
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
 
         self.buttonBox = QDialogButtonBox(QBtn)
         self.buttonBox.accepted.connect(self.accept)
@@ -299,7 +317,9 @@ class netlistExportDialogue(QDialog):
         self.editorWindow = parent
         self.setWindowTitle(f"Export Netlist for {parent.cellName}-{parent.viewName}")
         # self.setMinimumSize(500, 100)
-        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        QBtn = (
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
 
         self.buttonBox = QDialogButtonBox(QBtn)
         self.buttonBox.accepted.connect(self.accept)
@@ -366,7 +386,9 @@ class layoutExportDialogue(QDialog):
         self.parentW = parentW
         self.export_format = export_format.upper()
         self.setMinimumWidth(500)
-        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        QBtn = (
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
 
         self.buttonBox = QDialogButtonBox(QBtn)
         self.buttonBox.accepted.connect(self.accept)
@@ -381,7 +403,9 @@ class layoutExportDialogue(QDialog):
         self.unitEdit.setToolTip(f"The unit of the {self.export_format} file.")
         settingsBoxLayout.addRow(edf.boldLabel("Unit:"), self.unitEdit)
         self.precisionEdit = edf.shortLineEdit()
-        self.precisionEdit.setToolTip(f"The precision of the {self.export_format} file.")
+        self.precisionEdit.setToolTip(
+            f"The precision of the {self.export_format} file."
+        )
         settingsBoxLayout.addRow(edf.boldLabel("Precision:"), self.precisionEdit)
         self.mainLayout.addWidget(settingsBox)
         fileBox = QGroupBox(f"{self.export_format} Export Directory")
@@ -401,9 +425,7 @@ class layoutExportDialogue(QDialog):
     def onDirButtonClicked(self):
         dirName = QFileDialog.getExistingDirectory()
         if dirName:
-            self.exportPathEdit.setText(
-                f"{dirName}/{self.parentW.cellName}"
-            )
+            self.exportPathEdit.setText(f"{dirName}/{self.parentW.cellName}")
 
 
 class gdsExportDialogue(layoutExportDialogue):
@@ -415,13 +437,16 @@ class oasExportDialogue(layoutExportDialogue):
     def __init__(self, parentW):
         super().__init__(parentW, "OAS")
 
+
 class gdsImportDialogue(QDialog):
     def __init__(self, parent):
         super().__init__(parent)
         self.parent = parent
         self.setWindowTitle(f"Import GDS File")
         self.setMinimumWidth(500)
-        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        QBtn = (
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
 
         self.buttonBox = QDialogButtonBox(QBtn)
         self.buttonBox.accepted.connect(self.accept)
@@ -434,12 +459,22 @@ class gdsImportDialogue(QDialog):
         settingsBox.setLayout(settingsBoxLayout)
         self.libNameEdit = edf.longLineEdit()
         self.libNameEdit.setToolTip("The name of the library to import the GDS into.")
-        settingsBoxLayout.addRow(edf.boldLabel("Import Library Name:"), self.libNameEdit)
+        settingsBoxLayout.addRow(
+            edf.boldLabel("Import Library Name:"), self.libNameEdit
+        )
         self.unitEdit = edf.shortLineEdit()
-        self.unitEdit.setToolTip("The unit of the GDS file.")
+        self.unitEdit.setReadOnly(True)
+        self.unitEdit.setPlaceholderText("Auto-detected from GDS file")
+        self.unitEdit.setToolTip(
+            "The unit of the GDS file (read-only, detected from the selected file)."
+        )
         settingsBoxLayout.addRow(edf.boldLabel("Unit:"), self.unitEdit)
         self.precisionEdit = edf.shortLineEdit()
-        self.precisionEdit.setToolTip("The precision of the GDS file.")
+        self.precisionEdit.setReadOnly(True)
+        self.precisionEdit.setPlaceholderText("Auto-detected from GDS file")
+        self.precisionEdit.setToolTip(
+            "The precision of the GDS file (read-only, detected from the selected file)."
+        )
         settingsBoxLayout.addRow(edf.boldLabel("Precision:"), self.precisionEdit)
         self.mainLayout.addWidget(settingsBox)
         fileBox = QGroupBox("GDS File")
@@ -457,18 +492,29 @@ class gdsImportDialogue(QDialog):
         self.setLayout(self.mainLayout)
 
     def onFileButtonClicked(self):
-        gdsFileName, _ = QFileDialog.getOpenFileName(self, caption="Select GDS file.",
-                                                     filter="GDS files (*.gds)")
-        if gdsFileName:
-            self.inputFileEdit.setText(
-                gdsFileName
+        gdsFileName, _ = QFileDialog.getOpenFileName(
+            self, caption="Select GDS file.", filter="GDS files (*.gds)"
+        )
+        if not gdsFileName:
+            return
+
+        self.inputFileEdit.setText(gdsFileName)
+        try:
+            gds_library = gdstk.read_gds(gdsFileName)
+            self.unitEdit.setText(str(gds_library.unit))
+            self.precisionEdit.setText(str(gds_library.precision))
+        except Exception as e:
+            self.unitEdit.clear()
+            self.precisionEdit.clear()
+            QMessageBox.warning(
+                self, "GDS Read Error", f"Could not read GDS metadata: {e}"
             )
 
 
 class goDownHierDialogue(QDialog):
     def __init__(
-            self,
-            parent,
+        self,
+        parent,
     ):
         super().__init__(parent=parent)
         self._parent = parent
@@ -496,7 +542,9 @@ class goDownHierDialogue(QDialog):
         self.buttonGroup.addButton(self.readOnlyButton, id=2)
         self.buttonGroup.buttonClicked.connect(self.onButtonClicked)
         _mainLayout.addWidget(buttonGroupBox)
-        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        QBtn = (
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
 
         buttonBox = QDialogButtonBox(QBtn)
         buttonBox.accepted.connect(self.accept)
@@ -583,7 +631,7 @@ class importCellDialogue(QDialog):
                     ]
                 except Exception as e:
                     initialCellNames = []
-                    print(f'No libraries could be found.')
+                    print(f"No libraries could be found.")
             else:  # Spice
                 initialCellNames = [
                     self._model.item(0).child(i).cellName
@@ -606,7 +654,9 @@ class importCellDialogue(QDialog):
         mainLayout.addWidget(symbolGroupBox)
         mainLayout.addSpacing(20)
 
-        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        QBtn = (
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
         self.buttonBox = QDialogButtonBox(QBtn)
         self.buttonBox.accepted.connect(self.accept)
         self.buttonBox.rejected.connect(self.reject)
@@ -630,9 +680,7 @@ class importCellDialogue(QDialog):
         fileDialog.setNameFilter(self.file_filter)
         fileDialog.setDirectory(str(filePathObj.parent))
         fileDialog.selectFile(filePathObj.name)
-        fileName = fileDialog.getOpenFileName(
-            self, caption=self.caption
-        )[0]
+        fileName = fileDialog.getOpenFileName(self, caption=self.caption)[0]
         if fileName:
             self.fileEdit.setText(fileName)
 
@@ -654,7 +702,7 @@ class importVerilogaCellDialogue(importCellDialogue):
     @property
     def vaFileName(self):
         """Compatibility property for existing code"""
-        return getattr(self, '_fileName', None)
+        return getattr(self, "_fileName", None)
 
     @vaFileName.setter
     def vaFileName(self, value):
@@ -678,7 +726,7 @@ class importSpiceCellDialogue(importCellDialogue):
     @property
     def spiceFileName(self):
         """Compatibility property for existing code"""
-        return getattr(self, '_fileName', None)
+        return getattr(self, "_fileName", None)
 
     @spiceFileName.setter
     def spiceFileName(self, value):
@@ -740,7 +788,9 @@ class createConfigViewDialogue(QDialog):
         self.stopViews = edf.longLineEdit()
         viewGroupLayout.addRow(edf.boldLabel("Stop List:"), self.stopViews)
         self.mainLayout.addWidget(viewGroup)
-        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        QBtn = (
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
 
         self.buttonBox = QDialogButtonBox(QBtn)
         self.buttonBox.accepted.connect(self.accept)
@@ -808,8 +858,9 @@ class appProperties(QDialog):
         performanceGroup = QGroupBox("Performance Settings")
         performanceLayout = QFormLayout()
         self.threadPoolEdit = edf.shortLineEdit()
-        performanceLayout.addRow(edf.boldLabel("Thread Pool Max Count:"),
-                                 self.threadPoolEdit)
+        performanceLayout.addRow(
+            edf.boldLabel("Thread Pool Max Count:"), self.threadPoolEdit
+        )
         performanceGroup.setLayout(performanceLayout)
         mainLayout.addWidget(performanceGroup)
         saveGroupBox = QGroupBox("Save Options")
@@ -819,7 +870,9 @@ class appProperties(QDialog):
         saveGroupBox.setLayout(saveGBLayout)
         mainLayout.addWidget(saveGroupBox)
         mainLayout.addSpacing(20)
-        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        QBtn = (
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
 
         self.buttonBox = QDialogButtonBox(QBtn)
         self.buttonBox.accepted.connect(self.accept)
@@ -839,7 +892,9 @@ class appProperties(QDialog):
 
     def onSimInpPathButtonClicked(self):
         self.simInpPathEdit.setText(
-            QFileDialog.getExistingDirectory(self, caption="Simulation Inputs (PDK) path:")
+            QFileDialog.getExistingDirectory(
+                self, caption="Simulation Inputs (PDK) path:"
+            )
         )
 
     def onPluginsPathButtonClicked(self):
@@ -928,7 +983,9 @@ class libraryPathEditorDialog(QDialog):
         self.tableView = libraryPathsTableView(self.pathsModel, self.logger)
         self.boxLayout.addWidget(self.tableView)
         self.mainLayout.addWidget(self.pathsBox)
-        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        QBtn = (
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
 
         self.buttonBox = QDialogButtonBox(QBtn)
         self.buttonBox.accepted.connect(self.accept)
@@ -969,7 +1026,9 @@ class klayoutLaypImportDialogue(QDialog):
         mainLayout.addWidget(fileBox)
         mainLayout.addSpacing(20)
 
-        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        QBtn = (
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
 
         self.buttonBox = QDialogButtonBox(QBtn)
         self.buttonBox.accepted.connect(self.accept)
@@ -981,8 +1040,11 @@ class klayoutLaypImportDialogue(QDialog):
         fileDialog = QFileDialog()
         fileDialog.setNameFilter("Layout Properties files (*.lyp)")
         laypFileName = fileDialog.getOpenFileName(
-            self, caption="Select LayoutProperties file.", dir=str(pathlib.Path.cwd()),
-            filter="Layout Properties files (*.lyp)")[0]
+            self,
+            caption="Select LayoutProperties file.",
+            dir=str(pathlib.Path.cwd()),
+            filter="Layout Properties files (*.lyp)",
+        )[0]
         if laypFileName:
             self.laypFileEdit.setText(laypFileName)
 
@@ -1014,7 +1076,9 @@ class klayoutLaytImportDialogue(QDialog):
         fileDialogLayout.addWidget(self.laytFileButton)
         fileBox.setLayout(fileDialogLayout)
         mainLayout.addWidget(fileBox)
-        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        QBtn = (
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
 
         self.buttonBox = QDialogButtonBox(QBtn)
         self.buttonBox.accepted.connect(self.accept)
@@ -1026,8 +1090,11 @@ class klayoutLaytImportDialogue(QDialog):
         fileDialog = QFileDialog()
         fileDialog.setNameFilter("Layout Properties files (*.lyt)")
         laytFileName = fileDialog.getOpenFileName(
-            self, caption="Select LayoutProperties file.", dir=str(pathlib.Path.cwd()),
-            filter="Layout Properties files (*.lyt)")[0]
+            self,
+            caption="Select LayoutProperties file.",
+            dir=str(pathlib.Path.cwd()),
+            filter="Layout Properties files (*.lyt)",
+        )[0]
         if laytFileName:
             self.laytFileEdit.setText(laytFileName)
 
@@ -1052,7 +1119,7 @@ class xschemSymIimportDialogue(QDialog):
         fileDialogLayout.addWidget(self.symFileButton)
         fileBox.setLayout(fileDialogLayout)
         mainLayout.addWidget(fileBox)
-        libraryBox = QGroupBox('Select Library')
+        libraryBox = QGroupBox("Select Library")
         libraryBoxLayout = QFormLayout()
         self.libNamesCB = QComboBox()
         self.libNamesCB.setModel(self.model)
@@ -1061,14 +1128,16 @@ class xschemSymIimportDialogue(QDialog):
         libraryBoxLayout.addRow(edf.boldLabel("Library:"), self.libNamesCB)
         libraryBox.setLayout(libraryBoxLayout)
         mainLayout.addWidget(libraryBox)
-        parameterBox = QGroupBox('Import Parameters')
+        parameterBox = QGroupBox("Import Parameters")
         parameterBoxLayout = QFormLayout()
         self.scaleEdit = edf.longLineEdit()
-        self.scaleEdit.setText('4')
+        self.scaleEdit.setText("4")
         parameterBoxLayout.addRow(edf.boldLabel("Scale Factor"), self.scaleEdit)
         parameterBox.setLayout(parameterBoxLayout)
         mainLayout.addWidget(parameterBox)
-        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        QBtn = (
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
 
         self.buttonBox = QDialogButtonBox(QBtn)
         self.buttonBox.accepted.connect(self.accept)
@@ -1083,7 +1152,7 @@ class xschemSymIimportDialogue(QDialog):
         if fileDialog.exec():
             symFileNames = fileDialog.selectedFiles()
             if symFileNames:
-                self.symFileEdit.setText(', '.join(symFileNames))
+                self.symFileEdit.setText(", ".join(symFileNames))
 
 
 class fileInfoDialogue(QDialog):
@@ -1103,8 +1172,14 @@ class fileInfoDialogue(QDialog):
         layout.addRow("Size:", QLabel(f"{size:,} bytes"))
         layout.addRow("Created:", QLabel(created.strftime("%Y-%m-%d %H:%M:%S")))
         layout.addRow("Modified:", QLabel(modified.strftime("%Y-%m-%d %H:%M:%S")))
-        layout.addRow("Accessed:", QLabel(
-            datetime.datetime.fromtimestamp(stats.st_atime).strftime("%Y-%m-%d %H:%M:%S")))
+        layout.addRow(
+            "Accessed:",
+            QLabel(
+                datetime.datetime.fromtimestamp(stats.st_atime).strftime(
+                    "%Y-%m-%d %H:%M:%S"
+                )
+            ),
+        )
         layout.addRow("Permissions:", QLabel(oct(stats.st_mode)[-3:]))
         # layout.addRow("Owner:", QLabel(str(stats.st_uid)))
         self.buttonBox = QDialogButtonBox(QDialogButtonBox.Ok)
@@ -1246,10 +1321,10 @@ class imageExportDialog(QDialog):
         self.marginSlider.setRange(0, 20)
         self.marginSlider.setValue(5)
         self.marginSlider.valueChanged.connect(self._onMarginChanged)
-        
+
         self.marginLabel = QLabel("5%")
         self.marginLabel.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        
+
         marginLayout.addWidget(self.marginSlider)
         marginLayout.addWidget(self.marginLabel)
         layout.addWidget(marginBox)
@@ -1257,15 +1332,15 @@ class imageExportDialog(QDialog):
         # --- JPEG Quality ---
         self.qualityBox = QGroupBox("JPEG Quality")
         qualityLayout = QVBoxLayout(self.qualityBox)
-        
+
         self.qualitySlider = QSlider(Qt.Orientation.Horizontal)
         self.qualitySlider.setRange(1, 100)
         self.qualitySlider.setValue(85)
         self.qualitySlider.valueChanged.connect(self._onQualityChanged)
-        
+
         self.qualityLabel = QLabel("85")
         self.qualityLabel.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        
+
         qualityLayout.addWidget(self.qualitySlider)
         qualityLayout.addWidget(self.qualityLabel)
         layout.addWidget(self.qualityBox)
@@ -1274,10 +1349,10 @@ class imageExportDialog(QDialog):
         # --- Transparency ---
         self.transBox = QGroupBox("Transparency")
         transLayout = QVBoxLayout(self.transBox)
-        
+
         self.transparentCheck = QCheckBox("Transparent background")
         self.transparentCheck.toggled.connect(self._onTransparentChanged)
-        
+
         transLayout.addWidget(self.transparentCheck)
         layout.addWidget(self.transBox)
         self.transBox.setVisible(False)
@@ -1285,19 +1360,19 @@ class imageExportDialog(QDialog):
         # --- Export Scope ---
         scopeBox = QGroupBox("Export Scope")
         scopeLayout = QVBoxLayout(scopeBox)
-        
+
         self.scopeItemsRadio = QRadioButton("Items bounding rect")
         self.scopeSceneRadio = QRadioButton("Entire scene")
         self.scopeViewportRadio = QRadioButton("Current viewport")
         self.scopeSelectedRadio = QRadioButton("Selected items only")
         self.scopeItemsRadio.setChecked(True)
-        
+
         self.scopeGroup = QButtonGroup(self)
         self.scopeGroup.addButton(self.scopeItemsRadio)
         self.scopeGroup.addButton(self.scopeSceneRadio)
         self.scopeGroup.addButton(self.scopeViewportRadio)
         self.scopeGroup.addButton(self.scopeSelectedRadio)
-        
+
         scopeLayout.addWidget(self.scopeItemsRadio)
         scopeLayout.addWidget(self.scopeSceneRadio)
         scopeLayout.addWidget(self.scopeViewportRadio)
@@ -1307,7 +1382,7 @@ class imageExportDialog(QDialog):
         # --- Grid ---
         gridBox = QGroupBox("Grid")
         gridLayout = QVBoxLayout(gridBox)
-        
+
         self.gridCheck = QCheckBox("Include grid in export")
         gridLayout.addWidget(self.gridCheck)
         layout.addWidget(gridBox)
@@ -1315,15 +1390,15 @@ class imageExportDialog(QDialog):
         # --- Antialiasing ---
         aaBox = QGroupBox("Antialiasing")
         aaLayout = QVBoxLayout(aaBox)
-        
+
         self.aaFastRadio = QRadioButton("Fast")
         self.aaHighRadio = QRadioButton("High quality")
         self.aaHighRadio.setChecked(True)
-        
+
         self.aaGroup = QButtonGroup(self)
         self.aaGroup.addButton(self.aaFastRadio)
         self.aaGroup.addButton(self.aaHighRadio)
-        
+
         aaLayout.addWidget(self.aaFastRadio)
         aaLayout.addWidget(self.aaHighRadio)
         layout.addWidget(aaBox)
@@ -1414,7 +1489,7 @@ class imageExportDialog(QDialog):
             if p.suffix.lower() != suffix:
                 self.fileEdit.setText(str(p.with_suffix(suffix)))
         self.fileEdit.setFocus()
-        
+
         # Show/hide format-specific options
         isJpeg = "JPEG" in filterText
         isRaster = any(f in filterText for f in ("PNG", "JPEG", "BMP", "GIF"))
@@ -1450,10 +1525,13 @@ class imageExportDialog(QDialog):
 
     def _chooseBackgroundColor(self):
         from PySide6.QtWidgets import QColorDialog
+
         color = QColorDialog.getColor()
         if color.isValid():
             self._backgroundColor = color.name()
-            self.bgColorButton.setStyleSheet(f"background-color: {self._backgroundColor}")
+            self.bgColorButton.setStyleSheet(
+                f"background-color: {self._backgroundColor}"
+            )
 
     def _browse(self):
         fdlg = QFileDialog(self, caption="Select or create an image file")

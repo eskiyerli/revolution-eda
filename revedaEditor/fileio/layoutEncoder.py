@@ -31,26 +31,43 @@ def _pcell_parameter_names(pcell_type: type) -> tuple[str, ...]:
 
 
 class layoutEncoder(json.JSONEncoder):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        # Pre-build a type -> encoder map for the common concrete shape classes.
+        # Exact-type lookup is faster than an isinstance chain for large layouts.
+        self._encoders = {
+            lshp.layoutPcell: self._encodePcell,
+            lshp.layoutInstance: self._encodeLayoutInstance,
+            lshp.layoutRect: self._encodeLayoutRect,
+            lshp.layoutPath: self._encodeLayoutPath,
+            lshp.layoutViaArray: self._encodeLayoutViaArray,
+            lshp.layoutPin: self._encodeLayoutPin,
+            lshp.layoutLabel: self._encodeLayoutLabel,
+            lshp.layoutPolygon: self._encodeLayoutPolygon,
+            lshp.layoutRuler: self._encodeLayoutRuler,
+        }
+        # Resolve the layer list at encode time and key it by
+        # (name, purpose) rather than object id: after a runtime PDK switch
+        # the layoutLayers module is re-imported, so shapes may hold layLayer
+        # objects from a different module instance than the one bound here.
+        layers = importPDKModule("layoutLayers").pdkAllLayers
+        self._layerIndex = {
+            (layer.name, layer.purpose): i for i, layer in enumerate(layers)
+        }
+
+    def _layerIndexFor(self, layer) -> int:
+        return self._layerIndex[(layer.name, layer.purpose)]
+
     def default(self, item: Any) -> Dict[str, Any]:
+        encoder = self._encoders.get(type(item))
+        if encoder is not None:
+            return encoder(item)
+        # layoutPcell is a subclass of layoutInstance; handle subclasses that
+        # are not in the exact-type map.
         if isinstance(item, lshp.layoutPcell):
             return self._encodePcell(item)
-        elif isinstance(item, lshp.layoutInstance):
+        if isinstance(item, lshp.layoutInstance):
             return self._encodeLayoutInstance(item)
-        elif isinstance(item, lshp.layoutRect):
-            return self._encodeLayoutRect(item)
-        elif isinstance(item, lshp.layoutPath):
-            return self._encodeLayoutPath(item)
-        elif isinstance(item, lshp.layoutViaArray):
-            return self._encodeLayoutViaArray(item)
-        elif isinstance(item, lshp.layoutPin):
-            return self._encodeLayoutPin(item)
-        elif isinstance(item, lshp.layoutLabel):
-            return self._encodeLayoutLabel(item)
-        elif isinstance(item, lshp.layoutPolygon):
-            return self._encodeLayoutPolygon(item)
-        elif isinstance(item, lshp.layoutRuler):
-            return self._encodeLayoutRuler(item)
-
         return super().default(item)
 
     def _encodeLayoutInstance(self, item: lshp.layoutInstance) -> Dict[str, Any]:
@@ -61,7 +78,11 @@ class layoutEncoder(json.JSONEncoder):
             "view": item.viewName,
             "nam": item.instanceName,
             "ic": item.counter,
-            "loc": item.scenePos().toTuple(),
+            # ``pos`` is the parent-coordinate translation consumed by
+            # the instance/PCell loaders.  ``scenePos`` includes this item's
+            # rotation/flip about ``top`` and would be applied a second time
+            # after reload, moving the instance on every save/load cycle.
+            "loc": item.pos().toTuple(),
             "top": item.transformOriginPoint().toTuple(),
             "ang": item.angle,
             "fl": item.flipTuple,
@@ -78,24 +99,26 @@ class layoutEncoder(json.JSONEncoder):
         # (pos() + local): the loader rebuilds the shape with pos()=0, so the
         # transform origin (which lives in item-local coordinates) must be
         # shifted by pos() to stay at the same scene pivot.
+        pos = item.pos()
         return {
             "type": "Rect",
-            "tl": (item.pos() + item.rect.topLeft()).toTuple(),
-            "br": (item.pos() + item.rect.bottomRight()).toTuple(),
-            "top": (item.pos() + item.transformOriginPoint()).toTuple(),
+            "tl": (pos + item.rect.topLeft()).toTuple(),
+            "br": (pos + item.rect.bottomRight()).toTuple(),
+            "top": (pos + item.transformOriginPoint()).toTuple(),
             "ang": item.angle,
-            "ln": laylyr.pdkAllLayers.index(item.layer),
+            "ln": self._layerIndexFor(item.layer),
             "fl": item.flipTuple,
         }
 
     def _encodeLayoutPath(self, item: lshp.layoutPath) -> Dict[str, Any]:
         # Rotation/flip-neutral geometry; see _encodeLayoutRect.
+        pos = item.pos()
         return {
             "type": "Path",
-            "dfl1": (item.pos() + item.draftLine.p1()).toTuple(),
-            "dfl2": (item.pos() + item.draftLine.p2()).toTuple(),
-            "top": (item.pos() + item.transformOriginPoint()).toTuple(),
-            "ln": laylyr.pdkAllLayers.index(item.layer),
+            "dfl1": (pos + item.draftLine.p1()).toTuple(),
+            "dfl2": (pos + item.draftLine.p2()).toTuple(),
+            "top": (pos + item.transformOriginPoint()).toTuple(),
+            "ln": self._layerIndexFor(item.layer),
             "w": item.width,
             "se": item.startExtend,
             "ee": item.endExtend,
@@ -132,24 +155,25 @@ class layoutEncoder(json.JSONEncoder):
             "ys": item.ys,
             "xn": item.xnum,
             "yn": item.ynum,
-            # Keep the local origin at zero; the first-cut anchor and transform
-            # fields fully describe the array's placement.
-            "top": (0, 0),
+            # Keep the custom local pivot so rotation/flip continue to use the
+            # same center after the array is rebuilt from its canonical origin.
+            "top": item.transformOriginPoint().toTuple(),
             "ang": item.angle,
             "fl": item.flipTuple,
         }
 
     def _encodeLayoutPin(self, item: lshp.layoutPin) -> Dict[str, Any]:
         # Rotation/flip-neutral geometry; see _encodeLayoutRect.
+        pos = item.pos()
         return {
             "type": "Pin",
-            "tl": (item.pos() + item.rect.topLeft()).toTuple(),
-            "br": (item.pos() + item.rect.bottomRight()).toTuple(),
-            "top": (item.pos() + item.transformOriginPoint()).toTuple(),
+            "tl": (pos + item.rect.topLeft()).toTuple(),
+            "br": (pos + item.rect.bottomRight()).toTuple(),
+            "top": (pos + item.transformOriginPoint()).toTuple(),
             "pn": item.pinName,
             "pd": item.pinDir,
             "pt": item.pinType,
-            "ln": laylyr.pdkAllLayers.index(item.layer),
+            "ln": self._layerIndexFor(item.layer),
             "ang": item.angle,
             "fl": item.flipTuple,
         }
@@ -159,9 +183,10 @@ class layoutEncoder(json.JSONEncoder):
         # the generic rotate path, so only the anchor is stored pos-folded; the
         # loader recreates orientation from labelOrient instead of re-applying
         # generic ang/fl.
+        pos = item.pos()
         return {
             "type": "Label",
-            "st": (item.pos() + item.start).toTuple(),
+            "st": (pos + item.start).toTuple(),
             "lt": item.labelText,
             "ff": item.fontFamily,
             "fs": item.fontStyle,
@@ -170,27 +195,29 @@ class layoutEncoder(json.JSONEncoder):
             "lo": item.labelOrient,
             "ang": item.angle,
             "fl": item.flipTuple,
-            "ln": laylyr.pdkAllLayers.index(item.layer),
+            "ln": self._layerIndexFor(item.layer),
         }
 
     def _encodeLayoutPolygon(self, item: lshp.layoutPolygon) -> Dict[str, Any]:
         # Rotation/flip-neutral geometry; see _encodeLayoutRect.
+        pos = item.pos()
         return {
             "type": "Polygon",
-            "ps": [(item.pos() + point).toTuple() for point in item.points],
-            "top": (item.pos() + item.transformOriginPoint()).toTuple(),
-            "ln": laylyr.pdkAllLayers.index(item.layer),
+            "ps": [(pos + point).toTuple() for point in item.points],
+            "top": (pos + item.transformOriginPoint()).toTuple(),
+            "ln": self._layerIndexFor(item.layer),
             "ang": item.angle,
             "fl": item.flipTuple,
         }
 
     def _encodeLayoutRuler(self, item: lshp.layoutRuler) -> Dict[str, Any]:
         # Rotation/flip-neutral geometry; see _encodeLayoutRect.
+        pos = item.pos()
         return {
             "type": "Ruler",
-            "dfl1": (item.pos() + item.draftLine.p1()).toTuple(),
-            "dfl2": (item.pos() + item.draftLine.p2()).toTuple(),
-            "top": (item.pos() + item.transformOriginPoint()).toTuple(),
+            "dfl1": (pos + item.draftLine.p1()).toTuple(),
+            "dfl2": (pos + item.draftLine.p2()).toTuple(),
+            "top": (pos + item.transformOriginPoint()).toTuple(),
             "md": item.mode,
             "ang": item.angle,
             "fl": item.flipTuple,
@@ -209,7 +236,11 @@ class layoutEncoder(json.JSONEncoder):
             "view": item.viewName,
             "nam": item.instanceName,
             "ic": item.counter,
-            "loc": item.scenePos().toTuple(),
+            # ``pos`` is the parent-coordinate translation consumed by
+            # the instance/PCell loaders.  ``scenePos`` includes this item's
+            # rotation/flip about ``top`` and would be applied a second time
+            # after reload, moving the instance on every save/load cycle.
+            "loc": item.pos().toTuple(),
             "top": item.transformOriginPoint().toTuple(),
             "ang": item.angle,
             "fl": item.flipTuple,

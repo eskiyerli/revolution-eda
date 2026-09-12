@@ -537,7 +537,9 @@ class xyceNetlist:
             if cellItem:
                 cellPath = cellItem.data(Qt.ItemDataRole.UserRole + 2)
                 if cellPath:
-                    incFileName = f"{elementSymbol.cellName}.sp"
+                    incFileName = elementSymbol.symattrs.get(
+                        "SpiceIncludeLine", f"{elementSymbol.cellName}.sp"
+                    ).strip()
                     incFilePath = pathlib.Path(cellPath) / incFileName
                     self.includeLines.add(f'.INC "{incFilePath}"')
                 else:

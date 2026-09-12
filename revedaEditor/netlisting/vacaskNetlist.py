@@ -324,6 +324,10 @@ class vacaskNetlist:
                 elif "veriloga" in netlistView:
                     lines = self.createVerilogaLine(elementSymbol)
                     content.extend(lines if isinstance(lines, list) else [lines])
+                elif "vacask" in netlistView:
+                    lines = self.createVacaskSymbolLine(elementSymbol)
+                    content.extend(lines if isinstance(lines, list) else [lines])
+                    self._collectModelLoadInfo(elementSymbol)
             elif elementSymbol.netlistIgnore:
                 content.append(
                     f"// {elementSymbol.instanceName} is marked to be ignored"
@@ -465,6 +469,16 @@ class vacaskNetlist:
             modelLine = elementSymbol.symattrs.get("VacaskModelLine")
             if modelLine:
                 self.modelLines.add(modelLine.strip())
+
+        vacaskIncludeFile = elementSymbol.symattrs.get("VacaskIncludeFile")
+        if vacaskIncludeFile:
+            cellItem = self._getCellItem(
+                elementSymbol.libraryName, elementSymbol.cellName
+            )
+            if cellItem is not None:
+                vacaskFileName = vacaskIncludeFile.strip().replace("\\", "/")
+                incFilePath = pathlib.Path(cellItem.cellPath) / vacaskFileName
+                self.includeLines.add(f'include "{incFilePath.as_posix()}"')
 
         if not skipLoadFile:
             loadFile = elementSymbol.symattrs.get("VacaskLoadFile")
@@ -659,6 +673,11 @@ class vacaskNetlist:
             verilogaLines = self.createVerilogaLine(elementSymbol)
             for line in verilogaLines:
                 cirFile.write(f"{line}\n")
+        elif "vacask" in netlistView:
+            vacaskLines = self.createVacaskSymbolLine(elementSymbol)
+            for line in vacaskLines:
+                cirFile.write(f"{line}\n")
+            self._collectModelLoadInfo(elementSymbol)
 
     def _createNetlistLine(
         self,

@@ -14,7 +14,7 @@ from contextlib import contextmanager
 from itertools import cycle
 from typing import TYPE_CHECKING, Any, List, Optional, Union
 
-from PySide6.QtCore import (QEvent, QPoint, QRectF, QSizeF, Qt, QRect)
+from PySide6.QtCore import (QEvent, QPoint, QPointF, QRectF, QSizeF, Qt, QRect)
 from PySide6.QtGui import QColor, QGuiApplication, QPainterPath, QPen, QTransform
 from PySide6.QtWidgets import (QApplication, QCompleter, QDialog, QGraphicsItem,
                                QGraphicsRectItem, QGraphicsScene, QMenu, )
@@ -100,9 +100,7 @@ class editorScene(QGraphicsScene):
         self.readOnly = False
         self.installEventFilter(self)
         self.setMinimumRenderSize(0)
-        self._initialGroupPosList = []
-        self._initialGroupPos = QPoint(0, 0)
-        self._finalGroupPosDiff = QPoint(0, 0)
+        self._initialGroupPos = QPointF(0, 0)
         self.itemCycler = None
         self.mousePressLoc = QPoint(0, 0)
         self.mouseMoveLoc = QPoint(0, 0)
@@ -136,26 +134,18 @@ class editorScene(QGraphicsScene):
                         self.itemCycler = cycle(self.itemsAtPressSet)
                         item = next(self.itemCycler)
                         if modifiers == Qt.KeyboardModifier.ShiftModifier:
-                            # Add to selection - don't call super to avoid clearing
-                            self.selectedItemsSet |= {item}
-                            item.setSelected(True)
+                            self.setSelectedItems(self.selectedItemsSet | {item})
                             event.accept()
                             return
                         elif modifiers == Qt.KeyboardModifier.ControlModifier:
-                            # Toggle selection
                             if item in self.selectedItemsSet:
-                                self.selectedItemsSet.remove(item)
-                                item.setSelected(False)
+                                self.setSelectedItems(self.selectedItemsSet - {item})
                             else:
-                                self.selectedItemsSet.add(item)
-                                item.setSelected(True)
+                                self.setSelectedItems(self.selectedItemsSet | {item})
                             event.accept()
                             return
                         elif modifiers == Qt.KeyboardModifier.NoModifier:
-                            # Single selection - clear others
-                            self.clearSelection()
-                            self.selectedItemsSet = {item}
-                            item.setSelected(True)
+                            self.setSelectedItems({item})
                 elif self.selectionRectItem is None:
                     # Starting rubber band selection
                     self.selectionRectItem = QGraphicsRectItem(self.mousePressLoc.x(),
@@ -176,17 +166,20 @@ class editorScene(QGraphicsScene):
                         while clickedItem.parentItem() is not None:
                             clickedItem = clickedItem.parentItem()
                     if clickedItem:
-                        self.clearSelection()
-                        self.selectedItemsSet = {clickedItem}
-                        clickedItem.setSelected(True)
+                        self.setSelectedItems({clickedItem})
                 # Create move group from selected items
                 if self.selectedItems():
+                    # Record each item's pre-group pos()/transform(). Qt's
+                    # createItemGroup()/destroyItemGroup() preserve the scene
+                    # position of transformed children by folding the
+                    # transform-origin offset into pos() and transform(), which
+                    # would corrupt the pos-folded coordinates saved to JSON.
+                    for item in self.selectedItems():
+                        item._groupInitialState = (item.pos(), item.transform())
                     self.selectedItemGroup = self.createItemGroup(self.selectedItems())
-                    self._initialGroupPos = self.selectedItemGroup.pos().toPoint()
-                    self._initialGroupPosList = []
+                    self._initialGroupPos = self.selectedItemGroup.pos()
                     for item in self.selectedItemGroup.childItems():
                         item.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, False)
-                        self._initialGroupPosList.append(item.scenePos().toPoint())
                     event.accept()
                     return
             elif self.editModes.panView:
@@ -263,25 +256,44 @@ class editorScene(QGraphicsScene):
 
         if (self.editModes.moveItem or self.editModes.constrainedMoveItem) and self.selectedItemGroup:
             _groupItems = self.selectedItemGroup.childItems()
-            # Calculate final scene positions before destroying group
-            _finalGroupPosList = [item.scenePos().toPoint() for item in _groupItems]
-            _posDiff = [finalPos - initPos for finalPos, initPos in zip(_finalGroupPosList, self._initialGroupPosList)]
+            # The group pos is the rigid move delta applied to all children.
+            _posDiff = self.selectedItemGroup.pos() - self._initialGroupPos
+            _initialStates = [
+                getattr(item, '_groupInitialState', None) for item in _groupItems
+            ]
 
             self.destroyItemGroup(self.selectedItemGroup)
             self.selectedItemGroup = None
 
-            # Use the actual position difference for each item
-            if _posDiff and _posDiff[0] != QPoint(0, 0):
-                self.undoGroupMoveStack(_groupItems, self._initialGroupPosList, _posDiff[0])
+            # createItemGroup()/destroyItemGroup() preserve the scene position
+            # of transformed children by folding the origin offset into pos()
+            # and transform(). Restore the pre-group state plus the move delta
+            # so the file encoders see a clean parent-coordinate translation.
+            for item, state in zip(_groupItems, _initialStates):
+                if state is not None:
+                    item.setTransform(state[1])
+                    item.setPos(state[0] + _posDiff)
+                    del item._groupInitialState
 
-            [item.setSelected(False) for item in _groupItems]
+            if _posDiff != QPointF(0, 0):
+                self.undoGroupMoveStack(_groupItems, _initialStates, _posDiff)
+
+            self.setSelectedItems(set())
             self.editModes.setMode("selectItem")
         elif self.editModes.copyItem and self.selectedItemGroup:
             _groupItems = self.selectedItemGroup.childItems()
+            # Copy groups are created by the scene-specific copySelectedItems()
+            # methods, which also record _groupInitialState.
+            _posDiff = self.selectedItemGroup.pos() - self._initialGroupPos
             self.destroyItemGroup(self.selectedItemGroup)
             self.selectedItemGroup = None
             for item in _groupItems:
                 item.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
+                state = getattr(item, '_groupInitialState', None)
+                if state is not None:
+                    item.setTransform(state[1])
+                    item.setPos(state[0] + _posDiff)
+                    del item._groupInitialState
             self.editModes.setMode("selectItem")
         elif self.editModes.selectItem:
             if self.selectionRectItem:
@@ -294,15 +306,14 @@ class editorScene(QGraphicsScene):
                      item.parentItem() is None])
                 itemsInRectSet = self._filterBySelectModes(itemsInRectSet)
                 if modifiers == Qt.KeyboardModifier.ShiftModifier:
-                    self.selectedItemsSet |= itemsInRectSet
+                    selectedItems = self.selectedItemsSet | itemsInRectSet
                 elif modifiers == Qt.KeyboardModifier.ControlModifier:
-                    for item in itemsInRectSet:
-                        item.setSelected(False)
-                    self.selectedItemsSet -= itemsInRectSet
+                    selectedItems = self.selectedItemsSet ^ itemsInRectSet
                 elif modifiers == Qt.KeyboardModifier.NoModifier:
-                    self.selectedItemsSet = itemsInRectSet
-                for item in self.selectedItemsSet:
-                    item.setSelected(True)
+                    selectedItems = itemsInRectSet
+                else:
+                    selectedItems = self.selectedItemsSet
+                self.setSelectedItems(selectedItems)
                 self.removeItem(self.selectionRectItem)
                 self.selectionRectItem = None
             elif not self.itemsAtPressSet:
@@ -331,11 +342,23 @@ class editorScene(QGraphicsScene):
         """
         return items
 
+    def setSelectedItems(self, items: set[QGraphicsItem]) -> None:
+        """Synchronize the scene's selection set with Qt item selection."""
+        for item in self.selectedItems():
+            item.setSelected(False)
+        for item in items:
+            item.setSelected(True)
+        self.selectedItemsSet = set(self.selectedItems())
+
     def snapToGrid(self, point: QPoint) -> QPoint:
         """Snap point to scene grid."""
         xgrid = self.snapTuple[0]
         ygrid = self.snapTuple[1]
-        return QPoint(round(point.x() / xgrid) * xgrid, round(point.y() / ygrid) * ygrid)
+        # Final round() ensures QPoint receives ints even when grid is a float.
+        return QPoint(
+            round(round(point.x() / xgrid) * xgrid),
+            round(round(point.y() / ygrid) * ygrid),
+        )
 
     def _snapPoint(self, pos: QPoint) -> QPoint:
         """
@@ -401,16 +424,13 @@ class editorScene(QGraphicsScene):
         """
         Select all items in the scene.
         """
-        [item.setSelected(True) for item in self.items()]
+        self.setSelectedItems(set(self.items()))
 
     def deselectAll(self) -> None:
         """
         Deselect all items in the scene.
         """
-        for item in self.selectedItems():
-            item.setSelected(False)
-        self.clearSelection()
-        self.selectedItemsSet.clear()
+        self.setSelectedItems(set())
         self.itemsAtPressSet.clear()
         self.selectionRectItem = None
         self.zoomRectItem = None
@@ -438,12 +458,13 @@ class editorScene(QGraphicsScene):
             if hasattr(item, "stretch"):
                 item.stretch = True
 
-    def reloadScene(self) -> None:
-        """Reload scene with proper painter state management."""
-        self._safeLoadDesign(self.editorWindow.file, reload=True)
+    def reloadScene(self) -> bool:
+        """Reload the current file and report whether its scene was realized."""
+        return self._safeLoadDesign(self.editorWindow.file, reload=True)
 
-    def _safeLoadDesign(self, file, reload=False):
-        """Safely load design with painter error prevention."""
+    def _safeLoadDesign(self, file, reload=False) -> bool:
+        """Safely load a design while avoiding painter-state errors."""
+        loaded = False
         # Disable all updates and painting
         for view in self.views():
             view.setUpdatesEnabled(False)
@@ -455,21 +476,21 @@ class editorScene(QGraphicsScene):
             if reload:
                 self.clear()
 
-            # Call subclass-specific loadDesign
-            self.loadDesign(file)
-
-            # Update scene rect after loading
-            if self.items():
+            # Concrete scenes return True only after successful reconstruction.
+            loaded = bool(self.loadDesign(file))
+            if loaded and self.items():
                 self.setSceneRect(self.itemsBoundingRect())
-
+        except Exception as error:
+            self.logger.error("Error reloading design scene: %s", error)
+            loaded = False
         finally:
             self.blockSignals(False)
             for view in self.views():
                 view.setUpdatesEnabled(True)
                 view.viewport().setUpdatesEnabled(True)
-
-            # Single deferred update
             QApplication.processEvents()
+
+        return loaded
 
     def loadDesign(self, filePathObj: pathlib.Path):
         """
@@ -623,9 +644,9 @@ class editorScene(QGraphicsScene):
             # No constraint
             return offset
 
-    def undoGroupMoveStack(self, items: List[QGraphicsItem], startPos: List[QPoint],
-                           endPos: QPoint) -> None:
-        undoCommand = us.undoGroupMove(self, items, startPos, endPos)
+    def undoGroupMoveStack(self, items: List[QGraphicsItem],
+                           initialStates: List, posDiff: QPointF) -> None:
+        undoCommand = us.undoGroupMove(self, items, initialStates, posDiff)
         self.undoStack.push(undoCommand)
 
     def addUndoMacroStack(self, undoCommands: list, macroName: str = "Macro"):

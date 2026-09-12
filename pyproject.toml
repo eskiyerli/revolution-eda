@@ -49,6 +49,7 @@ exclude = [
 python = ">=3.12,<3.15"
 jsonschema = "^4.23.0"
 anthropic = "^0.75.0"
+openai = "3.8.0"
 google-generativeai = "^0.8.5"
 PySide6 = "~6.11.1"
 quantiphy = "~2.21"
@@ -62,6 +63,7 @@ orjson = "^3.11.9"
 httpx = "^0.28.1"
 cryptography = "^48.0.1"
 pyqtgraph = "~0.14.0"
+google-genai = "^1.74.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "~8.4.1"
@@ -69,8 +71,6 @@ black = "~25.9.0"
 nuitka = "^4.0"
 hypothesis = "^6.155.1"
 anthropic = "^0.75.0"
-google-genai = "^1.74.0"
-mistralai = "^1.12.4"
 
 [tool.poetry.scripts]
 reveda = "reveda:main"

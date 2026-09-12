@@ -89,9 +89,9 @@ class libraryBrowser(QMainWindow):
         #     pass
         self.helpMenu = self.browserMenubar.addMenu("&Help")
         # Call plugin hook after menus exist so plugins can augment menus
-        if hasattr(self._app, 'applyPluginMenus'):
+        if hasattr(self._app, 'pluginsObj') and hasattr(self._app.pluginsObj, 'applyPluginMenus'):
             try:
-                self._app.applyPluginMenus(self)
+                self._app.pluginsObj.applyPluginMenus(self)
             except Exception:
                 self.logger.exception('applyPluginMenus failed')
 

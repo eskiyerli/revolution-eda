@@ -209,7 +209,7 @@ class spiceC:
         )
         name = self.subcktParams.get("name", "")
         if instParamString.strip():
-            self._netlistLine = f'X@instName %pinOrder {name} PARAM: {instParamString}'
+            self._netlistLine = f'X@instName %pinOrder {name} PARAMS: {instParamString}'
         else:
             self._netlistLine = f'X@instName %pinOrder {name}'
         return self._netlistLine
@@ -244,9 +244,9 @@ class spiceC:
             self._pinOrder = ""
             return subcktDict
         subcktDict["name"] = tokens[1]
-        cap = subcktLine.upper()
-        if 'PARAM:' in cap:
-            param_index = cap.split().index('PARAM:')
+        tokens_upper = [t.upper() for t in tokens]
+        if any(t.startswith('PARAM') for t in tokens_upper):
+            param_index = next(i for i, t in enumerate(tokens_upper) if t.startswith('PARAM'))
             subcktDict['pins'] = tokens[2:param_index]
             params_tokens = tokens[param_index+1:]
             params_string = ' '.join(params_tokens)

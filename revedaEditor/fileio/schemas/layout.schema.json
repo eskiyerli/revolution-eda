@@ -111,11 +111,12 @@
         "type": { "const": "Path" },
         "dfl1": { "$ref": "#/$defs/point" },
         "dfl2": { "$ref": "#/$defs/point" },
+        "top": { "$ref": "#/$defs/point" },
         "ln": { "type": "integer", "minimum": 0 },
         "w": { "type": "number" },
         "se": { "type": "number" },
         "ee": { "type": "number" },
-        "md": { "type": "string" },
+        "md": { "enum": [0, 1, 2, 3, 4] },
         "nam": { "type": "string" },
         "ang": { "type": "number" },
         "fl": { "$ref": "#/$defs/flipTuple" }
@@ -158,7 +159,15 @@
         "lt": { "type": "string" },
         "ff": { "type": "string" },
         "fs": { "type": "string" },
-        "fh": { "type": ["number", "integer"] },
+        "fh": {
+          "oneOf": [
+            { "type": "number" },
+            {
+              "type": "string",
+              "pattern": "^[+-]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][+-]?\\d+)?$"
+            }
+          ]
+        },
         "la": { "type": "string" },
         "lo": { "type": "string" },
         "ln": { "type": "integer", "minimum": 0 },

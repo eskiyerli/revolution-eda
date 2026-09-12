@@ -19,8 +19,8 @@ laylyr = importPDKModule("layoutLayers")
 
 # common process parameters
 dbu = 1000  # distance between two points, 1um/1000=1n
-snapGrid = 50  # 50nm
-majorGrid = 100  # 100nm
+snapGrid = 0.05  # 0.05 um
+majorGrid = 0.1  # 0.1 um
 layoutScaler = 1e6 * dbu
 gdsUnit = Quantity("1 um")
 gdsPrecision = Quantity("1 nm")

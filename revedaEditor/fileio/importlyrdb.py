@@ -14,6 +14,7 @@ from PySide6.QtCore import (
 from PySide6.QtGui import QPolygonF, QPen, QColor
 
 from PySide6.QtWidgets import (
+    QGraphicsItem,
     QGraphicsPolygonItem,
 )
 from lxml import etree
@@ -29,6 +30,11 @@ class DRCErrorPolygon(QGraphicsPolygonItem):
         # self.setBrush(QBrush(QColor(255, 0, 0, 100)))
         self.setZValue(100)
         self.setPen(QPen(QColor(255, 0, 0), 20, Qt.PenStyle.DashLine))
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, False)
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, False)
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsFocusable, False)
+        self.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
+        self.drcError = True
         self._errorCategory = ""
         self._cell = ""
 

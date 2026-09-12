@@ -10,9 +10,9 @@
 ##
 
 
-from typing import List, Tuple, Union
+from typing import Callable, List, Tuple, Union
 
-from PySide6.QtCore import QPoint
+from PySide6.QtCore import QPoint, QPointF
 from PySide6.QtGui import QUndoCommand, QUndoStack
 from PySide6.QtWidgets import QGraphicsItem, QGraphicsScene
 
@@ -288,19 +288,74 @@ class undoStretchShape(QUndoCommand):
 
 
 class undoGroupMove(QUndoCommand):
-    def __init__(self, scene, items: List, oldPosList: List[QPoint],
-                 posDiff: QPoint):
+    def __init__(self, scene, items: List, initialStates: List, posDiff: QPointF):
         super().__init__()
         self.scene = scene
         self.items = items
-        self.oldPosList = oldPosList
+        # initialStates are the pre-group (pos(), transform()) pairs captured
+        # by editorScene before createItemGroup. Group reparenting preserves
+        # the scene position of transformed children by folding the
+        # transform-origin offset into pos() and transform(), so restoring
+        # both is required to keep the move undoable and the saved JSON clean.
+        self.initialStates = initialStates
         self.posDiff = posDiff
         self.setText("Undo Group Move")
 
     def redo(self):
-        for item, oldPos in zip(self.items, self.oldPosList):
-            item.setPos(oldPos + self.posDiff)
+        for item, state in zip(self.items, self.initialStates):
+            if state is None:
+                continue
+            item.setTransform(state[1])
+            item.setPos(state[0] + self.posDiff)
 
     def undo(self):
-        for item, oldPos in zip(self.items, self.oldPosList):
-            item.setPos(oldPos)
+        for item, state in zip(self.items, self.initialStates):
+            if state is None:
+                continue
+            item.setTransform(state[1])
+            item.setPos(state[0])
+
+
+class replaceDesignSnapshotUndo(QUndoCommand):
+    """Undo command that applies complete persisted-design snapshots.
+
+    The callback is owned by the editor UI thread. It must atomically persist a
+    snapshot and reload its scene, returning ``True`` only when realization
+    succeeds. A failed apply is immediately recovered with the opposite snapshot.
+    """
+
+    def __init__(
+        self,
+        before_snapshot: bytes,
+        after_snapshot: bytes,
+        apply_snapshot: Callable[[bytes], bool],
+    ):
+        super().__init__("Apply AI modification")
+        self._before_snapshot = before_snapshot
+        self._after_snapshot = after_snapshot
+        self._apply_snapshot = apply_snapshot
+        self.lastSuccess = False
+        self.lastError = ""
+
+    def _apply(self, target: bytes, recovery: bytes) -> None:
+        try:
+            self.lastSuccess = bool(self._apply_snapshot(target))
+        except Exception as error:
+            self.lastSuccess = False
+            self.lastError = str(error)
+        else:
+            if self.lastSuccess:
+                self.lastError = ""
+                return
+            self.lastError = "The editor could not reload the design snapshot."
+
+        try:
+            self._apply_snapshot(recovery)
+        except Exception as recovery_error:
+            self.lastError = f"{self.lastError} Recovery failed: {recovery_error}"
+
+    def undo(self) -> None:
+        self._apply(self._before_snapshot, self._after_snapshot)
+
+    def redo(self) -> None:
+        self._apply(self._after_snapshot, self._before_snapshot)

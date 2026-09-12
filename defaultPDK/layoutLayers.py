@@ -318,4 +318,6 @@ pdkTextLayers = [
     m1layer_txt,
     m2Layer_txt,
 ]
+# The default PDK has no dedicated label layers; text layers serve both roles.
+pdkLabelLayers = pdkTextLayers
 pdkAllLayers = pdkDrawingLayers + pdkPinLayers + pdkTextLayers + pdkViaLayers

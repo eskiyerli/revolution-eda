@@ -154,24 +154,49 @@ class pdkConfig:
                 if not callback:
                     continue
 
-                # Find target menu and add action
+                # Find target menu and add action. "menu" may be a path such
+                # as "Edit/Guard Ring": the first segment must match a
+                # top-level menu, intermediate segments are found or created
+                # as submenus.
                 if hasattr(editorWindow, menuItem['location']):
+                    menuPath = [
+                        name.strip()
+                        for name in menuItem["menu"].split("/")
+                        if name.strip()
+                    ]
+                    targetMenu = None
                     for action in editorWindow.menuBar().actions():
-                        if action.text().replace('&', '') == menuItem["menu"]:
-                            new_action = QAction(menuItem["action"], editorWindow)
-                            if "text" in menuItem:
-                                new_action.setText(menuItem["text"])
-                            if "icon" in menuItem:
-                                new_action.setIcon(QIcon(menuItem["icon"]))
-                            if "shortcut" in menuItem:
-                                new_action.setShortcut(menuItem["shortcut"])
-                            if "checked" in menuItem:
-                                new_action.setCheckable(True)
-                                new_action.setChecked(menuItem["checked"])
-                            new_action.triggered.connect(lambda c=False, cb=callback: cb(
-                                editorWindow))
-                            action.menu().addAction(new_action)
+                        if action.text().replace('&', '') == menuPath[0]:
+                            targetMenu = action.menu()
                             break
+                    if targetMenu is None:
+                        continue
+                    for subMenuName in menuPath[1:]:
+                        subMenu = next(
+                            (
+                                subAction.menu()
+                                for subAction in targetMenu.actions()
+                                if subAction.menu() is not None
+                                and subAction.text().replace('&', '') == subMenuName
+                            ),
+                            None,
+                        )
+                        if subMenu is None:
+                            subMenu = targetMenu.addMenu(subMenuName)
+                        targetMenu = subMenu
+                    new_action = QAction(menuItem["action"], editorWindow)
+                    if "text" in menuItem:
+                        new_action.setText(menuItem["text"])
+                    if "icon" in menuItem:
+                        new_action.setIcon(QIcon(menuItem["icon"]))
+                    if "shortcut" in menuItem:
+                        new_action.setShortcut(menuItem["shortcut"])
+                    if "checked" in menuItem:
+                        new_action.setCheckable(True)
+                        new_action.setChecked(menuItem["checked"])
+                    new_action.triggered.connect(lambda c=False, cb=callback: cb(
+                        editorWindow))
+                    targetMenu.addAction(new_action)
 
 
 def getPDKPath():

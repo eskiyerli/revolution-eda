@@ -16,6 +16,7 @@ import pathlib
 from typing import Any, Dict, List, Union, Optional
 
 import orjson
+import shiboken6
 from PySide6.QtCore import QLineF, QPoint, QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import (
     QColor,
@@ -238,6 +239,9 @@ class layoutScene(editorScene):
         super().mousePressEvent(event)
 
     def _updateLabelPlacementMarker(self, point: QPoint) -> None:
+        if self._labelPlacementMarker is not None:
+            if not all(shiboken6.isValid(line) for line in self._labelPlacementMarker):
+                self._labelPlacementMarker = None
         scale = abs(self.views()[0].transform().m11()) if self.views() else 1.0
         halfSize = 6.0 / (scale or 1.0)
         if self._labelPlacementMarker is None:
@@ -262,7 +266,8 @@ class layoutScene(editorScene):
     def _removeLabelPlacementMarker(self) -> None:
         if self._labelPlacementMarker is not None:
             for markerLine in self._labelPlacementMarker:
-                self.removeItem(markerLine)
+                if shiboken6.isValid(markerLine):
+                    self.removeItem(markerLine)
             self._labelPlacementMarker = None
 
     def mouseMoveEvent(self, event: QGraphicsSceneMouseEvent) -> None:
@@ -425,7 +430,7 @@ class layoutScene(editorScene):
         bestDist = maxDistance
         closestPoint = pointF
         for item in items:
-            if isinstance(item, lshp.layoutRuler) or item is ruler:
+            if isinstance(item, lshp.layoutRuler) or item is ruler or getattr(item, "drcError", False):
                 continue
             edges = lshp.layoutRuler._extractItemEdges(item)
             for p1, p2 in edges:
@@ -757,9 +762,12 @@ class layoutScene(editorScene):
 
     def _filterBySelectModes(self, items: set) -> set:
         """Filter rubber-band selected items by the active selection filter."""
-        if self.selectModes.selectAll:
-            return items
-        return {item for item in items if self._itemPassesFilter(item)}
+        return {
+            item
+            for item in items
+            if not getattr(item, "drcError", False)
+               and (self.selectModes.selectAll or self._itemPassesFilter(item))
+        }
 
     def _itemPassesFilter(self, item) -> bool:
         """Check if an item passes the current selection filter."""
@@ -878,6 +886,16 @@ class layoutScene(editorScene):
 
         return None
 
+    def _getPcellParameterMap(self, cellName: str) -> dict:
+        mapPath = pathlib.Path(fabproc.__file__).parent / "pcellParameterMap.json"
+        try:
+            with mapPath.open("rb") as mapFile:
+                parameterMap = orjson.loads(mapFile.read())
+        except (OSError, orjson.JSONDecodeError) as error:
+            self.logger.error(f"Failed to load PCell parameter map: {error}")
+            return {}
+        return parameterMap.get("mappings", {}).get(cellName, {})
+
     def _createLayoutInstanceFromSch(self, viewTuple: ddef.viewItemTuple, sch_inst: dict) -> bool:
         """Create a layout instance from schematic instance data.
 
@@ -897,17 +915,49 @@ class layoutScene(editorScene):
             if new_inst is None:
                 return False
 
-            # For PCells, initialize with default parameters
+            # For PCells, apply matching schematic instance labels.
             if isinstance(new_inst, pcells.baseCell):
-                # Use default parameter values without showing dialog
-                lineEditDict = self.extractPcellInstanceParameters(new_inst)
-                if lineEditDict:
-                    # Extract default values from the parameter edit widgets
-                    instanceValuesDict = {}
-                    for key, value in lineEditDict.items():
-                        instanceValuesDict[key] = value.text()
-                    if instanceValuesDict:
-                        new_inst(*instanceValuesDict.values())
+                labels = sch_inst.get("labels", {})
+                callParameters = inspect.signature(new_inst.__call__).parameters
+                parameterMap = self._getPcellParameterMap(sch_inst["cell"])
+                if not parameterMap:
+                    # No schematic->PCell parameter mapping: fall back to the
+                    # PCell's default parameter values rather than failing.
+                    lineEditDict = self.extractPcellInstanceParameters(new_inst)
+                    if lineEditDict:
+                        instanceValuesDict = {
+                            key: value.text()
+                            for key, value in lineEditDict.items()
+                        }
+                        if instanceValuesDict:
+                            new_inst(*instanceValuesDict.values())
+                else:
+                    instanceParameters = {
+                        name: labels[labelName][0]
+                        for name, parameter in callParameters.items()
+                        if parameter.kind in (
+                            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                            inspect.Parameter.KEYWORD_ONLY,
+                        )
+                        and (labelName := parameterMap.get(name)) in labels
+                    }
+                    missingParameters = [
+                        name
+                        for name, parameter in callParameters.items()
+                        if parameter.kind in (
+                            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                            inspect.Parameter.KEYWORD_ONLY,
+                        )
+                        and parameter.default is inspect.Parameter.empty
+                        and name not in instanceParameters
+                    ]
+                    if missingParameters:
+                        self.logger.error(
+                            f"Missing PCell parameters for {sch_inst['name']}: "
+                            f"{', '.join(missingParameters)}"
+                        )
+                        return False
+                    new_inst(**instanceParameters)
 
             # Inherit properties from schematic
             new_inst.instanceName = sch_inst["name"]
@@ -915,10 +965,11 @@ class layoutScene(editorScene):
             new_inst.angle = sch_inst["ang"]
             new_inst.flipTuple = tuple(sch_inst["fl"])
 
-            # Set position - use schematic location as starting point
-            # Convert grid units to scene coordinates
-            newInstBR = new_inst.boundingRect()
-            loc: tuple[int, int] = (sch_inst['loc'][0]*10+newInstBR.width(), sch_inst['loc'][1]*10+newInstBR.height())
+            # Convert the schematic grid location to layout scene coordinates.
+            loc: tuple[int, int] = (
+                sch_inst["loc"][0] * 10,
+                sch_inst["loc"][1] * 10,
+            )
 
             if isinstance(loc, (list, tuple)) and len(loc) >= 2:
                 new_inst.setPos(loc[0], loc[1])
@@ -986,8 +1037,10 @@ class layoutScene(editorScene):
             ]
             layoutData = [
                 {"viewType": "layout", "schemaVersion": "1.0"},
-                {"snapGrid": (self.majorGrid, self.snapGrid),
-                 "snapConnectDistance": self.editorWindow.snapConnectDistance,
+                # Grid values are stored in layout units (e.g. µm); the scene
+                # converts them to dbu-scaled integers on load.
+                {"snapGrid": (self.majorGrid / fabproc.dbu, self.snapGrid / fabproc.dbu),
+                 "snapConnectDistance": self.editorWindow.snapConnectDistance / fabproc.dbu,
                  "lodThreshold": self.editorWindow.lodThreshold},
                 *topLevelItems,
             ]
@@ -1094,11 +1147,24 @@ class layoutScene(editorScene):
                     )
                 return False
             with self.measureDuration():
-                self.editorWindow.configureGridSettings(
-                    decodedData[1].get("snapGrid", (self.majorGrid, self.snapGrid))
+                snapGridTuple = decodedData[1].get(
+                    "snapGrid", (self.majorGrid / fabproc.dbu, self.snapGrid / fabproc.dbu)
                 )
+                # Snap grid is stored in layout units (floats); older files may
+                # still have scene-unit ints. Convert layout-unit values back to
+                # scene (dbu) values.
+                if any(isinstance(v, float) for v in snapGridTuple):
+                    snapGridTuple = (
+                        round(float(snapGridTuple[0]) * fabproc.dbu),
+                        round(float(snapGridTuple[1]) * fabproc.dbu),
+                    )
+                self.editorWindow.configureGridSettings(snapGridTuple)
                 snapConnectDistance = decodedData[1].get("snapConnectDistance")
                 if snapConnectDistance is not None:
+                    # Floats are layout units (µm); ints are legacy scene-unit
+                    # values stored by older versions.
+                    if isinstance(snapConnectDistance, float):
+                        snapConnectDistance = round(snapConnectDistance * fabproc.dbu)
                     self.editorWindow.snapConnectDistance = snapConnectDistance
                     self.snapConnectDistance = snapConnectDistance
                 # Restore LOD threshold if saved
@@ -1186,7 +1252,12 @@ class layoutScene(editorScene):
             self.logger.error(f"{type(item)} property editor error: {e}")
 
     def layoutPolygonProperties(self, item):
-        pointsTupleList = [self.toLayoutCoord(point).toTuple() for point in item.points]
+        # points are stored in item-local coordinates; fold in pos() so the
+        # dialog shows the polygon's actual scene position after moves.
+        pointsTupleList = [
+            self.toLayoutCoord(item.pos() + point).toTuple()
+            for point in item.points
+        ]
 
         dlg = ldlg.layoutPolygonProperties(self.editorWindow, pointsTupleList)
         dlg.polygonLayerCB.addItems(
@@ -1216,8 +1287,11 @@ class layoutScene(editorScene):
         dlg.rectLayerCB.setCurrentText(f"{item.layer.name} [{item.layer.purpose}]")
         dlg.rectWidthEdit.setText(str(item.width / fabproc.dbu))
         dlg.rectHeightEdit.setText(str(item.height / fabproc.dbu))
-        dlg.topLeftEditX.setText(str(item.rect.topLeft().x() / fabproc.dbu))
-        dlg.topLeftEditY.setText(str(item.rect.topLeft().y() / fabproc.dbu))
+        # rect is stored in item-local coordinates; fold in pos() so the
+        # dialog shows the rect's actual scene position after moves.
+        topLeft = item.pos() + item.rect.topLeft()
+        dlg.topLeftEditX.setText(str(topLeft.x() / fabproc.dbu))
+        dlg.topLeftEditY.setText(str(topLeft.y() / fabproc.dbu))
         if dlg.exec() == QDialog.DialogCode.Accepted:
             layer = laylyr.pdkAllLayers[dlg.rectLayerCB.currentIndex()]
             newRect = lshp.layoutRect(QPoint(0, 0), QPoint(0, 0), layer)
@@ -1256,9 +1330,12 @@ class layoutScene(editorScene):
         dlg.startXEdit.setText(str(self.toLayoutCoord(item.mapToScene(item.start)).x()))
         dlg.startYEdit.setText(str(self.toLayoutCoord(item.mapToScene(item.start)).y()))
         if dlg.exec() == QDialog.DialogCode.Accepted:
-            startX = int(float(dlg.startXEdit.text()))
-            startY = int(float(dlg.startYEdit.text()))
-            start = self.toSceneCoord(QPoint(startX, startY))
+            start = self.toSceneCoord(
+                QPointF(
+                    float(dlg.startXEdit.text()),
+                    float(dlg.startYEdit.text()),
+                )
+            )
             if dlg.singleViaRB.isChecked():
                 selViaDefTuple = fabproc.processVias[
                     fabproc.processViaNames.index(dlg.singleViaNamesCB.currentText())
@@ -1392,8 +1469,9 @@ class layoutScene(editorScene):
     def layoutLabelProperties(self, item):
         dlg = ldlg.layoutLabelProperties(self.editorWindow)
         dlg.labelName.setText(item.labelText)
+        labelLayers = getattr(laylyr, "pdkLabelLayers", laylyr.pdkTextLayers)
         dlg.labelLayerCB.addItems(
-            [f"{layer.name} [{layer.purpose}]" for layer in laylyr.pdkTextLayers]
+            [f"{layer.name} [{layer.purpose}]" for layer in labelLayers]
         )
         dlg.labelLayerCB.setCurrentText(f"{item.layer.name} [{item.layer.purpose}]")
         dlg.familyCB.setCurrentText(item.fontFamily)
@@ -1412,8 +1490,9 @@ class layoutScene(editorScene):
 
             labelStart = self.toSceneCoord(QPointF(labelStartX, labelStartY))
             labelLayerName = dlg.labelLayerCB.currentText().split()[0]
+            labelPurpose = dlg.labelLayerCB.currentText().split()[1].strip("[]")
             labelLayer = [
-                item for item in laylyr.pdkTextLayers if item.name == labelLayerName
+                item for item in labelLayers if item.name == labelLayerName and item.purpose == labelPurpose
             ][0]
             fontFamily = dlg.familyCB.currentText()
             fontStyle = dlg.fontStyleCB.currentText()
@@ -1664,14 +1743,23 @@ class layoutScene(editorScene):
                     copyShapesList.append(shape)
 
             self.addListUndoStack(copyShapesList)
+            # Record each copy's pre-group pos()/transform() so the base class
+            # mouseReleaseEvent can restore them after destroyItemGroup().
+            for shape in copyShapesList:
+                shape._groupInitialState = (shape.pos(), shape.transform())
             self.selectedItemGroup = self.createItemGroup(copyShapesList)
+            self._initialGroupPos = self.selectedItemGroup.pos()
             self.selectedItemGroup.setSelected(True)
 
     def deleteAllRulers(self):
+        # A ruler is added on its first click and finalized on the second. Do
+        # not keep a reference to it after the bulk-delete command removes it.
+        self._newRuler = None
         sceneRulerSet = {
             item for item in self.items() if isinstance(item, lshp.layoutRuler)
         }
-        self.deleteListUndoStack(list(sceneRulerSet))
+        if sceneRulerSet:
+            self.deleteListUndoStack(list(sceneRulerSet))
         # for ruler in self.rulersSet:
         #     undoCommand = us.deleteShapeUndo(self, ruler)
         #     self.undoStack.push(undoCommand)

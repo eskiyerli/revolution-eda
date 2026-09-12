@@ -223,6 +223,52 @@ class TestStrictValidation:
         assert is_valid
         assert errors == []
 
+    def test_strict_valid_layout_path_and_label_native_encoding(self):
+        data = [
+            {"viewType": "layout", "schemaVersion": "1.0"},
+            {"snapGrid": [10, 5]},
+            {
+                "type": "Path", "dfl1": [0, 0], "dfl2": [100, 0],
+                "top": [0, 0], "ln": 0, "w": 10, "se": 5, "ee": 5,
+                "md": 0, "nam": "", "ang": 0, "fl": [1, 1],
+            },
+            {
+                "type": "Label", "st": [0, 0], "lt": "net", "ff": "Arial",
+                "fs": "Regular", "fh": "1.0", "la": "Left", "lo": "R0",
+                "ln": 0, "ang": 0, "fl": [1, 1],
+            },
+        ]
+
+        is_valid, errors = validate_design_data(data, strict=True)
+
+        assert is_valid, errors
+
+    @pytest.mark.parametrize(
+        "record",
+        (
+            {
+                "type": "Path", "dfl1": [0, 0], "dfl2": [100, 0],
+                "ln": 0, "w": 10, "se": 5, "ee": 5, "md": "0",
+            },
+            {
+                "type": "Label", "st": [0, 0], "lt": "net", "ff": "Arial",
+                "fs": "Regular", "fh": "not-a-number", "la": "Left",
+                "lo": "R0", "ln": 0,
+            },
+        ),
+    )
+    def test_strict_rejects_invalid_layout_path_mode_or_label_height(self, record):
+        data = [
+            {"viewType": "layout", "schemaVersion": "1.0"},
+            {"snapGrid": [10, 5]},
+            record,
+        ]
+
+        is_valid, errors = validate_design_data(data, strict=True)
+
+        assert not is_valid
+        assert errors
+
     def test_strict_invalid_item_type(self):
         data = [
             {"viewType": "symbol"},
