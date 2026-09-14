@@ -32,7 +32,7 @@ from revedaEditor.backend.startThread import startThread
 
 class libraryBrowser(QMainWindow):
     CELLVIEWS = ["schematic", "symbol", "layout", "veriloga", "config", "spice",
-                 "spectre", "vacask", "pcell", "revbench", ]
+                 "spectre", "spef", "vacask", "pcell", "revbench", ]
 
     def __init__(self, appMainW: QMainWindow) -> None:
         super().__init__()

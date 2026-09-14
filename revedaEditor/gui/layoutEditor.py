@@ -614,6 +614,10 @@ class layoutEditor(edw.editorWindow):
             cellItem = libm.getCellItem(libItem, dialog.cellCB.currentText())
             viewItem = libm.getViewItem(cellItem, dialog.viewCB.currentText())
             self.centralW.scene.clear()
+            # clear() removes items from the scene but does not touch
+            # itemsRefSet; without this the cleared shapes linger as ghosts
+            # in the item set.
+            self.centralW.scene.itemsRefSet.clear()
             # Call scene to load schematic instances
             self.centralW.scene.loadSchematicInstances(
                 ddef.viewItemTuple(libItem, cellItem, viewItem)
@@ -704,6 +708,8 @@ class layoutContainer(edw.editorContainer):
         self.lswWidget.lswTable.dataSelected.connect(self.selectLayer)
         self.lswWidget.lswTable.layerSelectable.connect(self.layerSelectableChange)
         self.lswWidget.lswTable.layerVisible.connect(self.layerVisibleChange)
+        self.lswWidget.objectsTable.objectVisible.connect(self.objectVisibleChange)
+        self.lswWidget.objectsTable.objectSelectable.connect(self.objectSelectableChange)
         self.init_UI()
 
     def init_UI(self):
@@ -740,18 +746,22 @@ class layoutContainer(edw.editorContainer):
         selectedLayer = self.findSelectedLayer(layerName, layerPurpose)
         selectedLayer.selectable = layerSelectable
 
+        pinLabels = self.scene.pinLabelItems()
         for item in self.scene.items():
             if (
                 hasattr(item, "layer")
                 and item.layer == selectedLayer
                 and item.parentItem() is None
             ):
-                item.setEnabled(layerSelectable)
+                item.setEnabled(
+                    layerSelectable and self.scene.objectSelectable(item, pinLabels)
+                )
 
     def layerVisibleChange(self, layerName: str, layerPurpose: str, layerVisible: bool):
         selectedLayer = self.findSelectedLayer(layerName, layerPurpose)
         selectedLayer.visible = layerVisible
 
+        pinLabels = self.scene.pinLabelItems()
         for item in self.scene.items():
             # Vias/via arrays are composite: a single item draws its cut layer
             # plus the connecting-metal enclosure layers. Visibility is honoured
@@ -761,7 +771,15 @@ class layoutContainer(edw.editorContainer):
                 if item.usesLayer(selectedLayer):
                     item.update()
             elif hasattr(item, "layer") and item.layer == selectedLayer:
-                item.setVisible(layerVisible)
+                item.setVisible(
+                    layerVisible and self.scene.objectVisible(item, pinLabels)
+                )
+
+    def objectVisibleChange(self, category: str, visible: bool):
+        self.scene.setObjectClassVisible(category, visible)
+
+    def objectSelectableChange(self, category: str, selectable: bool):
+        self.scene.setObjectClassSelectable(category, selectable)
 
 
 class LayerFilterProxyModel(QSortFilterProxyModel):
@@ -853,6 +871,7 @@ class lswWindow(QWidget):
 
         searchLayout = QHBoxLayout()
         searchLabel = QLabel("Search:")
+        searchLabel.setStyleSheet("font-weight: bold; font-size: 13px;")
         self._searchEdit = QLineEdit()
         self._searchEdit.setPlaceholderText("Filter layers by name...")
         self._searchEdit.setToolTip("Type to filter layers by name")
@@ -869,10 +888,21 @@ class lswWindow(QWidget):
         self._proxyModel = LayerFilterProxyModel(self)
         self._proxyModel.setSourceModel(self.lswTable.model())
         self._proxyModel.setFilterCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self._proxyModel.setSortCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
         self.lswTable.setModel(self._proxyModel)
         self._searchEdit.textChanged.connect(self._proxyModel.setFilterFixedString)
 
         layout.addWidget(self.lswTable)
+
+        # Objects filter: per-category visibility/selectability below the LSW
+        objectsLabel = QLabel("Objects")
+        objectsLabel.setStyleSheet("font-weight: bold; font-size: 13px;")
+        layout.addWidget(objectsLabel)
+        self.objectsModel = lsw.objectsFilterModel(
+            list(self.lswTable.layoutScene.objectFilterClasses)
+        )
+        self.objectsTable = lsw.objectsFilterTable(self, self.objectsModel)
+        layout.addWidget(self.objectsTable)
         self.setLayout(layout)
 
     def _updateFilteredLayers(self, visible=None, selectable=None):
@@ -884,11 +914,26 @@ class lswWindow(QWidget):
         else:
             state = Qt.CheckState.Checked if selectable else Qt.CheckState.Unchecked
             col = lsw.layerViewTable.columnSelectable
+        # The currently selected layer is exempt from being switched off
+        exemptLayer = None
+        if state == Qt.CheckState.Unchecked:
+            exemptLayer = self.lswTable.layoutScene.selectEdLayer
         for proxyRow in range(self._proxyModel.rowCount()):
             sourceIndex = self._proxyModel.mapToSource(
                 self._proxyModel.index(proxyRow, col)
             )
-            item = sourceModel.item(sourceIndex.row(), col)
+            sourceRow = sourceIndex.row()
+            if exemptLayer is not None:
+                nameItem = sourceModel.item(sourceRow, lsw.layerViewTable.columnName)
+                purpItem = sourceModel.item(sourceRow, lsw.layerViewTable.columnPurpose)
+                if (
+                    nameItem
+                    and purpItem
+                    and nameItem.text() == exemptLayer.name
+                    and purpItem.text() == exemptLayer.purpose
+                ):
+                    continue
+            item = sourceModel.item(sourceRow, col)
             if item is not None:
                 item.setCheckState(state)
 

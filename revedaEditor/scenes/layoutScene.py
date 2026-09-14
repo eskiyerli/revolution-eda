@@ -69,6 +69,16 @@ class layoutScene(editorScene):
         lshp.layoutPcell,
         lshp.layoutRuler,
     )
+    # Object filter categories shown below the LSW, mapped to the layout
+    # shape classes they control. Pin name labels are filtered with pins.
+    objectFilterClasses = {
+        "Instances": (lshp.layoutInstance,),
+        "Pins": (lshp.layoutPin,),
+        "Vias": (lshp.layoutVia, lshp.layoutViaArray),
+        "Labels": (lshp.layoutLabel,),
+        "Paths": (lshp.layoutPath,),
+        "Shapes": (lshp.layoutRect, lshp.layoutPolygon),
+    }
     alignLineFinished = Signal(lshp.alignLine)
 
     def __init__(self, parent):
@@ -110,6 +120,9 @@ class layoutScene(editorScene):
             selectLabel=False,
             selectText=False,
         )
+        # Per-category object filter state, toggled from the objects panel.
+        self.objectVisibility = {name: True for name in self.objectFilterClasses}
+        self.objectSelectability = {name: True for name in self.objectFilterClasses}
         # Merge with parent's messages
         self.messages.update({
             "drawPath": "Draw Path",
@@ -648,14 +661,22 @@ class layoutScene(editorScene):
 
     def drawLayoutPath(self):
         self.editorWindow.messageLine.setText("Path mode")
+        startPoint = self.mousePressLoc
         if self.newPath:
+            # Commit the segment end at the snapped release point so the path
+            # end lands on the snap grid, then chain the next segment from it.
+            self.newPath.draftLine = QLineF(
+                self.newPath.draftLine.p1(), self.mouseReleaseLoc
+            )
             if self.newPath.draftLine.isNull():
                 self.undoStack.removeLastCommand()
+            else:
+                startPoint = self.newPath.sceneEndPoints[1]
             self.newPath = None
 
             # Create a new path
         self.newPath = lshp.layoutPath(
-            QLineF(self.mousePressLoc, self.mousePressLoc),
+            QLineF(startPoint, startPoint),
             self.newPathTuple.layer,
             self.newPathTuple.width,
             int(self.newPathTuple.startExtend),
@@ -765,7 +786,8 @@ class layoutScene(editorScene):
         return {
             item
             for item in items
-            if not getattr(item, "drcError", False)
+            if item.isEnabled()
+               and not getattr(item, "drcError", False)
                and (self.selectModes.selectAll or self._itemPassesFilter(item))
         }
 
@@ -782,6 +804,121 @@ class layoutScene(editorScene):
         if self.selectModes.selectLabel and isinstance(item, lshp.layoutLabel):
             return True
         return False
+
+    def pinLabelItems(self) -> set:
+        """Labels attached to pins are filtered with the Pins category."""
+        return {
+            item.label
+            for item in self.items()
+            if isinstance(item, lshp.layoutPin) and item.label is not None
+        }
+
+    def objectCategory(
+        self, item: QGraphicsItem, pinLabels: Optional[set] = None
+    ) -> Optional[str]:
+        """Object filter category for a top-level scene item, or None."""
+        if isinstance(item, lshp.layoutLabel):
+            if pinLabels is None:
+                pinLabels = self.pinLabelItems()
+            return "Pins" if item in pinLabels else "Labels"
+        for category, classes in self.objectFilterClasses.items():
+            if isinstance(item, classes):
+                return category
+        return None
+
+    def objectVisible(
+        self, item: QGraphicsItem, pinLabels: Optional[set] = None
+    ) -> bool:
+        """Object-filter visibility for an item. Only top-level items are
+        filtered; instance/via children follow their parent item."""
+        if item.parentItem() is not None:
+            return True
+        return self.objectVisibility.get(self.objectCategory(item, pinLabels), True)
+
+    def objectSelectable(
+        self, item: QGraphicsItem, pinLabels: Optional[set] = None
+    ) -> bool:
+        """Object-filter selectability for an item (top-level items only)."""
+        if item.parentItem() is not None:
+            return True
+        return self.objectSelectability.get(self.objectCategory(item, pinLabels), True)
+
+    def setObjectClassVisible(self, category: str, visible: bool) -> None:
+        if category not in self.objectVisibility:
+            return
+        self.objectVisibility[category] = visible
+        pinLabels = self.pinLabelItems()
+        for item in self.items():
+            if (
+                item.parentItem() is None
+                and self.objectCategory(item, pinLabels) == category
+            ):
+                self._applyItemObjectState(item, category)
+
+    def setObjectClassSelectable(self, category: str, selectable: bool) -> None:
+        if category not in self.objectSelectability:
+            return
+        self.objectSelectability[category] = selectable
+        pinLabels = self.pinLabelItems()
+        for item in self.items():
+            if (
+                item.parentItem() is None
+                and self.objectCategory(item, pinLabels) == category
+            ):
+                self._applyItemObjectState(item, category)
+
+    def _applyItemObjectState(self, item: QGraphicsItem, category: str) -> None:
+        """Combine object-filter state with the item's layer state and apply
+        the result to the item."""
+        visible = self.objectVisibility[category]
+        layer = getattr(item, "layer", None)
+        if hasattr(item, "usesLayer"):
+            # Composite items (vias) honour per-layer visibility inside paint;
+            # the object filter hides the whole item instead.
+            item.setVisible(visible)
+        else:
+            item.setVisible(visible and getattr(layer, "visible", True))
+        item.setEnabled(
+            self.objectSelectability[category] and getattr(layer, "selectable", True)
+        )
+        if not (visible and self.objectSelectability[category]):
+            item.setSelected(False)
+            self.selectedItemsSet.discard(item)
+
+    def _applyObjectFilter(self, item: QGraphicsItem) -> None:
+        """Apply active object filters to a newly added scene item."""
+        if all(self.objectVisibility.values()) and all(
+            self.objectSelectability.values()
+        ):
+            return
+        if item.parentItem() is not None:
+            return
+        category = self.objectCategory(item)
+        if category is not None:
+            self._applyItemObjectState(item, category)
+
+    def _applyObjectFilters(self) -> None:
+        """Re-apply object filters to all top-level items in the scene."""
+        if all(self.objectVisibility.values()) and all(
+            self.objectSelectability.values()
+        ):
+            return
+        pinLabels = self.pinLabelItems()
+        for item in self.items():
+            if item.parentItem() is not None:
+                continue
+            category = self.objectCategory(item, pinLabels)
+            if category is not None:
+                self._applyItemObjectState(item, category)
+
+    def addUndoStack(self, item: QGraphicsItem):
+        super().addUndoStack(item)
+        self._applyObjectFilter(item)
+
+    def addListUndoStack(self, itemList: List[QGraphicsItem]) -> None:
+        super().addListUndoStack(itemList)
+        for item in itemList:
+            self._applyObjectFilter(item)
 
     def loadSchematicInstances(self, schematicTuple: ddef.viewItemTuple) -> None:
         """Load schematic and create corresponding layout instances.
@@ -1027,6 +1164,13 @@ class layoutScene(editorScene):
             # Create parentW directory if it doesn't exist
             filePathObj.parent.mkdir(parents=True, exist_ok=True)
 
+            # A live selection group (e.g. right after copy) parents its
+            # members to the group item; the top-level filter below would
+            # otherwise silently drop them from the saved cell.
+            if self.selectedItemGroup is not None:
+                self.destroyItemGroup(self.selectedItemGroup)
+                self.selectedItemGroup = None
+
             # Prepare data before file operation
             self.itemsRefSet = set(self.items())
             topLevelItems = [
@@ -1086,9 +1230,16 @@ class layoutScene(editorScene):
         export_path = export_dir / f"{self.cellName}{file_extension}"
 
         try:
+            # Ungroup a live selection group so its members are exported,
+            # and take self.items() (the scene is the source of truth):
+            # itemsRefSet can drift when items are added/removed outside
+            # undo commands.
+            if self.selectedItemGroup is not None:
+                self.destroyItemGroup(self.selectedItemGroup)
+                self.selectedItemGroup = None
             topLevelItems = [
                 item
-                for item in self.itemsRefSet
+                for item in self.items()
                 if item.parentItem() is None
                    and isinstance(item, tuple(self.LAYOUT_SHAPES))
             ]
@@ -1207,6 +1358,8 @@ class layoutScene(editorScene):
                         pass
         finally:
             self.setItemIndexMethod(index_method)
+        if hasattr(self, "_applyObjectFilters"):
+            self._applyObjectFilters()
 
     def deleteSelectedItems(self):
         for item in self.selectedItems():
@@ -1294,13 +1447,25 @@ class layoutScene(editorScene):
         dlg.topLeftEditY.setText(str(topLeft.y() / fabproc.dbu))
         if dlg.exec() == QDialog.DialogCode.Accepted:
             layer = laylyr.pdkAllLayers[dlg.rectLayerCB.currentIndex()]
+            topLeft = self.snapToGrid(
+                self.toSceneCoord(
+                    QPointF(
+                        float(dlg.topLeftEditX.text()),
+                        float(dlg.topLeftEditY.text()),
+                    )
+                )
+            )
+            bottomRight = self.snapToGrid(
+                topLeft
+                + self.toSceneCoord(
+                    QPointF(
+                        float(dlg.rectWidthEdit.text()),
+                        float(dlg.rectHeightEdit.text()),
+                    )
+                )
+            )
             newRect = lshp.layoutRect(QPoint(0, 0), QPoint(0, 0), layer)
-            newRect.rect = QRectF(
-                float(dlg.topLeftEditX.text()) * fabproc.dbu,
-                float(dlg.topLeftEditY.text()) * fabproc.dbu,
-                float(dlg.rectWidthEdit.text()) * fabproc.dbu,
-                float(dlg.rectHeightEdit.text()) * fabproc.dbu,
-            ).toRect()
+            newRect.rect = QRectF(topLeft, bottomRight).toRect()
             self.undoStack.push(us.addDeleteShapeUndo(self, newRect, item))
 
     def layoutViaProperties(self, item):
@@ -1619,8 +1784,13 @@ class layoutScene(editorScene):
         )
         dlg.instanceNameEdit.setText(item.instanceName)
 
-        dlg.xEdit.setText(str(item.scenePos().x() / fabproc.dbu))
-        dlg.yEdit.setText(str(item.scenePos().y() / fabproc.dbu))
+        # Use pos() (parent-coordinate translation), not scenePos(). scenePos()
+        # bakes in this item's rotation/flip about its origin; writing it back
+        # through setPos() (which sets pos()) would apply that transform a
+        # second time and shift a flipped/rotated instance. pos() round-trips
+        # cleanly with setPos() and matches the frame the layout loader uses.
+        dlg.xEdit.setText(str(item.pos().x() / fabproc.dbu))
+        dlg.yEdit.setText(str(item.pos().y() / fabproc.dbu))
 
         if dlg.exec() == QDialog.DialogCode.Accepted:
             libraryName = dlg.instanceLibName.text().strip()
@@ -1643,6 +1813,14 @@ class layoutScene(editorScene):
                     instanceValuesDict[key] = value.text()
             if instanceValuesDict:
                 newLayoutInstance(**instanceValuesDict)
+            # Preserve the original instance orientation. Rebuilding the
+            # instance (needed to apply changed PCell parameters) starts from
+            # the default transform, so the rotation and flip state must be
+            # carried over or the instance silently reverts to unrotated /
+            # unflipped. flipTuple is applied after angle because its transform
+            # is derived from the item's (post-rotation) bounding rect.
+            newLayoutInstance.angle = item.angle
+            newLayoutInstance.flipTuple = item.flipTuple
             newLayoutInstance.setPos(
                 QPoint(
                     self.snapToBase(
@@ -1886,7 +2064,9 @@ class layoutScene(editorScene):
                 newItem.setTransform(item.transform())
                 updateRect = item.boundingRect()
                 self.removeItem(item)
+                self.itemsRefSet.discard(item)
                 self.addItem(newItem)
+                self.itemsRefSet.add(newItem)
                 self.update(updateRect)
 
     def renumberInstances(self):

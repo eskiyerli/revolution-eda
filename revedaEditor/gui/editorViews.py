@@ -402,8 +402,8 @@ class editorView(QGraphicsView):
         if self.viewScene.itemCycler:
             item = next(self.viewScene.itemCycler)
             # Deselect without calling deselectAll(), which would reset itemCycler.
-            for i in self.viewScene.selectedItems():
-                i.setSelected(False)
+            # clearSelection() already deselects every selected item, so there is
+            # no need to iterate over selectedItems() beforehand.
             self.viewScene.clearSelection()
             self.viewScene.selectedItemsSet = {item}
             item.setSelected(True)

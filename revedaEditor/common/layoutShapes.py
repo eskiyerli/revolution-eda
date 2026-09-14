@@ -237,6 +237,14 @@ class layoutShape(QGraphicsItem):
             self._transformedBrush.setTransform(transform)
             self._lastScale = rounded_scale
 
+    def _snappedEventPos(self, event: QGraphicsSceneMouseEvent) -> QPoint:
+        """Mouse position snapped to the scene snap grid, in item coordinates."""
+        scene = self.scene()
+        if scene is not None and hasattr(scene, "snapToGrid"):
+            return self.mapFromScene(
+                scene.snapToGrid(event.scenePos().toPoint())).toPoint()
+        return event.pos().toPoint()
+
     @property
     def pen(self):
         return self._pen
@@ -572,7 +580,7 @@ class layoutRect(layoutShape):
             self.setFlag(QGraphicsItem.ItemIsSelectable, False)
 
     def mouseMoveEvent(self, event: QGraphicsSceneMouseEvent) -> None:
-        eventPos = event.pos().toPoint()
+        eventPos = self._snappedEventPos(event)
         if self.stretch:
             self.prepareGeometryChange()
             if self.stretchSide == layoutRect.sides[0]:
@@ -962,7 +970,7 @@ class layoutPath(layoutShape):
             f"{self._width}, {self._startExtend}, {self._endExtend}, {self._mode})"
         )
 
-    def _rectCorners(self, angle: float):
+    def _rectCorners(self, angle: float, snapEndPoint: bool = False):
         match self._mode:
             case 0:  # manhattan
                 self._createManhattanPath(angle)
@@ -974,10 +982,31 @@ class layoutPath(layoutShape):
                 self._createHorizontalPath(angle)
             case 4:
                 self._createVerticalPath(angle)
+        if snapEndPoint:
+            self._snapEndPoint()
         self._draftLine.setAngle(0)
         self._rect = self._extractRect()
         self.setTransformOriginPoint(self.draftLine.p1())
         self.setRotation(-self._angle)
+
+    def _snapEndPoint(self) -> None:
+        """
+        Project the draft line end point onto the constrained direction and
+        snap its length so that the effective path end point lies on the
+        snap grid.
+        """
+        if self._mode == 2:  # any angle: end point is already snapped
+            return
+        p1 = self._draftLine.p1()
+        direction = QLineF(p1, p1 + QPointF(1.0, 0.0))
+        direction.setAngle(self._angle)
+        unit = direction.p2() - direction.p1()
+        length = max(0.0, QPointF.dotProduct(self._draftLine.p2() - p1, unit))
+        scene = self.scene()
+        if scene is not None and scene.snapGrid:
+            step = scene.snapGrid / max(abs(unit.x()), abs(unit.y()))
+            length = round(length / step) * step
+        self._draftLine.setP2(p1 + unit * length)
 
     def _createManhattanPath(self, angle: float) -> None:
         """
@@ -1066,7 +1095,7 @@ class layoutPath(layoutShape):
         self.prepareGeometryChange()
         self._draftLine = line
         angle = self._draftLine.angle()
-        self._rectCorners(angle)
+        self._rectCorners(angle, snapEndPoint=True)
 
     @property
     def width(self):
@@ -1974,7 +2003,7 @@ class layoutPin(layoutShape):
             self.setFlag(QGraphicsItem.ItemIsSelectable, False)
 
     def mouseMoveEvent(self, event: QGraphicsSceneMouseEvent) -> None:
-        eventPos = event.pos().toPoint()
+        eventPos = self._snappedEventPos(event)
         if self._stretch and self._stretchSide:
             self.prepareGeometryChange()
             if self.stretchSide == layoutRect.sides[0]:
@@ -2497,7 +2526,7 @@ class layoutPolygon(layoutShape):
             self.setFlag(QGraphicsItem.ItemIsSelectable, False)
 
     def mouseMoveEvent(self, event: QGraphicsSceneMouseEvent) -> None:
-        eventPos = event.pos().toPoint()
+        eventPos = self._snappedEventPos(event)
         if self._stretch and self._selectedCornerIndex != 999:
             self._points[self._selectedCornerIndex] = eventPos
             self.points = self._points

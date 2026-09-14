@@ -84,7 +84,7 @@ class vacaskNetlist:
     # Pre-compiled regex to strip dangling parameter assignments (e.g. `` width =``) left
     # after token substitution.  Compiled once at class level avoids re.compile() on every
     # netlist line inside the hot loop.
-    _PARAM_RE = re.compile(r'\s+\w+\s*=(?=\s|$)')
+    _PARAM_RE = re.compile(r'\s+\w+\s*=\s*@\w+|\s+\w+\s*=(?=\s|$)')
 
     def __init__(
         self,
@@ -280,7 +280,7 @@ class vacaskNetlist:
                 if "schematic" in netlistView:
                     lines = self.createVacaskSymbolLine(elementSymbol)
                     content.extend(lines if isinstance(lines, list) else [lines])
-                    if netlistView not in self._stopViewList:
+                    if not self._isStopView(netlistView):
                         viewTuple = ddef.viewNameTuple(
                             elementSymbol.libraryName,
                             elementSymbol.cellName,
@@ -293,7 +293,7 @@ class vacaskNetlist:
                             schematicObj = schematicEditor(
                                 schematicItem, self.libraryDict, self.libraryView
                             )
-                            schematicObj.loadSchematic()
+                            schematicObj.loadSchematic(register=False)
                             expandedPinsString = self.expandPinNames(
                                 list(elementSymbol.pinNetMap.keys())
                             )
@@ -324,8 +324,10 @@ class vacaskNetlist:
                 elif "veriloga" in netlistView:
                     lines = self.createVerilogaLine(elementSymbol)
                     content.extend(lines if isinstance(lines, list) else [lines])
-                elif "vacask" in netlistView:
-                    lines = self.createVacaskSymbolLine(elementSymbol)
+                elif ("vacask" in netlistView or "spectre" in netlistView
+                      or "spef" in netlistView):
+                    lines = self.createTextViewLine(elementSymbol, cellItem,
+                                                    netlistView)
                     content.extend(lines if isinstance(lines, list) else [lines])
                     self._collectModelLoadInfo(elementSymbol)
             elif elementSymbol.netlistIgnore:
@@ -572,7 +574,6 @@ class vacaskNetlist:
             return self._viewNameCache[cacheKey]
 
         viewItems = [cellItem.child(row) for row in range(cellItem.rowCount())]
-        viewNames = [view.viewName for view in viewItems]
 
         if self._useConfig and self.configDict:
             config_entry = self.configDict.get(elementSymbol.cellName)
@@ -582,30 +583,48 @@ class vacaskNetlist:
                     result = config_entry[1]
                 else:
                     # Library mismatch, fall back to switchViewList
-                    result = self._findViewFromSwitchList(viewNames)
+                    result = self._findViewFromSwitchList(viewItems)
             else:
                 # Cell not in config, fall back to switchViewList
-                result = self._findViewFromSwitchList(viewNames)
+                result = self._findViewFromSwitchList(viewItems)
         else:
             # Not using config or config dict is empty
-            result = self._findViewFromSwitchList(viewNames)
+            result = self._findViewFromSwitchList(viewItems)
 
         self._viewNameCache[cacheKey] = result
         return result
 
-    def _findViewFromSwitchList(self, viewNames: List[str]) -> str:
+    def _findViewFromSwitchList(self, viewItems: list) -> str:
         """Find the first matching view from switchViewList.
-        
+
+        switchViewList holds view *types* (e.g. "schematic", "symbol"); they
+        are matched against each view item's viewType, so views like
+        "schematic2" are covered by the "schematic" type. The switch-list
+        order defines priority.
+
         Args:
-            viewNames: List of available view names for the cell.
-            
+            viewItems: List of available view items for the cell.
+
         Returns:
-            The first matching view name from switchViewList, or "symbol" if none match.
+            The name of the first matching view, or "symbol" if none match.
         """
-        for viewName in self._switchViewList:
-            if viewName in viewNames:
-                return viewName
+        viewNameByType = {}
+        for viewItem in viewItems:
+            if (viewItem.viewType not in viewNameByType
+                    or viewItem.viewName == viewItem.viewType):
+                viewNameByType[viewItem.viewType] = viewItem.viewName
+        for viewType in self._switchViewList:
+            if viewType in viewNameByType:
+                return viewNameByType[viewType]
         return "symbol"
+
+    def _isStopView(self, viewName: str) -> bool:
+        """Check whether a view name belongs to a stop view type.
+
+        View types are matched as substrings of the view name, the same way
+        viewItem.viewType is derived from the file stem.
+        """
+        return any(stopType in viewName for stopType in self._stopViewList)
 
     def createItemLine(
         self,
@@ -620,7 +639,7 @@ class vacaskNetlist:
             for line in elementLines:
                 cirFile.write(f"{line}\n")
 
-            if netlistView not in self._stopViewList:
+            if not self._isStopView(netlistView):
                 viewTuple = ddef.viewNameTuple(
                     elementSymbol.libraryName,
                     elementSymbol.cellName,
@@ -638,7 +657,7 @@ class vacaskNetlist:
                     schematicObj = schematicEditor(
                         schematicItem, self.libraryDict, self.libraryView
                     )
-                    schematicObj.loadSchematic()
+                    schematicObj.loadSchematic(register=False)
                     expandedPinsString = self.expandPinNames(
                         list(elementSymbol.pinNetMap.keys())
                     )
@@ -673,9 +692,11 @@ class vacaskNetlist:
             verilogaLines = self.createVerilogaLine(elementSymbol)
             for line in verilogaLines:
                 cirFile.write(f"{line}\n")
-        elif "vacask" in netlistView:
-            vacaskLines = self.createVacaskSymbolLine(elementSymbol)
-            for line in vacaskLines:
+        elif ("vacask" in netlistView or "spectre" in netlistView
+              or "spef" in netlistView):
+            textLines = self.createTextViewLine(elementSymbol, cellItem,
+                                                netlistView)
+            for line in textLines:
                 cirFile.write(f"{line}\n")
             self._collectModelLoadInfo(elementSymbol)
 
@@ -868,13 +889,45 @@ class vacaskNetlist:
                     f"Could not determine cell path for {elementSymbol.cellName}"
                 )
                 return spiceLines
-            incFileName = f"{elementSymbol.cellName}.sp"
-            incFilePath = pathlib.Path(cellPath) / incFileName
+            netlistView = self.determineNetlistView(elementSymbol, cellItem)
+            incFilePath = libb.textViewFilePath(
+                cellItem, libm.getViewItem(cellItem, netlistView))
+            if incFilePath is None:
+                incFilePath = pathlib.Path(cellPath) / f"{elementSymbol.cellName}.sp"
             self.includeLines.add(f'include "{incFilePath.as_posix()}"')
             return spiceLines
         except Exception as e:
             self._scene.logger.error(
                 f"Vacask subckt netlist error for {elementSymbol.instanceName}: {e}"
+            )
+            return [
+                f"// Netlist line is not defined for symbol of {elementSymbol.instanceName}"
+            ]
+
+    def createTextViewLine(self, elementSymbol: shp.schematicSymbol,
+                           cellItem: libb.cellItem, netlistView: str) -> list[str]:
+        """Create netlist lines for an instance bound to a file-backed text view.
+
+        Emits the instance line and pulls the view's netlist file in once via
+        an ``include`` directive. Used for vacask/spectre/spef views selected
+        through the switch list or a config view (e.g. PEX-extracted
+        netlists, which are complete subcircuits named after the cell).
+        """
+        try:
+            symbolLines = self.createVacaskSymbolLine(elementSymbol)
+            viewItem = libm.getViewItem(cellItem, netlistView)
+            filePath = libb.textViewFilePath(cellItem, viewItem)
+            if filePath is not None:
+                self.includeLines.add(f'include "{filePath.as_posix()}"')
+            else:
+                self._scene.logger.warning(
+                    f"View '{netlistView}' of {elementSymbol.cellName} has no "
+                    f"netlist file"
+                )
+            return symbolLines
+        except Exception as e:
+            self._scene.logger.error(
+                f"Text view netlist error for {elementSymbol.instanceName}: {e}"
             )
             return [
                 f"// Netlist line is not defined for symbol of {elementSymbol.instanceName}"

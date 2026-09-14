@@ -191,13 +191,21 @@ class NetGraph:
 # ---------------------------------------------------------------------------
 
 
-def extract(rcx_db: RcxDatabase, tech: TechFile, coupling: bool = True) -> ExtractionResult:
+def extract(
+    rcx_db: RcxDatabase,
+    tech: TechFile,
+    coupling: bool = True,
+    resistance: bool = True,
+) -> ExtractionResult:
     """Run parasitic RC extraction on an RCX database.
 
     Args:
         rcx_db: Pre-solved RCX database from LVS.
         tech: Technology file with R/C models.
         coupling: Whether to extract inter-net coupling capacitance.
+        resistance: Whether to build the parasitic resistor network.
+            When False (C/CC extraction), each net collapses to a single
+            node named after the net and only capacitors are emitted.
 
     Returns:
         ExtractionResult containing devices and parasitic elements.
@@ -215,7 +223,10 @@ def extract(rcx_db: RcxDatabase, tech: TechFile, coupling: bool = True) -> Extra
     for net in rcx_db.nets:
         net_graph = NetGraph(net.name, dbu=dbu, tol=25.0)
         net_graphs[net.name] = net_graph
-        _extract_net_parasitics(net, tech, dbu, net_graph, result, node_sub_caps)
+        _extract_net_parasitics(
+            net, tech, dbu, net_graph, result, node_sub_caps,
+            extract_r=resistance,
+        )
 
     # --- Step 1b: Merge same-layer nodes on layers with no routing shapes ---
     # PCell-internal metal (e.g. Metal1 source/drain contacts) is not in the
@@ -360,8 +371,17 @@ def _extract_net_parasitics(
     net_graph: NetGraph,
     result: ExtractionResult,
     node_sub_caps: dict[str, float],
+    extract_r: bool = True,
 ) -> None:
-    """Extract connected R and substrate C for a single net."""
+    """Extract connected R and substrate C for a single net.
+
+    With ``extract_r`` False (C/CC-only mode) no resistor network is built;
+    the net's whole substrate capacitance is lumped onto the net-name node.
+    """
+    if not extract_r:
+        _extract_net_capacitance(net, tech, dbu, node_sub_caps)
+        return
+
     # 1) Collect potential interior tap / connection points on each layer
     # Tap points come from via centers and shape endpoints
     taps_by_layer: dict[str, list[tuple[float, float]]] = defaultdict(list)
@@ -566,6 +586,54 @@ def _extract_net_parasitics(
                             layer=via.via_type,
                         )
                     )
+
+
+def _extract_net_capacitance(
+    net: RcxNet,
+    tech: TechFile,
+    dbu: float,
+    node_sub_caps: dict[str, float],
+) -> None:
+    """Lump a net's total substrate capacitance onto its net-name node.
+
+    Used in C/CC-only extraction: no NetGraph nodes are created, so this
+    single accumulation produces one capacitor per net, and coupling caps
+    plus device terminals resolve to the net name directly.
+    """
+    for shape in net.shapes:
+        layer_info = tech.layer_by_number(shape.layer_number)
+        if layer_info is None:
+            layer_info = tech.layer_by_name(shape.layer)
+        if layer_info is None or layer_info.purpose not in (
+            "routing", "gate", "diffusion"
+        ):
+            continue
+
+        if shape.shape_type == "path":
+            coords = shape.coordinates
+            if len(coords) < 4 or not isinstance(coords[0], (int, float)):
+                continue
+            width_um = max(float(shape.width) / dbu, 0.001)
+            length_um = math.hypot(
+                float(coords[2]) - float(coords[0]),
+                float(coords[3]) - float(coords[1]),
+            ) / dbu
+            area_um2 = length_um * width_um
+            perim_um = 2.0 * (length_um + width_um)
+        elif shape.shape_type == "rect":
+            bbox = _get_bbox(shape)
+            if bbox is None:
+                continue
+            w_um = abs(bbox[2] - bbox[0]) / dbu
+            h_um = abs(bbox[3] - bbox[1]) / dbu
+            area_um2 = w_um * h_um
+            perim_um = 2.0 * (w_um + h_um)
+        else:
+            continue
+
+        c_sub = layer_info.area_cap * area_um2 + layer_info.fringe_cap * perim_um
+        if c_sub > 1e-6:
+            node_sub_caps[net.name] += c_sub
 
 
 # ---------------------------------------------------------------------------

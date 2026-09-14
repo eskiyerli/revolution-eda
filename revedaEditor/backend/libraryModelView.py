@@ -129,8 +129,9 @@ class BaseDesignLibrariesView(QWidget):
                 configWindow = createNewConfigView(itemTuple.cellItem, itemTuple.viewItem, dlg,
                                                    self.libraryDict,
                                                    self)
-                self.appMainW.openViews[viewNameT] = configWindow
-                configWindow.show()
+                if configWindow is not None:
+                    self.appMainW.openViews[viewNameT] = configWindow
+                    configWindow.show()
         elif itemTuple.viewItem.viewType == "pcell":
             dlg = ldlg.pcellLinkDialogue(self.appMainW, itemTuple.viewItem)
             if dlg.exec() == QDialog.DialogCode.Accepted:
@@ -144,6 +145,8 @@ class BaseDesignLibrariesView(QWidget):
                     itemTuple.viewItem.parent().removeRow(itemTuple.viewItem.row())
                 except OSError as e:
                     self.logger.warning(f"Error:{e.strerror}")
+        elif itemTuple.viewItem.viewType == "spef":
+            self._handle_spef_view(itemTuple)
         else:
             if hasattr(self._app, 'pluginsObj') and self._app.pluginsObj is not None:
                 self._app.pluginsObj.createCellView(itemTuple)
@@ -178,12 +181,17 @@ class BaseDesignLibrariesView(QWidget):
                     filePath = pathlib.Path(viewItemT.cellItem.cellPath.joinpath(
                         viewNameT.cellName).with_suffix(".vacask"))
                     filePath.touch(exist_ok=True)
-        
+                elif viewItemT.viewItem.viewType == 'spef':
+                    filePath = pathlib.Path(viewItemT.cellItem.cellPath.joinpath(
+                        viewNameT.cellName).with_suffix(".spef"))
+                    filePath.touch(exist_ok=True)
+
         if filePath:
             filePath = filePath.resolve()
             editor = editor_class(filePath)
             editor.cellViewTuple = viewNameT
-            editor.closedSignal.connect(finished_callback)
+            if finished_callback is not None:
+                editor.closedSignal.connect(finished_callback)
             self.appMainW.openViews[viewNameT] = editor
             editor.show()
         else:
@@ -205,6 +213,10 @@ class BaseDesignLibrariesView(QWidget):
     def _handle_vacask_view(self, viewItemT: ddef.viewItemTuple):
         """Handle vacask view opening."""
         self._handle_text_view(viewItemT, ted.vacaskEditor, self.vacaskEditFinished)
+
+    def _handle_spef_view(self, viewItemT: ddef.viewItemTuple):
+        """Handle spef view opening."""
+        self._handle_text_view(viewItemT, ted.spefEditor, None)
 
     def _handle_pcell_view(self, viewItemT: ddef.viewItemTuple):
         """Handle pcell view opening by displaying a default instance in the layout editor."""
@@ -329,6 +341,8 @@ class BaseDesignLibrariesView(QWidget):
             self._handle_vacask_view(viewItemT)
         elif view_type == "pcell":
             self._handle_pcell_view(viewItemT)
+        elif view_type == "spef":
+            self._handle_spef_view(viewItemT)
         else:
             if hasattr(self._app, 'pluginsObj') and self._app.pluginsObj is not None:
                 result = self._app.pluginsObj.openCellView(viewItemT)

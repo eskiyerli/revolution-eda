@@ -87,7 +87,11 @@ class gdsExporter:
     def createCells(self, library: gdstk.Library, item: lshp.layoutShape,
                     parentCell: gdstk.Cell, offset: Tuple[float, float] = (0.0, 0.0)):
         item_type = type(item)
-        if item_type == lshp.layoutInstance:
+        # layoutPcell subclasses layoutInstance; check it first so pcell
+        # subclasses are not dispatched to the plain-instance handler.
+        if isinstance(item, lshp.layoutPcell):
+            self._process_custom_layout(library, item, parentCell)
+        elif item_type == lshp.layoutInstance:
             self._processInstance(library, item, parentCell)
         elif item_type in (lshp.layoutRect, lshp.layoutPin):
             self._processRectPin(item, parentCell, offset)
@@ -102,7 +106,8 @@ class gdsExporter:
         elif item_type == lshp.layoutRuler:
             return
         else:
-            self._process_custom_layout(library, item, parentCell)
+            logger.warning(
+                f"Unsupported layout item skipped on export: {type(item).__name__}")
 
     def _processInstance(self, library, item, parentCell):
         cache_key = (item.libraryName, item.cellName, item.viewName)

@@ -631,6 +631,33 @@ class vacaskEditor(textEditor):
                     file.write(text)
 
 
+class spefEditor(textEditor):
+    def __init__(self, filePathObj: Path):
+        super().__init__(filePathObj)
+        self.setWindowTitle("SPEF Editor")
+
+    def openFile(self):
+        (fileName, _) = QFileDialog.getOpenFileName(self, "Open File", "",
+                                                    "SPEF Files (*.spef);;All Files (*)")
+        if fileName:
+            self.filePathObj = Path(fileName)
+            if self.filePathObj.exists():
+                with self.filePathObj.open("r") as file:
+                    text = file.read()
+                    self.textEdit.setPlainText(text)
+
+    def saveAsFile(self):
+        (fileName, _) = QFileDialog.getSaveFileName(self, "Save File",
+                                                    str(self.filePathObj),
+                                                    "SPEF Files (*.spef);;All Files (*)")
+        if fileName:
+            self.filePathObj = Path(fileName)
+            if self.filePathObj:
+                with self.filePathObj.open("w") as file:
+                    text = self.textEdit.toPlainText()
+                    file.write(text)
+
+
 def main():
     app = QApplication(sys.argv)
     editor = verilogaEditor(None, '')

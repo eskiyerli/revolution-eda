@@ -301,66 +301,101 @@ class schematicEditor(edw.editorWindow):
         self.centralW.scene.reloadScene()
         self.centralW.scene.reapplyProbesAfterReload()
 
-    def loadSchematic(self):
+    def loadSchematic(self, register: bool = True):
         try:
             self.logger.info(f'Loading schematic from {self.cellName} - {self.viewName}')
             self.centralW.scene.loadDesign(self.file)
-            viewNameTuple = ddef.viewNameTuple(self.libItem.libraryName, self.cellItem.cellName,
-                                               self.viewName)
-            self.appMainW.openViews[viewNameTuple] = self
+            if register:
+                viewNameTuple = ddef.viewNameTuple(self.libItem.libraryName,
+                                                   self.cellItem.cellName,
+                                                   self.viewName)
+                self.appMainW.openViews[viewNameTuple] = self
         except Exception as e:
             self.logger.error(f"Error during loading schematic for {self.cellName}: {e}")
 
-    def createConfigView(self, configItem: libb.viewItem, newConfigDict: dict,
-                         processedCells: set, savedSelections: dict = None):
+    def createConfigView(self, newConfigDict: dict, processedCells: set,
+                         savedSelections: dict = None):
         """Recursively build configuration view by traversing schematic hierarchy.
 
         Walks through all symbol instances in the schematic and determines
-        the appropriate view to use for each based on switchViewList. Creates
-        temporary schematicEditor instances for nested schematics.
+        the appropriate view to use for each based on switchViewList. Reuses
+        already-open editors for nested schematics; temporary editors are
+        never registered in openViews and are deleted without saving.
 
         Args:
-            configItem: The configuration view item being created.
             newConfigDict: Dictionary to populate with cell->view mappings.
             processedCells: Set tracking already-processed cells to avoid cycles.
             savedSelections: Dict of cellName->viewName for preserving user selections.
         """
         if savedSelections is None:
             savedSelections = {}
-        
+
         sceneSymbolSet = self.centralW.scene.findSceneSymbolSet()
         for item in sceneSymbolSet:
             libItem = libm.getLibItem(self.libraryView.libraryModel, item.libraryName)
             cellItem = libm.getCellItem(libItem, item.cellName)
+            if libItem is None or cellItem is None:
+                continue
             viewItems = [cellItem.child(row) for row in range(cellItem.rowCount())]
             viewNames = [viewItem.viewName for viewItem in viewItems]
-            netlistableViews = [viewItemName for viewItemName in self.switchViewList if
-                                viewItemName in viewNames]
+            # switchViewList holds view *types*; collect all views whose type
+            # is netlistable, in switch-list priority order. Within a type an
+            # exact name match wins over variants (e.g. "schematic" over
+            # "schematic2").
+            typeRank = {viewType: rank for rank, viewType in
+                        enumerate(self.switchViewList)}
+            netlistableViews = [view.viewName for view in sorted(
+                (view for view in viewItems if view.viewType in typeRank),
+                key=lambda view: (typeRank[view.viewType],
+                                  view.viewName != view.viewType))]
             itemSwitchViewList = deepcopy(netlistableViews)
             viewDict = dict(zip(viewNames, viewItems))
             itemCellTuple = ddef.cellTuple(libItem.libraryName, cellItem.cellName)
             if itemCellTuple not in processedCells:
                 if cellLine := newConfigDict.get(cellItem.cellName):
                     netlistableViews = [cellLine[1]]
-                
+
                 # Check if user had previously selected a view for this cell
                 if cellItem.cellName in savedSelections:
                     savedView = savedSelections[cellItem.cellName]
                     if savedView in viewNames:
                         netlistableViews = [savedView]
-                
+
                 for viewName in netlistableViews:
                     match viewDict[viewName].viewType:
                         case "schematic":
                             newConfigDict[cellItem.cellName] = [libItem.libraryName,
                                                                 viewName,
                                                                 itemSwitchViewList, ]
-                            schematicObj = schematicEditor(viewDict[viewName],
-                                                           self.libraryDict,
-                                                           self.libraryView, )
-                            schematicObj.loadSchematic()
-                            schematicObj.createConfigView(configItem, newConfigDict,
-                                                          processedCells, savedSelections)
+                            schTuple = ddef.viewNameTuple(libItem.libraryName,
+                                                          cellItem.cellName,
+                                                          viewName)
+                            schematicObj = self.appMainW.openViews.get(schTuple)
+                            if schematicObj is not None:
+                                prevSwitch = schematicObj.switchViewList
+                                prevStop = schematicObj.stopViewList
+                                try:
+                                    schematicObj.switchViewList = self.switchViewList
+                                    schematicObj.stopViewList = self.stopViewList
+                                    schematicObj.createConfigView(newConfigDict,
+                                                                  processedCells,
+                                                                  savedSelections)
+                                finally:
+                                    schematicObj.switchViewList = prevSwitch
+                                    schematicObj.stopViewList = prevStop
+                            else:
+                                schematicObj = schematicEditor(viewDict[viewName],
+                                                               self.libraryDict,
+                                                               self.libraryView, )
+                                try:
+                                    schematicObj.switchViewList = self.switchViewList
+                                    schematicObj.stopViewList = self.stopViewList
+                                    schematicObj.loadSchematic(register=False)
+                                    schematicObj.createConfigView(newConfigDict,
+                                                                  processedCells,
+                                                                  savedSelections)
+                                finally:
+                                    schematicObj.deleteLater()
                             break
                         case _:
                             newConfigDict[cellItem.cellName] = [libItem.libraryName,
@@ -420,8 +455,11 @@ class schematicEditor(edw.editorWindow):
         selectedViewName = dlg.viewNameCombo.currentText()
 
         self.switchViewList = [item.strip() for item in
-                               dlg.switchViewEdit.text().split(",")]
-        self.stopViewList = [dlg.stopViewEdit.text().strip()]
+                               dlg.switchViewEdit.text().split(",")
+                               if item.strip()]
+        self.stopViewList = [item.strip() for item in
+                             dlg.stopViewEdit.text().split(",")
+                             if item.strip()]
 
         subDirPath = self.appMainW.simulationOutputPath / self.libName / self.cellName / selectedViewName
         subDirPath.mkdir(parents=True, exist_ok=True)
@@ -458,24 +496,23 @@ class schematicEditor(edw.editorWindow):
         if viewItem.viewType == "schematic":
             return netlisterClass(self, filePath, False, topSubCkt)
         elif viewItem.viewType == "config":
-            print(f"DEBUG: Config view detected - viewType={viewItem.viewType}")
             netlistObj = netlisterClass(self, filePath, True, topSubCkt)
             configItem = libm.findViewItem(self.libraryView.libraryModel, self.libName,
                                            self.cellName, viewItem.viewName)
-            print(f"DEBUG: configItem={configItem}")
             if configItem:
                 configPath = configItem.data(Qt.ItemDataRole.UserRole + 2)
-                print(f"DEBUG: configPath={configPath}")
                 if configPath:
                     with configPath.open(mode="r") as f:
                         jsonData = json.load(f)
-                        print(f"DEBUG: jsonData={jsonData}")
+                    if len(jsonData) > 2:
                         netlistObj.configDict = jsonData[2]
-                        print(f"Loaded config dict for netlisting: {netlistObj.configDict}")
-                else:
-                    print(f"DEBUG: configPath is None")
-            else:
-                print(f"DEBUG: configItem not found")
+                    # Apply the config's own switch/stop view lists so views
+                    # beyond the app defaults can be netlisted.
+                    header = jsonData[1] if len(jsonData) > 1 else {}
+                    if header.get("switchViews"):
+                        netlistObj.switchViewList = header["switchViews"]
+                    if header.get("stopViews"):
+                        netlistObj.stopViewList = header["stopViews"]
             return netlistObj
         return None
 

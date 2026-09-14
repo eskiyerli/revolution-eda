@@ -24,7 +24,7 @@ from PySide6.QtGui import (
     QImage,
 )
 from PySide6.QtWidgets import (QTableView, QStyledItemDelegate,
-                               QStyle)
+                               QStyle, QHeaderView)
 
 from revedaEditor.backend.pdkLoader import importPDKModule
 
@@ -67,9 +67,14 @@ class layerDataModel(QStandardItemModel):
             brush.setTexture(_pixmap)
             item = QStandardItem()
             item.setBackground(brush)
+            item.setEditable(False)
             self.setItem(row, 0, item)
-            self.setItem(row, 1, QStandardItem(layer.name))
-            self.setItem(row, 2, QStandardItem(layer.purpose))
+            nameItem = QStandardItem(layer.name)
+            nameItem.setEditable(False)
+            self.setItem(row, 1, nameItem)
+            purposeItem = QStandardItem(layer.purpose)
+            purposeItem.setEditable(False)
+            self.setItem(row, 2, purposeItem)
             item = QStandardItem()
             item.setCheckable(True)
             item.setCheckState(Qt.CheckState.Checked if layer.visible else Qt.CheckState.Unchecked)
@@ -183,6 +188,7 @@ class layerViewTable(QTableView):
         self.setShowGrid(False)
         self.setSelectionBehavior(QTableView.SelectionBehavior.SelectRows)
         self.setSelectionMode(QTableView.SelectionMode.SingleSelection)
+        self.setSortingEnabled(True)
         self.verticalHeader().setVisible(False)
         # Set custom delegate for texture column
         self.setItemDelegateForColumn(self.columnTexture, TextureDelegate(self))
@@ -258,9 +264,13 @@ class layerViewTable(QTableView):
             for layer in laylyr.pdkAllLayers:
                 layer.selectable = selectable
             # Update scene items selectability
+            pinLabels = self.layoutScene.pinLabelItems()
             for item in self.layoutScene.items():
                 if item.parentItem() is None and hasattr(item, 'layer'):
-                    item.setEnabled(selectable)
+                    item.setEnabled(
+                        selectable
+                        and self.layoutScene.objectSelectable(item, pinLabels)
+                    )
 
         for row in range(self._model.rowCount()):
             self._model.item(row, column).setCheckState(state)
@@ -276,3 +286,80 @@ class layerViewTable(QTableView):
 
     def allLayersSelectable(self):
         self.updateAllLayers(selectable=True)
+
+
+class objectsFilterModel(QStandardItemModel):
+    """Model backing the objects filter table: one row per object category
+    with visible (V) and selectable (S) checkboxes."""
+
+    columnName = 0
+    columnVisible = 1
+    columnSelectable = 2
+
+    def __init__(self, categories: list[str]):
+        super().__init__()
+        self.setColumnCount(3)
+        self.setHeaderData(self.columnName, Qt.Orientation.Horizontal, "Object")
+        self.setHeaderData(self.columnVisible, Qt.Orientation.Horizontal, "V")
+        self.setHeaderData(self.columnSelectable, Qt.Orientation.Horizontal, "S")
+
+        for row, category in enumerate(categories):
+            self.insertRow(row)
+            nameItem = QStandardItem(category)
+            nameItem.setEditable(False)
+            self.setItem(row, self.columnName, nameItem)
+            for column in (self.columnVisible, self.columnSelectable):
+                item = QStandardItem()
+                item.setCheckable(True)
+                item.setEditable(False)
+                item.setCheckState(Qt.CheckState.Checked)
+                self.setItem(row, column, item)
+
+
+class objectsFilterTable(QTableView):
+    columnName = 0
+    columnVisible = 1
+    columnSelectable = 2
+
+    objectVisible = Signal(str, bool)
+    objectSelectable = Signal(str, bool)
+
+    def __init__(self, parent=None, model: objectsFilterModel = None):
+        super().__init__(parent)
+        self._model = model
+        self.setModel(self._model)
+        self.setupUi()
+        self._model.dataChanged.connect(self.onDataChanged)
+
+    def setupUi(self):
+        self.setShowGrid(False)
+        self.setSelectionMode(QTableView.SelectionMode.NoSelection)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.verticalHeader().setVisible(False)
+        header = self.horizontalHeader()
+        header.setSectionResizeMode(self.columnName, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(
+            self.columnVisible, QHeaderView.ResizeMode.ResizeToContents
+        )
+        header.setSectionResizeMode(
+            self.columnSelectable, QHeaderView.ResizeMode.ResizeToContents
+        )
+        self.resizeRowsToContents()
+        # Fix the height so the table does not steal space from the LSW.
+        tableHeight = (
+            header.sizeHint().height()
+            + sum(self.rowHeight(row) for row in range(self._model.rowCount()))
+            + 2 * self.frameWidth()
+        )
+        self.setFixedHeight(tableHeight)
+
+    def onDataChanged(self, topLeft: QModelIndex, bottomRight: QModelIndex, roles: list):
+        if Qt.ItemDataRole.CheckStateRole not in roles:
+            return
+        row, column = topLeft.row(), topLeft.column()
+        isChecked = self._model.item(row, column).checkState() == Qt.CheckState.Checked
+        category = self._model.item(row, self.columnName).text()
+        if column == self.columnVisible:
+            self.objectVisible.emit(category, isChecked)
+        elif column == self.columnSelectable:
+            self.objectSelectable.emit(category, isChecked)

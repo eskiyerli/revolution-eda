@@ -19,6 +19,16 @@ from PySide6.QtCore import (Qt, )
 from PySide6.QtGui import (QStandardItem, )
 from PySide6.QtWidgets import QMessageBox, QWidget
 
+# File-backed text view types and the suffix of the netlist/model file each
+# view refers to.
+TEXT_VIEW_SUFFIXES = {
+    "spectre": ".scs",
+    "spef": ".spef",
+    "spice": ".sp",
+    "vacask": ".vacask",
+    "veriloga": ".va",
+}
+
 
 class libraryItem(QStandardItem):
     def __init__(self, libraryPath: pathlib.Path):  # path is a pathlib.Path object
@@ -150,6 +160,8 @@ class viewItem(QStandardItem):
             return "spice"
         elif "spectre" in self.viewPath.stem:
             return "spectre"
+        elif "spef" in self.viewPath.stem:
+            return "spef"
         elif "vacask" in self.viewPath.stem:
             return "vacask"
         elif "myhdl" in self.viewPath.stem:
@@ -172,6 +184,31 @@ class viewItem(QStandardItem):
         newViewItem.setData('clone', Qt.ItemDataRole.UserRole + 4)
         newViewItem.setData(self, Qt.ItemDataRole.UserRole + 10)
         return newViewItem
+
+
+def textViewFilePath(cellItem: Union[cellItem, None],
+                     viewItem: Union[viewItem, None]) -> Optional[pathlib.Path]:
+    """Resolve the file a text-based view refers to.
+
+    Prefers the ``filePath`` entry stored in the view JSON (as written e.g.
+    by the PEX extraction flow); otherwise falls back to
+    ``<cellPath>/<cellName><ext>`` based on the view type, matching the
+    convention used when the view is opened in a text editor.
+    """
+    if cellItem is None or viewItem is None:
+        return None
+    suffix = TEXT_VIEW_SUFFIXES.get(viewItem.viewType)
+    if suffix is None:
+        return None
+    try:
+        with viewItem.viewPath.open("r") as f:
+            items = json.load(f)
+        if len(items) > 1 and items[1].get("filePath"):
+            return cellItem.cellPath.joinpath(items[1]["filePath"]).resolve()
+    except (OSError, json.JSONDecodeError, AttributeError):
+        pass
+    return cellItem.cellPath.joinpath(f"{cellItem.cellName}{suffix}").resolve()
+
 
 def createLibrary(parent, model, libraryDir: str, libraryName: str) -> Union[
     libraryItem, None]:
@@ -272,6 +309,8 @@ def createCellviewItem(viewName, viewPath)->viewItem:
         items.insert(0, {"viewType": "pcell"})
     elif "spice" in viewName:
         items.insert(0, {"viewType": "spice"})
+    elif "spef" in viewName:
+        items.insert(0, {"viewType": "spef"})
     elif "veriloga" in viewName:
         items.insert(0, {"viewType": "veriloga"})
     elif "config" in viewName:

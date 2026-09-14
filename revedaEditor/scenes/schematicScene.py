@@ -17,7 +17,7 @@ import pathlib
 import orjson
 from typing import Dict, List, Optional, Set, Tuple, Union
 
-from PySide6.QtCore import (QLineF, QPoint, QPointF, QRect, QRectF,
+from PySide6.QtCore import (QLineF, QPoint, QRect, QRectF,
                             QRegularExpression, Qt, Signal, Slot)
 from PySide6.QtGui import (QFont, QFontDatabase, QPen, )
 from PySide6.QtWidgets import (QComboBox, QDialog, QGraphicsItem,
@@ -223,10 +223,10 @@ class schematicScene(editorScene):
 
             self._newPin.setPos(self.mouseMoveLoc - self._newPin.start)
         elif self.editModes.drawWire or self.editModes.drawBus:
-            # Show the closest snap point while drawing a net; fall back to grid
+            # findSnapPoint already returns a grid-aligned point (a connection
+            # point when one is nearby, otherwise the grid-snapped cursor).
             ignoredSet = {self._newNet} if self._newNet is not None else set()
-            netEndPoint = self.snapToGrid(
-                self.findSnapPoint(self.mouseMoveLoc, ignoredSet))
+            netEndPoint = self.findSnapPoint(self.mouseMoveLoc, ignoredSet)
             snapRect = self._ensureSnapPointRect()
             if snapRect.scene() is None:
                 self.addItem(snapRect)
@@ -239,11 +239,9 @@ class schematicScene(editorScene):
             self.newAlignLine.draftLine = QLineF(
                 self.newAlignLine.draftLine.p1(), self.mouseMoveLoc)
         elif self._stretchNet and self.editModes.stretchItem:
-            # Snap to nearby connection points first, fall back to grid-snapped position
+            # findSnapPoint returns a grid-aligned connection point when nearby,
+            # otherwise the grid-snapped cursor.
             netEndPoint = self.findSnapPoint(self.mouseMoveLoc, set())
-            if netEndPoint == self.mouseMoveLoc:
-                # No nearby connection point found; snap cursor to grid
-                netEndPoint = self.snapToGrid(self.mouseMoveLoc)
             snapRect = self._ensureSnapPointRect()
             snapRect.setVisible(True)
             snapRect.setPos(netEndPoint)
@@ -340,7 +338,8 @@ class schematicScene(editorScene):
     def _handleDrawWire(self, eventLoc: QPoint) -> None:
         """Handle draw wire logic with continuous mode."""
         ignoredSet = {self._newNet} if self._newNet is not None else set()
-        snapPoint = self.snapToGrid(self.findSnapPoint(eventLoc, ignoredSet))
+        # findSnapPoint already returns a grid-aligned point.
+        snapPoint = self.findSnapPoint(eventLoc, ignoredSet)
 
         snapRect = self._ensureSnapPointRect()
         if snapRect.scene() is None:
@@ -384,7 +383,8 @@ class schematicScene(editorScene):
     def _handleDrawBus(self, eventLoc: QPoint):
         """Handle draw bus logic with continuous mode."""
         ignoredSet = {self._newNet} if self._newNet is not None else set()
-        snapPoint = self.snapToGrid(self.findSnapPoint(eventLoc, ignoredSet))
+        # findSnapPoint already returns a grid-aligned point.
+        snapPoint = self.findSnapPoint(eventLoc, ignoredSet)
 
         snapRect = self._ensureSnapPointRect()
         if snapRect.scene() is None:
@@ -434,11 +434,9 @@ class schematicScene(editorScene):
         and restores the original net plus any existing nets consumed by merging.
         """
         try:
-            # Snap release position: check for nearby connection points first,
-            # fall back to grid snap
+            # findSnapPoint returns a grid-aligned point: a nearby connection
+            # point when available, otherwise the grid-snapped release position.
             snappedRelease = self.findSnapPoint(releasePos, set())
-            if snappedRelease == releasePos:
-                snappedRelease = self.snapToGrid(releasePos)
 
             anchorPoint = self._stretchAnchorPoint
 
@@ -531,9 +529,8 @@ class schematicScene(editorScene):
             self.editModes.setMode("selectItem")
 
     def updateStretchNet(self):
+        # findSnapPoint returns a grid-aligned point already.
         netEndPoint = self.findSnapPoint(self.mouseMoveLoc, set())
-        if netEndPoint == self.mouseMoveLoc:
-            netEndPoint = self.snapToGrid(self.mouseMoveLoc)
         self._stretchNet.draftLine = QLineF(self._stretchNet.draftLine.p1(),
                                             netEndPoint)
 
@@ -557,33 +554,70 @@ class schematicScene(editorScene):
             self.mergeSplitNets(newNet)
             self.invalidate(newNetSceneRect, QGraphicsScene.BackgroundLayer)
 
-    def _updateNets(self, nets_to_remove: set, nets_to_add: set, name_source_net):
-        """Helper to update nets in scene"""
-        for net in nets_to_remove:
-            # Only remove if the net is actually in this scene
-            if net.scene() == self:
+    def _replaceNets(self, oldNets, newNets, name_source_net):
+        """Replace a set of nets in the scene with a new set.
+
+        Reconciliation is done by geometry (schematicNet.__eq__), NOT object
+        identity: any old net whose geometry already matches a new net is kept
+        as-is, and only genuinely new geometries are added. This guarantees the
+        scene ends up with exactly one net per distinct geometry, so overlapping
+        duplicates collapse into a single object.
+        """
+        # Expand oldNets to EVERY scene net object sharing a geometry with the
+        # nets being consumed. schematicNet.__eq__/__hash__ compare by geometry,
+        # so a plain set of nets silently collapses exact duplicates into one
+        # element - meaning duplicate *objects* would otherwise be left behind
+        # in the scene. Gathering them here is what makes overlapping duplicates
+        # actually disappear on merge/delete.
+        consumedGeometries = set(oldNets)
+        allOldObjects = [
+            item for item in self.items()
+            if isinstance(item, snet.schematicNet) and item in consumedGeometries
+        ]
+        # Ensure the originally supplied objects are included even if not
+        # currently reported by self.items() (e.g. just added this pass).
+        for net in oldNets:
+            if all(net is not obj for obj in allOldObjects):
+                allOldObjects.append(net)
+
+        keptIds = set()
+
+        for newNet in newNets:
+            existing = next(
+                (obj for obj in allOldObjects if obj == newNet
+                 and id(obj) not in keptIds),
+                None,
+            )
+            if existing is not None:
+                # Geometry already present: keep one existing object and fold
+                # the new net's name into it.
+                existing.mergeNetName(name_source_net)
+                keptIds.add(id(existing))
+            else:
+                self.addItem(newNet)
+                newNet.mergeNetName(name_source_net)
+
+        # Remove every old net object that was not kept. id()-based so duplicate
+        # objects that are __eq__ to a kept net are still removed.
+        for net in allOldObjects:
+            if id(net) in keptIds:
+                continue
+            if net.scene() is self:
                 self.removeItem(net)
-        for net in nets_to_add:
-            self.addItem(net)
-            net.mergeNetName(name_source_net)
 
     def mergeSplitNets(self, inputNet: snet.schematicNet):
         merged, outputNet, processedNets = self.mergeNets(inputNet)
 
         if merged:
+            # processedNets are the originals consumed by the merge (includes
+            # inputNet and every parallel/overlapping duplicate).
             splitDone, splitOutputNets = self.splitInputNet(outputNet)
-            if splitDone:
-                self._updateNets(processedNets - splitOutputNets,
-                                 splitOutputNets - processedNets, outputNet)
-            else:
-                for net in processedNets:
-                    self.removeItem(net)
-                self.addItem(outputNet)
+            newNets = splitOutputNets if splitDone else {outputNet}
+            self._replaceNets(processedNets, newNets, outputNet)
         else:
             splitDone, splitOutputNets = self.splitInputNet(inputNet)
             if splitDone:
-                self._updateNets({inputNet} - splitOutputNets,
-                                 splitOutputNets - {inputNet}, inputNet)
+                self._replaceNets({inputNet}, splitOutputNets, inputNet)
 
     def cleanUpNets(self):
         """Run mergeSplitNets on every net in the scene to remove duplicates."""
@@ -667,83 +701,48 @@ class schematicScene(editorScene):
 
     def findSnapPoint(self, eventLoc: QPoint,
                       ignoredSet: set[snet.schematicNet]) -> QPoint:
+        # Always work from the grid-snapped cursor so the returned point is
+        # grid-aligned even when no connection point is found. This is the
+        # single source of truth for net endpoint placement and keeps the
+        # behaviour identical across draw and stretch code paths.
+        gridPoint = self.snapToGrid(eventLoc)
+
         snapRect = QRect(eventLoc.x() - self.snapConnectDistance,
                          eventLoc.y() - self.snapConnectDistance,
                          2 * self.snapConnectDistance,
                          2 * self.snapConnectDistance, )
         snapPoints = self.findConnectPoints(snapRect, ignoredSet)
 
-        if self._newNet:
-            snapPoints.update(self.findNetInterSect(self._newNet, snapRect))
-        if snapPoints:
-            closestPoint = min(snapPoints,
-                               key=lambda p: (p - eventLoc).manhattanLength())
-            return closestPoint
-        else:
-            return eventLoc
+        if not snapPoints:
+            return gridPoint
+
+        # Deterministic selection: pick the connection point nearest to the
+        # cursor, breaking ties by (x, y) so the same candidate always wins.
+        # Sorting (instead of min over an unordered set) prevents the endpoint
+        # from jittering between equidistant candidates as the mouse moves.
+        closestPoint = min(
+            sorted(snapPoints, key=lambda p: (p.x(), p.y())),
+            key=lambda p: (p - eventLoc).manhattanLength(),
+        )
+        return closestPoint
 
     def findConnectPoints(self, sceneRect: QRect,
                           ignoredSet: set[QGraphicsItem]) -> set[QPoint]:
+        """Collect grid-aligned connection points (net endpoints and pins)
+        inside sceneRect. Points are snapped to grid so that snapping to them
+        can never drag a net endpoint off-grid."""
         snapPoints = set()
         rectItems = set(self.items(sceneRect)) - ignoredSet
         for item in rectItems:
             if isinstance(item, snet.schematicNet):
                 for ep in item.sceneEndPoints:
                     if sceneRect.contains(ep):
-                        snapPoints.add(ep)
+                        snapPoints.add(self.snapToGrid(ep))
                         break
-            elif isinstance(item, shp.symbolPin):
-                snapPoints.add(item.mapToScene(item.start).toPoint())
-            elif isinstance(item, shp.schematicPin):
-                snapPoints.add(item.mapToScene(item.start).toPoint())
+            elif isinstance(item, (shp.symbolPin, shp.schematicPin)):
+                snapPoints.add(
+                    self.snapToGrid(item.mapToScene(item.start).toPoint()))
         return snapPoints
-
-    def findNetInterSect(self, inputNet: snet.schematicNet, rect: QRect) -> set[
-        QPoint]:
-        # Find all nets in the rectangle except the input net
-        netsInSnapRectSet = {netItem for netItem in self.items(rect) if
-                             isinstance(netItem,
-                                        snet.schematicNet) and netItem.isOrthogonal(
-                                 inputNet)}
-        snapPointsSet = set()
-        l1 = QLineF(inputNet.sceneEndPoints[0], inputNet.sceneEndPoints[1])
-        unitVector = l1.unitVector()
-        dx = unitVector.dx() if unitVector.dx() else 0
-        dy = unitVector.dy() if unitVector.dy() else 0
-        newEndX = l1.x2() + rect.width() * dx
-        newEndY = l1.y2() + rect.height() * dy
-        extendedL1 = QLineF(l1.p1(), QPointF(newEndX, newEndY))
-        for netItem in netsInSnapRectSet:
-            l2 = QLineF(netItem.sceneEndPoints[0], netItem.sceneEndPoints[1])
-            (_, intersectPoint) = extendedL1.intersects(l2)
-            if intersectPoint:
-                snapPointsSet.add(intersectPoint.toPoint())
-        return snapPointsSet
-
-    # def findNetStretchPoints(self, netItem: snet.schematicNet,
-    #                          snapDistance: int) -> dict[int, QPoint]:
-    #     netEndPointsDict: dict[int, QPoint] = {}
-    #     sceneEndPoints = netItem.sceneEndPoints
-    #     for netEnd in sceneEndPoints:
-    #         snapRect: QRect = QRect(netEnd.x() - snapDistance,
-    #                                 netEnd.y() - snapDistance, 2 * snapDistance,
-    #                                 2 * snapDistance, )
-    #         snapRectItems = set(self.items(snapRect)) - {netItem}
-    #
-    #         for item in snapRectItems:
-    #             if isinstance(item, snet.schematicNet) and any(
-    #                     list(map(snapRect.contains, item.sceneEndPoints))):
-    #                 netEndPointsDict[sceneEndPoints.index(netEnd)] = netEnd
-    #             elif (isinstance(item,
-    #                              shp.symbolPin | shp.schematicPin)) and snapRect.contains(
-    #                 item.mapToScene(item.start).toPoint()):
-    #                 netEndPointsDict[
-    #                     sceneEndPoints.index(netEnd)] = item.mapToScene(
-    #                     item.start).toPoint()
-    #             if netEndPointsDict.get(sceneEndPoints.index(
-    #                     netEnd)):  # after finding one point, no need to iterate.
-    #                 break
-    #     return netEndPointsDict
 
     @staticmethod
     def orderPoints(points: list[QPoint]) -> list[QPoint]:
@@ -1072,8 +1071,14 @@ class schematicScene(editorScene):
             symbolInstance = shp.schematicSymbol(itemShapes, itemAttributes)
             cellItem = viewItem.parent()
             libItem = cellItem.parent()
+            # Position the instance. Use setPos() rather than a raw ``pos``
+            # attribute: assigning ``symbolInstance.pos = ...`` would shadow the
+            # inherited QGraphicsItem.pos() method with a QPoint, breaking every
+            # later ``item.pos()`` call (e.g. move-group setup in editorScene).
+            symbolInstance.setPos(pos)
+
             # Batch property assignments
-            instanceProperties = {"pos": pos, "counter": self.instanceCounter,
+            instanceProperties = {"counter": self.instanceCounter,
                                   "instanceName": f"I{self.instanceCounter}",
                                   "libraryName": libItem.libraryName,
                                   "cellName": cellItem.cellName,
@@ -1998,7 +2003,12 @@ class schematicScene(editorScene):
             ordered_map = {}
             pinNames = (item.strip() for item in pinOrder.split(","))
             for pinName in pinNames:
-                ordered_map[pinName] = symbolItem.pinNetMap[pinName]
+                if pinName in symbolItem.pinNetMap:
+                    ordered_map[pinName] = symbolItem.pinNetMap[pinName]
+                else:
+                    self.logger.warning(
+                        f"{symbolItem.instanceName}: pinOrder entry "
+                        f"'{pinName}' has no matching pin, skipping.")
             symbolItem.pinNetMap = ordered_map
 
     def _processNetGroup(self, namedNets: Set[snet.schematicNet],

@@ -535,7 +535,7 @@ class editorWindow(QMainWindow):
         self.objPropAction.setShortcut(Qt.Key.Key_Q)
         self.constrainedMoveAction.setShortcut("Shift+M")
         self.copyAction.setShortcut(Qt.Key.Key_C)
-        self.rotateAction.setShortcut("Ctrl+R")
+        self.rotateAction.setShortcut(QKeySequence("Ctrl+R"))
         self.createTextAction.setShortcut("Shift+L")
         self.fitAction.setShortcut(Qt.Key.Key_F)
         self.deleteAction.setShortcut(QKeySequence.StandardKey.Delete)

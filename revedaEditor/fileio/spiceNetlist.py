@@ -197,15 +197,49 @@ def get_top_level_subcircuit(subckts: dict[str, dict[str, Any]]) -> str | None:
     return next(iter(subckts.values()))["name"]
 
 
-# SPICE primitive device terminal orders (standard SPICE convention)
+# SPICE primitive device terminal orders (standard SPICE convention).
+# These are the *base* terminal names.  Some PDK devices (e.g. IHP rsil / rppd
+# / rhigh silicide poly resistors) extract with an extra substrate/bulk
+# terminal, so the parser derives the actual terminal count from the netlist
+# and appends generic substrate names when a device carries more nets than the
+# base list (see _terminal_names_for).
 _DEVICE_TERMINALS: dict[str, list[str]] = {
     "M": ["D", "G", "S", "B"],        # MOSFET: drain, gate, source, bulk
     "Q": ["C", "B", "E"],             # BJT: collector, base, emitter (+ optional substrate)
-    "R": ["PLUS", "MINUS"],           # Resistor: plus, minus
-    "C": ["PLUS", "MINUS"],           # Capacitor: plus, minus
+    "R": ["PLUS", "MINUS"],           # Resistor: plus, minus (+ optional substrate)
+    "C": ["PLUS", "MINUS"],           # Capacitor: plus, minus (+ optional substrate)
     "D": ["PLUS", "MINUS"],           # Diode: anode, cathode
-    "L": ["PLUS", "MINUS"],           # Inductor: plus, minus
+    "L": ["PLUS", "MINUS"],           # Inductor: plus, minus (+ optional substrate)
 }
+
+# Devices whose model/value token trails the net list.  For these, the number
+# of nets is not fixed (a resistor may have 2 or 3 terminals depending on the
+# PDK device), so the model token is located as the last bare (non key=value)
+# token and every token before it is treated as a net.
+_TRAILING_MODEL_PREFIXES = frozenset({"M", "Q", "R", "C", "D", "L"})
+
+# Names used for extra terminals beyond the base list, in order of appearance.
+# "B" (bulk/substrate) is used first so a 3-terminal resistor's substrate net
+# maps onto the "B" pin present on the IHP rsil/rppd/rhigh symbols (and matches
+# the terminal order used by the RC-extraction netlist writer).
+_EXTRA_TERMINAL_NAMES = ["B", "SUB2", "SUB3"]
+
+
+def _terminal_names_for(prefix: str, net_count: int) -> list[str]:
+    """Return terminal names for *net_count* nets of a device with *prefix*.
+
+    Extends the base terminal list with substrate names when the extracted
+    device carries more nets than the standard convention (e.g. a 3-terminal
+    silicide poly resistor). If fewer nets are present, the base list is
+    truncated.
+    """
+    base = list(_DEVICE_TERMINALS.get(prefix, []))
+    if net_count <= len(base):
+        return base[:net_count]
+    extras = _EXTRA_TERMINAL_NAMES + [
+        f"SUB{index}" for index in range(4, net_count - len(base) + 4)
+    ]
+    return base + extras[: net_count - len(base)]
 
 
 def _join_continuation_lines(lines: list[str]) -> list[str]:
@@ -286,30 +320,30 @@ def _parse_device_line(line: str) -> dict[str, Any] | None:
             "terminals": terminals,
         }
 
-    terminal_names = _DEVICE_TERMINALS.get(prefix)
-    if terminal_names is None:
+    if prefix not in _TRAILING_MODEL_PREFIXES:
         return None
 
     # Standard device: <prefix><name> <nets...> <model_or_value> [params...]
     rest = tokens[1:]
 
-    # Separate nets, model, and parameters.
-    # Nets come first, then model name (no '='), then key=value params.
-    # Number of nets is defined by terminal_names length.
-    num_terminals = len(terminal_names)
-
-    # For BJTs, there might be a 4th terminal (substrate)
-    if prefix == "Q" and len(rest) > 4 and "=" not in rest[3]:
-        terminal_names = ["C", "B", "E", "S"]
-        num_terminals = 4
-
-    if len(rest) < num_terminals + 1:
-        # Not enough tokens for terminals + model
+    # The model/value token is the last bare (non key=value) token; every token
+    # before it is a net.  This locates the model correctly regardless of how
+    # many terminals the device has (e.g. a 3-terminal silicide poly resistor),
+    # instead of assuming a fixed net count and mistaking a substrate net for
+    # the model name.
+    model_index = next(
+        (index for index in range(len(rest) - 1, -1, -1) if "=" not in rest[index]),
+        None,
+    )
+    if model_index is None or model_index < 1:
+        # No model token, or no nets precede it: not a usable primitive line.
         return None
 
-    net_tokens = rest[:num_terminals]
-    model_name = rest[num_terminals]
-    param_tokens = rest[num_terminals + 1:]
+    net_tokens = rest[:model_index]
+    model_name = rest[model_index]
+    param_tokens = rest[model_index + 1:]
+
+    terminal_names = _terminal_names_for(prefix, len(net_tokens))
 
     terminals = dict(zip(terminal_names, net_tokens))
     params = {}
