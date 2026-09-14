@@ -223,6 +223,8 @@ class schematicScene(editorScene):
 
             self._newPin.setPos(self.mouseMoveLoc - self._newPin.start)
         elif self.editModes.drawWire or self.editModes.drawBus:
+            if self._newNet is not None and self._newNet.scene() is None:
+                self._newNet = None  # removed while drawing (e.g. undo)
             # findSnapPoint already returns a grid-aligned point (a connection
             # point when one is nearby, otherwise the grid-snapped cursor).
             ignoredSet = {self._newNet} if self._newNet is not None else set()
@@ -337,6 +339,14 @@ class schematicScene(editorScene):
 
     def _handleDrawWire(self, eventLoc: QPoint) -> None:
         """Handle draw wire logic with continuous mode."""
+        self._handleDrawNet(eventLoc, width=0)
+
+    def _handleDrawNet(self, eventLoc: QPoint, width: int = 0) -> None:
+        """
+        Commit the in-progress net segment at the snapped point and start the
+        next one, so a multi-segment net is a chain of segments sharing
+        on-grid vertices.
+        """
         ignoredSet = {self._newNet} if self._newNet is not None else set()
         # findSnapPoint already returns a grid-aligned point.
         snapPoint = self.findSnapPoint(eventLoc, ignoredSet)
@@ -347,18 +357,26 @@ class schematicScene(editorScene):
         snapRect.setVisible(True)
         snapRect.setPos(snapPoint)
 
-        if self._newNet is None:
-            # Start new net
-            self._newNet = snet.schematicNet(snapPoint, snapPoint, 0)
-            self.addUndoStack(self._newNet)
-        else:
-            # Continue from last point – use same snapPoint for segment end and next start
-            self._newNet.draftLine = QLineF(self._newNet.draftLine.p1(), snapPoint)
+        if self._newNet is not None and self._newNet.scene() is None:
+            # In-progress segment was removed while drawing (e.g. undo).
+            self._newNet = None
+        if self._newNet is not None:
+            self._newNet.draftLine = QLineF(
+                self._newNet.draftLine.p1(), snapPoint
+            )
+            if self._newNet.draftLine.isNull():
+                # Zero-length click: keep the segment open for a real end point.
+                return
+            startPoint = self._newNet.sceneEndPoints[1]
             self.wireEditFinished.emit(self._newNet)
+            self._newNet = None
+        else:
+            startPoint = snapPoint
+        self._createNet(startPoint, width)
 
-            # Start next segment from same endpoint
-            self._newNet = snet.schematicNet(snapPoint, snapPoint, 0)
-            self.addUndoStack(self._newNet)
+    def _createNet(self, point: QPoint, width: int = 0) -> None:
+        self._newNet = snet.schematicNet(point, point, width)
+        self.addUndoStack(self._newNet)
 
     def _handleAlignItemLine(self, eventLoc: QPoint) -> None:
         if self.newAlignLine is None:
@@ -382,28 +400,7 @@ class schematicScene(editorScene):
 
     def _handleDrawBus(self, eventLoc: QPoint):
         """Handle draw bus logic with continuous mode."""
-        ignoredSet = {self._newNet} if self._newNet is not None else set()
-        # findSnapPoint already returns a grid-aligned point.
-        snapPoint = self.findSnapPoint(eventLoc, ignoredSet)
-
-        snapRect = self._ensureSnapPointRect()
-        if snapRect.scene() is None:
-            self.addItem(snapRect)
-        snapRect.setVisible(True)
-        snapRect.setPos(snapPoint)
-
-        if self._newNet is None:
-            # Start new bus
-            self._newNet = snet.schematicNet(snapPoint, snapPoint, 1)
-            self.addUndoStack(self._newNet)
-        else:
-            # Continue from last point – use same snapPoint for segment end and next start
-            self._newNet.draftLine = QLineF(self._newNet.draftLine.p1(), snapPoint)
-            self.wireEditFinished.emit(self._newNet)
-
-            # Start next segment from same endpoint
-            self._newNet = snet.schematicNet(snapPoint, snapPoint, 1)
-            self.addUndoStack(self._newNet)
+        self._handleDrawNet(eventLoc, width=1)
 
     def _handleDrawText(self, mouseReleaseLoc: QPoint) -> None:
         """
@@ -542,10 +539,12 @@ class schematicScene(editorScene):
         """
 
         if newNet.draftLine.length() < 1:
-            # Only remove if the net is actually in this scene
+            # Only remove if the net is actually in this scene; if it was
+            # already removed (e.g. undo) its undo entry is gone too, so
+            # popping the stack would discard an unrelated command.
             if newNet.scene() == self:
                 self.removeItem(newNet)
-            self.undoStack.removeLastCommand()
+                self.undoStack.removeLastCommand()
         else:
             newNetSceneRect = newNet.sceneBoundingRect().adjusted(-self.snapGrid,
                                                                   -self.snapGrid,

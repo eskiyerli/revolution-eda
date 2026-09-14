@@ -589,8 +589,13 @@ class layoutView(editorView):
     def keyPressEvent(self, event: QKeyEvent):
         modifiers = event.modifiers()
         if event.key() == Qt.Key.Key_Escape:
-            if self.viewScene.editModes.drawPath and self.viewScene.newPath is not None:
-                if self.viewScene.newPath.draftLine.isNull():
+            if self.viewScene.editModes.drawPath:
+                newPath = self.viewScene.newPath
+                if (
+                        newPath is not None
+                        and newPath.scene() is not None
+                        and newPath.draftLine.isNull()
+                ):
                     self.viewScene.undoStack.removeLastCommand()
                 self.viewScene.newPath = None
                 self.viewScene.editModes.setMode("selectItem")

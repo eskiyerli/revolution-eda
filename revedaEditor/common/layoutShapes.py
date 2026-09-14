@@ -1003,8 +1003,9 @@ class layoutPath(layoutShape):
         unit = direction.p2() - direction.p1()
         length = max(0.0, QPointF.dotProduct(self._draftLine.p2() - p1, unit))
         scene = self.scene()
-        if scene is not None and scene.snapGrid:
-            step = scene.snapGrid / max(abs(unit.x()), abs(unit.y()))
+        grid = getattr(scene, "snapGrid", 0)
+        if grid:
+            step = grid / max(abs(unit.x()), abs(unit.y()))
             length = round(length / step) * step
         self._draftLine.setP2(p1 + unit * length)
 

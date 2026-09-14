@@ -299,10 +299,13 @@ class layoutScene(editorScene):
         super().mouseMoveEvent(event)
 
         # Handle drawing path mode
-        if self.editModes.drawPath and self.newPath is not None:
-            self.newPath.draftLine = QLineF(
-                self.newPath.draftLine.p1(), self.mouseMoveLoc
-            )
+        if self.editModes.drawPath:
+            if self.newPath is not None and self.newPath.scene() is None:
+                self.newPath = None  # removed while drawing (e.g. undo)
+            if self.newPath is not None:
+                self.newPath.draftLine = QLineF(
+                    self.newPath.draftLine.p1(), self.mouseMoveLoc
+                )
         elif (self.editModes.drawRect or self.editModes.cutShape) and self.newRect:
             self.newRect.end = self.mouseMoveLoc
         # Handle drawing pin mode with no new pin
@@ -360,9 +363,11 @@ class layoutScene(editorScene):
     #         self._handleMouseRelease(self.mouseReleaseLoc, mouse_event.button())
 
     def _handleMouseRelease(self, mousePos: QPoint, button: Qt.MouseButton) -> None:
+        if button != Qt.MouseButton.LeftButton:
+            return
         try:
             if self.editModes.drawPath:
-                self.drawLayoutPath()
+                self.drawLayoutPath(mousePos)
             elif self.editModes.drawRect:
                 self.drawLayoutRect()
             elif self.editModes.drawPin:
@@ -379,6 +384,8 @@ class layoutScene(editorScene):
                 self.finishCutLine()
             elif self.editModes.addVia:
                 self.addLayoutViaArray()
+            elif self.editModes.stretchItem:
+                self.finishStretchPath(mousePos)
             elif self.editModes.changeOrigin:
                 self.origin: QPoint = mousePos
             elif self.editModes.alignItems:
@@ -659,24 +666,30 @@ class layoutScene(editorScene):
         )
         self.addUndoStack(self.newRect)
 
-    def drawLayoutPath(self):
+    def drawLayoutPath(self, point: QPoint):
+        """
+        Commit the in-progress path segment at ``point`` and start the next
+        one, so a multi-segment path is a chain of segments sharing on-grid
+        vertices.
+        """
         self.editorWindow.messageLine.setText("Path mode")
-        startPoint = self.mousePressLoc
-        if self.newPath:
-            # Commit the segment end at the snapped release point so the path
-            # end lands on the snap grid, then chain the next segment from it.
-            self.newPath.draftLine = QLineF(
-                self.newPath.draftLine.p1(), self.mouseReleaseLoc
-            )
-            if self.newPath.draftLine.isNull():
-                self.undoStack.removeLastCommand()
-            else:
-                startPoint = self.newPath.sceneEndPoints[1]
+        if self.newPath is not None and self.newPath.scene() is None:
+            # In-progress segment was removed while drawing (e.g. undo).
             self.newPath = None
+        if self.newPath is not None:
+            self.newPath.draftLine = QLineF(self.newPath.draftLine.p1(), point)
+            if self.newPath.draftLine.isNull():
+                # Zero-length click: keep the segment open for a real end point.
+                return
+            startPoint = self.newPath.sceneEndPoints[1]
+            self.newPath = None
+        else:
+            startPoint = point
+        self._createLayoutPath(startPoint)
 
-            # Create a new path
+    def _createLayoutPath(self, point: QPoint):
         self.newPath = lshp.layoutPath(
-            QLineF(startPoint, startPoint),
+            QLineF(point, point),
             self.newPathTuple.layer,
             self.newPathTuple.width,
             int(self.newPathTuple.startExtend),
@@ -685,6 +698,14 @@ class layoutScene(editorScene):
         )
         self.newPath.name = self.newPathTuple.name
         self.addUndoStack(self.newPath)
+
+    def finishStretchPath(self, point: QPoint) -> None:
+        """Commit the stretched path end at the snapped release point."""
+        if self.stretchPathItem is not None:
+            self.stretchPathItem.draftLine = QLineF(
+                self.stretchPathItem.draftLine.p1(), point
+            )
+            self.stretchPathItem = None
 
     def addNewInstance(self) -> Union[lshp.layoutInstance, lshp.layoutPcell]:
         newInstance = self.instLayout(self.layoutInstanceTuple)

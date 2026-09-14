@@ -132,6 +132,7 @@ class schematicNet(QGraphicsItem):
         }
         self._angle = angle_calculators.get(self._mode, lambda angle: angle)(line_angle)
 
+        self._snapEndPoint()
         self._draftLine.setAngle(0)
 
         # Clear the cached _extractRect and calculate new bounding boxes
@@ -143,6 +144,25 @@ class schematicNet(QGraphicsItem):
         # Apply transform/rotation (setRotation internally handles prepareGeometryChange as needed)
         self.setTransformOriginPoint(origin_point)
         self.setRotation(-self._angle)
+
+    def _snapEndPoint(self) -> None:
+        """
+        Project the draft line end point onto the constrained direction and
+        snap its length so the effective end point lies on the snap grid.
+        """
+        if self._mode == NetMode.FREE:
+            return
+        p1 = self._draftLine.p1()
+        direction = QLineF(p1, p1 + QPointF(1.0, 0.0))
+        direction.setAngle(self._angle)
+        unit = direction.p2() - direction.p1()
+        length = max(0.0, QPointF.dotProduct(self._draftLine.p2() - p1, unit))
+        scene = self.scene()
+        grid = getattr(scene, "snapGrid", 0)
+        if grid:
+            step = grid / max(abs(unit.x()), abs(unit.y()))
+            length = round(length / step) * step
+        self._draftLine.setP2(p1 + unit * length)
 
     @cached_property
     def _extractRect(self) -> QRectF:
