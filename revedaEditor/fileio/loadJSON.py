@@ -17,7 +17,8 @@ import pathlib
 from typing import Any, Optional
 
 import orjson
-from PySide6.QtCore import QPoint, QPointF, QLineF, QRect
+from PySide6.QtCore import QPoint, QPointF, QLineF, QRect, QRectF
+from PySide6.QtGui import QTransform
 from PySide6.QtWidgets import (
     QGraphicsScene,
     QGraphicsRectItem,
@@ -461,6 +462,163 @@ class layoutItems:
         if "top" in item:
             obj.setTransformOriginPoint(QPointF(*item["top"]))
 
+    # fl (flip) is bounds-invariant: it mirrors the item about its own
+    # bounding-rect center, so it never changes the rect. Only ang (rotation
+    # about top) and translation move bounds.
+    _UNBOUNDABLE = object()
+
+    def _dictsBounds(self, records, activePaths):
+        """Union of a cell's record bounds from the raw dicts, without
+        constructing any QGraphicsItems. Returns None when a record cannot be
+        bounded cheaply, signalling the caller to load eagerly."""
+        bounds = None
+        for rec in records:
+            r = self._recordBounds(rec, activePaths)
+            if r is self._UNBOUNDABLE:
+                return None
+            if r is None:
+                continue
+            bounds = r if bounds is None else bounds.united(r)
+        # Each child's boundingRect carries its own margin; inflate so the
+        # stored bounds never underestimate the realised childrenBoundingRect.
+        if bounds is None:
+            return QRectF()
+        return bounds.adjusted(-2, -2, 2, 2)
+
+    @staticmethod
+    def _applyRecordTransform(bounds, rec, translate=None):
+        """Apply a record's ang rotation (about its saved ``top`` pivot) and an
+        optional extra translation to ``bounds``."""
+        ang = rec.get("ang", 0)
+        if not ang and translate is None:
+            return bounds
+        transform = QTransform()
+        if translate is not None:
+            transform.translate(translate[0], translate[1])
+        if ang:
+            top = rec.get("top", (0, 0))
+            transform.translate(top[0], top[1])
+            transform.rotate(ang)
+            transform.translate(-top[0], -top[1])
+        return transform.mapRect(bounds)
+
+    def _recordBounds(self, rec, activePaths):
+        """Bounds of one record in parent (cell-local) coordinates.
+
+        Returns a QRectF, None to skip the record, or _UNBOUNDABLE when the
+        record cannot be bounded without building its item."""
+        if not isinstance(rec, dict):
+            return None
+        rtype = rec.get("type")
+        if rtype in ("Rect", "Pin"):
+            bounds = QRectF(
+                QPointF(*rec["tl"]), QPointF(*rec["br"])
+            ).normalized()
+            return self._applyRecordTransform(bounds, rec)
+        if rtype in ("Path", "Ruler"):
+            bounds = QRectF(
+                QPointF(*rec["dfl1"]), QPointF(*rec["dfl2"])
+            ).normalized()
+            if rtype == "Path":
+                margin = rec.get("w", 0) / 2 + max(
+                    rec.get("se", 0), rec.get("ee", 0)
+                )
+            else:
+                margin = self.rulerTickLength * 4
+            return self._applyRecordTransform(
+                bounds.adjusted(-margin, -margin, margin, margin), rec
+            )
+        if rtype == "Polygon":
+            bounds = None
+            for x, y in rec["ps"]:
+                point = QRectF(x, y, 0, 0)
+                bounds = point if bounds is None else bounds.united(point)
+            if bounds is None:
+                return None
+            return self._applyRecordTransform(bounds, rec)
+        if rtype == "Via":
+            viaInfo = rec["via"]
+            # ``st`` anchors the first cut; cuts extend (xn-1)*xs by
+            # (yn-1)*ys in the array's local frame before ang is applied.
+            margin = (
+                    max(viaInfo.get("w", 0), viaInfo.get("h", 0))
+                    + max(viaInfo.get("be") or 0, viaInfo.get("te") or 0)
+                    + 2
+            )
+            start = rec["st"]
+            span = QRectF(
+                QPointF(0, 0),
+                QPointF((rec["xn"] - 1) * rec["xs"],
+                        (rec["yn"] - 1) * rec["ys"]),
+            ).normalized()
+            bounds = self._applyRecordTransform(
+                span.adjusted(-margin, -margin, margin, margin),
+                rec,
+                translate=start,
+            )
+            return bounds
+        if rtype == "Label":
+            return self._labelDictBounds(rec)
+        if rtype == "Inst":
+            libraryPath = self._get_library_path(rec.get("lib", ""))
+            if not libraryPath:
+                return None
+            filePath = (
+                    libraryPath / rec["cell"] / f"{rec['view']}.json"
+            )
+            filePathKey = str(filePath)
+            if filePathKey in activePaths:
+                # Recursive reference: the item loader skips these too.
+                return None
+            childContents = self._load_json_file(filePathKey)
+            if not childContents:
+                return None
+            bbox = rec.get("bbox")
+            if isinstance(bbox, (list, tuple)) and len(bbox) == 4:
+                bounds = QRectF(*bbox)
+            else:
+                bounds = self._dictsBounds(
+                    childContents[2:], activePaths | {filePathKey}
+                )
+            if bounds is None:
+                return self._UNBOUNDABLE
+            return self._applyRecordTransform(bounds, rec, translate=rec["loc"])
+        if rtype == "Pcell":
+            bbox = rec.get("bbox")
+            if isinstance(bbox, (list, tuple)) and len(bbox) == 4:
+                return self._applyRecordTransform(
+                    QRectF(*bbox), rec, translate=rec["loc"]
+                )
+            return self._UNBOUNDABLE
+        # Unknown or unboundable record type: force eager loading.
+        return self._UNBOUNDABLE
+
+    @staticmethod
+    def _labelDictBounds(rec):
+        """Label bounds from font metrics, honouring labelOrient rotation."""
+        fontMetrics = lshp.layoutLabel._fontEntry(rec["ff"], rec["fs"], rec["fh"])[1]
+        textBounds = fontMetrics.boundingRect(rec["lt"])
+        orients = lshp.layoutLabel.LABEL_ORIENTS
+        try:
+            orientIndex = orients.index(rec["lo"])
+        except ValueError:
+            orientIndex = 0
+        # labelOrient angles with flips collapsed out (flips are
+        # bounds-invariant). MY90 has no setOrient case, so it stays at 0.
+        orientAngles = (0, 90, 180, 270, 0, 90, 90, 0)
+        start = rec["st"]
+        totalAngle = orientAngles[orientIndex] + rec.get("ang", 0)
+        bounds = QRectF(
+            start[0], start[1], textBounds.width(), textBounds.height()
+        )
+        if totalAngle:
+            transform = QTransform()
+            transform.translate(start[0], start[1])
+            transform.rotate(totalAngle)
+            transform.translate(-start[0], -start[1])
+            bounds = transform.mapRect(bounds)
+        return bounds.adjusted(-8, -8, 8, 8)
+
     def createPcellInstance(self, item):
         library_path = self._get_library_path(item["lib"])
         if not library_path:
@@ -480,7 +638,17 @@ class layoutItems:
 
         try:
             instance = pcell_class()
-            instance(**item.get("params", {}))
+            # A saved "bbox" defers pcell evaluation until shapes are needed.
+            bbox = item.get("bbox")
+            deferParams = getattr(instance, "deferParams", None)
+            if (
+                    callable(deferParams)
+                    and isinstance(bbox, (list, tuple))
+                    and len(bbox) == 4
+            ):
+                deferParams(item.get("params", {}), QRectF(*bbox))
+            else:
+                instance(**item.get("params", {}))
             instance.libraryName = item["lib"]
             instance.cellName = item["cell"]
             instance.viewName = item["view"]
@@ -508,21 +676,38 @@ class layoutItems:
             self.scene.logger.error(f"Recursive layout reference: {file_path}")
             return None
 
-        item_shapes = []
-        append_shape = item_shapes.append
-        self._active_layout_paths.add(file_path_key)
-        try:
-            for shape_data in itertools.islice(file_contents, 2, None):
-                try:
-                    shape = self.create(shape_data)
-                except Exception:
-                    continue
-                if shape:
-                    append_shape(shape)
-        finally:
-            self._active_layout_paths.remove(file_path_key)
+        # Defer child construction until the shapes are actually needed (paint
+        # at full LOD, hit tests, export). The bounds come from a saved "bbox"
+        # when present, or a cheap dict-level walk for legacy files; cells
+        # containing unboundable records (e.g. a Pcell without bbox) fall back
+        # to eager construction.
+        bbox = item.get("bbox")
+        if isinstance(bbox, (list, tuple)) and len(bbox) == 4:
+            bounds = QRectF(*bbox)
+        else:
+            try:
+                bounds = self._dictsBounds(file_contents[2:], {file_path_key})
+            except (KeyError, IndexError, TypeError, ValueError):
+                bounds = None
+        if bounds is not None:
+            instance = lshp.layoutInstance([])
+            instance.deferShapes(file_contents[2:], bounds, file_path_key)
+        else:
+            item_shapes = []
+            append_shape = item_shapes.append
+            self._active_layout_paths.add(file_path_key)
+            try:
+                for shape_data in itertools.islice(file_contents, 2, None):
+                    try:
+                        shape = self.create(shape_data)
+                    except Exception:
+                        continue
+                    if shape:
+                        append_shape(shape)
+            finally:
+                self._active_layout_paths.remove(file_path_key)
 
-        instance = lshp.layoutInstance(item_shapes)
+            instance = lshp.layoutInstance(item_shapes)
         loc = item["loc"]
         instance.libraryName = item["lib"]
         instance.cellName = item["cell"]

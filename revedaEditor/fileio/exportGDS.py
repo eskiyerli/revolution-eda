@@ -349,6 +349,14 @@ class gdsExporter:
                 param for param in inspect.signature(cls.__init__).parameters
                 if param not in ("self", "snapTuple")
             ]
+        # A deferred pcell's ctor-param attributes still hold defaults; read
+        # the pending params dict instead.
+        pending = getattr(instance, "deferredParams", None)
+        if pending is not None:
+            return {
+                arg: pending[arg] if arg in pending else getattr(instance, arg)
+                for arg in _pcell_param_cache[cls]
+            }
         return {arg: getattr(instance, arg) for arg in _pcell_param_cache[cls]}
 
     @property

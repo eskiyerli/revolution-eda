@@ -28,12 +28,11 @@ import pytest
 
 from revedaEditor.fileio.schemaValidation import (
     SCHEMA_VERSION,
+    DesignFileValidationError,
+    get_schema_version,
     validate_design_data,
     validate_design_file,
-    get_schema_version,
-    DesignFileValidationError,
 )
-
 
 # ---------------------------------------------------------------------------
 # Test fixtures
@@ -147,14 +146,16 @@ class TestValidateDesignData:
         assert errors == []
 
     def test_item_missing_type_field(self):
+        # Non-strict validation is header-only for speed; items without a
+        # "type" are tolerated and skipped by the item factory at load time.
         data = [
             {"viewType": "symbol"},
             {"snapGrid": [10, 5]},
             {"rect": [0, 0, 100, 50]},  # missing "type"
         ]
         is_valid, errors = validate_design_data(data)
-        assert not is_valid
-        assert "type" in errors[0]
+        assert is_valid
+        assert errors == []
 
     def test_minimal_valid_file(self):
         data = [{"viewType": "layout"}, {"snapGrid": [10, 5]}]
@@ -169,7 +170,7 @@ class TestValidateDesignData:
             {"snapGrid": [10, 5]},
             {"type": "rect", "rect": [0, 0, 100, 50], "loc": [10, 20]},
         ]
-        is_valid, errors = validate_design_data(data)
+        is_valid, _errors = validate_design_data(data)
         assert is_valid
 
 
@@ -192,7 +193,7 @@ class TestValidateDesignFile:
         assert "Expected view type" in errors[0]
 
     def test_invalid_data_fails_before_type_check(self):
-        is_valid, errors = validate_design_file([], "symbol")
+        is_valid, _errors = validate_design_file([], "symbol")
         assert not is_valid
 
 

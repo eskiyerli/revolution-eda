@@ -12,7 +12,6 @@
 import inspect
 import json
 import pathlib
-# import time
 from typing import Any, Dict, List, Union, Optional
 
 import orjson
@@ -1352,7 +1351,6 @@ class layoutScene(editorScene):
                         pass
                 if len(decodedData) > 2:
                     self.createLayoutItems(decodedData[2:])
-            self.itemsRefSet = set(self.items())
             return True
         except orjson.JSONDecodeError:
             self.logger.error("Invalid file format.")
@@ -1368,13 +1366,25 @@ class layoutScene(editorScene):
         factory_create = lj.layoutItems(self).create
         index_method = self.itemIndexMethod()
         self.setItemIndexMethod(QGraphicsScene.ItemIndexMethod.NoIndex)
+        # Register items into itemsRefSet incrementally as they are created,
+        # avoiding a sorted self.items() scan over the whole scene afterwards.
+        refSet = getattr(self, "itemsRefSet", None)
+        refAdd = refSet.add if refSet is not None else None
+        addItem = self.addItem
         try:
             for item in decoded_data:
                 if isinstance(item, dict):
                     try:
                         shape = factory_create(item)
                         if shape is not None:
-                            self.addItem(shape)
+                            addItem(shape)
+                            if refAdd is not None:
+                                refAdd(shape)
+                                stack = shape.childItems()
+                                while stack:
+                                    child = stack.pop()
+                                    refAdd(child)
+                                    stack.extend(child.childItems())
                     except Exception:
                         pass
         finally:
@@ -1891,7 +1901,16 @@ class layoutScene(editorScene):
     def extractPcellInstanceParameters(self, instance: lshp.layoutPcell) -> dict:
         initArgs = inspect.signature(instance.__class__.__init__).parameters
         argsUsed = [param for param in initArgs if (param != "self")]
-        argDict = {arg: getattr(instance, arg) for arg in argsUsed}
+        # A deferred pcell keeps its real params in the pending loader; the
+        # ctor-param attributes still hold defaults until realisation.
+        pending = getattr(instance, "deferredParams", None)
+        if pending is not None:
+            argDict = {
+                arg: pending[arg] if arg in pending else getattr(instance, arg)
+                for arg in argsUsed
+            }
+        else:
+            argDict = {arg: getattr(instance, arg) for arg in argsUsed}
         lineEditDict = {key: edf.shortLineEdit(value) for key, value in argDict.items()}
         return lineEditDict
 

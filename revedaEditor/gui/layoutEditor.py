@@ -466,7 +466,7 @@ class layoutEditor(edw.editorWindow):
         QApplication.setOverrideCursor(Qt.WaitCursor)
         QApplication.processEvents()
         try:
-            self.centralW.scene.loadDesign(self.file)
+            self.centralW.scene._safeLoadDesign(self.file)
             viewNameTuple = ddef.viewNameTuple(
                 self.libItem.libraryName, self.cellItem.cellName, self.viewName
             )

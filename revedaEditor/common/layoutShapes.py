@@ -10,7 +10,7 @@
 #
 import math
 from pathlib import Path
-from typing import List, Optional, Tuple, Union
+from typing import ClassVar, List, NamedTuple, Optional, Tuple
 
 import numpy as np
 import shiboken6
@@ -35,7 +35,6 @@ from PySide6.QtGui import (
     QPen,
     QPixmap,
     QPolygonF,
-    QTextOption,
     QTransform,
 )
 from PySide6.QtWidgets import (
@@ -70,8 +69,8 @@ def getProcessDBU():
     return _processDBUCache
 
 class textureCache:
-    _file_content_cache = {}
-    _pixmap_cache = {}
+    _file_content_cache: ClassVar[dict] = {}
+    _pixmap_cache: ClassVar[dict] = {}
 
     @classmethod
     def readFileContent(cls, filePath):
@@ -135,9 +134,9 @@ class textureCache:
 
 class layoutShape(QGraphicsItem):
     # Class-level color cache
-    _color_cache = {}
+    _color_cache: ClassVar[dict] = {}
     # Class-level pen/brush lookup table
-    _pen_brush_cache = {}
+    _pen_brush_cache: ClassVar[dict] = {}
 
     def __init__(self) -> None:
         super().__init__()
@@ -293,7 +292,7 @@ class layoutShape(QGraphicsItem):
         return self._offset
 
     @offset.setter
-    def offset(self, value: Union[QPoint | QPointF]):
+    def offset(self, value: QPoint | QPointF):
         self._offset = value
 
     # def mousePressEvent(self, event: QGraphicsSceneMouseEvent) -> None:
@@ -375,7 +374,15 @@ class layoutShape(QGraphicsItem):
 
 
 class layoutRect(layoutShape):
-    sides = ["Left", "Right", "Top", "Bottom"]
+    sides: ClassVar[list] = ["Left", "Right", "Top", "Bottom"]
+    # Stretch-side endpoint getters are stateless; share one map per class
+    # instead of rebuilding it for every rect.
+    _stretchSidesMap: ClassVar[dict] = {
+        sides[0]: (lambda r: r.topLeft(), lambda r: r.bottomLeft()),
+        sides[1]: (lambda r: r.topRight(), lambda r: r.bottomRight()),
+        sides[2]: (lambda r: r.topLeft(), lambda r: r.topRight()),
+        sides[3]: (lambda r: r.bottomLeft(), lambda r: r.bottomRight()),
+    }
 
     def __init__(
             self,
@@ -388,23 +395,14 @@ class layoutRect(layoutShape):
         self._start = self._rect.topLeft()
         self._end = self._rect.bottomRight()
         self._layer = layer
-        if self._layer.selectable:
-            self.setFlag(QGraphicsItem.ItemIsSelectable, True)
-            self.setFlag(QGraphicsItem.ItemIsFocusable, True)
-        else:
-            self.setFlag(QGraphicsItem.ItemIsSelectable, False)
-            self.setFlag(QGraphicsItem.ItemIsFocusable, False)
+        self.setFlag(
+            QGraphicsItem.ItemIsSelectable | QGraphicsItem.ItemIsFocusable,
+            self._layer.selectable,
+        )
         self._stretch = False
         self._stretchSide = None
-        self._stretchPen = QPen(QColor("red"), self._layer.pwidth, Qt.SolidLine)
         self._definePensBrushes(self._layer)
         self.setZValue(self._layer.z)
-        self._stretchSidesMap = {
-            self.sides[0]: (lambda r: r.topLeft(), lambda r: r.bottomLeft()),
-            self.sides[1]: (lambda r: r.topRight(), lambda r: r.bottomRight()),
-            self.sides[2]: (lambda r: r.topLeft(), lambda r: r.topRight()),
-            self.sides[3]: (lambda r: r.bottomLeft(), lambda r: r.bottomRight()),
-        }
 
     def __repr__(self) -> str:
         return f"layoutRect({self._start}, {self._end}, {self._layer})"
@@ -608,6 +606,19 @@ class layoutRect(layoutShape):
             self.setCursor(Qt.ArrowCursor)
 
 
+class _DeferredLoader(NamedTuple):
+    """Pending child realisation for a lazily loaded layoutInstance.
+
+    kind:    "json" for a referenced layout cell, "pcell" for a pcell.
+    payload: child record dicts for "json", the params dict for "pcell".
+    pathKey: the referenced cell's file path, kept for the recursion guard.
+    """
+
+    kind: str
+    payload: object
+    pathKey: str | None
+
+
 class layoutInstance(layoutShape):
     _lodThreshold = 0.002
     def __init__(self, shapes: list[layoutShape]):
@@ -633,27 +644,102 @@ class layoutInstance(layoutShape):
         # Defer expensive operations
         self._start = None
         self._shapes_set = False
+        self._childBoundsCache = None
+        self._deferredLoader: _DeferredLoader | None = None
 
         # Set shapes only if not empty
         if shapes:
             self.setShapes()
 
+    def deferShapes(
+            self, childDicts: list[dict], bounds: QRectF, pathKey: str | None = None
+    ) -> None:
+        """Postpone child-item construction until shapes are needed.
+
+        ``bounds`` is the saved childrenBoundingRect so boundingRect/start can
+        answer without realising children."""
+        self._deferredLoader = _DeferredLoader("json", childDicts, pathKey)
+        self._childBoundsCache = bounds
+
+    def deferParams(self, params: dict, bounds: QRectF) -> None:
+        """Postpone pcell evaluation (instance(**params)) until needed."""
+        self._deferredLoader = _DeferredLoader("pcell", params, None)
+        self._childBoundsCache = bounds
+
+    @property
+    def deferredParams(self) -> dict | None:
+        """Pending params of a deferred pcell, or None."""
+        loader = self._deferredLoader
+        return loader.payload if loader is not None and loader.kind == "pcell" else None
+
+    def _ensureShapes(self) -> None:
+        """Realise deferred child items. No-op for fully built instances."""
+        loader = self._deferredLoader
+        if loader is None:
+            return
+        scene = self.scene()
+        if scene is None:
+            return
+        if loader.kind == "json":
+            # Deferred import: loadJSON already imports this module.
+            from revedaEditor.fileio.loadJSON import layoutItems
+
+            try:
+                factory = layoutItems(scene)
+            except AttributeError:
+                # Scene cannot host layout items (e.g. a bare QGraphicsScene
+                # in tests); keep the loader so a later attempt can retry.
+                return
+            self._deferredLoader = None
+            if loader.pathKey is not None:
+                factory._active_layout_paths.add(loader.pathKey)
+            try:
+                # The shapes setter reparents the children via setShapes.
+                self.shapes = [
+                    shape
+                    for data in loader.payload
+                    if isinstance(data, dict)
+                    and (shape := factory.create(data)) is not None
+                ]
+            finally:
+                if loader.pathKey is not None:
+                    factory._active_layout_paths.discard(loader.pathKey)
+        else:
+            self._deferredLoader = None
+            # __call__ assigns self.shapes which parents the children.
+            self(**loader.payload)
+        self._childBoundsCache = None
+        self._start = None
+        refSet = getattr(scene, "itemsRefSet", None)
+        if refSet is not None:
+            stack = self.childItems()
+            while stack:
+                child = stack.pop()
+                refSet.add(child)
+                stack.extend(child.childItems())
+        self.update()
+
     def setShapes(self):
         if self._shapes_set or not self._shapes:
             return
 
+        self._childBoundsCache = None
         # Batch process all shapes
         for item in self._shapes:
+            # setFlags replaces all flags, so ItemIsSelectable is already
+            # cleared by this single call.
             item.setFlags(QGraphicsItem.ItemStacksBehindParent)
-            item.setFlag(QGraphicsItem.ItemIsSelectable, False)
-            if hasattr(item, "layer") and hasattr(item.layer, "visible"):
-                item.setVisible(item.layer.visible)
+            layer = getattr(item, "layer", None)
+            if layer is not None and getattr(layer, "visible", True) is False:
+                item.setVisible(False)
             item.setParentItem(self)
 
         self._shapes_set = True
 
     def removeShapes(self):
+        self._deferredLoader = None
         self.prepareGeometryChange()
+        self._childBoundsCache = None
         scene = self.scene()
         for item in self._shapes:
             item.setParentItem(None)
@@ -666,8 +752,15 @@ class layoutInstance(layoutShape):
         return f"{self.__class__.__name__}({self._libraryName}, {self._cellName}, {self._viewName}, {self._instanceName})"
 
 
+    def _childrenBounds(self) -> QRectF:
+        # Children are static after construction, so the union of their bounds
+        # can be computed once and reused by boundingRect/paint/start.
+        if self._childBoundsCache is None:
+            self._childBoundsCache = self.childrenBoundingRect()
+        return self._childBoundsCache
+
     def boundingRect(self) -> QRectF:
-        return self.childrenBoundingRect().adjusted(-2, -2, 2, 2)
+        return self._childrenBounds().adjusted(-2, -2, 2, 2)
 
     def paint(self, painter, option, widget) -> None:
         lod = QStyleOptionGraphicsItem.levelOfDetailFromTransform(
@@ -681,7 +774,7 @@ class layoutInstance(layoutShape):
                     child.setVisible(False)
                 self._childrenHidden = True
 
-            rect = self.childrenBoundingRect()
+            rect = self._childrenBounds()
             painter.setPen(QPen(QColor(150, 150, 150), 0))
             painter.setBrush(QColor(100, 100, 100, 60))
             painter.drawRect(rect)
@@ -691,7 +784,8 @@ class layoutInstance(layoutShape):
                 painter.setBrush(Qt.NoBrush)
                 painter.drawRect(rect)
         else:
-            # --- Full-detail mode: ensure children are visible ---
+            # --- Full-detail mode: realise deferred children, ensure visible ---
+            self._ensureShapes()
             if getattr(self, "_childrenHidden", False):
                 for child in self.childItems():
                     if hasattr(child, "layer") and hasattr(child.layer, "visible"):
@@ -703,7 +797,7 @@ class layoutInstance(layoutShape):
             painter.setRenderHint(QPainter.NonCosmeticBrushPatterns)
             if option.state & QStyle.State_Selected:
                 painter.setPen(self._selectedPen)
-                rect = self.childrenBoundingRect()
+                rect = self._childrenBounds()
                 painter.drawRect(rect)
 
     def sceneEvent(self, event):
@@ -757,6 +851,7 @@ class layoutInstance(layoutShape):
 
     @property
     def shapes(self):
+        self._ensureShapes()
         return self._shapes
 
     @shapes.setter
@@ -768,7 +863,7 @@ class layoutInstance(layoutShape):
     @property
     def start(self):
         if self._start is None:
-            self._start = self.childrenBoundingRect().bottomLeft()
+            self._start = self._childrenBounds().bottomLeft()
         return self._start.toPoint()
 
     @property
@@ -781,6 +876,8 @@ class layoutInstance(layoutShape):
             self._counter = value
 
     def addShape(self, shape: layoutShape):
+        self._ensureShapes()
+        self._childBoundsCache = None
         self._shapes.append(shape)
         shape.setParentItem(self)
 
@@ -1646,9 +1743,14 @@ class layoutRuler(layoutShape):
 
 
 class layoutLabel(layoutShape):
-    LABEL_ALIGNMENTS = ["Left", "Center", "Right"]
-    LABEL_ORIENTS = ["R0", "R90", "R180", "R270", "MX", "MX90", "MY", "MY90"]
+    LABEL_ALIGNMENTS: ClassVar[list] = ["Left", "Center", "Right"]
+    LABEL_ORIENTS: ClassVar[list] = ["R0", "R90", "R180", "R270", "MX", "MX90", "MY", "MY90"]
     LABEL_SCALE = 10
+    # (family, style, pointSize) -> (template QFont, QFontMetrics). Labels copy
+    # the template font (QFont is implicitly shared) so per-label setters can
+    # still mutate without affecting the cache; metrics are read-only and
+    # shared directly.
+    _fontCache: ClassVar[dict] = {}
 
     def __init__(
             self,
@@ -1672,22 +1774,27 @@ class layoutLabel(layoutShape):
         self._layer = layer
         self._placementMarkerVisible = False
         self._definePensBrushes(self._layer)
-        self._labelFont = QFont(fontFamily)
-        self._labelFont.setStyleName(fontStyle)
-        self._labelFont.setKerning(False)
-        self._labelFont.setPointSize(int(float(self._fontHeight) * self.LABEL_SCALE))
-        # self.setOpacity(1)
-        self._fm = QFontMetrics(self._labelFont)
+        templateFont, self._fm = layoutLabel._fontEntry(
+            fontFamily, fontStyle, fontHeight
+        )
+        self._labelFont = QFont(templateFont)
         self._rect = self._fm.boundingRect(self._labelText)
-        self._labelOptions = QTextOption()
-        if self._labelAlign == layoutLabel.LABEL_ALIGNMENTS[0]:
-            self._labelOptions.setAlignment(Qt.AlignmentFlag.AlignLeft)
-        elif self._labelAlign == layoutLabel.LABEL_ALIGNMENTS[1]:
-            self._labelOptions.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        elif self._labelAlign == layoutLabel.LABEL_ALIGNMENTS[2]:
-            self._labelOptions.setAlignment(Qt.AlignmentFlag.AlignRight)
         self.setOrient()
         self.setZValue(self._layer.z)
+
+    @classmethod
+    def _fontEntry(cls, fontFamily: str, fontStyle: str, fontHeight: str):
+        """Shared (template QFont, QFontMetrics) for a label font spec."""
+        fontKey = (fontFamily, fontStyle, int(float(fontHeight) * cls.LABEL_SCALE))
+        fontEntry = cls._fontCache.get(fontKey)
+        if fontEntry is None:
+            templateFont = QFont(fontFamily)
+            templateFont.setStyleName(fontStyle)
+            templateFont.setKerning(False)
+            templateFont.setPointSize(fontKey[2])
+            fontEntry = (templateFont, QFontMetrics(templateFont))
+            cls._fontCache[fontKey] = fontEntry
+        return fontEntry
 
     def __repr__(self) -> str:
         return (
@@ -1725,7 +1832,7 @@ class layoutLabel(layoutShape):
             )
             .normalized()
             .adjusted(-8, -8, 8, 8)
-        )  #
+        )
 
     def shape(self) -> QPainterPath:
         path = QPainterPath()
@@ -1854,8 +1961,8 @@ class layoutLabel(layoutShape):
 
 
 class layoutPin(layoutShape):
-    pinDirs = ["Input", "Output", "Inout"]
-    pinTypes = ["Signal", "Ground", "Power", "Clock", "Digital", "Analog"]
+    pinDirs: ClassVar[list] = ["Input", "Output", "Inout"]
+    pinTypes: ClassVar[list] = ["Signal", "Ground", "Power", "Clock", "Digital", "Analog"]
 
     def __init__(
             self,
@@ -1878,7 +1985,6 @@ class layoutPin(layoutShape):
         self._definePensBrushes(self._layer)
         self._label = None
         self._stretchSide = None
-        self._stretchPen = QPen(QColor("red"), self._layer.pwidth, Qt.SolidLine)
         self.setZValue(self._layer.z)
 
     def __repr__(self) -> str:
@@ -2272,14 +2378,9 @@ class layoutViaArray(layoutShape):
         self._ys = ys  # row spacing
         self._legacyStart = legacyStart
         self._start = start if legacyStart else QPoint(0, 0)
-        self._via = layoutVia(
-            self._start,
-            self._prototype_via.viaDefTuple,
-            self._prototype_via.width,
-            self._prototype_via.height,
-            self._prototype_via.bottomEnclosure,
-            self._prototype_via.topEnclosure,
-        )
+        # The prototype is only used as a parameter/reference holder (its
+        # position is never read), so adopt it instead of building a copy.
+        self._via = self._prototype_via
         self._via_array = []
         self._create_array()
         self.setFiltersChildEvents(True)

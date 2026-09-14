@@ -475,6 +475,7 @@ class editorScene(QGraphicsScene):
         try:
             if reload:
                 self.clear()
+                self.itemsRefSet.clear()
 
             # Concrete scenes return True only after successful reconstruction.
             loaded = bool(self.loadDesign(file))
@@ -687,7 +688,9 @@ class editorScene(QGraphicsScene):
             yield
         finally:
             end_time = time.perf_counter()
-            self.logger.info(f"Total processing time: {end_time - start_time:.3f} seconds")
+            self.logger.info(
+                f"Total processing time: {end_time - start_time:.3f} seconds"
+            )
 
     @property
     def draftPen(self):

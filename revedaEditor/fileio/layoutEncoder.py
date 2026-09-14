@@ -71,6 +71,9 @@ class layoutEncoder(json.JSONEncoder):
         return super().default(item)
 
     def _encodeLayoutInstance(self, item: lshp.layoutInstance) -> Dict[str, Any]:
+        # ``bbox`` is the children bounds in item-local coordinates; the loader
+        # uses it to defer child construction until the instance is viewed.
+        bounds = item._childrenBounds()
         return {
             "type": "Inst",
             "lib": item.libraryName,
@@ -86,6 +89,7 @@ class layoutEncoder(json.JSONEncoder):
             "top": item.transformOriginPoint().toTuple(),
             "ang": item.angle,
             "fl": item.flipTuple,
+            "bbox": (bounds.x(), bounds.y(), bounds.width(), bounds.height()),
         }
 
     def _encodeLayoutRect(self, item: lshp.layoutRect) -> Dict[str, Any]:
@@ -224,11 +228,18 @@ class layoutEncoder(json.JSONEncoder):
         }
 
     def _encodePcell(self, item) -> Dict[str, Any]:
-        argDict = {
-            name: getattr(item, name)
-            for name in _pcell_parameter_names(type(item))
-            if hasattr(item, name)
-        }
+        # A deferred pcell's ctor-param attributes still hold defaults, so read
+        # the pending params dict instead of getattr on the instance.
+        pending = getattr(item, "deferredParams", None)
+        if pending is not None:
+            argDict = dict(pending)
+        else:
+            argDict = {
+                name: getattr(item, name)
+                for name in _pcell_parameter_names(type(item))
+                if hasattr(item, name)
+            }
+        bounds = item._childrenBounds()
         return {
             "type": "Pcell",
             "lib": item.libraryName,
@@ -245,6 +256,7 @@ class layoutEncoder(json.JSONEncoder):
             "ang": item.angle,
             "fl": item.flipTuple,
             "params": argDict,
+            "bbox": (bounds.x(), bounds.y(), bounds.width(), bounds.height()),
         }
 
 

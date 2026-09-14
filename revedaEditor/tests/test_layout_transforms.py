@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
-from PySide6.QtCore import QLineF, QPoint, QPointF
+from PySide6.QtCore import QLineF, QPoint, QPointF, QRectF
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QApplication, QGraphicsScene
 
@@ -166,25 +166,231 @@ def test_layout_loader_skips_unknown_records(loader):
 
 
 def test_layout_loader_stops_recursive_instance_reference(tmp_path):
-    cell_dir = tmp_path / "library" / "self" 
+    cell_dir = tmp_path / "library" / "self"
     cell_dir.mkdir(parents=True)
     (cell_dir / "layout.json").write_text(
         '[{"viewType":"layout"},{"snapGrid":[10,10]},'
         '{"type":"Inst","lib":"library","cell":"self","view":"layout",'
         '"loc":[0,0],"ic":1,"nam":"I1"}]'
     )
-    scene = SimpleNamespace(
-        libraryDict={"library": str(tmp_path / "library")},
-        rulerFont=QFont(), rulerTickLength=5, snapTuple=(10, 10),
-        rulerWidth=1, rulerTickGap=10, logger=Mock(),
-    )
+    scene = _makeLayoutScene({"library": str(tmp_path / "library")})
 
     instance = layoutItems(scene).create({
         "type": "Inst", "lib": "library", "cell": "self", "view": "layout",
         "loc": [0, 0], "ic": 1, "nam": "I1",
     })
+    scene.addItem(instance)
 
     assert instance is not None
+    # Realising the deferred children hits the recursion guard.
     assert not instance.shapes
     scene.logger.error.assert_called_once()
+
+
+def _writeLayoutCell(tmp_path, lib, cell, records):
+    cellDir = tmp_path / lib / cell
+    cellDir.mkdir(parents=True)
+    (cellDir / "layout.json").write_text(
+        '[{"viewType":"layout"},{"snapGrid":[10,10]},' + ",".join(records) + "]"
+    )
+    return tmp_path / lib
+
+
+def _makeLayoutScene(libraryDict):
+    scene = QGraphicsScene()
+    scene.libraryDict = libraryDict
+    scene.rulerFont = QFont()
+    scene.rulerTickLength = 5
+    scene.snapTuple = (10, 10)
+    scene.rulerWidth = 1
+    scene.rulerTickGap = 10
+    scene.logger = Mock()
+    scene.itemsRefSet = set()
+    return scene
+
+
+def test_instance_with_bbox_defers_child_construction(tmp_path):
+    libPath = _writeLayoutCell(tmp_path, "library", "child", [
+        '{"type":"Rect","tl":[0,0],"br":[10,20],"ln":0}',
+    ])
+    scene = SimpleNamespace(
+        libraryDict={"library": str(libPath)},
+        rulerFont=QFont(), rulerTickLength=5, snapTuple=(10, 10),
+        rulerWidth=1, rulerTickGap=10, logger=Mock(),
+    )
+
+    instance = layoutItems(scene).create({
+        "type": "Inst", "lib": "library", "cell": "child", "view": "layout",
+        "loc": [100, 200], "ic": 1, "nam": "I1", "bbox": [0, 0, 10, 20],
+    })
+
+    assert isinstance(instance, lshp.layoutInstance)
+    assert not instance.childItems()
+    assert instance.boundingRect() == QRectF(0, 0, 10, 20).adjusted(-2, -2, 2, 2)
+    # Not in a QGraphicsScene yet: shapes cannot be realised, stays deferred.
+    assert instance.shapes == []
+    assert instance._deferredLoader is not None
+
+
+def test_deferred_instance_realises_children_on_shapes_access(tmp_path):
+    libPath = _writeLayoutCell(tmp_path, "library", "child", [
+        '{"type":"Rect","tl":[0,0],"br":[10,20],"ln":0}',
+    ])
+    scene = _makeLayoutScene({"library": str(libPath)})
+
+    instance = layoutItems(scene).create({
+        "type": "Inst", "lib": "library", "cell": "child", "view": "layout",
+        "loc": [100, 200], "ic": 1, "nam": "I1", "bbox": [0, 0, 10, 20],
+    })
+    scene.addItem(instance)
+    assert not instance.childItems()
+
+    shapes = instance.shapes
+
+    assert len(shapes) == 1
+    assert isinstance(shapes[0], lshp.layoutRect)
+    assert shapes[0].parentItem() is instance
+    assert instance._deferredLoader is None
+    assert shapes[0] in scene.itemsRefSet
+
+
+def test_instance_without_bbox_computes_bounds_from_dicts(tmp_path):
+    libPath = _writeLayoutCell(tmp_path, "library", "child", [
+        '{"type":"Rect","tl":[0,0],"br":[10,20],"ln":0}',
+    ])
+    scene = SimpleNamespace(
+        libraryDict={"library": str(libPath)},
+        rulerFont=QFont(), rulerTickLength=5, snapTuple=(10, 10),
+        rulerWidth=1, rulerTickGap=10, logger=Mock(),
+    )
+
+    instance = layoutItems(scene).create({
+        "type": "Inst", "lib": "library", "cell": "child", "view": "layout",
+        "loc": [0, 0], "ic": 1, "nam": "I1",
+    })
+
+    # Legacy record: still deferred, with bounds estimated from the dicts.
+    assert not instance.childItems()
+    assert instance._deferredLoader is not None
+    # Stored bounds must cover the realised childrenBoundingRect
+    # (0,0)-(10,20) plus each child's own margin.
+    bounds = instance.boundingRect()
+    assert bounds.contains(QRectF(-4, -4, 18, 28))
+
+
+def test_instance_with_unboundable_record_loads_eagerly(tmp_path):
+    libPath = _writeLayoutCell(tmp_path, "library", "child", [
+        '{"type":"Rect","tl":[0,0],"br":[10,20],"ln":0}',
+        '{"type":"Pcell","lib":"library","cell":"dev","view":"pcell",'
+        '"loc":[0,0],"ic":1,"nam":"P1"}',
+    ])
+    scene = SimpleNamespace(
+        libraryDict={"library": str(libPath)},
+        rulerFont=QFont(), rulerTickLength=5, snapTuple=(10, 10),
+        rulerWidth=1, rulerTickGap=10, logger=Mock(),
+    )
+
+    instance = layoutItems(scene).create({
+        "type": "Inst", "lib": "library", "cell": "child", "view": "layout",
+        "loc": [0, 0], "ic": 1, "nam": "I1",
+    })
+
+    # A Pcell record without a saved bbox cannot be bounded cheaply, so the
+    # whole cell falls back to eager construction.
+    assert instance._deferredLoader is None
+    assert len(instance.childItems()) == 1
+
+
+def test_nested_deferred_instance_stays_deferred(tmp_path):
+    _writeLayoutCell(tmp_path, "library", "grandchild", [
+        '{"type":"Rect","tl":[0,0],"br":[5,5],"ln":0}',
+    ])
+    libPath = _writeLayoutCell(tmp_path, "library", "child", [
+        ('{"type":"Inst","lib":"library","cell":"grandchild","view":"layout",'
+         '"loc":[0,0],"ic":1,"nam":"I0","bbox":[0,0,5,5]}'),
+    ])
+    scene = _makeLayoutScene({"library": str(libPath)})
+
+    instance = layoutItems(scene).create({
+        "type": "Inst", "lib": "library", "cell": "child", "view": "layout",
+        "loc": [0, 0], "ic": 1, "nam": "I1", "bbox": [0, 0, 5, 5],
+    })
+    scene.addItem(instance)
+
+    nested = instance.shapes[0]
+
+    assert isinstance(nested, lshp.layoutInstance)
+    assert not nested.childItems()
+    assert nested._deferredLoader is not None
+    assert len(nested.shapes) == 1
+
+
+def test_deferred_recursive_instance_does_not_recurse(tmp_path):
+    libPath = _writeLayoutCell(tmp_path, "library", "self", [
+        ('{"type":"Inst","lib":"library","cell":"self","view":"layout",'
+         '"loc":[0,0],"ic":1,"nam":"I0","bbox":[0,0,10,10]}'),
+        '{"type":"Rect","tl":[0,0],"br":[10,10],"ln":0}',
+    ])
+    scene = _makeLayoutScene({"library": str(libPath)})
+
+    instance = layoutItems(scene).create({
+        "type": "Inst", "lib": "library", "cell": "self", "view": "layout",
+        "loc": [0, 0], "ic": 1, "nam": "I1", "bbox": [0, 0, 10, 10],
+    })
+    scene.addItem(instance)
+
+    shapes = instance.shapes
+
+    assert len(shapes) == 1
+    assert isinstance(shapes[0], lshp.layoutRect)
+    scene.logger.error.assert_called_once()
+
+
+def test_deferred_pcell_realises_on_shapes_access():
+    instance = nmos()
+    instance.deferParams({"width": 4.0, "length": 0.13, "nf": 1},
+                       QRectF(0, 0, 10, 10))
+    scene = _makeLayoutScene({})
+    scene.addItem(instance)
+    assert not instance.childItems()
+
+    assert instance.shapes
+    assert instance._deferredLoader is None
+
+
+def test_encoder_writes_instance_bbox():
+    rect = lshp.layoutRect(QPointF(10, 20), QPointF(50, 40), odLayer_drw)
+    instance = lshp.layoutInstance([rect])
+    instance.libraryName = "library"
+    instance.cellName = "child"
+    instance.viewName = "layout"
+    instance.instanceName = "I1"
+    instance.counter = 1
+
+    bounds = instance.childrenBoundingRect()
+    saved = layoutEncoder().default(instance)
+
+    assert saved["bbox"] == pytest.approx(
+        (bounds.x(), bounds.y(), bounds.width(), bounds.height())
+    )
+
+
+def test_encoder_writes_deferred_instance_bbox_without_realising(tmp_path):
+    libPath = _writeLayoutCell(tmp_path, "library", "child", [
+        '{"type":"Rect","tl":[0,0],"br":[10,20],"ln":0}',
+    ])
+    scene = SimpleNamespace(
+        libraryDict={"library": str(libPath)},
+        rulerFont=QFont(), rulerTickLength=5, snapTuple=(10, 10),
+        rulerWidth=1, rulerTickGap=10, logger=Mock(),
+    )
+    instance = layoutItems(scene).create({
+        "type": "Inst", "lib": "library", "cell": "child", "view": "layout",
+        "loc": [0, 0], "ic": 1, "nam": "I1", "bbox": [0, 0, 10, 20],
+    })
+
+    saved = layoutEncoder().default(instance)
+
+    assert saved["bbox"] == pytest.approx((0, 0, 10, 20))
+    assert instance._deferredLoader is not None
 

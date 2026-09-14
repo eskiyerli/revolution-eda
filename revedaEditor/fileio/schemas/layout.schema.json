@@ -73,7 +73,13 @@
         "ic": { "type": ["integer", "null"] },
         "loc": { "$ref": "#/$defs/point" },
         "ang": { "type": "number" },
-        "fl": { "$ref": "#/$defs/flipTuple" }
+        "fl": { "$ref": "#/$defs/flipTuple" },
+        "bbox": {
+          "type": "array",
+          "items": { "type": "number" },
+          "minItems": 4,
+          "maxItems": 4
+        }
       }
     },
     "layoutPcell": {
@@ -89,7 +95,13 @@
         "loc": { "$ref": "#/$defs/point" },
         "ang": { "type": "number" },
         "fl": { "$ref": "#/$defs/flipTuple" },
-        "params": { "type": "object" }
+        "params": { "type": "object" },
+        "bbox": {
+          "type": "array",
+          "items": { "type": "number" },
+          "minItems": 4,
+          "maxItems": 4
+        }
       }
     },
     "layoutRect": {

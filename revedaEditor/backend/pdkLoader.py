@@ -19,14 +19,19 @@ from PySide6.QtGui import (QAction, QIcon)
 from PySide6.QtWidgets import QApplication
 
 _module_cache: dict[tuple[str, str], ModuleType] = {}
+_pdk_path_cache: dict[str | None, pathlib.Path] = {}
 logger = logging.getLogger(__name__)
 
 
 def _get_pdk_path() -> pathlib.Path:
     """Get and cache PDK path"""
-    base_path = pathlib.Path(__file__).resolve().parent.parent.parent
     pdkPath = os.environ.get("REVEDA_PDK_PATH")
-    
+    cached = _pdk_path_cache.get(pdkPath)
+    if cached is not None:
+        return cached
+
+    base_path = pathlib.Path(__file__).resolve().parent.parent.parent
+
     if pdkPath:
         pdkPathObj = pathlib.Path(pdkPath)
         if not pdkPathObj.is_absolute():
@@ -45,6 +50,7 @@ def _get_pdk_path() -> pathlib.Path:
     if pdkPathParentStr not in sys.path:
         sys.path.append(pdkPathParentStr)
 
+    _pdk_path_cache[pdkPath] = pdkPathObj
     return pdkPathObj
 
 
@@ -86,6 +92,7 @@ def clearPDKModuleCache() -> None:
     old_pdk_names = {pathlib.Path(path).name for path, _ in _module_cache.keys()}
 
     _module_cache.clear()
+    _pdk_path_cache.clear()
 
     # Also try to determine the current PDK name from environment before the switch
     # (the caller updates os.environ BEFORE calling this function)

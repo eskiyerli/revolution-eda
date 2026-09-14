@@ -208,14 +208,6 @@ def validate_design_data(
                 # Internal schema error - log but don't block loading
                 logger.warning(f"Schema definition error: {e.message}")
 
-    # Non-strict item validation: check that items have a 'type' field
-    if not strict:
-        for idx, item in enumerate(data[2:], start=2):
-            if isinstance(item, dict) and "type" not in item:
-                errors.append(
-                    f"Item at index {idx} is missing required 'type' field"
-                )
-
     if errors:
         return False, errors
 
