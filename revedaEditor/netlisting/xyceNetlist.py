@@ -476,23 +476,34 @@ class xyceNetlist:
             instNameToken = instNameLabel.labelName
             symbolLines = []
 
-            # Pre-compute substitution lists once; avoids repeated dict iteration
-            # for every element in an arrayed instance (e.g. inst<0:99>).
-            attr_replacements = [(f"%{a}", v) for a, v in elementSymbol.symattrs.items()]
-            label_replacements = [(lbl.labelName, lbl.labelValue)
-                                  for lbl in elementSymbol.labels.values()]
+            # Single-pass token substitution over the template. Only whole
+            # "@name"/"%name" tokens match, so "@w" never substitutes inside
+            # "@wfeed"; unresolved tokens are left for _PARAM_RE cleanup.
+            tokenMap = {f"%{attrName}": attrValue
+                        for attrName, attrValue in elementSymbol.symattrs.items()}
+            tokenMap.update(
+                (lbl.labelName, lbl.labelValue)
+                for lbl in elementSymbol.labels.values())
+            tokenPattern = re.compile("(?:" + "|".join(sorted(
+                (re.escape(token)
+                 for token in (*tokenMap, instNameToken, "%pinOrder",
+                               "%lvsPinOrder")),
+                key=len, reverse=True)) + r")(?!\w)")
 
-            def processLine(line, netsList):
-                line = line.replace("%pinOrder", netsList)
-                for token, value in attr_replacements:
-                    line = line.replace(token, value)
+            def createInstanceLine(instanceName, netsList, lvsNetsList):
+                def substituteToken(match):
+                    token = match.group(0)
+                    if token == instNameToken:
+                        return instanceName
+                    if token == "%pinOrder":
+                        return netsList
+                    if token == "%lvsPinOrder":
+                        return lvsNetsList
+                    return tokenMap.get(token, token)
+                return tokenPattern.sub(substituteToken, baseNetlistLine)
+
+            def processLine(line):
                 return xyceNetlist._PARAM_RE.sub('', line)
-
-            def createInstanceLine(instanceName):
-                line = baseNetlistLine.replace(instNameToken, instanceName)
-                for labelName, labelValue in label_replacements:
-                    line = line.replace(labelName, labelValue)
-                return line
 
             def expandNet(netName):
                 baseName, netTuple = self.parseArrayNotation(netName)
@@ -505,31 +516,51 @@ class xyceNetlist:
             # Expand nets per pin
             expandedPinNets = [expandNet(netName) for netName in elementSymbol.pinNetMap.values()]
 
+            # 'lvsPinOrder' reorders the same pin nets for the LVS line when
+            # the extracted terminal order differs from pinOrder (e.g.
+            # inductor3's center tap extracts between the outer ports).
+            expandedLvsPinNets = expandedPinNets
+            lvsPinOrder = (elementSymbol.symattrs or {}).get("lvsPinOrder")
+            if lvsPinOrder:
+                expandedLvsPinNets = [
+                    expandNet(elementSymbol.pinNetMap[pinName])
+                    for pinName in (pin.strip() for pin in str(lvsPinOrder).split(","))
+                    if pinName in elementSymbol.pinNetMap
+                ]
+
+            def selectNets(expandedNets, index):
+                """Pick per-instance nets honoring array broadcast rules."""
+                pickedNets = []
+                for nets in expandedNets:
+                    if len(nets) == arraySize:
+                        pickedNets.append(nets[index])  # 1-to-1 matching across array width
+                    elif len(nets) == 1:
+                        pickedNets.append(nets[0])  # Scalar broadcasted to all array nodes
+                    elif index < len(nets):
+                        pickedNets.append(nets[index])  # Partial connection: connect available nets
+                    else:
+                        # Out of bounds for partial connection - use last available net
+                        pickedNets.append(nets[-1])
+                return pickedNets
+
             # Generate instance lines
             if arraySize == 1:
                 # Scalar instance logic
                 flatNetsList = " ".join([nets[0] for nets in expandedPinNets])
-                symbolLines.append(processLine(createInstanceLine(baseInstName), flatNetsList))
+                flatLvsNetsList = " ".join([nets[0] for nets in expandedLvsPinNets])
+                symbolLines.append(processLine(createInstanceLine(
+                    baseInstName, flatNetsList, flatLvsNetsList)))
             else:
                 # Array instance logic
                 arrayIndices = list(range(arrayTuple[0], arrayTuple[1] + arrayStep, arrayStep))
 
                 for j, i in enumerate(arrayIndices):
-                    instanceNets = []
-                    for nets in expandedPinNets:
-                        if len(nets) == arraySize:
-                            instanceNets.append(nets[j])  # 1-to-1 matching across array width
-                        elif len(nets) == 1:
-                            instanceNets.append(nets[0])  # Scalar broadcasted to all array nodes
-                        elif j < len(nets):
-                            instanceNets.append(nets[j])  # Partial connection: connect available nets
-                        else:
-                            # Out of bounds for partial connection - use last available net
-                            instanceNets.append(nets[-1])
-
-                    specificNetsList = " ".join(instanceNets)
+                    specificNetsList = " ".join(selectNets(expandedPinNets, j))
+                    specificLvsNetsList = " ".join(selectNets(expandedLvsPinNets, j))
                     symbolLines.append(
-                        processLine(createInstanceLine(f"{baseInstName}<{i}>"), specificNetsList))
+                        processLine(createInstanceLine(
+                            f"{baseInstName}<{i}>", specificNetsList,
+                            specificLvsNetsList)))
 
             return symbolLines
 

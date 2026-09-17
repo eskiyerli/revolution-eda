@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Union, Optional
 
 import orjson
 import shiboken6
+from quantiphy import Quantity
 from PySide6.QtCore import QLineF, QPoint, QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import (
     QColor,
@@ -142,7 +143,6 @@ class layoutScene(editorScene):
         self._scale = fabproc.dbu if fabproc else 1000
         self.itemCounter = 0
         self.newPath = None
-        self.stretchPathItem = None
         defaultPathDefTuple = fabproc.processPaths[0] if fabproc else None
         self.newPathTuple = ddef.layoutPathTuple(
             "",
@@ -333,10 +333,6 @@ class layoutScene(editorScene):
         elif self.editModes.addVia and self.arrayVia is not None:
             self.arrayVia.setPos(self.mouseMoveLoc - self.arrayVia.start)
 
-        elif self.editModes.stretchItem and self.stretchPathItem is not None:
-            self.stretchPathItem.draftLine = QLineF(
-                self.stretchPathItem.draftLine.p1(), self.mouseMoveLoc
-            )
         elif self.editModes.cutShape and self._newCutLine is not None:
             self._newCutLine.draftLine = QLineF(
                 self._newCutLine.draftLine.p1(), self.mouseMoveLoc
@@ -383,8 +379,6 @@ class layoutScene(editorScene):
                 self.finishCutLine()
             elif self.editModes.addVia:
                 self.addLayoutViaArray()
-            elif self.editModes.stretchItem:
-                self.finishStretchPath(mousePos)
             elif self.editModes.changeOrigin:
                 self.origin: QPoint = mousePos
             elif self.editModes.alignItems:
@@ -422,6 +416,7 @@ class layoutScene(editorScene):
         point,
         ruler: Optional[lshp.layoutRuler] = None,
         snapScreenPx: float = 20.0,
+        exclude: Optional[QGraphicsItem] = None,
     ) -> QPointF:
         pointF = QPointF(point)
         # Convert screen-pixel snap radius to scene units using current view scale
@@ -449,7 +444,7 @@ class layoutScene(editorScene):
         bestDist = maxDistance
         closestPoint = pointF
         for item in items:
-            if isinstance(item, lshp.layoutRuler) or item is ruler or getattr(item, "drcError", False):
+            if isinstance(item, lshp.layoutRuler) or item is ruler or item is exclude or getattr(item, "drcError", False):
                 continue
             edges = lshp.layoutRuler._extractItemEdges(item)
             for p1, p2 in edges:
@@ -551,6 +546,43 @@ class layoutScene(editorScene):
     def _splitPolygon(self, item, line):
         """Split a polygon - delegates to unified polygonal shape splitter."""
         self._splitPolygonalShape(item, line)
+
+    def _splitPath(self, item: lshp.layoutPath, line: QLineF):
+        """Split a path where the cut line crosses its centreline."""
+        p1, p2 = item.sceneEndPoints
+        intersectionType, cutPoint = line.intersects(
+            QLineF(p1.toPointF(), p2.toPointF())
+        )
+        if intersectionType != QLineF.IntersectionType.BoundedIntersection:
+            return
+        if (
+            QLineF(p1.toPointF(), cutPoint).isNull()
+            or QLineF(cutPoint, p2.toPointF()).isNull()
+        ):
+            return
+        path1 = lshp.layoutPath(
+            QLineF(p1.toPointF(), cutPoint),
+            item.layer,
+            item.width,
+            item.startExtend,
+            0,
+            item.mode,
+        )
+        path1.name = item.name
+        path2 = lshp.layoutPath(
+            QLineF(cutPoint, p2.toPointF()),
+            item.layer,
+            item.width,
+            0,
+            item.endExtend,
+            item.mode,
+        )
+        path2.name = item.name
+        self.undoStack.beginMacro("Split Path")
+        self.deleteUndoStack(item)
+        self.addUndoStack(path1)
+        self.addUndoStack(path2)
+        self.undoStack.endMacro()
 
     def startCutLine(self):
         if self.selectedItemsSet:
@@ -698,17 +730,9 @@ class layoutScene(editorScene):
         self.newPath.name = self.newPathTuple.name
         self.addUndoStack(self.newPath)
 
-    def finishStretchPath(self, point: QPoint) -> None:
-        """Commit the stretched path end at the snapped release point."""
-        if self.stretchPathItem is not None:
-            self.stretchPathItem.draftLine = QLineF(
-                self.stretchPathItem.draftLine.p1(), point
-            )
-            self.stretchPathItem = None
-
     def addNewInstance(self) -> Union[lshp.layoutInstance, lshp.layoutPcell]:
         newInstance = self.instLayout(self.layoutInstanceTuple)
-        if isinstance(newInstance, pcells.baseCell):
+        if isinstance(newInstance, lshp.layoutPcell):
             dlg = ldlg.layoutInstanceDialogue(self.editorWindow)
             dlg.instanceLibName.setText(newInstance.libraryName)
             dlg.instanceCellName.setText(newInstance.cellName)
@@ -774,7 +798,7 @@ class layoutScene(editorScene):
                     return None
                 pcell_cls = getattr(pcells, ref_name, None)
                 if pcell_cls is None or not (
-                    isinstance(pcell_cls, type) and issubclass(pcell_cls, pcells.baseCell)
+                    isinstance(pcell_cls, type) and issubclass(pcell_cls, lshp.layoutPcell)
                 ):
                     self.logger.error(f"Unknown or invalid pcell reference: {ref_name!r}")
                     return None
@@ -1073,7 +1097,7 @@ class layoutScene(editorScene):
                 return False
 
             # For PCells, apply matching schematic instance labels.
-            if isinstance(new_inst, pcells.baseCell):
+            if isinstance(new_inst, lshp.layoutPcell):
                 labels = sch_inst.get("labels", {})
                 callParameters = inspect.signature(new_inst.__call__).parameters
                 parameterMap = self._getPcellParameterMap(sch_inst["cell"])
@@ -1425,11 +1449,8 @@ class layoutScene(editorScene):
                             self.layoutPolygonProperties(item)
                         case lshp.layoutInstance:
                             self.layoutInstanceProperties(item, False)
-                        # case _:
-                        # if item.__class__.__bases__[0] == pcells.baseCell:
-                        #     self.layoutInstanceProperties(item, True)
                         case _:
-                            if isinstance(item, pcells.baseCell):
+                            if isinstance(item, lshp.layoutPcell):
                                 self.layoutInstanceProperties(item, True)
 
         except Exception as e:
@@ -1911,7 +1932,17 @@ class layoutScene(editorScene):
             }
         else:
             argDict = {arg: getattr(instance, arg) for arg in argsUsed}
-        lineEditDict = {key: edf.shortLineEdit(value) for key, value in argDict.items()}
+        # Numeric attrs hold raw SI values (e.g. 2e-06 metres); render them
+        # so the dialogue shows "2u".  The text round-trips through
+        # Quantity() unchanged when the pcell is rebuilt on accept.
+        lineEditDict = {}
+        for key, value in argDict.items():
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                try:
+                    value = Quantity(value).render(prec=3)
+                except (ValueError, TypeError):
+                    value = str(value)
+            lineEditDict[key] = edf.shortLineEdit(value)
         return lineEditDict
 
     def clearLayout(self, layout):
@@ -2021,34 +2052,6 @@ class layoutScene(editorScene):
                             childWindow.layoutToolbar.addAction(childWindow.goUpAction)
                             if dlg.buttonId == 2:
                                 childWindow.centralW.scene.readOnly = True
-
-    def stretchPath(self, pathItem: lshp.layoutPath, stretchEnd: str):
-        match stretchEnd:
-            case "p2":
-                self.stretchPathItem = lshp.layoutPath(
-                    QLineF(pathItem.sceneEndPoints[0], pathItem.sceneEndPoints[1]),
-                    pathItem.layer,
-                    pathItem.width,
-                    pathItem.startExtend,
-                    pathItem.endExtend,
-                    pathItem.mode,
-                )
-            case "p1":
-                self.stretchPathItem = lshp.layoutPath(
-                    QLineF(pathItem.sceneEndPoints[1], pathItem.sceneEndPoints[0]),
-                    pathItem.layer,
-                    pathItem.width,
-                    pathItem.startExtend,
-                    pathItem.endExtend,
-                    pathItem.mode,
-                )
-        self.stretchPathItem.stretch = True
-        self.stretchPathItem.name = pathItem.name
-
-        addDeleteStretchNetCommand = us.addDeleteShapeUndo(
-            self, self.stretchPathItem, pathItem
-        )
-        self.undoStack.push(addDeleteStretchNetCommand)
 
     def findClosestFontSize(self, sizes: List[int], target: int = 16) -> int:
         return min(sizes, key=lambda x: abs(x - target))

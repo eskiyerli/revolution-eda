@@ -561,13 +561,59 @@ class klayoutSchematicGenerator:
         terminals = device.get("terminals", {})
         name = None
         if isinstance(terminals, dict):
-            name = terminals.get(pinItem.pinName)
-            if name is None:
-                target_cf = str(pinItem.pinName).casefold()
-                for k, v in terminals.items():
-                    if str(k).casefold() == target_cf:
-                        name = v
-                        break
+            # 'lvsPinOrder' declares the extracted terminal order when it
+            # differs from pinOrder (e.g. inductor3's center tap extracts
+            # between the outer ports). Positional mapping is then
+            # authoritative: extracted terminal names are generic and can
+            # alias pin names by accident.
+            lvsPinOrder = (symbolItem.symattrs or {}).get("lvsPinOrder")
+            if lvsPinOrder:
+                orderedPins = [
+                    pinName.strip() for pinName in str(lvsPinOrder).split(",")
+                ]
+                pinKey = str(pinItem.pinName).casefold()
+                pinIndex = next(
+                    (
+                        index
+                        for index, pinName in enumerate(orderedPins)
+                        if pinName.casefold() == pinKey
+                    ),
+                    None,
+                )
+                terminalValues = list(terminals.values())
+                if pinIndex is not None and pinIndex < len(terminalValues):
+                    name = terminalValues[pinIndex]
+            else:
+                name = terminals.get(pinItem.pinName)
+                if name is None:
+                    target_cf = str(pinItem.pinName).casefold()
+                    for k, v in terminals.items():
+                        if str(k).casefold() == target_cf:
+                            name = v
+                            break
+                if name is None:
+                    # Extracted devices carry generic terminal names (e.g.
+                    # PLUS/MINUS/B) that may differ from the symbol's pin
+                    # names (e.g. c0/c1/bn). Both netlist sides emit
+                    # terminals in pinOrder, so fall back to positional
+                    # matching.
+                    pinOrder = (symbolItem.symattrs or {}).get("pinOrder")
+                    if pinOrder:
+                        orderedPins = [
+                            pinName.strip() for pinName in str(pinOrder).split(",")
+                        ]
+                        pinKey = str(pinItem.pinName).casefold()
+                        pinIndex = next(
+                            (
+                                index
+                                for index, pinName in enumerate(orderedPins)
+                                if pinName.casefold() == pinKey
+                            ),
+                            None,
+                        )
+                        terminalValues = list(terminals.values())
+                        if pinIndex is not None and pinIndex < len(terminalValues):
+                            name = terminalValues[pinIndex]
         if name:
             pinNetItem.name = name
             pinNetItem.nameStrength = snet.netNameStrengthEnum.SET

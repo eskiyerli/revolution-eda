@@ -13,7 +13,6 @@ from pathlib import Path
 from typing import ClassVar, List, NamedTuple, Optional, Tuple
 
 import numpy as np
-import shiboken6
 from PySide6.QtCore import (
     QLineF,
     QPoint,
@@ -21,7 +20,6 @@ from PySide6.QtCore import (
     QRect,
     QRectF,
     Qt,
-    QTimer,
 )
 from PySide6.QtGui import (
     QBrush,
@@ -67,6 +65,12 @@ def getProcessDBU():
         if processModule is not None:
             _processDBUCache = processModule.dbu
     return _processDBUCache
+
+
+def _undoStack():
+    """Lazy import to avoid circular dependency (undoStack imports this module)."""
+    import revedaEditor.backend.undoStack as _us
+    return _us
 
 class textureCache:
     _file_content_cache: ClassVar[dict] = {}
@@ -228,13 +232,13 @@ class layoutShape(QGraphicsItem):
 
     def _updateTransformedBrush(self, brush: QBrush, scale: float):
         """Update transformed brush only when needed"""
-        rounded_scale = max(round(scale, 2), 0.01)  # Prevent division by zero
+        scale = max(scale, 1e-9)  # Prevent division by zero
 
-        if self._transformedBrush is None or self._lastScale != rounded_scale:
+        if self._transformedBrush is None or self._lastScale != scale:
             self._transformedBrush = QBrush(brush)
-            transform = QTransform().scale(1 / rounded_scale, 1 / rounded_scale)
+            transform = QTransform().scale(1 / scale, 1 / scale)
             self._transformedBrush.setTransform(transform)
-            self._lastScale = rounded_scale
+            self._lastScale = scale
 
     def _snappedEventPos(self, event: QGraphicsSceneMouseEvent) -> QPoint:
         """Mouse position snapped to the scene snap grid, in item coordinates."""
@@ -243,6 +247,47 @@ class layoutShape(QGraphicsItem):
             return self.mapFromScene(
                 scene.snapToGrid(event.scenePos().toPoint())).toPoint()
         return event.pos().toPoint()
+
+    def _stretchActive(self) -> bool:
+        """True when armed and the scene is in stretch mode.
+
+        Items keep the armed flag until Esc so several stretches can be made
+        per S press; gating on the edit mode keeps the flag (and its visual
+        cues) inert in every other mode.
+        """
+        scene = self.scene()
+        return (
+                self._stretch
+                and scene is not None
+                and getattr(getattr(scene, "editModes", None), "stretchItem", False)
+        )
+
+    def _pushStretchUndo(self) -> None:
+        """Push an undo command if stretch changed the item's geometry."""
+        oldGeometry = getattr(self, "_stretchOldGeometry", None)
+        newGeometry = self.captureGeometry()
+        if (
+                oldGeometry is not None
+                and newGeometry != oldGeometry
+                and self.scene() is not None
+        ):
+            self.scene().undoStack.push(
+                _undoStack().undoStretchShape(
+                    self.scene(), self, oldGeometry, newGeometry
+                )
+            )
+        if hasattr(self, "_stretchOldGeometry"):
+            del self._stretchOldGeometry
+
+    def cancelStretch(self) -> None:
+        """Abort an in-progress stretch, restoring pre-drag geometry."""
+        oldGeometry = getattr(self, "_stretchOldGeometry", None)
+        if oldGeometry is not None and hasattr(self, "restoreGeometry"):
+            self.restoreGeometry(oldGeometry)
+            del self._stretchOldGeometry
+        self._stretch = False
+        self._stretchSide = None
+        self.setCursor(Qt.ArrowCursor)
 
     @property
     def pen(self):
@@ -417,7 +462,7 @@ class layoutRect(layoutShape):
             painter.setPen(self._selectedPen)
             self._updateTransformedBrush(self._selectedBrush, scale)
 
-            if self.stretch:
+            if self._stretchActive():
                 painter.setPen(self._stretchPen)
                 # Get the line endpoints from the mapping
                 if self._stretchSide in self._stretchSidesMap:
@@ -544,6 +589,16 @@ class layoutRect(layoutShape):
         self.prepareGeometryChange()
         self._layer = layer
 
+    def captureGeometry(self):
+        return QRectF(self._rect)
+
+    def restoreGeometry(self, state):
+        self.prepareGeometryChange()
+        self._rect = QRectF(state)
+        self._start = self._rect.topLeft()
+        self._end = self._rect.bottomRight()
+        self.update()
+
     def mousePressEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         super().mousePressEvent(event)
 
@@ -554,32 +609,28 @@ class layoutRect(layoutShape):
             )
             self.setFlag(QGraphicsItem.ItemIsMovable, movable)
             self.setFlag(QGraphicsItem.ItemIsSelectable, True)
-            eventPos = event.pos().toPoint()
-            if self._stretch:
+            if self._stretchActive():
                 self.setFlag(QGraphicsItem.ItemIsMovable, False)
-                if eventPos.x() == self._rect.left():
-                    if self._rect.top() <= eventPos.y() <= self._rect.bottom():
-                        self.setCursor(Qt.SizeHorCursor)
-                        self._stretchSide = layoutRect.sides[0]
-                elif eventPos.x() == self._rect.right():
-                    if self._rect.top() <= eventPos.y() <= self._rect.bottom():
-                        self.setCursor(Qt.SizeHorCursor)
-                        self._stretchSide = layoutRect.sides[1]
-                elif eventPos.y() == self._rect.top():
-                    if self._rect.left() <= eventPos.x() <= self._rect.right():
-                        self.setCursor(Qt.SizeVerCursor)
-                        self._stretchSide = layoutRect.sides[2]
-                elif eventPos.y() == self._rect.bottom():
-                    if self._rect.left() <= eventPos.x() <= self._rect.right():
-                        self.setCursor(Qt.SizeVerCursor)
-                        self._stretchSide = layoutRect.sides[3]
+                self._stretchOldGeometry = self.captureGeometry()
+                eventPos = event.pos()
+                distances = {
+                    layoutRect.sides[0]: abs(eventPos.x() - self._rect.left()),
+                    layoutRect.sides[1]: abs(eventPos.x() - self._rect.right()),
+                    layoutRect.sides[2]: abs(eventPos.y() - self._rect.top()),
+                    layoutRect.sides[3]: abs(eventPos.y() - self._rect.bottom()),
+                }
+                self._stretchSide = min(distances, key=distances.get)
+                if self._stretchSide in (layoutRect.sides[0], layoutRect.sides[1]):
+                    self.setCursor(Qt.SizeHorCursor)
+                else:
+                    self.setCursor(Qt.SizeVerCursor)
         else:
             self.setFlag(QGraphicsItem.ItemIsMovable, False)
             self.setFlag(QGraphicsItem.ItemIsSelectable, False)
 
     def mouseMoveEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         eventPos = self._snappedEventPos(event)
-        if self.stretch:
+        if self.stretch and self._stretchSide:
             self.prepareGeometryChange()
             if self.stretchSide == layoutRect.sides[0]:
                 self.setCursor(Qt.SizeHorCursor)
@@ -600,8 +651,8 @@ class layoutRect(layoutShape):
     def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         self.setFlag(QGraphicsItem.ItemIsMovable, False)
         super().mouseReleaseEvent(event)
-        if self.stretch:
-            self._stretch = False
+        if self.stretch and self._stretchSide is not None:
+            self._pushStretchUndo()
             self._stretchSide = None
             self.setCursor(Qt.ArrowCursor)
 
@@ -1055,6 +1106,8 @@ class layoutPath(layoutShape):
         self._name = ""
         self._stretch = False
         self._stretchSide = None
+        self._anchorScene = None
+        self._stretchDragged = False
         self._definePensBrushes(self._layer)
         self._rect = QRectF(0, 0, 0, 0)
         self._angle = 0
@@ -1067,7 +1120,7 @@ class layoutPath(layoutShape):
             f"{self._width}, {self._startExtend}, {self._endExtend}, {self._mode})"
         )
 
-    def _rectCorners(self, angle: float, snapEndPoint: bool = False):
+    def _rectCorners(self, angle: float, snapEndPoint: bool = False, snapGrid: bool = True):
         match self._mode:
             case 0:  # manhattan
                 self._createManhattanPath(angle)
@@ -1080,13 +1133,13 @@ class layoutPath(layoutShape):
             case 4:
                 self._createVerticalPath(angle)
         if snapEndPoint:
-            self._snapEndPoint()
+            self._snapEndPoint(snapGrid)
         self._draftLine.setAngle(0)
         self._rect = self._extractRect()
         self.setTransformOriginPoint(self.draftLine.p1())
         self.setRotation(-self._angle)
 
-    def _snapEndPoint(self) -> None:
+    def _snapEndPoint(self, snapGrid: bool = True) -> None:
         """
         Project the draft line end point onto the constrained direction and
         snap its length so that the effective path end point lies on the
@@ -1101,7 +1154,7 @@ class layoutPath(layoutShape):
         length = max(0.0, QPointF.dotProduct(self._draftLine.p2() - p1, unit))
         scene = self.scene()
         grid = getattr(scene, "snapGrid", 0)
-        if grid:
+        if snapGrid and grid:
             step = grid / max(abs(unit.x()), abs(unit.y()))
             length = round(length / step) * step
         self._draftLine.setP2(p1 + unit * length)
@@ -1168,7 +1221,7 @@ class layoutPath(layoutShape):
         # Get scale once and cache it
         scale = self.scene().views()[0].transform().m11()
         if self.isSelected():
-            if self._stretch:
+            if self._stretchActive():
                 painter.setPen(self._stretchPen)
                 self._updateTransformedBrush(self._stretchBrush, scale)
             else:
@@ -1180,6 +1233,11 @@ class layoutPath(layoutShape):
         painter.setBrush(self._transformedBrush)
         painter.drawLine(self._draftLine)
         painter.drawRect(self._rect)
+        if self._stretchActive():
+            # Endpoint grips show where a press will grab the path.
+            gripRadius = 4.0 / scale
+            painter.drawEllipse(self._draftLine.p1(), gripRadius, gripRadius)
+            painter.drawEllipse(self._draftLine.p2(), gripRadius, gripRadius)
 
     def boundingRect(self) -> QRectF:
         return self._rect.adjusted(-2, -2, 2, 2)
@@ -1280,32 +1338,108 @@ class layoutPath(layoutShape):
             self.mapToScene(self._draftLine.p2()).toPoint(),
         ]
 
+    def captureGeometry(self):
+        return (
+            QLineF(self._draftLine),
+            self._angle,
+            self._startExtend,
+            self._endExtend,
+        )
+
+    def restoreGeometry(self, state):
+        line, angle, startExtend, endExtend = state
+        self.prepareGeometryChange()
+        self._draftLine = QLineF(line)
+        self._angle = angle
+        self._startExtend = startExtend
+        self._endExtend = endExtend
+        self._rect = self._extractRect()
+        self.setTransformOriginPoint(self._draftLine.p1())
+        self.setRotation(-self._angle)
+        self.update()
+
+    def _nearestStretchEnd(self, scenePos: QPointF):
+        """Return the grabbed side and the opposite (anchor) end, scene coords."""
+        p1Scene, p2Scene = self.sceneEndPoints
+        if (
+                QLineF(scenePos, p1Scene).length()
+                <= QLineF(scenePos, p2Scene).length()
+        ):
+            return "p1", QPointF(p2Scene)
+        return "p2", QPointF(p1Scene)
+
+    def _stretchToScenePoint(self, targetScene: QPointF, snapGrid: bool = True) -> None:
+        """Rebuild the path so the moving end tracks targetScene.
+
+        The stored draft line is expressed in the scene frame translated by
+        pos() (anchor at p1) so the mode angle quantization and the encoder's
+        pos + draftLine convention stay correct even for moved items.
+        """
+        self.prepareGeometryChange()
+        self._draftLine = QLineF(
+            self._anchorScene - self.pos(), QPointF(targetScene) - self.pos()
+        )
+        self._rectCorners(
+            self._draftLine.angle(), snapEndPoint=True, snapGrid=snapGrid
+        )
+
+    def _restoreStretchOrientation(self) -> None:
+        """Re-anchor after a p1-side drag so the grabbed end is dfl1 again.
+
+        During a p1 stretch the line is anchored at the fixed end so it stays
+        put; on release the line is rebuilt grabbed-end-first, keeping
+        startExtend/endExtend attached to their original physical ends.
+        """
+        grabbedScene = self.sceneEndPoints[1]
+        self.prepareGeometryChange()
+        self._draftLine = QLineF(
+            QPointF(grabbedScene) - self.pos(), self._anchorScene - self.pos()
+        )
+        self._rectCorners(
+            self._draftLine.angle(), snapEndPoint=True, snapGrid=False
+        )
+
     def mousePressEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         super().mousePressEvent(event)
-        if self._layer.selectable:
-            eventPos = event.pos().toPoint()
-            if self._stretch:
-                if (
-                        eventPos - self._draftLine.p1().toPoint()
-                ).manhattanLength() <= self.scene().snapDistance:
-                    self._stretchSide = "p1"
-                    self.setCursor(Qt.SizeHorCursor)
-                elif (
-                        eventPos - self._draftLine.p2().toPoint()
-                ).manhattanLength() <= self.scene().snapDistance:
-                    self._stretchSide = "p2"
-                    self.setCursor(Qt.SizeHorCursor)
-                if self._stretchSide in {"p1", "p2"}:
-                    scene = self.scene()
-                    stretchSide = self._stretchSide
-                    QTimer.singleShot(
-                        0,
-                        lambda: (
-                            scene.stretchPath(self, stretchSide)
-                            if shiboken6.isValid(self) and self.scene() is scene
-                            else None
-                        ),
-                    )
+        if self._layer.selectable and self._stretchActive():
+            self.setFlag(QGraphicsItem.ItemIsMovable, False)
+            self._stretchOldGeometry = self.captureGeometry()
+            self._stretchDragged = False
+            # Any press on an armed path grabs the nearer endpoint.
+            self._stretchSide, self._anchorScene = self._nearestStretchEnd(
+                event.scenePos()
+            )
+            self.setCursor(Qt.SizeAllCursor)
+
+    def mouseMoveEvent(self, event: QGraphicsSceneMouseEvent) -> None:
+        if self._stretch and self._stretchSide:
+            scene = self.scene()
+            scenePos = event.scenePos()
+            if scene is not None and hasattr(scene, "snapToGrid"):
+                targetScene = QPointF(scene.snapToGrid(scenePos.toPoint()))
+            else:
+                targetScene = QPointF(scenePos)
+            snapGrid = True
+            if scene is not None and hasattr(scene, "snapToClosestEdge"):
+                snapped = scene.snapToClosestEdge(scenePos, exclude=self)
+                if snapped != scenePos:
+                    targetScene = QPointF(snapped)
+                    snapGrid = False  # keep the exact edge position
+            self._stretchToScenePoint(targetScene, snapGrid)
+            self._stretchDragged = True
+        else:
+            super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent) -> None:
+        super().mouseReleaseEvent(event)
+        if self._stretch and self._stretchSide is not None:
+            if self._stretchSide == "p1" and self._stretchDragged:
+                self._restoreStretchOrientation()
+            self._pushStretchUndo()
+            self._stretchSide = None
+            self._anchorScene = None
+            self._stretchDragged = False
+            self.setCursor(Qt.ArrowCursor)
 
 
 class layoutRuler(layoutShape):
@@ -2081,30 +2215,36 @@ class layoutPin(layoutShape):
         self.prepareGeometryChange()
         self._stretchSide = value
 
+    def captureGeometry(self):
+        return QRectF(self._rect)
+
+    def restoreGeometry(self, state):
+        self.prepareGeometryChange()
+        self._rect = QRectF(state)
+        self._start = self._rect.topLeft()
+        self._end = self._rect.bottomRight()
+        self.update()
+
     def mousePressEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         super().mousePressEvent(event)
         if self._layer.selectable:
             self.setFlag(QGraphicsItem.ItemIsMovable, True)
             self.setFlag(QGraphicsItem.ItemIsSelectable, True)
-            eventPos = event.pos().toPoint()
-            if self._stretch:
+            if self._stretchActive():
                 self.setFlag(QGraphicsItem.ItemIsMovable, False)
-                if eventPos.x() == self._rect.left():
-                    if self._rect.top() <= eventPos.y() <= self._rect.bottom():
-                        self.setCursor(Qt.SizeHorCursor)
-                        self._stretchSide = layoutRect.sides[0]
-                elif eventPos.x() == self._rect.right():
-                    if self._rect.top() <= eventPos.y() <= self._rect.bottom():
-                        self.setCursor(Qt.SizeHorCursor)
-                        self._stretchSide = layoutRect.sides[1]
-                elif eventPos.y() == self._rect.top():
-                    if self._rect.left() <= eventPos.x() <= self._rect.right():
-                        self.setCursor(Qt.SizeVerCursor)
-                        self._stretchSide = layoutRect.sides[2]
-                elif eventPos.y() == self._rect.bottom():
-                    if self._rect.left() <= eventPos.x() <= self._rect.right():
-                        self.setCursor(Qt.SizeVerCursor)
-                        self._stretchSide = layoutRect.sides[3]
+                self._stretchOldGeometry = self.captureGeometry()
+                eventPos = event.pos()
+                distances = {
+                    layoutRect.sides[0]: abs(eventPos.x() - self._rect.left()),
+                    layoutRect.sides[1]: abs(eventPos.x() - self._rect.right()),
+                    layoutRect.sides[2]: abs(eventPos.y() - self._rect.top()),
+                    layoutRect.sides[3]: abs(eventPos.y() - self._rect.bottom()),
+                }
+                self._stretchSide = min(distances, key=distances.get)
+                if self._stretchSide in (layoutRect.sides[0], layoutRect.sides[1]):
+                    self.setCursor(Qt.SizeHorCursor)
+                else:
+                    self.setCursor(Qt.SizeVerCursor)
         else:
             self.setFlag(QGraphicsItem.ItemIsMovable, False)
             self.setFlag(QGraphicsItem.ItemIsSelectable, False)
@@ -2132,8 +2272,8 @@ class layoutPin(layoutShape):
     def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         self.setFlag(QGraphicsItem.ItemIsMovable, True)
         super().mouseReleaseEvent(event)
-        if self.stretch:
-            self._stretch = False
+        if self.stretch and self._stretchSide is not None:
+            self._pushStretchUndo()
             self._stretchSide = None
             self.setCursor(Qt.ArrowCursor)
 
@@ -2232,10 +2372,10 @@ class layoutVia(layoutShape):
         keeps a constant on-screen density. Built locally (not via the shared
         single-slot cache) because several metal brushes are drawn per paint at
         the same scale."""
-        roundedScale = max(round(scale, 2), 0.01)
+        scale = max(scale, 1e-9)  # Prevent division by zero
         scaledBrush = QBrush(brush)
         scaledBrush.setTransform(
-            QTransform().scale(1 / roundedScale, 1 / roundedScale)
+            QTransform().scale(1 / scale, 1 / scale)
         )
         return scaledBrush
 
@@ -2609,20 +2749,28 @@ class layoutPolygon(layoutShape):
         self.prepareGeometryChange()
         self._polygon = QPolygonF([*self._points, value])
 
+    def captureGeometry(self):
+        return list(self._points)
+
+    def restoreGeometry(self, state):
+        self.points = list(state)
+        self.update()
+
     def mousePressEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         super().mousePressEvent(event)
         if self._layer.selectable:
             self.setFlag(QGraphicsItem.ItemIsMovable, True)
             self.setFlag(QGraphicsItem.ItemIsSelectable, True)
-            eventPos = event.pos().toPoint()
-            if self._stretch:
+            if self._stretchActive() and self._points:
                 self.setFlag(QGraphicsItem.ItemIsMovable, False)
-                for point in self._points:
-                    if (
-                            eventPos - point
-                    ).manhattanLength() <= self.scene().snapDistance:
-                        self._selectedCorner = point
-                        self._selectedCornerIndex = self._points.index(point)
+                self._stretchOldGeometry = self.captureGeometry()
+                eventPos = event.pos().toPoint()
+                # Any press on an armed polygon grabs the nearest vertex.
+                self._selectedCornerIndex = min(
+                    range(len(self._points)),
+                    key=lambda i: (eventPos - self._points[i]).manhattanLength(),
+                )
+                self._selectedCorner = self._points[self._selectedCornerIndex]
         else:
             self.setFlag(QGraphicsItem.ItemIsMovable, False)
             self.setFlag(QGraphicsItem.ItemIsSelectable, False)
@@ -2638,8 +2786,8 @@ class layoutPolygon(layoutShape):
     def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         super().mouseReleaseEvent(event)
         self.setFlag(QGraphicsItem.ItemIsMovable, True)
-        if self.stretch:
-            self._stretch = False
+        if self.stretch and self._selectedCornerIndex != 999:
+            self._pushStretchUndo()
             self._stretchSide = None
             self.setCursor(Qt.ArrowCursor)
             self._selectedCornerIndex = 999

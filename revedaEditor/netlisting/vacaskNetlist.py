@@ -733,26 +733,36 @@ class vacaskNetlist:
             instNameToken = instNameLabel.labelName
             symbolLines: list[str] = []
 
-            attr_replacements = [
-                (f"%{a}", v) for a, v in elementSymbol.symattrs.items()
-            ]
-            label_replacements = [
+            # Single-pass token substitution over the template. Only whole
+            # "@name"/"%name" tokens match, so "@w" never substitutes inside
+            # "@wfeed"; unresolved tokens are left for _PARAM_RE cleanup.
+            tokenMap = {f"%{attrName}": attrValue
+                        for attrName, attrValue in elementSymbol.symattrs.items()}
+            tokenMap.update(
                 (lbl.labelName, lbl.labelValue)
-                for lbl in elementSymbol.labels.values()
-            ]
+                for lbl in elementSymbol.labels.values())
+            tokenPattern = re.compile("(?:" + "|".join(sorted(
+                (re.escape(token)
+                 for token in (*tokenMap, instNameToken, "%pinOrder",
+                               "%lvsPinOrder")),
+                key=len, reverse=True)) + r")(?!\w)")
 
-            def processLine(line: str, netsList: str) -> str:
-                line = line.replace("%pinOrder", netsList)
-                for token, value in attr_replacements:
-                    line = line.replace(token, value)
+            def createInstanceLine(instanceName: str, netsList: str,
+                                   lvsNetsList: str) -> str:
+                def substituteToken(match):
+                    token = match.group(0)
+                    if token == instNameToken:
+                        return instanceName
+                    if token == "%pinOrder":
+                        return netsList
+                    if token == "%lvsPinOrder":
+                        return lvsNetsList
+                    return tokenMap.get(token, token)
+                return tokenPattern.sub(substituteToken, baseNetlistLine)
+
+            def processLine(line: str) -> str:
                 line = vacaskNetlist._PARAM_RE.sub('', line)
                 line = line.replace('{', '').replace('}', '')
-                return line
-
-            def createInstanceLine(instanceName: str) -> str:
-                line = baseNetlistLine.replace(instNameToken, instanceName)
-                for labelName, labelValue in label_replacements:
-                    line = line.replace(labelName, labelValue)
                 return line
 
             def expandNet(netName: str) -> list[str]:
@@ -780,6 +790,21 @@ class vacaskNetlist:
                 getNetVectorInfo(netName) for netName in pinNets
             ]
 
+            # 'lvsPinOrder' reorders the same pin nets for the LVS line when
+            # the extracted terminal order differs from pinOrder (e.g.
+            # inductor3's center tap extracts between the outer ports).
+            lvsPinOrder = (elementSymbol.symattrs or {}).get("lvsPinOrder")
+            lvsPinNets = pinNets
+            if lvsPinOrder:
+                lvsPinNets = [
+                    self._processGlobalNet(elementSymbol.pinNetMap[pinName])
+                    for pinName in (pin.strip() for pin in str(lvsPinOrder).split(","))
+                    if pinName in elementSymbol.pinNetMap
+                ]
+            lvsNetVectorInfos = [
+                getNetVectorInfo(netName) for netName in lvsPinNets
+            ]
+
             # Check if we can preserve vector notation
             # All nets must be scalars or vectors of the same dimension as the instance
             canUseVectorNotation = arraySize > 1
@@ -803,48 +828,66 @@ class vacaskNetlist:
                     if netTuple else baseName
                     for baseName, netTuple in netVectorInfos
                 ])
+                vectorLvsNetsList = " ".join([
+                    _q(f"{baseName}<{netTuple[0]}:{netTuple[1]}>")
+                    if netTuple else baseName
+                    for baseName, netTuple in lvsNetVectorInfos
+                ])
                 vectorInstName = _q(f"{baseInstName}<{arrayTuple[0]}:{arrayTuple[1]}>")
                 symbolLines.append(
-                    processLine(createInstanceLine(vectorInstName), vectorNetsList)
+                    processLine(createInstanceLine(
+                        vectorInstName, vectorNetsList, vectorLvsNetsList))
                 )
             else:
                 # Fall back to expansion
                 expandedPinNets = [
                     expandNet(netName) for netName in pinNets
                 ]
+                expandedLvsPinNets = [
+                    expandNet(netName) for netName in lvsPinNets
+                ]
+
+                def selectNets(expandedNets, index):
+                    """Pick per-instance nets honoring array broadcast rules."""
+                    pickedNets = []
+                    for nets in expandedNets:
+                        if len(nets) == arraySize:
+                            pickedNets.append(nets[index])
+                        elif len(nets) == 1:
+                            pickedNets.append(nets[0])
+                        else:
+                            self._scene.logger.warning(
+                                f"Net connection width mismatch for "
+                                f"{elementSymbol.instanceName}: "
+                                f"expected 1 or {arraySize}, got {len(nets)}. "
+                                f"Falling back to element 0."
+                            )
+                            pickedNets.append(nets[0])
+                    return pickedNets
 
                 if arraySize == 1:
                     flatNetsList = " ".join([nets[0] for nets in expandedPinNets])
+                    flatLvsNetsList = " ".join(
+                        [nets[0] for nets in expandedLvsPinNets])
                     symbolLines.append(
-                        processLine(createInstanceLine(baseInstName), flatNetsList)
+                        processLine(createInstanceLine(
+                            baseInstName, flatNetsList, flatLvsNetsList))
                     )
                 else:
                     arrayIndices = list(
                         range(arrayTuple[0], arrayTuple[1] + arrayStep, arrayStep)
                     )
                     for j, i in enumerate(arrayIndices):
-                        instanceNets: list[str] = []
-                        for nets in expandedPinNets:
-                            if len(nets) == arraySize:
-                                instanceNets.append(nets[j])
-                            elif len(nets) == 1:
-                                instanceNets.append(nets[0])
-                            else:
-                                self._scene.logger.warning(
-                                    f"Net connection width mismatch for "
-                                    f"{elementSymbol.instanceName}: "
-                                    f"expected 1 or {arraySize}, got {len(nets)}. "
-                                    f"Falling back to element 0."
-                                )
-                                instanceNets.append(nets[0])
-
-                        specificNetsList = " ".join(instanceNets)
+                        specificNetsList = " ".join(selectNets(expandedPinNets, j))
+                        specificLvsNetsList = " ".join(
+                            selectNets(expandedLvsPinNets, j))
                         symbolLines.append(
                             processLine(
                                 createInstanceLine(
-                                    vacaskNetlist._quoteId(f"{baseInstName}<{i}>")
+                                    vacaskNetlist._quoteId(f"{baseInstName}<{i}>"),
+                                    specificNetsList,
+                                    specificLvsNetsList,
                                 ),
-                                specificNetsList,
                             )
                         )
 

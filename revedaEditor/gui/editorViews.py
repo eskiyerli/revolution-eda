@@ -411,7 +411,10 @@ class editorView(QGraphicsView):
     def clearStretchItems(self):
         self.determineViewRect()
         for item in self.viewScene.items(self.viewRect):
-            if hasattr(item, "stretch"):
+            cancelStretch = getattr(item, "cancelStretch", None)
+            if callable(cancelStretch):
+                cancelStretch()
+            elif hasattr(item, "stretch"):
                 setattr(item, "stretch", False)
 
 class symbolView(editorView):
@@ -605,10 +608,6 @@ class layoutView(editorView):
                     self.viewScene.undoStack.removeLastCommand()
                 self.viewScene.newRect = None
                 self.viewScene.editModes.setMode("selectItem")
-            elif self.viewScene.editModes.stretchItem and self.viewScene.stretchPathItem is not None:
-                self.viewScene.stretchPathItem.setSelected(False)
-                self.viewScene.stretchPathItem.stretch = False
-                self.viewScene.stretchPathItem = None
             elif self.viewScene.editModes.drawPolygon:
                 if self.viewScene.polygonGuideLine:
                     self.viewScene.removeItem(self.viewScene.polygonGuideLine)

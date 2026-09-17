@@ -105,8 +105,9 @@ class DesignFileValidationError(Exception):
         errors: List of human-readable error descriptions.
     """
 
-    def __init__(self, message: str, file_path: str = "",
-                 errors: Optional[List[str]] = None):
+    def __init__(
+        self, message: str, file_path: str = "", errors: Optional[List[str]] = None
+    ):
         super().__init__(message)
         self.file_path = file_path
         self.errors = errors or []
@@ -114,7 +115,9 @@ class DesignFileValidationError(Exception):
 
 def _format_validation_error(error: ValidationError) -> str:
     """Convert a jsonschema ValidationError to a human-friendly message."""
-    path = " -> ".join(str(p) for p in error.absolute_path) if error.absolute_path else "root"
+    path = (
+        " -> ".join(str(p) for p in error.absolute_path) if error.absolute_path else "root"
+    )
     return f"At '{path}': {error.message}"
 
 
@@ -143,9 +146,7 @@ def validate_design_data(
 
     # Basic structure check
     if not isinstance(data, list):
-        errors.append(
-            f"Design file must be a JSON array, got {type(data).__name__}"
-        )
+        errors.append(f"Design file must be a JSON array, got {type(data).__name__}")
         return False, errors
 
     if len(data) < 2:
@@ -184,9 +185,7 @@ def validate_design_data(
     if grid_settings and "snapGrid" in grid_settings:
         snap_grid = grid_settings["snapGrid"]
         if not (isinstance(snap_grid, (list, tuple)) and len(snap_grid) == 2):
-            errors.append(
-                f"'snapGrid' must be a 2-element array, got: {snap_grid!r}"
-            )
+            errors.append(f"'snapGrid' must be a 2-element array, got: {snap_grid!r}")
             return False, errors
 
     # Validate items in strict mode
@@ -241,8 +240,7 @@ def validate_design_file(
     actual_type = data[0].get("viewType")
     if actual_type != view_type:
         return False, [
-            f"Expected view type '{view_type}', but file contains "
-            f"'{actual_type}'"
+            f"Expected view type '{view_type}', but file contains '{actual_type}'"
         ]
 
     return True, []
