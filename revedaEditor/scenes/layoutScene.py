@@ -38,6 +38,7 @@ import revedaEditor.backend.dataDefinitions as ddef
 import revedaEditor.backend.libraryMethods as libm
 import revedaEditor.backend.libraryModelView as lmview
 import revedaEditor.backend.undoStack as us
+import revedaEditor.common.layoutMerge as lmerge
 import revedaEditor.common.layoutShapes as lshp  # import layout shapes
 import revedaEditor.fileio.exportGDS as gdse
 import revedaEditor.fileio.layoutEncoder as layenc
@@ -496,6 +497,24 @@ class layoutScene(editorScene):
                 self.removeItem(self._newCutLine)
         self._newCutLine = None
 
+    def mergeSelectedItems(self):
+        """Merge mergeable selected items (see common/layoutMerge.py)."""
+        produced, consumed = lmerge.mergeLayoutItems(
+            list(self.selectedItemsSet), self.logger
+        )
+        if not produced:
+            self.messageLine.setText("No mergeable items selected")
+            return
+        for item in consumed:
+            item.setSelected(False)
+        for item in produced:
+            item.setFlag(QGraphicsItem.ItemIsSelectable, True)
+            item.setSelected(True)
+        self.undoStack.push(us.addDeleteShapesUndo(self, produced, consumed))
+        self.messageLine.setText(
+            f"Merged {len(consumed)} items into {len(produced)} shape(s)"
+        )
+
     def _splitPolygonalShape(self, item, line: QLineF):
         """Split a polygonal shape (rectangle or polygon) at intersections with the cut line."""
         # Get points based on item type
@@ -512,6 +531,10 @@ class layoutScene(editorScene):
             points = item.points
             shape_name = "Polygon"
 
+        # layoutPolygon expects integer QPoint vertices; normalize rect
+        # corners (QPointF) so the split results remain stretchable.
+        points = [QPoint(round(p.x()), round(p.y())) for p in points]
+
         intersections = []
 
         # Find all intersection points with shape edges
@@ -526,7 +549,9 @@ class layoutScene(editorScene):
             idx1, p1 = intersections[0]
             idx2, p2 = intersections[1]
 
-            # Create two new polygons using list slicing
+            # Create two new polygons using list slicing. Intersection points
+            # are QPointF; layoutPolygon expects integer QPoint vertices.
+            p1, p2 = p1.toPoint(), p2.toPoint()
             poly1_points = [p1] + points[idx1 + 1:idx2 + 1] + [p2]
             poly2_points = [p2] + points[idx2 + 1:] + points[:idx1 + 1] + [p1]
 
@@ -683,13 +708,20 @@ class layoutScene(editorScene):
         self.addUndoStack(self._newPin)
 
     def drawLayoutRect(self):
-        self.editorWindow.messageLine.setText("Rectangle mode.")
-        # Create a new rectangle
+        # Second release finalizes the in-progress rectangle; return to
+        # select mode instead of anchoring another one.
         if self.newRect:
             if self.newRect.rect.isNull():
                 self.removeItem(self.newRect)
                 self.undoStack.removeLastCommand()
             self.newRect = None
+            self.editModes.setMode("selectItem")
+            self.editorWindow.messageLine.setText(
+                self.messages.get("selectItem", "Select Item")
+            )
+            return
+        self.editorWindow.messageLine.setText("Rectangle mode.")
+        # Create a new rectangle
         self.newRect = lshp.layoutRect(
             self.mouseReleaseLoc,
             self.mouseReleaseLoc,
@@ -714,16 +746,23 @@ class layoutScene(editorScene):
                 return
             startPoint = self.newPath.sceneEndPoints[1]
             self.newPath = None
+            continuation = True
         else:
             startPoint = point
-        self._createLayoutPath(startPoint)
+            continuation = False
+        self._createLayoutPath(startPoint, continuation)
 
-    def _createLayoutPath(self, point: QPoint):
+    def _createLayoutPath(self, point: QPoint, continuation: bool = False):
+        startExtend = int(self.newPathTuple.startExtend)
+        if continuation:
+            # A chained segment must reach half the path width behind the
+            # joint, otherwise a turn leaves a notch at the outer corner.
+            startExtend = max(startExtend, round(self.newPathTuple.width / 2))
         self.newPath = lshp.layoutPath(
             QLineF(point, point),
             self.newPathTuple.layer,
             self.newPathTuple.width,
-            int(self.newPathTuple.startExtend),
+            startExtend,
             int(self.newPathTuple.endExtend),
             self.newPathTuple.pathMode,
         )

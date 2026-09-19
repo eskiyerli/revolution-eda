@@ -771,7 +771,8 @@ class layoutItems:
         return pin
 
     def createPolygonShape(self, item):
-        points = [QPointF(x, y) for x, y in item["ps"]]
+        # layoutPolygon stretch logic expects integer QPoint vertices.
+        points = [QPoint(round(x), round(y)) for x, y in item["ps"]]
         polygon = lshp.layoutPolygon(points, self._pdkLayers[item["ln"]])
         self._set_common_attrs(polygon, item)
         return polygon

@@ -129,6 +129,10 @@ The Edit menu contains the core geometry editing commands.
 - `Edit -> Vertical Flip`: mirrors selected items vertically.
 - `Edit -> Align Items...`: aligns selected shapes by edge/center or to a guide line.
 - `Edit -> Cut Item`: cuts selected rectangles, paths, or polygons with a drawn cut line.
+- `Edit -> Merge Shapes` (`Ctrl+M`): merges selected shapes. Same-layer paths with equal
+  width that are collinear and overlapping or touching become one longer path; same-layer
+  rectangles and polygons that overlap or touch are unioned into a polygon (or a rectangle
+  when the union is an exact rectangle). Disjoint or incompatible items are left unchanged.
 - `Edit -> Selection`: contains `Select All` and `Unselect All`.
 
 Property editing works on these layout object types:

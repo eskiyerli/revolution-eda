@@ -94,6 +94,8 @@ class layoutEditor(edw.editorWindow):
         cutIcon = QIcon(":/icons/cutter.png")
         self.cutAction = QAction(cutIcon, "Cut Item", self)
         self.cutAction.setToolTip("Cut selected objects")
+        self.mergeAction = QAction("Merge Shapes", self)
+        self.mergeAction.setToolTip("Merge selected paths, rectangles, or polygons")
         self.exportGDSAction = QAction("Export GDS", self)
         self.exportGDSAction.setToolTip("Export GDS from Layout")
         self.exportOASAction = QAction("Export OAS", self)
@@ -111,6 +113,7 @@ class layoutEditor(edw.editorWindow):
         self.propertyMenu.addAction(self.objPropAction)
         self.menuEdit.addAction(self.stretchAction)
         self.menuEdit.addAction(self.cutAction)
+        self.menuEdit.addAction(self.mergeAction)
         self.menuCreate.addAction(self.createInstAction)
         self.menuCreate.addAction(self.createRectAction)
         self.menuCreate.addAction(self.createPathAction)
@@ -144,6 +147,7 @@ class layoutEditor(edw.editorWindow):
     def _layoutContextMenu(self):
         super()._editorContextMenu()
         self.centralW.scene.itemContextMenu.addAction(self.goDownAction)
+        self.centralW.scene.itemContextMenu.addAction(self.mergeAction)
 
     def _createToolBars(self):
         super()._createToolBars()
@@ -173,6 +177,7 @@ class layoutEditor(edw.editorWindow):
         self.exportGDSAction.triggered.connect(self.exportGDSClick)
         self.exportOASAction.triggered.connect(self.exportOASClick)
         self.cutAction.triggered.connect(self.cutClick)
+        self.mergeAction.triggered.connect(self.mergeClick)
         self.createPathAction.triggered.connect(self.createPathClick)
         self.createPinAction.triggered.connect(self.createPinClick)
         self.createLabelAction.triggered.connect(self.createLabelClick)
@@ -199,9 +204,13 @@ class layoutEditor(edw.editorWindow):
         self.rulerAction.setShortcut(Qt.Key.Key_K)
         self.delRulerAction.setShortcut("Shift+K")
         self.cutAction.setShortcut("Shift+C")
+        self.mergeAction.setShortcut("Ctrl+M")
 
     def cutClick(self):
         self.centralW.scene.editModes.setMode("cutShape")
+
+    def mergeClick(self):
+        self.centralW.scene.mergeSelectedItems()
 
     def createRectClick(self, s):
         self.centralW.scene.editModes.setMode("drawRect")
