@@ -82,3 +82,7 @@ build-backend = "poetry.core.masonry.api"
 [tool.ruff]
 # Allow lines to be as long as 120.
 line-length = 92
+
+[tool.ruff.lint]
+# Module names are camelCase by convention (layoutScene.py, loadJSON.py, ...).
+ignore = ["N999"]

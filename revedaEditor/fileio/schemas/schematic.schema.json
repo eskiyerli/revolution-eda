@@ -92,8 +92,9 @@
         "type": { "const": "scp" },
         "st": { "$ref": "#/$defs/point" },
         "pn": { "type": "string" },
-        "pd": { "type": "string" },
-        "pt": { "type": "string" },
+        "pd": { "type": "string", "enum": ["Input", "Output", "Inout"] },
+        "pt": { "type": "string",
+                "enum": ["Signal", "Ground", "Power", "Clock", "Digital", "Analog"] },
         "ang": { "type": "number" },
         "fl": { "$ref": "#/$defs/flipTuple" }
       }

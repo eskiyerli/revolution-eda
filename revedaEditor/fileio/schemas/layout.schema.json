@@ -155,8 +155,9 @@
         "tl": { "$ref": "#/$defs/point" },
         "br": { "$ref": "#/$defs/point" },
         "pn": { "type": "string" },
-        "pd": { "type": "string" },
-        "pt": { "type": "string" },
+        "pd": { "type": "string", "enum": ["Input", "Output", "Inout"] },
+        "pt": { "type": "string",
+                "enum": ["Signal", "Ground", "Power", "Clock", "Digital", "Analog"] },
         "ln": { "type": "integer", "minimum": 0 },
         "ang": { "type": "number" },
         "fl": { "$ref": "#/$defs/flipTuple" }

@@ -62,6 +62,13 @@ class addDeleteShapesUndo(QUndoCommand):
         self._oldShapes = oldShapes
         self.setText("Add/Delete Shapes")
 
+    def disable(self):
+        """Neutralize the command: subsequent undo/redo calls are no-ops.
+        Used when a macro child was already reverted manually (e.g. popping
+        the last vertex of an in-progress wire)."""
+        self._newShapes = []
+        self._oldShapes = []
+
     def undo(self):
         for item in self._newShapes:
             self._scene.removeItem(item)
@@ -76,7 +83,8 @@ class addDeleteShapesUndo(QUndoCommand):
 
     def redo(self):
         for item in self._newShapes:
-            self._scene.addItem(item)
+            if item.scene() is not self._scene:
+                self._scene.addItem(item)
         self._scene.itemsRefSet |= set(self._newShapes)
         for item in self._oldShapes:
             if item.scene() is not None:

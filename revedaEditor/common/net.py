@@ -402,10 +402,12 @@ class schematicNet(QGraphicsItem):
                             # Zero-length: just remove the guideLine
                             scene.removeItem(snapLine)
                             continue
-                        newNets = scene.addStretchWires(p1, p2)
+                        newNets = scene.addStretchWires(
+                            p1, p2, snapLine.horizontalFirst)
                         if newNets:
                             for netItem in newNets:
                                 netItem.inherit(snapLine)
+                                netItem.width = snapLine.width
                             allNewNets.extend(newNets)
                         scene.removeItem(snapLine)
                 # Push a single addDeleteShapesUndo capturing all net replacements.
@@ -1005,6 +1007,8 @@ class guideLine(QGraphicsLineItem):
         self.setPen(schlyr.guideLinePen)
         self._name: str = ""
         self._nameStrength: netNameStrengthEnum = netNameStrengthEnum.NONAME
+        self._width = 0
+        self._horizontalFirst: Optional[bool] = None
 
     @property
     def draftLine(self) -> QLineF:
@@ -1058,6 +1062,17 @@ class guideLine(QGraphicsLineItem):
         assert isinstance(otherNet, schematicNet)
         self.name = otherNet.name
         self.nameStrength = otherNet.nameStrength
+        self._width = otherNet.width
+        line = otherNet.draftLine
+        self._horizontalFirst = abs(line.dx()) >= abs(line.dy())
+
+    @property
+    def width(self) -> int:
+        return self._width
+
+    @property
+    def horizontalFirst(self) -> Optional[bool]:
+        return self._horizontalFirst
 
     def _finishSnapLines(self):
         if self._netSnapLines:

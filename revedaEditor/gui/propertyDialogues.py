@@ -20,24 +20,25 @@ from PySide6.QtGui import (
     QFontDatabase,
 )
 from PySide6.QtWidgets import (
-    QWidget,
-    QDialog,
-    QVBoxLayout,
-    QHBoxLayout,
-    QFormLayout,
-    QDialogButtonBox,
     QButtonGroup,
-    QTabWidget,
-    QLineEdit,
-    QLabel,
-    QComboBox,
-    QGroupBox,
-    QRadioButton,
-    QGridLayout,
-    QTextEdit,
     QCheckBox,
+    QComboBox,
+    QDialog,
+    QDialogButtonBox,
+    QFormLayout,
+    QGridLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QRadioButton,
     QTableWidget,
     QTableWidgetItem,
+    QTabWidget,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
 )
 
 import revedaEditor.common.labels as lbl
@@ -539,6 +540,57 @@ class instanceProperties(QDialog):
         self.setLayout(mainLayout)
         self.buttonBox.accepted.connect(self.accept)
         self.buttonBox.rejected.connect(self.reject)
+
+
+class schematicCheckRulesDialogue(QDialog):
+    """Checkbox dialogue selecting which schematic check rules are applied.
+    All rules passed in ``enabledIds`` start checked (all rules on by
+    default)."""
+
+    def __init__(self, parent, rules, enabledIds):
+        super().__init__(parent)
+        self.parent = parent
+        self.setWindowTitle("Schematic Check Rules")
+        self.setMinimumWidth(380)
+        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+
+        mainLayout = QVBoxLayout()
+        rulesGroup = QGroupBox("Applied Rules")
+        rulesLayout = QVBoxLayout()
+        self.ruleCheckBoxes = {}
+        for rule in rules:
+            checkBox = QCheckBox(
+                f"{rule.name}  [{rule.severity.name.title()}]")
+            checkBox.setToolTip(rule.description)
+            checkBox.setChecked(rule.ruleId in enabledIds)
+            rulesLayout.addWidget(checkBox)
+            self.ruleCheckBoxes[rule.ruleId] = checkBox
+        rulesGroup.setLayout(rulesLayout)
+        mainLayout.addWidget(rulesGroup)
+
+        selectLayout = QHBoxLayout()
+        selectAllButton = QPushButton("Select All", self)
+        selectAllButton.clicked.connect(lambda: self._setAllChecked(True))
+        selectNoneButton = QPushButton("Select None", self)
+        selectNoneButton.clicked.connect(lambda: self._setAllChecked(False))
+        selectLayout.addWidget(selectAllButton)
+        selectLayout.addWidget(selectNoneButton)
+        selectLayout.addStretch(1)
+        mainLayout.addLayout(selectLayout)
+
+        buttonBox = QDialogButtonBox(QBtn)
+        mainLayout.addWidget(buttonBox)
+        self.setLayout(mainLayout)
+        buttonBox.accepted.connect(self.accept)
+        buttonBox.rejected.connect(self.reject)
+
+    def _setAllChecked(self, checked: bool):
+        for checkBox in self.ruleCheckBoxes.values():
+            checkBox.setChecked(checked)
+
+    def selectedRuleIds(self) -> set:
+        return {ruleId for ruleId, checkBox in self.ruleCheckBoxes.items()
+                if checkBox.isChecked()}
 
 
 class netNameDialog(QDialog):

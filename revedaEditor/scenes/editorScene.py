@@ -47,6 +47,9 @@ class editorScene(QGraphicsScene):
 
         # Initialize mouse-related attributes together
         self.mousePressLoc = self.mouseMoveLoc = self.mouseReleaseLoc = None
+        # Raw (un-snapped) counterparts used for snap-target evaluation so the
+        # snap aperture is anchored to the real cursor, not a grid point.
+        self.mouseRawLoc = self.mouseReleaseRawLoc = None
 
         # Use dictionary unpacking for edit modes
         self.editModes = ddef.editModes(
@@ -105,6 +108,8 @@ class editorScene(QGraphicsScene):
         self.mousePressLoc = QPoint(0, 0)
         self.mouseMoveLoc = QPoint(0, 0)
         self.mouseReleaseLoc = QPoint(0, 0)
+        self.mouseRawLoc = None
+        self.mouseReleaseRawLoc = None
         self.newAlignLine = None
         self._rightZoomPressLoc: Optional[QPoint] = None
         self._rightZoomRectItem: Optional[QGraphicsRectItem] = None
@@ -199,7 +204,8 @@ class editorScene(QGraphicsScene):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event) -> None:
-        self.mouseMoveLoc = self.snapToGrid(event.scenePos().toPoint())
+        self.mouseRawLoc = event.scenePos().toPoint()
+        self.mouseMoveLoc = self.snapToGrid(self.mouseRawLoc)
         super().mouseMoveEvent(event)
         if self.editModes.selectItem:
             if self.selectionRectItem and self.mousePressLoc:
@@ -240,7 +246,8 @@ class editorScene(QGraphicsScene):
         #     return
 
         modifiers = QGuiApplication.keyboardModifiers()
-        self.mouseReleaseLoc = self.snapToGrid(event.scenePos().toPoint())
+        self.mouseReleaseRawLoc = event.scenePos().toPoint()
+        self.mouseReleaseLoc = self.snapToGrid(self.mouseReleaseRawLoc)
 
         if event.button() == Qt.MouseButton.RightButton:
             if self._rightZoomRectItem is not None:

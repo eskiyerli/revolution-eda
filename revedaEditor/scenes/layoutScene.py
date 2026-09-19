@@ -499,6 +499,11 @@ class layoutScene(editorScene):
 
     def mergeSelectedItems(self):
         """Merge mergeable selected items (see common/layoutMerge.py)."""
+        # Dissolve a live selection group first so merge sees real items,
+        # not children of an in-progress move/copy group.
+        if self.selectedItemGroup is not None:
+            self.destroyItemGroup(self.selectedItemGroup)
+            self.selectedItemGroup = None
         produced, consumed = lmerge.mergeLayoutItems(
             list(self.selectedItemsSet), self.logger
         )
@@ -507,10 +512,11 @@ class layoutScene(editorScene):
             return
         for item in consumed:
             item.setSelected(False)
-        for item in produced:
-            item.setFlag(QGraphicsItem.ItemIsSelectable, True)
-            item.setSelected(True)
         self.undoStack.push(us.addDeleteShapesUndo(self, produced, consumed))
+        for item in produced:
+            # addDeleteShapesUndo bypasses addUndoStack's filter hook.
+            self._applyObjectFilter(item)
+        self.setSelectedItems(set(produced))
         self.messageLine.setText(
             f"Merged {len(consumed)} items into {len(produced)} shape(s)"
         )

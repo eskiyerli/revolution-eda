@@ -90,6 +90,30 @@ def test_paths_extends_preserved_in_drawn_span():
     assert sorted((merged.startExtend, merged.endExtend)) == [5, 10]
 
 
+def test_extend_longer_than_segment_does_not_bridge_gap():
+    # p1's endExtend (100) exceeds its own length (10): its drawn span is
+    # [0, 110], so a path ending at -40 must NOT merge with it.
+    p1 = _path((0, 0), (10, 0), ee=100)
+    p2 = _path((-50, 0), (-40, 0))
+    scene = _scene_with(p1, p2)
+    produced, consumed = lmerge.mergeLayoutItems([p1, p2])
+    assert produced == []
+    assert consumed == []
+
+
+def test_merged_extends_exact_when_extend_exceeds_length():
+    # Union drawn span is [0, 110] over centreline [0, 20]: ee must be 90,
+    # not inflated by p1's extend applied at the wrong end.
+    p1 = _path((0, 0), (10, 0), ee=100)
+    p2 = _path((10, 0), (20, 0))
+    scene = _scene_with(p1, p2)
+    produced, _ = lmerge.mergeLayoutItems([p1, p2])
+    merged = produced[0]
+    ends = sorted(tuple(p.toTuple()) for p in merged.sceneEndPoints)
+    assert ends == [(0.0, 0.0), (20.0, 0.0)]
+    assert sorted((merged.startExtend, merged.endExtend)) == [0, 90]
+
+
 def test_paths_different_widths_no_merge():
     p1 = _path((0, 0), (100, 0), width=10.0)
     p2 = _path((100, 0), (200, 0), width=20.0)

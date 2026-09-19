@@ -27,6 +27,7 @@ The table below maps common Virtuoso schematic actions to Revolution EDA equival
 | Place pin | `Create -> Pin` or press `p` | Direction: Input/Output/InOut |
 | Net label | `Net Properties` on selected wire or press 'l' | Names propagate along connected net |
 | Highlight net | `Tools -> Highlight Net` | Hover to highlight connected net |
+| Check schematic | `Check -> View Errors...` | Runs the rules enabled in `Check -> Check Rules Setup...` |
 | Go down hierarchy | `Edit -> Hierarchy -> Go Down` or `Shift+E` | Choose schematic or symbol |
 | Go up hierarchy | `Edit -> Hierarchy -> Go Up` | Returns to parent view |
 | Generate symbol | `Create -> Create Symbol...` | Uses schematic pins |
@@ -57,7 +58,8 @@ The File menu handles saving, printing, and exporting your schematic designs.
 
 ![schematicEditorFileMenu.png](assets/schematicEditorFileMenu.png)
 
-- `File -> Check-Save`: validates the schematic and saves it to disk.
+- `File -> Check Schematic`: runs the enabled schematic check rules (configured via `Check -> Check Rules Setup...`) and marks violations on the canvas without saving. Also available as the check-box icon on the schematic toolbar.
+- `File -> Check-Save`: resolves net names (reporting name conflicts) and saves the schematic to disk. For full rule checking, use `Check -> View Errors...` or `File -> Check Schematic`.
 - `File -> Save`: saves the current schematic without validation.
 - `File -> Update Design`: reloads all referenced cells from disk, useful after external changes.
 - `File -> Print...`: opens a print dialog to send the schematic to a printer.
@@ -69,6 +71,7 @@ File menu actions and shortcuts:
 
 | Action | Shortcut | Notes |
 | --- | --- | --- |
+| `File -> Check Schematic` | None | Runs enabled check rules and marks violations; no save. |
 | `File -> Check-Save` | None | Validates design rules before saving. |
 | `File -> Save` | None | Quick save without validation. |
 | `File -> Update Design` | None | Refreshes all cell references from disk. |
@@ -258,6 +261,39 @@ Both of these settings are saved to schematic file and will be reloaded with the
 
 <img src="assets/schematicSelectionConfigDialogue.png" class="small-image" />
 
+
+### Check Menu
+
+The Check menu provides rule-based schematic checking, similar to Virtuoso's
+*Check -> Against Rules* / check-and-save verification.
+
+- `Check -> Check Rules Setup...`: opens the **Schematic Check Rules**
+  dialogue listing every check rule with a checkbox. All rules are enabled by
+  default; tick rules on or off individually, or use the `Select All` /
+  `Select None` buttons. The selection is kept for the duration of the
+  session.
+- `Check -> View Errors...`: runs the enabled rules over the current schematic.
+  Each violation is marked on the canvas and logged:
+  - **Red dash-dot rectangle**: error (must be fixed before netlisting).
+  - **Magenta dash-dot rectangle**: warning (review recommended).
+- `Check -> Delete Errors...`: removes all check markers from the canvas.
+  Running `View Errors` again also clears the previous markers first.
+
+Available check rules:
+
+| Rule | Severity | What it flags |
+| --- | --- | --- |
+| Overlapping symbols | Error | Symbol instances whose drawn shapes overlap. |
+| Dangling wire ends | Warning | Wire endpoints not connected to another wire or a pin. |
+| Floating pins | Warning | Pins that touch no wire (input pins are covered separately). |
+| Floating input pins | Warning | Input-direction pins with no connected net. |
+| Shorted output pins | Error | Two or more Output pins driving the same net. |
+| Net name conflicts | Error | Electrically joined nets carrying different strong names (bus-aware). |
+| Overlapping wires | Error | Wire segments drawn on top of each other — silent shorts. |
+| Crossing wires without junction | Warning | Wires crossing mid-segment with no vertex at the crossing: looks connected but is electrically open. |
+| Duplicate instance names | Error | Symbol instances sharing the same instance name (fix with `Tools -> Renumber Instances`). |
+| Off-grid items | Warning | Net endpoints, pin origins, or symbol origins not on the snap grid. |
+| Bus width mismatch | Error | A bussed pin connected to a like-named net of a different bus width. |
 
 ### Tools Menu
 - `Tools -> Read Only`: Toggling this menu will lock the schematic to editing. To unlock the schematic, unlock the menu item.

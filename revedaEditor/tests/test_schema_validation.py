@@ -46,8 +46,8 @@ def valid_symbol_data():
         {"snapGrid": [10, 5]},
         {"type": "rect", "rect": [0, 0, 100, 50], "loc": [10, 20],
          "ang": 0, "fl": [1, 1]},
-        {"type": "pin", "st": [0, 0], "nam": "A", "pd": "input",
-         "pt": "signal", "loc": [5, 5], "ang": 0, "fl": [1, 1]},
+        {"type": "pin", "st": [0, 0], "nam": "A", "pd": "Input",
+         "pt": "Signal", "loc": [5, 5], "ang": 0, "fl": [1, 1]},
     ]
 
 
@@ -58,8 +58,8 @@ def valid_schematic_data():
         {"snapGrid": [10, 5]},
         {"type": "scn", "st": [0, 0], "end": [100, 0], "nam": "net1",
          "ns": 3},
-        {"type": "scp", "st": [0, 0], "pn": "VDD", "pd": "input",
-         "pt": "signal", "ang": 0, "fl": [1, 1]},
+        {"type": "scp", "st": [0, 0], "pn": "VDD", "pd": "Input",
+         "pt": "Signal", "ang": 0, "fl": [1, 1]},
     ]
 
 
@@ -261,6 +261,31 @@ class TestStrictValidation:
     def test_strict_rejects_invalid_layout_path_mode_or_label_height(self, record):
         data = [
             {"viewType": "layout", "schemaVersion": "1.0"},
+            {"snapGrid": [10, 5]},
+            record,
+        ]
+
+        is_valid, errors = validate_design_data(data, strict=True)
+
+        assert not is_valid
+        assert errors
+
+    @pytest.mark.parametrize(
+        "record",
+        (
+            {
+                "type": "scp", "st": [0, 0], "pn": "In", "pd": "In",
+                "pt": "Signal",
+            },
+            {
+                "type": "scp", "st": [0, 0], "pn": "VDD", "pd": "Input",
+                "pt": "signal",
+            },
+        ),
+    )
+    def test_strict_rejects_invalid_schematic_pin_direction_or_type(self, record):
+        data = [
+            {"viewType": "schematic", "schemaVersion": "1.0"},
             {"snapGrid": [10, 5]},
             record,
         ]

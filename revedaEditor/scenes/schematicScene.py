@@ -13,16 +13,34 @@
 import json
 import os
 import pathlib
-
-import orjson
 from typing import Dict, List, Optional, Set, Tuple, Union
 
-from PySide6.QtCore import (QLineF, QPoint, QRect, QRectF,
-                            QRegularExpression, Qt, Signal, Slot)
-from PySide6.QtGui import (QFont, QFontDatabase, QPen, )
-from PySide6.QtWidgets import (QComboBox, QDialog, QGraphicsItem,
-                               QGraphicsRectItem, QGraphicsScene,
-                               QGraphicsSceneMouseEvent)
+import orjson
+import shiboken6
+from PySide6.QtCore import (
+    QLineF,
+    QPoint,
+    QPointF,
+    QRect,
+    QRectF,
+    QRegularExpression,
+    Qt,
+    Signal,
+    Slot,
+)
+from PySide6.QtGui import (
+    QFont,
+    QFontDatabase,
+    QPen,
+)
+from PySide6.QtWidgets import (
+    QComboBox,
+    QDialog,
+    QGraphicsItem,
+    QGraphicsRectItem,
+    QGraphicsScene,
+    QGraphicsSceneMouseEvent,
+)
 
 import revedaEditor.backend.dataDefinitions as ddef
 import revedaEditor.backend.editFunctions as edf
@@ -33,8 +51,8 @@ import revedaEditor.common.labels as lbl
 import revedaEditor.common.net as snet
 import revedaEditor.common.shapes as shp  # import the shapes
 import revedaEditor.fileio.loadJSON as lj
-import revedaEditor.fileio.schemaValidation as sv
 import revedaEditor.fileio.schematicEncoder as schenc
+import revedaEditor.fileio.schemaValidation as sv
 import revedaEditor.gui.alignItems as alg
 import revedaEditor.gui.fileDialogues as fd
 import revedaEditor.gui.propertyDialogues as pdlg
@@ -108,8 +126,27 @@ class schematicScene(editorScene):
         self._snapPointRect = self.defineSnapRect()
         self._moveMacroActive = False
 
+        # Wire drawing state
+        self._wireDrawMode = snet.NetMode.ORTHOGONAL
+        self._wireAutoRoute = True
+        self._routeHorizontalFirst: Optional[bool] = None
+        self._routeGhost: Optional[snet.guideLine] = None
+        self._wireChainActive = False
+        self._wireCommands = []
+        self._wireResumePoints = []
+        self._wireWidth = 0
+        self._suppressWireRestart = False
+
+        # Stretch state
+        self._stretchBody = None
+        self._stretchOriginalNet = None
+
+        # Net name auto-increment state
+        self._netNameAuto = None
+
         # error shapes
         self.overlapRectSet = set()
+        self.lastCheckViolations = []
 
         # Initialize view properties
         self.highlightNets = False
@@ -214,8 +251,8 @@ class schematicScene(editorScene):
 
     def mouseMoveEvent(self, event: QGraphicsSceneMouseEvent) -> None:
         """Handle mouse move event."""
+        # super() already records mouseRawLoc and the snapped mouseMoveLoc.
         super().mouseMoveEvent(event)
-        self.mouseMoveLoc = self.snapToGrid(event.scenePos().toPoint())
 
         if self._newInstance and self.editModes.addInstance:
             self._newInstance.setPos(self.mouseMoveLoc)
@@ -228,27 +265,28 @@ class schematicScene(editorScene):
             # findSnapPoint already returns a grid-aligned point (a connection
             # point when one is nearby, otherwise the grid-snapped cursor).
             ignoredSet = {self._newNet} if self._newNet is not None else set()
-            netEndPoint = self.findSnapPoint(self.mouseMoveLoc, ignoredSet)
+            netEndPoint = self.findSnapPoint(self.mouseRawLoc, ignoredSet)
             snapRect = self._ensureSnapPointRect()
             if snapRect.scene() is None:
                 self.addItem(snapRect)
             snapRect.setVisible(True)
             snapRect.setPos(netEndPoint)
-            if self._newNet is not None:
-                self._newNet.draftLine = QLineF(self._newNet.draftLine.p1(),
-                                                netEndPoint)
+            self._updateWirePreview(netEndPoint)
         elif self.newAlignLine and self.editModes.alignItems:
             self.newAlignLine.draftLine = QLineF(
                 self.newAlignLine.draftLine.p1(), self.mouseMoveLoc)
         elif self._stretchNet and self.editModes.stretchItem:
             # findSnapPoint returns a grid-aligned connection point when nearby,
             # otherwise the grid-snapped cursor.
-            netEndPoint = self.findSnapPoint(self.mouseMoveLoc, set())
+            netEndPoint = self.findSnapPoint(self.mouseRawLoc, set())
             snapRect = self._ensureSnapPointRect()
             snapRect.setVisible(True)
             snapRect.setPos(netEndPoint)
-            self._stretchNet.draftLine = QLineF(self._stretchNet.draftLine.p1(),
-                                                netEndPoint)
+            if self._stretchBody is not None:
+                self._updateBodyStretch(netEndPoint)
+            else:
+                self._stretchNet.draftLine = QLineF(
+                    self._stretchNet.draftLine.p1(), netEndPoint)
         elif self._newText and self.editModes.drawText:
 
             self._newText.start = self.mouseMoveLoc
@@ -262,6 +300,7 @@ class schematicScene(editorScene):
         if not (self.editModes.drawWire or self.editModes.drawBus or
                 self.editModes.stretchItem):
             self._ensureSnapPointRect().setVisible(False)
+            self._clearRouteGhost()
 
         cursorPosition = self.snapToGrid(self.mouseMoveLoc - self.origin)
         self.statusLine.showMessage(
@@ -295,15 +334,22 @@ class schematicScene(editorScene):
         """
 
         if button == Qt.MouseButton.LeftButton:
+            # Abandoned wire draft left over by a mode switch: close it out.
+            if self._newNet is not None and not (
+                    self.editModes.drawWire or self.editModes.drawBus):
+                self._finishWire()
+            # Same for a stretch interrupted by a mode switch.
+            if self._stretchNet is not None and not self.editModes.stretchItem:
+                self._cancelStretch()
             # modifiers = QGuiApplication.keyboardModifiers()
             if self.editModes.addInstance:
                 self._handleAddInstance(mousePos)
             elif self.editModes.drawPin:
                 self._handleDrawPin(mousePos)
             elif self.editModes.drawWire:
-                self._handleDrawWire(mousePos)
+                self._handleDrawWire(self._releaseRawLoc(mousePos))
             elif self.editModes.drawBus:
-                self._handleDrawBus(mousePos)
+                self._handleDrawBus(self._releaseRawLoc(mousePos))
             elif self.editModes.drawText:
                 self._handleDrawText(mousePos)
             elif self.editModes.rotateItem:
@@ -314,6 +360,16 @@ class schematicScene(editorScene):
                 self._handleNameNet(mousePos)
             elif self.editModes.alignItems:
                 self._handleAlignItemLine(mousePos)
+
+    def _cursorRawLoc(self) -> QPoint:
+        """Raw cursor position for snap evaluation; falls back to the snapped
+        location when no raw position has been recorded (e.g. in tests)."""
+        raw = getattr(self, 'mouseRawLoc', None)
+        return raw if raw is not None else self.mouseMoveLoc
+
+    def _releaseRawLoc(self, fallback: QPoint) -> QPoint:
+        raw = getattr(self, 'mouseReleaseRawLoc', None)
+        return raw if raw is not None else fallback
 
     def _handleAddInstance(self, eventLoc: QPoint) -> None:
         """
@@ -343,44 +399,241 @@ class schematicScene(editorScene):
 
     def _handleDrawNet(self, eventLoc: QPoint, width: int = 0) -> None:
         """
-        Commit the in-progress net segment at the snapped point and start the
-        next one, so a multi-segment net is a chain of segments sharing
-        on-grid vertices.
+        Commit the in-progress net at the snapped point and start the next
+        one, so a multi-segment net is a chain of segments sharing on-grid
+        vertices. With auto-route enabled the commit routes a Manhattan
+        two-segment path; landing on a connection point ends the wire.
         """
+        if self._suppressWireRestart:
+            # The release that follows a double-click wire termination.
+            self._suppressWireRestart = False
+            return
         ignoredSet = {self._newNet} if self._newNet is not None else set()
-        # findSnapPoint already returns a grid-aligned point.
-        snapPoint = self.findSnapPoint(eventLoc, ignoredSet)
+        # findSnapTarget already returns a grid-aligned point.
+        snapPoint, isConnection = self.findSnapTarget(eventLoc, ignoredSet)
 
         snapRect = self._ensureSnapPointRect()
         if snapRect.scene() is None:
             self.addItem(snapRect)
         snapRect.setVisible(True)
         snapRect.setPos(snapPoint)
+        self._wireWidth = width
 
         if self._newNet is not None and self._newNet.scene() is None:
             # In-progress segment was removed while drawing (e.g. undo).
             self._newNet = None
-        if self._newNet is not None:
-            self._newNet.draftLine = QLineF(
-                self._newNet.draftLine.p1(), snapPoint
-            )
-            if self._newNet.draftLine.isNull():
-                # Zero-length click: keep the segment open for a real end point.
-                return
-            startPoint = self._newNet.sceneEndPoints[1]
-            self.wireEditFinished.emit(self._newNet)
-            self._newNet = None
-        else:
-            startPoint = snapPoint
-        self._createNet(startPoint, width)
+        if self._newNet is None:
+            # First click of a new wire.
+            self._routeHorizontalFirst = None
+            self._createNet(snapPoint, width)
+            return
+        endPoint = self._commitWirePoint(snapPoint, width)
+        if endPoint is None:
+            # Degenerate click: keep the segment open for a real end point.
+            return
+        if isConnection and endPoint == snapPoint:
+            # Landed on a pin or an existing net: the wire is complete. A
+            # constrained end point that did not reach the target keeps the
+            # chain going instead of finishing on an unconnected wire.
+            self._finishWire()
+            return
+        self._createNet(endPoint, width)
 
     def _createNet(self, point: QPoint, width: int = 0) -> None:
-        self._newNet = snet.schematicNet(point, point, width)
-        self.addUndoStack(self._newNet)
+        self._newNet = snet.schematicNet(point, point, width,
+                                         self._wireDrawMode)
+        self.addItem(self._newNet)
+        if not self._wireChainActive:
+            # One undo step per wire chain; segments land as macro children.
+            self.undoStack.beginMacro("Draw Wire")
+            self._wireChainActive = True
+            self._wireCommands = []
+            self._wireResumePoints = []
+
+    def _commitWirePoint(self, snapPoint: QPoint, width: int) -> Optional[
+        QPoint]:
+        """Commit the in-progress wire to snapPoint: a single constrained
+        segment in manual mode, or a Manhattan two-segment route when
+        auto-route is active. Returns the committed end point, or None for a
+        degenerate click."""
+        draft = self._newNet
+        startPoint = draft.sceneEndPoints[0]
+        corner = self._routeCorner(startPoint, snapPoint)
+        legs = ([(startPoint, corner), (corner, snapPoint)]
+                if corner is not None else [(startPoint, snapPoint)])
+        if all(a == b for a, b in legs):
+            return None
+        if draft.scene() is not None:
+            self.removeItem(draft)
+        self._newNet = None
+        self._clearRouteGhost()
+        endPoint = None
+        for segStart, segEnd in legs:
+            committed = self._commitSegment(segStart, segEnd, width)
+            if committed is not None:
+                endPoint = committed
+        return endPoint
+
+    def _commitSegment(self, start: QPoint, end: QPoint,
+                       width: int) -> Optional[QPoint]:
+        """Create one net segment, run merge/split, and capture the complete
+        net diff (segment plus any consumed nets) as a single undoable
+        command. Returns the segment's effective end point."""
+        segment = snet.schematicNet(start, end, width, self._wireDrawMode)
+        if segment.draftLine.isNull():
+            return None
+        startPoint, endPoint = segment.sceneEndPoints
+        netsBefore = self.findSceneNetsSet()
+        self.addItem(segment)
+        self.mergeSplitNets(segment)
+        self._splitPiercedNets(startPoint, endPoint)
+        netsAfter = self.findSceneNetsSet()
+        newNets = list(netsAfter - netsBefore)
+        oldNets = list(netsBefore - netsAfter)
+        if newNets or oldNets:
+            command = us.addDeleteShapesUndo(self, newNets, oldNets)
+            self.undoStack.push(command)
+            if self._wireChainActive:
+                self._wireCommands.append(command)
+                self._wireResumePoints.append(startPoint)
+        self.invalidate(
+            segment.mapToScene(segment.boundingRect()).boundingRect().adjusted(
+                -self.snapGrid, -self.snapGrid, self.snapGrid, self.snapGrid),
+            QGraphicsScene.BackgroundLayer)
+        return endPoint
+
+    def _splitPiercedNets(self, *points: QPoint) -> None:
+        """Split any existing wire whose body passes through one of the given
+        points, so T-junctions get a vertex (junction dot + connectivity)
+        immediately instead of after leaving draw mode."""
+        for point in points:
+            probe = QRectF(point.x() - 1, point.y() - 1, 2, 2)
+            for item in list(self.items(probe)):
+                if (isinstance(item, snet.schematicNet)
+                        and item.scene() is self
+                        and item.sceneShapeRect.contains(point)
+                        and point not in item.sceneEndPoints):
+                    self.mergeSplitNets(item)
+
+    def _routeCorner(self, start: QPoint, end: QPoint) -> Optional[QPoint]:
+        """Manhattan corner for auto-route; None when auto-route is off, the
+        draw mode is not orthogonal, or start/end are already axis-aligned."""
+        if (not self._wireAutoRoute
+                or self._wireDrawMode != snet.NetMode.ORTHOGONAL):
+            return None
+        if start.x() == end.x() or start.y() == end.y():
+            return None
+        horizontalFirst = (self._routeHorizontalFirst
+                           if self._routeHorizontalFirst is not None else
+                           abs(end.x() - start.x()) >= abs(end.y() - start.y()))
+        return (QPoint(end.x(), start.y()) if horizontalFirst
+                else QPoint(start.x(), end.y()))
+
+    def _updateWirePreview(self, netEndPoint: QPoint) -> None:
+        """Update the in-progress wire preview: a single constrained segment,
+        or a two-segment Manhattan route when auto-route is active."""
+        if self._newNet is None:
+            self._clearRouteGhost()
+            return
+        startPoint = self._newNet.sceneEndPoints[0]
+        corner = self._routeCorner(startPoint, netEndPoint)
+        if corner is not None:
+            self._newNet.draftLine = QLineF(startPoint, corner)
+            ghost = self._ensureRouteGhost()
+            ghost.draftLine = QLineF(corner, netEndPoint)
+        else:
+            self._newNet.draftLine = QLineF(startPoint, netEndPoint)
+            self._clearRouteGhost()
+
+    def _ensureRouteGhost(self) -> snet.guideLine:
+        if self._routeGhost is None or self._routeGhost.scene() is None:
+            self._routeGhost = snet.guideLine(QPoint(0, 0), QPoint(0, 0))
+            self.addItem(self._routeGhost)
+        return self._routeGhost
+
+    def _clearRouteGhost(self) -> None:
+        if self._routeGhost is not None:
+            if self._routeGhost.scene() is not None:
+                self.removeItem(self._routeGhost)
+            self._routeGhost = None
+
+    def _finishWire(self) -> None:
+        """Terminate the in-progress wire, committing a pending segment, and
+        close the wire undo macro. The draw mode stays active."""
+        if self._newNet is not None:
+            draft = self._newNet
+            if draft.scene() is not None:
+                endPoint = self.findSnapPoint(self._cursorRawLoc(), {draft})
+                if endPoint != draft.sceneEndPoints[0]:
+                    self._commitWirePoint(endPoint, draft.width)
+                else:
+                    self.removeItem(draft)
+                    self._newNet = None
+            else:
+                self._newNet = None
+        self._endWireMacro()
+        self._ensureSnapPointRect().setVisible(False)
+
+    def _endWireMacro(self) -> None:
+        if self._wireChainActive:
+            self.undoStack.endMacro()
+            if not self._wireCommands:
+                # Qt pushes even empty macros; drop the no-op entry.
+                self.undoStack.removeLastCommand()
+            self._wireChainActive = False
+        self._wireCommands = []
+        self._wireResumePoints = []
+        self._routeHorizontalFirst = None
+        self._clearRouteGhost()
+
+    def popWireVertex(self) -> None:
+        """Remove the last committed wire segment and resume the chain from
+        its start point (Backspace during wire drawing)."""
+        if not (self.editModes.drawWire or self.editModes.drawBus):
+            return
+        if self._wireCommands:
+            command = self._wireCommands.pop()
+            resumePoint = self._wireResumePoints.pop()
+            command.undo()
+            command.disable()
+            if self._newNet is not None and self._newNet.scene() is not None:
+                self.removeItem(self._newNet)
+            self._newNet = None
+            self._createNet(resumePoint, self._wireWidth)
+        elif self._newNet is not None:
+            # Nothing committed yet: drop the draft entirely.
+            if self._newNet.scene() is not None:
+                self.removeItem(self._newNet)
+            self._newNet = None
+            self._endWireMacro()
+
+    def cycleWireDrawMode(self) -> None:
+        modes = list(snet.NetMode)
+        self._wireDrawMode = modes[(modes.index(self._wireDrawMode) + 1) %
+                                   len(modes)]
+        self._clearRouteGhost()
+        self.messageLine.setText(
+            f"Wire Angle: {self._wireDrawMode.name.title()}")
+
+    def toggleWireAutoRoute(self) -> None:
+        self._wireAutoRoute = not self._wireAutoRoute
+        self._clearRouteGhost()
+        self.messageLine.setText(
+            f"Auto Route: {'On' if self._wireAutoRoute else 'Off'}")
+
+    def flipRouteOrientation(self) -> None:
+        self._routeHorizontalFirst = (not self._routeHorizontalFirst
+                                      if self._routeHorizontalFirst is not None
+                                      else False)
+        if self._newNet is not None:
+            self._updateWirePreview(
+                self.findSnapPoint(self._cursorRawLoc(), {self._newNet}))
 
     def _handleAlignItemLine(self, eventLoc: QPoint) -> None:
         if self.newAlignLine is None:
-            from PySide6.QtWidgets import (QApplication, )
+            from PySide6.QtWidgets import (
+                QApplication,
+            )
             alignDlg = [w for w in QApplication.topLevelWidgets() if isinstance(w,
                 alg.alignItemsDialogue) and w.isVisible() and w.scene == self][
                 0]
@@ -416,7 +669,33 @@ class schematicScene(editorScene):
 
     def _handleStretchItem(self):
         if self._stretchNet:
-            self._completeStretch(self.mouseMoveLoc)
+            self._completeStretch(self._cursorRawLoc())
+
+    def _cancelStretch(self) -> None:
+        """Restore original geometry when a stretch is aborted (Escape)."""
+        if self._stretchBody is not None:
+            body = self._stretchBody
+            netItem = body['net']
+            self.addItem(netItem)
+            for removedNet in getattr(netItem, '_removedNets', []):
+                self.addItem(removedNet)
+                self.itemsRefSet.add(removedNet)
+            for snapLinesSet in body['snapLines'].values():
+                for snapLine in list(snapLinesSet):
+                    if snapLine.scene() is not None:
+                        self.removeItem(snapLine)
+            self._stretchBody = None
+        elif getattr(self, '_stretchOriginalNet', None) is not None:
+            if self._stretchOriginalNet.scene() is None:
+                self.addItem(self._stretchOriginalNet)
+        if self._stretchNet is not None:
+            if self._stretchNet.scene() is not None:
+                self.removeItem(self._stretchNet)
+            self._stretchNet = None
+        self._stretchOriginalNet = None
+        self._ensureSnapPointRect().setVisible(False)
+        for view in self.views():
+            view.setCursor(Qt.CursorShape.ArrowCursor)
 
     def _completeStretch(self, releasePos: QPoint) -> None:
         """
@@ -430,6 +709,9 @@ class schematicScene(editorScene):
         removes all replacement nets (including any produced by mergeSplitNets)
         and restores the original net plus any existing nets consumed by merging.
         """
+        if self._stretchBody is not None:
+            self._completeBodyStretch(releasePos)
+            return
         try:
             # findSnapPoint returns a grid-aligned point: a nearby connection
             # point when available, otherwise the grid-snapped release position.
@@ -447,8 +729,11 @@ class schematicScene(editorScene):
                 # any undo command (nothing actually changed).
                 self.addItem(self._stretchOriginalNet)
             else:
-                # Create 1–3 manhattan segments from anchor to snapped release
-                newSegments = self.addStretchWires(anchorPoint, snappedRelease)
+                # Create manhattan segments from anchor to snapped release,
+                # preserving the original wire's direction.
+                newSegments = self.addStretchWires(
+                    anchorPoint, snappedRelease,
+                    getattr(self._stretchNet, 'horizontalFirst', None))
 
                 # Defensive filter: discard any zero-length segments
                 # (p1 == p2) that may slip through from addStretchWires
@@ -512,22 +797,59 @@ class schematicScene(editorScene):
                 view.setCursor(Qt.CursorShape.ArrowCursor)
 
     def _handleNameNet(self, mouseReleaseLoc):
-        if self.netNameString:
-            # Find the schematicNet under the cursor in a single click
-            clickedNet = next(
-                (item for item in self.items(mouseReleaseLoc)
-                 if isinstance(item, snet.schematicNet)), None)
-            if clickedNet:
-                clickedNet.name = self.netNameString
-                clickedNet.nameStrength = snet.netNameStrengthEnum.SET
-                clickedNet.setSelected(False)
-            self.netNameString = None
+        if not self.netNameString:
+            return
+        # Find the schematicNet under the cursor in a single click
+        clickedNet = next(
+            (item for item in self.items(mouseReleaseLoc)
+             if isinstance(item, snet.schematicNet)), None)
+        if clickedNet is None:
+            # Missed the net: stay in nameNet mode for another try.
+            self.messageLine.setText(
+                "No net under cursor - click a net to name it")
+            return
+        clickedNet.name = self._nextNetName()
+        clickedNet.nameStrength = snet.netNameStrengthEnum.SET
+        clickedNet.setSelected(False)
+        if self.netNameString is None:
+            # Bounded bus range exhausted: leave the mode.
             self._newNetNameObj = None
             self.editModes.setMode("selectItem")
 
+    def _nextNetName(self) -> str:
+        """Resolve the label to apply now and advance auto-increment state.
+
+        'base'     -> applies 'base' on every click until Escape
+        'base<i>'  -> applies 'base<i>', 'base<i+1>', ... (unbounded)
+        'base<i:j>'-> applies 'base<i>' ... 'base<j>', then exits the mode
+        """
+        if self._netNameAuto is None:
+            base, (start, end) = snet.schematicNet.parseArrayNotation(
+                self.netNameString)
+            if start == -1:
+                self._netNameAuto = {'repeat': True, 'base': base}
+            else:
+                hasRange = ':' in self.netNameString.split('<', 1)[1]
+                self._netNameAuto = {
+                    'repeat': False, 'base': base, 'next': start,
+                    'last': end if hasRange else None,
+                    'step': 1 if end >= start else -1}
+        auto = self._netNameAuto
+        if auto['repeat']:
+            return auto['base']
+        applyIndex = auto['next']
+        applyName = f"{auto['base']}<{applyIndex}>"
+        if auto['last'] is not None and applyIndex == auto['last']:
+            self.netNameString = None
+            self._netNameAuto = None
+        else:
+            auto['next'] += auto['step']
+            self.netNameString = applyName
+        return applyName
+
     def updateStretchNet(self):
         # findSnapPoint returns a grid-aligned point already.
-        netEndPoint = self.findSnapPoint(self.mouseMoveLoc, set())
+        netEndPoint = self.findSnapPoint(self._cursorRawLoc(), set())
         self._stretchNet.draftLine = QLineF(self._stretchNet.draftLine.p1(),
                                             netEndPoint)
 
@@ -539,18 +861,25 @@ class schematicScene(editorScene):
         """
 
         if newNet.draftLine.length() < 1:
-            # Only remove if the net is actually in this scene; if it was
-            # already removed (e.g. undo) its undo entry is gone too, so
-            # popping the stack would discard an unrelated command.
+            # Drafts are no longer pushed to the undo stack; a zero-length
+            # one is simply discarded.
             if newNet.scene() == self:
                 self.removeItem(newNet)
-                self.undoStack.removeLastCommand()
         else:
             newNetSceneRect = newNet.sceneBoundingRect().adjusted(-self.snapGrid,
                                                                   -self.snapGrid,
                                                                   self.snapGrid,
                                                                   self.snapGrid)
+            netsBefore = self.findSceneNetsSet()
+            startPoint, endPoint = newNet.sceneEndPoints
             self.mergeSplitNets(newNet)
+            self._splitPiercedNets(startPoint, endPoint)
+            netsAfter = self.findSceneNetsSet()
+            newNets = list(netsAfter - netsBefore)
+            oldNets = list(netsBefore - netsAfter)
+            if newNets or oldNets:
+                self.undoStack.push(
+                    us.addDeleteShapesUndo(self, newNets, oldNets))
             self.invalidate(newNetSceneRect, QGraphicsScene.BackgroundLayer)
 
     def _replaceNets(self, oldNets, newNets, name_source_net):
@@ -698,22 +1027,46 @@ class schematicScene(editorScene):
 
         return True, splitNetSet
 
+    def _snapRadius(self) -> int:
+        """Effective connection-snap radius. Capped at half a snap grid so a
+        connection point can only capture the cursor when it is essentially on
+        top of it — otherwise a wire end would visibly jump a full grid cell
+        sideways onto a neighbouring pin or wire."""
+        return max(1, min(self.snapConnectDistance,
+                          self.snapTuple[0] // 2, self.snapTuple[1] // 2))
+
     def findSnapPoint(self, eventLoc: QPoint,
                       ignoredSet: set[snet.schematicNet]) -> QPoint:
+        return self.findSnapTarget(eventLoc, ignoredSet)[0]
+
+    def findSnapTarget(self, eventLoc: QPoint,
+                       ignoredSet: set[snet.schematicNet]) -> Tuple[
+        QPoint, bool]:
+        """Snap the raw cursor position eventLoc to a nearby connection point
+        (pin, net endpoint, or net body) or to the grid.
+        Returns (point, isConnection)."""
         # Always work from the grid-snapped cursor so the returned point is
         # grid-aligned even when no connection point is found. This is the
         # single source of truth for net endpoint placement and keeps the
         # behaviour identical across draw and stretch code paths.
         gridPoint = self.snapToGrid(eventLoc)
 
-        snapRect = QRect(eventLoc.x() - self.snapConnectDistance,
-                         eventLoc.y() - self.snapConnectDistance,
-                         2 * self.snapConnectDistance,
-                         2 * self.snapConnectDistance, )
-        snapPoints = self.findConnectPoints(snapRect, ignoredSet)
+        snapRadius = self._snapRadius()
+        snapRect = QRect(eventLoc.x() - snapRadius,
+                         eventLoc.y() - snapRadius,
+                         2 * snapRadius,
+                         2 * snapRadius, )
+        # The rect is only a broad phase: a candidate must also be within the
+        # radius in Manhattan distance (the square corner would otherwise
+        # reach sqrt(2)-times farther), unless it coincides with the plain
+        # grid point — landing there costs nothing and still terminates a wire.
+        snapPoints = {
+            point for point in self.findConnectPoints(snapRect, ignoredSet)
+            if (point - eventLoc).manhattanLength() <= snapRadius
+               or point == gridPoint}
 
         if not snapPoints:
-            return gridPoint
+            return gridPoint, False
 
         # Deterministic selection: pick the connection point nearest to the
         # cursor, breaking ties by (x, y) so the same candidate always wins.
@@ -723,25 +1076,56 @@ class schematicScene(editorScene):
             sorted(snapPoints, key=lambda p: (p.x(), p.y())),
             key=lambda p: (p - eventLoc).manhattanLength(),
         )
-        return closestPoint
+        return closestPoint, True
 
     def findConnectPoints(self, sceneRect: QRect,
                           ignoredSet: set[QGraphicsItem]) -> set[QPoint]:
-        """Collect grid-aligned connection points (net endpoints and pins)
-        inside sceneRect. Points are snapped to grid so that snapping to them
-        can never drag a net endpoint off-grid."""
+        """Collect grid-aligned connection points inside sceneRect: net
+        endpoints, pins, and the projection of the probe point onto any wire
+        body (for T-junction snaps). Points are snapped to grid so that
+        snapping to them can never drag a net endpoint off-grid."""
         snapPoints = set()
         rectItems = set(self.items(sceneRect)) - ignoredSet
+        probePoint = sceneRect.center()
         for item in rectItems:
             if isinstance(item, snet.schematicNet):
-                for ep in item.sceneEndPoints:
-                    if sceneRect.contains(ep):
-                        snapPoints.add(self.snapToGrid(ep))
-                        break
+                if any(sceneRect.contains(ep) for ep in item.sceneEndPoints):
+                    snapPoints.add(self.snapToGrid(
+                        next(ep for ep in item.sceneEndPoints
+                             if sceneRect.contains(ep))))
+                    continue
+                projected = self._projectPointOnNet(probePoint, item)
+                if projected is not None:
+                    snapPoints.add(projected)
             elif isinstance(item, (shp.symbolPin, shp.schematicPin)):
                 snapPoints.add(
                     self.snapToGrid(item.mapToScene(item.start).toPoint()))
         return snapPoints
+
+    def _projectPointOnNet(self, point: QPoint,
+                           netItem: snet.schematicNet) -> Optional[QPoint]:
+        """Project point onto the net body and return a grid-aligned point
+        that stays on the segment, or None. Used to snap a wire end onto the
+        middle of an existing wire to form a T-junction."""
+        p1, p2 = netItem.sceneEndPoints
+        direction = QPointF(p2 - p1)
+        lengthSq = QPointF.dotProduct(direction, direction)
+        if lengthSq < 1.0:
+            return None
+        t = QPointF.dotProduct(QPointF(point - p1), direction) / lengthSq
+        if t <= 0.0 or t >= 1.0:
+            return None
+        projection = QPointF(p1) + t * direction
+        if (projection - QPointF(point)).manhattanLength() > \
+                self._snapRadius():
+            return None
+        snapped = self.snapToGrid(projection.toPoint())
+        if snapped == p1 or snapped == p2:
+            return None
+        # Grid rounding must not pull the point off the wire body.
+        if not netItem.sceneShapeRect.contains(snapped):
+            return None
+        return snapped
 
     @staticmethod
     def orderPoints(points: list[QPoint]) -> list[QPoint]:
@@ -847,9 +1231,11 @@ class schematicScene(editorScene):
         """
         result = self._findNearestEndpoint(mousePos)
         if result is None:
-            return False
+            # No endpoint nearby: try grabbing the wire body instead.
+            return self._initiateBodyStretch(mousePos)
 
         netItem, clickedEndpoint, anchorEndpoint = result
+        self._stretchBody = None
 
         # Capture endpoint positions before removing from scene
         # (mapToScene requires the item to be in a scene)
@@ -895,6 +1281,132 @@ class schematicScene(editorScene):
         snapRect.setVisible(True)
 
         return True
+
+    def _initiateBodyStretch(self, mousePos: QPoint) -> bool:
+        """Grab the body of a wire segment: the drag slides the segment
+        perpendicular to its direction while nets attached at both ends
+        rubber-band, like Virtuoso's edge stretch."""
+        probe = QRectF(mousePos.x() - 1, mousePos.y() - 1, 2, 2)
+        candidates = [item for item in self.items(probe)
+                      if isinstance(item, snet.schematicNet)
+                      and item.sceneShapeRect.contains(mousePos)]
+        if not candidates:
+            return False
+        netItem = candidates[0]  # items() is in descending stacking order
+        p1, p2 = netItem.sceneEndPoints
+        horizontal = abs(p2.y() - p1.y()) <= abs(p2.x() - p1.x())
+
+        # Replace each attached net with a guideLine anchored at this net's
+        # endpoints; the originals are restored/replaced on completion.
+        netItem.generateEndPointNetDict()
+        netItem.initializeSnapLines()
+        self._stretchBody = {
+            'net': netItem, 'p1': p1, 'p2': p2, 'horizontal': horizontal,
+            'width': netItem.width, 'snapLines': netItem._netSnapLines,
+            'delta': QPoint(0, 0)}
+        self.removeItem(netItem)
+
+        # Preview item for the sliding segment.
+        self._stretchNet = snet.guideLine(p1, p2)
+        self._stretchNet.inherit(netItem)
+        self.addItem(self._stretchNet)
+
+        cursor = (Qt.CursorShape.SizeVerCursor if horizontal
+                  else Qt.CursorShape.SizeHorCursor)
+        for view in self.views():
+            view.setCursor(cursor)
+
+        snapRect = self._ensureSnapPointRect()
+        if snapRect.scene() is None:
+            self.addItem(snapRect)
+        snapRect.setPos(mousePos)
+        snapRect.setVisible(True)
+        return True
+
+    def _updateBodyStretch(self, netEndPoint: QPoint) -> None:
+        """Update the body-stretch preview: the grabbed segment slides
+        perpendicular to its direction, attached guideLines follow."""
+        body = self._stretchBody
+        if body['horizontal']:
+            delta = QPoint(0, netEndPoint.y() - body['p1'].y())
+        else:
+            delta = QPoint(netEndPoint.x() - body['p1'].x(), 0)
+        body['delta'] = delta
+        self._stretchNet.draftLine = QLineF(body['p1'] + delta,
+                                            body['p2'] + delta)
+        for index, snapLinesSet in body['snapLines'].items():
+            movedEnd = (body['p1'] if index == 0 else body['p2']) + delta
+            for snapLine in list(snapLinesSet):
+                snapLine.draftLine = QLineF(movedEnd, snapLine.line().p2())
+
+    def _completeBodyStretch(self, releasePos: QPoint) -> None:
+        """Commit a body stretch: recreate the slid segment and re-route the
+        nets attached at both ends, captured as one undoable command."""
+        body = self._stretchBody
+        netItem = body['net']
+        try:
+            netEndPoint = self.findSnapPoint(releasePos, set())
+            if body['horizontal']:
+                delta = QPoint(0, netEndPoint.y() - body['p1'].y())
+            else:
+                delta = QPoint(netEndPoint.x() - body['p1'].x(), 0)
+
+            removedNets = [netItem] + list(
+                getattr(netItem, '_removedNets', []))
+            if delta == QPoint(0, 0):
+                # No movement: restore the originals as they were.
+                for originalNet in removedNets:
+                    self.addItem(originalNet)
+                    self.itemsRefSet.add(originalNet)
+                for snapLinesSet in body['snapLines'].values():
+                    for snapLine in list(snapLinesSet):
+                        if snapLine.scene() is not None:
+                            self.removeItem(snapLine)
+            else:
+                netsBefore = self.findSceneNetsSet()
+                newBody = snet.schematicNet(body['p1'] + delta,
+                                            body['p2'] + delta)
+                newBody.inherit(netItem)
+                newBody.width = body['width']
+                self.addItem(newBody)
+                newSegments = [newBody]
+                for index, snapLinesSet in body['snapLines'].items():
+                    movedEnd = (body['p1'] if index == 0 else body['p2']) + delta
+                    for snapLine in list(snapLinesSet):
+                        if snapLine.scene() is None:
+                            continue
+                        farEnd = snapLine.line().p2().toPoint()
+                        if farEnd != movedEnd:
+                            for seg in self.addStretchWires(
+                                    movedEnd, farEnd,
+                                    snapLine.horizontalFirst):
+                                seg.inherit(snapLine)
+                                seg.width = snapLine.width
+                                self.addItem(seg)
+                                newSegments.append(seg)
+                        self.removeItem(snapLine)
+                for segment in newSegments:
+                    if segment.scene() is not None:
+                        self.mergeSplitNets(segment)
+                if newBody.scene() is not None:
+                    self._splitPiercedNets(*newBody.sceneEndPoints)
+                netsAfter = self.findSceneNetsSet()
+                allNewNets = list(netsAfter - netsBefore)
+                consumedNets = list(netsBefore - netsAfter)
+                undoCommand = us.addDeleteShapesUndo(
+                    self, allNewNets, removedNets + consumedNets)
+                self.undoStack.push(undoCommand)
+        except Exception as e:
+            self.logger.error(f"Error in _completeBodyStretch: {e}",
+                              exc_info=True)
+        finally:
+            if self._stretchNet and self._stretchNet.scene() is not None:
+                self.removeItem(self._stretchNet)
+            self._stretchNet = None
+            self._stretchBody = None
+            self._ensureSnapPointRect().setVisible(False)
+            for view in self.views():
+                view.setCursor(Qt.CursorShape.ArrowCursor)
 
     def _handleStretchNet(self, netItem: snet.schematicNet, stretchEnd: str):
         match stretchEnd:
@@ -966,14 +1478,21 @@ class schematicScene(editorScene):
         else:
             return set()
 
-    def addStretchWires(self, start: QPoint, end: QPoint) -> List[
+    def addStretchWires(self, start: QPoint, end: QPoint,
+                        horizontalFirst: Optional[bool] = None) -> List[
         "snet.schematicNet"]:
         """
-        Add a trio of wires between two points.
+        Add wires between two points. Diagonal displacements produce a
+        single-bend L route whose first leg follows the original wire's
+        direction (``horizontalFirst``), like Virtuoso's stretch; when the
+        direction is unknown the dominant delta wins.
 
         Args:
             start (QPoint): The starting point of the wire.
             end (QPoint): The ending point of the wire.
+            horizontalFirst: True for a horizontal-then-vertical route,
+                False for vertical-then-horizontal, None to pick by the
+                dominant delta.
 
         Returns:
             List[snet.schematicNet]: A list of schematic net objects representing the wires.
@@ -988,27 +1507,15 @@ class schematicScene(editorScene):
                 # Horizontal or vertical line
                 return [snet.schematicNet(start, end)]
 
-            # Calculate intermediate points
-            firstPointX = self.snapToBase((end.x() - start.x()) / 3 + start.x(),
-                                          self.snapTuple[0])
-            firstPoint = QPoint(firstPointX, start.y())
-            secondPoint = QPoint(firstPointX, end.y())
+            if horizontalFirst is None:
+                horizontalFirst = (abs(end.x() - start.x())
+                                   >= abs(end.y() - start.y()))
+            corner = (QPoint(end.x(), start.y()) if horizontalFirst
+                      else QPoint(start.x(), end.y()))
 
-            # Snap all points to grid to ensure wire segments are properly aligned
-            start = self.snapToGrid(start)
-            firstPoint = self.snapToGrid(firstPoint)
-            secondPoint = self.snapToGrid(secondPoint)
-            end = self.snapToGrid(end)
-
-            # Create wire segments
-            lines = []
-            segments = [(start, firstPoint), (firstPoint, secondPoint),
-                        (secondPoint, end), ]
-            for seg_start, seg_end in segments:
-                if seg_start != seg_end:
-                    lines.append(snet.schematicNet(seg_start, seg_end))
-
-            return lines
+            return [snet.schematicNet(segStart, segEnd)
+                    for segStart, segEnd in ((start, corner), (corner, end))
+                    if segStart != segEnd]
 
         except Exception as e:
             self.logger.error(f"Error in addStretchWires: {e}", exc_info=True)
@@ -2186,22 +2693,46 @@ class schematicScene(editorScene):
             net.nameStrength = snet.netNameStrengthEnum.INHERIT
         return {net}
 
-    def checkErrors(self):
+    def checkErrors(self, enabledRuleIds=None):
         """
-        Check for errors in the schematic.
+        Run the enabled schematic check rules and mark violations on the
+        canvas. ``enabledRuleIds=None`` runs all registered rules; an empty
+        set runs none. Markers are colored by severity (red=error,
+        magenta=warning) and collected in ``overlapRectSet`` for
+        ``deleteErrors``.
         """
         self.logger.info("Checking for errors...")
-        symbolSet = self.findSceneSymbolSet()
-        overlapExists, overlapRects = schk.checkSymbolOverlaps(symbolSet)
-        if overlapExists:
-            errorPen = QPen(Qt.red, 1, Qt.DashDotLine)
-            for rect in overlapRects:
-                self.overlapRectSet.add(self.addRect(rect, errorPen))
+        self.deleteErrors()
+        if enabledRuleIds is not None and not enabledRuleIds:
+            self.logger.info("No check rules enabled.")
+            return
+        context = schk.buildCheckContext(self)
+        violations = schk.runChecks(context, enabledRuleIds)
+        errorPen = QPen(Qt.red, 1, Qt.DashDotLine)
+        warningPen = QPen(Qt.magenta, 1, Qt.DashDotLine)
+        errorCount = warningCount = 0
+        for violation in violations:
+            pen = (errorPen if violation.severity == schk.checkSeverity.ERROR
+                   else warningPen)
+            for marker in violation.markers:
+                self.overlapRectSet.add(self.addRect(marker, pen))
+            if violation.severity == schk.checkSeverity.ERROR:
+                self.logger.error(violation.message)
+                errorCount += 1
+            else:
+                self.logger.warning(violation.message)
+                warningCount += 1
+        self.lastCheckViolations = violations
+        self.logger.info(
+            f"Check complete: {errorCount} error(s), "
+            f"{warningCount} warning(s).")
 
     def deleteErrors(self):
         self.logger.info("Deleting errors...")
         for rectItem in self.overlapRectSet:
-            self.removeItem(rectItem)
+            if shiboken6.isValid(rectItem) and rectItem.scene() is self:
+                self.removeItem(rectItem)
+        self.overlapRectSet.clear()
 
     @staticmethod
     def checkNetConnect(netItem, otherNetItem):

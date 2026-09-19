@@ -28,6 +28,7 @@ from PySide6.QtGui import QAction, QIcon
 from PySide6.QtWidgets import QApplication, QDialog, QGridLayout, QMenu, QToolBar
 
 import revedaEditor.backend.dataDefinitions as ddef
+import revedaEditor.checks.schematic as schk
 import revedaEditor.backend.libBackEnd as libb
 import revedaEditor.backend.libraryMethods as libm
 import revedaEditor.backend.libraryModelView as lmview
@@ -40,7 +41,7 @@ import revedaEditor.gui.propertyDialogues as pdlg
 import revedaEditor.gui.toolsDialogues as tdlg
 import revedaEditor.scenes.schematicScene as schscn
 from revedaEditor.gui.editorFactory import EditorFactory
-from revedaEditor.netlisting import spectreNetlist, xyceNetlist, vacaskNetlist
+from revedaEditor.netlisting import spectreNetlist, vacaskNetlist, xyceNetlist
 
 if TYPE_CHECKING:
     pass
@@ -77,6 +78,9 @@ class schematicEditor(edw.editorWindow):
         self.majorGrid = self.MAJOR_GRID_DEFAULT
         self.snapGrid = self.SNAP_GRID_DEFAULT
         self.snapTuple = (self.snapGrid, self.snapGrid)
+        # Schematic check rules applied by Check -> View Errors; all on by default.
+        self.enabledCheckRules = {rule.ruleId for rule in
+                                  schk.SCHEMATIC_RULES}
         self.symbolViews = ["symbol"]  # only symbol can be instantiated in schematic
         self._schematicContextMenu()
 
@@ -115,9 +119,19 @@ class schematicEditor(edw.editorWindow):
         simulationIcon = QIcon("icons/application-run.png")
         self.simulateAction = QAction(simulationIcon, "Revolution EDA SAE...", self)
         self.findRelatedEditors = QAction("Find Related Editors", self)
+        self.checkRulesAction = QAction("Check Rules Setup...", self)
+        self.checkRulesAction.setToolTip(
+            "Select which schematic check rules are applied")
+        # Repurpose the base-class check action for schematic rule checking.
+        self.viewCheckAction.setText("Check Schematic")
+        self.viewCheckAction.setToolTip(
+            "Run enabled schematic check rules without saving")
 
     def _addActions(self):
         super()._addActions()
+        # file menu: Check Schematic ahead of Check-Save
+        self.menuFile.insertAction(self.checkCellAction,
+                                   self.viewCheckAction)
         # edit menu
         self.menuEdit.addAction(self.netNameAction)
         # self.menuEdit.removeAction(self.stretchAction)
@@ -139,6 +153,7 @@ class schematicEditor(edw.editorWindow):
         self.menuCreate.addAction(self.createSymbolAction)
 
         # check menu
+        self.menuCheck.addAction(self.checkRulesAction)
         self.menuCheck.addAction(self.viewErrorsAction)
         self.menuCheck.addAction(self.deleteErrorsAction)
 
@@ -179,6 +194,8 @@ class schematicEditor(edw.editorWindow):
         self.netlistAction.triggered.connect(self.createNetlistClick)
         self.ignoreAction.triggered.connect(self.ignoreClick)
         self.goDownAction.triggered.connect(self.goDownClick)
+        self.checkRulesAction.triggered.connect(self.checkRulesClick)
+        self.viewCheckAction.triggered.connect(self.checkErrorsClick)
         self.viewErrorsAction.triggered.connect(self.checkErrorsClick)
         self.deleteErrorsAction.triggered.connect(self.deleteErrorsClick)
 
@@ -526,6 +543,7 @@ class schematicEditor(edw.editorWindow):
         dlg = pdlg.netNameDialog(self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
             self.centralW.scene.netNameString = dlg.netNameEdit.text().strip()
+            self.centralW.scene._netNameAuto = None
             self.centralW.scene.editModes.setMode('nameNet')
         self.messageLine.setText("Select a net to attach the name")
 
@@ -699,8 +717,27 @@ class schematicEditor(edw.editorWindow):
         self.appMainW.openViews[openCellViewTuple] = symbolWindow
         symbolWindow.show()
 
+    def checkRulesClick(self):
+        dlg = pdlg.schematicCheckRulesDialogue(
+            self, schk.SCHEMATIC_RULES, self.enabledCheckRules)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self.enabledCheckRules = dlg.selectedRuleIds()
+
+    def undoClick(self, s):
+        scene = self.centralW.scene
+        if getattr(scene, '_wireChainActive', False):
+            # Mid-wire: the chain's commands live in an open macro not yet
+            # on the stack, so a plain undo would revert an older, unrelated
+            # action. Pop the last vertex (or drop the draft) instead.
+            if scene.editModes.drawWire or scene.editModes.drawBus:
+                scene.popWireVertex()
+            else:
+                scene._finishWire()
+            return
+        super().undoClick(s)
+
     def checkErrorsClick(self):
-        self.centralW.scene.checkErrors()
+        self.centralW.scene.checkErrors(self.enabledCheckRules)
         self.logger.info("Schematic Errors checked.")
 
     def deleteErrorsClick(self):

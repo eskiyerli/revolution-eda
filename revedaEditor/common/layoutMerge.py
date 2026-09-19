@@ -26,7 +26,7 @@ Merge rules:
 """
 
 import math
-from typing import NamedTuple, Optional
+from typing import NamedTuple
 
 import gdstk
 from PySide6.QtCore import QLineF, QPoint, QPointF
@@ -82,7 +82,7 @@ def _layerKey(item) -> tuple:
     return (layer.name, layer.purpose)
 
 
-def _pathGeometry(path: "lshp.layoutPath") -> Optional[_PathGeom]:
+def _pathGeometry(path: "lshp.layoutPath") -> _PathGeom | None:
     p1, p2 = path.sceneEndPoints
     direction = QPointF(p2) - QPointF(p1)
     length = math.hypot(direction.x(), direction.y())
@@ -95,6 +95,12 @@ def _pathGeometry(path: "lshp.layoutPath") -> Optional[_PathGeom]:
     s1 = QPointF.dotProduct(QPointF(p1), u)
     s2 = QPointF.dotProduct(QPointF(p2), u)
     offset = u.x() * p1.y() - u.y() * p1.x()
+    # Extends widen the drawn span past their own endpoint, so each must be
+    # applied at the end it belongs to, not blindly to min/max.
+    if s1 <= s2:
+        drawnMin, drawnMax = s1 - path.startExtend, s2 + path.endExtend
+    else:
+        drawnMin, drawnMax = s2 - path.endExtend, s1 + path.startExtend
     return _PathGeom(
         path,
         QPointF(p1),
@@ -102,8 +108,8 @@ def _pathGeometry(path: "lshp.layoutPath") -> Optional[_PathGeom]:
         offset,
         min(s1, s2),
         max(s1, s2),
-        min(s1 - path.startExtend, s2 - path.endExtend),
-        max(s1 + path.startExtend, s2 + path.endExtend),
+        drawnMin,
+        drawnMax,
     )
 
 

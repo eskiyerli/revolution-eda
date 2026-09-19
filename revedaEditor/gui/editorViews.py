@@ -27,7 +27,9 @@ from PySide6.QtGui import (
     QWheelEvent,
 )
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
-from PySide6.QtWidgets import (QGraphicsView,)
+from PySide6.QtWidgets import (
+    QGraphicsView,
+)
 
 import revedaEditor.common.net as net
 from revedaEditor.backend.pdkLoader import importPDKModule
@@ -564,22 +566,49 @@ class schematicView(editorView):
         if event.key() == Qt.Key.Key_Escape:
             # Esc key pressed, remove snap rect and reset states
             self.viewScene._ensureSnapPointRect().setVisible(False)
-            if self.viewScene._newNet is not None:
-                self.viewScene.wireEditFinished.emit(self.viewScene._newNet)
-                self.viewScene._newNet = None
-            elif self.viewScene._stretchNet is not None:
-                # Stretch net mode, cancel stretch
-                self.viewScene._stretchNet.setSelected(False)
-                self.viewScene._stretchNet.stretch = False
-                self.viewScene.mergeSplitNets(self.viewScene._stretchNet)
-                self.viewScene._stretchNet = None
+            self.viewScene._cancelStretch()
+            self.viewScene._finishWire()
             self.viewScene._newInstance = None
             self.viewScene._newPin = None
             self.viewScene._newText = None
+            self.viewScene.netNameString = None
+            self.viewScene._netNameAuto = None
             # Set the edit mode to select item
             self.viewScene.editModes.setMode("selectItem")
+        elif (self.viewScene.editModes.drawWire or
+              self.viewScene.editModes.drawBus):
+            match event.key():
+                # End the wire but stay in draw mode.
+                case Qt.Key.Key_Return | Qt.Key.Key_Enter:
+                    self.viewScene._finishWire()
+                    return
+                # Pop the last committed vertex and continue drawing.
+                case Qt.Key.Key_Backspace:
+                    self.viewScene.popWireVertex()
+                    return
+                # Cycle wire angle mode: orthogonal -> diagonal -> any angle.
+                case Qt.Key.Key_F3:
+                    self.viewScene.cycleWireDrawMode()
+                    return
+                # Toggle point-to-point Manhattan auto-routing.
+                case Qt.Key.Key_Tab:
+                    self.viewScene.toggleWireAutoRoute()
+                    return
+                # Flip the auto-route bend orientation.
+                case Qt.Key.Key_Space:
+                    self.viewScene.flipRouteOrientation()
+                    return
 
         super().keyPressEvent(event)
+
+    def mouseDoubleClickEvent(self, event):
+        if (self.viewScene.editModes.drawWire or
+                self.viewScene.editModes.drawBus):
+            # End the wire but stay in draw mode; the release that follows
+            # this double-click must not start a new wire at the same point.
+            self.viewScene._suppressWireRestart = True
+            self.viewScene._finishWire()
+        super().mouseDoubleClickEvent(event)
 
 
 class layoutView(editorView):

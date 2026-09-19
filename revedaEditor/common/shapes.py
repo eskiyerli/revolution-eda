@@ -13,14 +13,37 @@ import math
 from collections import OrderedDict
 from typing import Any, Dict, List, NamedTuple, Optional, Tuple, Union
 
-from PySide6.QtCore import (QLine, QLineF, QPoint, QRect, QRectF, Qt, )
-from PySide6.QtGui import (QBrush, QFont, QFontDatabase, QFontMetrics,
-                           QPainterPath, QPolygon, QPolygonF, QTextOption,
-                           QTransform, QPen, QColor)
-from PySide6.QtWidgets import (QGraphicsItem, QGraphicsPolygonItem,
-                               QGraphicsRectItem, QGraphicsScene,
-                               QGraphicsSceneHoverEvent, QGraphicsSceneMouseEvent,
-                               QGraphicsSimpleTextItem, QStyle)
+from PySide6.QtCore import (
+    QLine,
+    QLineF,
+    QPoint,
+    QRect,
+    QRectF,
+    Qt,
+)
+from PySide6.QtGui import (
+    QBrush,
+    QColor,
+    QFont,
+    QFontDatabase,
+    QFontMetrics,
+    QPainterPath,
+    QPen,
+    QPolygon,
+    QPolygonF,
+    QTextOption,
+    QTransform,
+)
+from PySide6.QtWidgets import (
+    QGraphicsItem,
+    QGraphicsPolygonItem,
+    QGraphicsRectItem,
+    QGraphicsScene,
+    QGraphicsSceneHoverEvent,
+    QGraphicsSceneMouseEvent,
+    QGraphicsSimpleTextItem,
+    QStyle,
+)
 
 import revedaEditor.common.net as net
 from revedaEditor.backend.pdkLoader import importPDKModule
@@ -1681,10 +1704,12 @@ class schematicSymbol(symbolShape):
                             # Just remove the guideLine without creating segments.
                             scene.removeItem(snapLine)
                             continue
-                        newNets = scene.addStretchWires(p1, p2)
+                        newNets = scene.addStretchWires(
+                            p1, p2, snapLine.horizontalFirst)
                         if newNets:
                             for netItem in newNets:
                                 netItem.inherit(snapLine)
+                                netItem.width = snapLine.width
                             allNewNets.extend(newNets)
                         scene.removeItem(snapLine)
                 # Push a single addDeleteShapesUndo capturing all net replacements.
