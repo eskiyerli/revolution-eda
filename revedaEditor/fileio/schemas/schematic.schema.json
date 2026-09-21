@@ -53,8 +53,24 @@
         { "$ref": "#/$defs/schematicSymbol" },
         { "$ref": "#/$defs/schematicNet" },
         { "$ref": "#/$defs/schematicPin" },
-        { "$ref": "#/$defs/schematicText" }
+        { "$ref": "#/$defs/schematicText" },
+        { "$ref": "#/$defs/checkMarker" }
       ]
+    },
+    "checkMarker": {
+      "type": "object",
+      "required": ["type", "rule", "sev", "msg", "rects"],
+      "properties": {
+        "type": { "const": "mrk" },
+        "rule": { "type": "string" },
+        "sev": { "type": "string", "enum": ["error", "warning"] },
+        "msg": { "type": "string" },
+        "rects": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/rectCoords" }
+        }
+      },
+      "description": "persisted check violation markers; rebuilt into scene.lastCheckViolations on load"
     },
     "schematicSymbol": {
       "type": "object",
@@ -67,6 +83,8 @@
         "nam": { "type": "string" },
         "ic": { "type": "integer" },
         "ld": { "type": "object" },
+        "nst": { "type": "object",
+                 "description": "netSet: inherited-connection overrides {exprName: localNetName} binding net expressions inside this instance's subcircuit" },
         "loc": { "$ref": "#/$defs/point" },
         "ang": { "type": "number" },
         "ign": { "type": "integer" },
@@ -82,7 +100,9 @@
         "st": { "$ref": "#/$defs/point" },
         "end": { "$ref": "#/$defs/point" },
         "nam": { "type": "string" },
-        "ns": { "type": "integer" }
+        "ns": { "type": "integer" },
+        "nx": { "type": "string",
+                "description": "net expression '[@name[:default]]' evaluated by connectivity.resolve" }
       }
     },
     "schematicPin": {
@@ -95,6 +115,8 @@
         "pd": { "type": "string", "enum": ["Input", "Output", "Inout"] },
         "pt": { "type": "string",
                 "enum": ["Signal", "Ground", "Power", "Clock", "Digital", "Analog"] },
+        "nx": { "type": "string",
+                "description": "net expression '[@name[:default]]' evaluated by connectivity.resolve" },
         "ang": { "type": "number" },
         "fl": { "$ref": "#/$defs/flipTuple" }
       }

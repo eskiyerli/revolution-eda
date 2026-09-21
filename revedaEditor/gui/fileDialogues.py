@@ -408,6 +408,38 @@ class layoutExportDialogue(QDialog):
         )
         settingsBoxLayout.addRow(edf.boldLabel("Precision:"), self.precisionEdit)
         self.mainLayout.addWidget(settingsBox)
+        streamBox = QGroupBox("Stream Options")
+        streamLayout = QFormLayout()
+        streamBox.setLayout(streamLayout)
+        self.layerMapEdit = edf.longLineEdit()
+        self.layerMapEdit.setPlaceholderText(
+            "srcLayer,srcDatatype=dstLayer,dstDatatype;...")
+        self.layerMapEdit.setToolTip(
+            "Remap GDS layer/datatype pairs on export, e.g. '1,0=11,0;2,0=12,0'."
+        )
+        streamLayout.addRow(edf.boldLabel("Layer Map:"), self.layerMapEdit)
+        self.cellNameMapEdit = edf.longLineEdit()
+        self.cellNameMapEdit.setPlaceholderText("cellName=gdsName;...")
+        self.cellNameMapEdit.setToolTip(
+            "Rename cells in the stream, e.g. 'myCell=MYCELL;lib_cell_view=X'."
+        )
+        streamLayout.addRow(
+            edf.boldLabel("Cell Name Map:"), self.cellNameMapEdit)
+        self.flattenCheck = QCheckBox("Flatten hierarchy")
+        self.flattenCheck.setToolTip(
+            "Emit geometry of instances deeper than the keep-depth directly "
+            "into their parent cell.")
+        streamLayout.addRow(self.flattenCheck)
+        self.flattenDepthSpin = QSpinBox()
+        self.flattenDepthSpin.setRange(0, 99)
+        self.flattenDepthSpin.setValue(1)
+        self.flattenDepthSpin.setEnabled(False)
+        self.flattenDepthSpin.setToolTip(
+            "Hierarchy levels kept as cell references; 0 flattens everything.")
+        self.flattenCheck.toggled.connect(self.flattenDepthSpin.setEnabled)
+        streamLayout.addRow(
+            edf.boldLabel("Keep Depth:"), self.flattenDepthSpin)
+        self.mainLayout.addWidget(streamBox)
         fileBox = QGroupBox(f"{self.export_format} Export Directory")
         fileDialogLayout = QHBoxLayout()
         fileDialogLayout.addWidget(edf.boldLabel("Export Directory/File:"))
@@ -426,6 +458,40 @@ class layoutExportDialogue(QDialog):
         dirName = QFileDialog.getExistingDirectory()
         if dirName:
             self.exportPathEdit.setText(f"{dirName}/{self.parentW.cellName}")
+
+    def layerMap(self) -> dict:
+        """Parse 'srcLayer,srcDatatype=dstLayer,dstDatatype;...' entries."""
+        layerMap = {}
+        for entry in self.layerMapEdit.text().split(";"):
+            entry = entry.strip()
+            if not entry:
+                continue
+            src, sep, dst = entry.partition("=")
+            try:
+                srcPair = tuple(
+                    int(part.strip()) for part in src.split(","))
+                dstPair = tuple(
+                    int(part.strip()) for part in dst.split(","))
+            except ValueError:
+                continue
+            if sep and len(srcPair) == 2 and len(dstPair) == 2:
+                layerMap[srcPair] = dstPair
+        return layerMap
+
+    def cellNameMap(self) -> dict:
+        """Parse 'cellName=gdsName;...' entries."""
+        nameMap = {}
+        for entry in self.cellNameMapEdit.text().split(";"):
+            src, sep, dst = entry.partition("=")
+            if sep and src.strip() and dst.strip():
+                nameMap[src.strip()] = dst.strip()
+        return nameMap
+
+    def flattenDepth(self):
+        """Keep-depth for hierarchy flattening, or None when disabled."""
+        if not self.flattenCheck.isChecked():
+            return None
+        return self.flattenDepthSpin.value()
 
 
 class gdsExportDialogue(layoutExportDialogue):
@@ -476,6 +542,12 @@ class gdsImportDialogue(QDialog):
             "The precision of the GDS file (read-only, detected from the selected file)."
         )
         settingsBoxLayout.addRow(edf.boldLabel("Precision:"), self.precisionEdit)
+        self.mergeCheckBox = QCheckBox("Merge into existing cells")
+        self.mergeCheckBox.setToolTip(
+            "When checked, imported shapes are appended to existing cells with "
+            "the same name instead of replacing the target library."
+        )
+        settingsBoxLayout.addRow(self.mergeCheckBox)
         self.mainLayout.addWidget(settingsBox)
         fileBox = QGroupBox("GDS File")
         fileDialogLayout = QHBoxLayout()

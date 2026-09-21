@@ -8,11 +8,14 @@
 # If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #
+import itertools
+import json
 import math
 from pathlib import Path
 from typing import ClassVar, List, NamedTuple, Optional, Tuple
 
 import numpy as np
+import shiboken6
 from PySide6.QtCore import (
     QLineF,
     QPoint,
@@ -37,6 +40,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QGraphicsItem,
+    QGraphicsLineItem,
     QGraphicsSceneHoverEvent,
     QGraphicsSceneMouseEvent,
     QStyle,
@@ -698,6 +702,18 @@ class layoutInstance(layoutShape):
         self._childBoundsCache = None
         self._deferredLoader: _DeferredLoader | None = None
 
+        # Instance-array (mosaic) state: rows/cols copies of the same cell,
+        # spaced by rowPitch/colPitch in scene units (dbu) along the
+        # instance-local axes. _arrayShapes holds the clones for elements
+        # other than (0, 0); _shapes always holds the base element only, so
+        # GDS export keeps one sub-cell and emits an array reference.
+        self._rows = 1
+        self._cols = 1
+        self._rowPitch = 0.0
+        self._colPitch = 0.0
+        self._arrayShapes: list[layoutShape] = []
+        self._arrayRealized = False
+
         # Set shapes only if not empty
         if shapes:
             self.setShapes()
@@ -727,6 +743,7 @@ class layoutInstance(layoutShape):
         """Realise deferred child items. No-op for fully built instances."""
         loader = self._deferredLoader
         if loader is None:
+            self._ensureArray()
             return
         scene = self.scene()
         if scene is None:
@@ -768,6 +785,108 @@ class layoutInstance(layoutShape):
                 child = stack.pop()
                 refSet.add(child)
                 stack.extend(child.childItems())
+        self._ensureArray()
+        self.update()
+
+    def _ensureArray(self) -> None:
+        """Materialise clones for array elements other than (0, 0).
+
+        Clones are produced by an encoder round-trip of the base children --
+        the same record dicts the JSON contract uses -- so the expansion is
+        identical whether the instance came from a cell file, a pcell, or an
+        interactively placed instance. Requires a scene for the item factory;
+        retried on the next call when the instance is not yet in one."""
+        if self._arrayRealized:
+            return
+        if self._rows * self._cols <= 1:
+            self._arrayRealized = True
+            return
+        scene = self.scene()
+        if scene is None:
+            return
+        # Lazy imports: loadJSON and layoutEncoder both import this module.
+        import revedaEditor.fileio.layoutEncoder as layenc
+        from revedaEditor.fileio.loadJSON import layoutItems
+
+        try:
+            factory = layoutItems(scene)
+        except AttributeError:
+            # Scene cannot host layout items (e.g. a bare QGraphicsScene in
+            # tests); keep the flag unset so a later attempt can retry.
+            return
+        baseDicts = json.loads(
+            json.dumps(self._shapes, cls=layenc.layoutEncoder)
+        )
+        self._arrayRealized = True
+        clones = []
+        for row in range(self._rows):
+            for col in range(self._cols):
+                if row == 0 and col == 0:
+                    continue
+                dx = col * self._colPitch
+                dy = row * self._rowPitch
+                for data in baseDicts:
+                    shape = factory.create(data)
+                    if shape is None:
+                        continue
+                    shape.moveBy(dx, dy)
+                    shape.setFlags(QGraphicsItem.ItemStacksBehindParent)
+                    layer = getattr(shape, "layer", None)
+                    if layer is not None and getattr(layer, "visible", True) is False:
+                        shape.setVisible(False)
+                    clones.append(shape)
+        if not clones:
+            return
+        self.prepareGeometryChange()
+        for shape in clones:
+            shape.setParentItem(self)
+        self._arrayShapes = clones
+        self._childBoundsCache = None
+        self._start = None
+        refSet = getattr(scene, "itemsRefSet", None)
+        if refSet is not None:
+            stack = list(clones)
+            while stack:
+                child = stack.pop()
+                refSet.add(child)
+                stack.extend(child.childItems())
+        self.update()
+
+    def _clearArrayShapes(self) -> None:
+        scene = self.scene()
+        for item in self._arrayShapes:
+            item.setParentItem(None)
+            if scene is not None:
+                scene.removeItem(item)
+        self._arrayShapes = []
+        self._arrayRealized = False
+
+    def setArray(self, rows: int = 1, cols: int = 1,
+                 rowPitch: float = 0.0, colPitch: float = 0.0) -> None:
+        """Configure the instance as a rows x cols mosaic.
+
+        ``rowPitch``/``colPitch`` are in scene units (dbu); elements tile
+        along the instance-local x/y axes so rotation and flip apply to the
+        whole array. Defaults (1 x 1) mean a single placement."""
+        rows = max(1, int(rows))
+        cols = max(1, int(cols))
+        rowPitch = float(rowPitch)
+        colPitch = float(colPitch)
+        if (rows, cols, rowPitch, colPitch) == (
+                self._rows, self._cols, self._rowPitch, self._colPitch):
+            return
+        self._clearArrayShapes()
+        self._rows, self._cols = rows, cols
+        self._rowPitch, self._colPitch = rowPitch, colPitch
+        if self._deferredLoader is not None:
+            # Keep the saved bbox: it already spans the persisted array. It
+            # is replaced by realised bounds on first full-detail paint.
+            self.update()
+            return
+        self.prepareGeometryChange()
+        self._childBoundsCache = None
+        self._start = None
+        self._ensureArray()
         self.update()
 
     def setShapes(self):
@@ -792,12 +911,14 @@ class layoutInstance(layoutShape):
         self.prepareGeometryChange()
         self._childBoundsCache = None
         scene = self.scene()
-        for item in self._shapes:
+        for item in itertools.chain(self._shapes, self._arrayShapes):
             item.setParentItem(None)
             if scene is not None:
                 scene.removeItem(item)
         self._shapes = []
+        self._arrayShapes = []
         self._shapes_set = False
+        self._arrayRealized = False
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}({self._libraryName}, {self._cellName}, {self._viewName}, {self._instanceName})"
@@ -807,7 +928,15 @@ class layoutInstance(layoutShape):
         # Children are static after construction, so the union of their bounds
         # can be computed once and reused by boundingRect/paint/start.
         if self._childBoundsCache is None:
-            self._childBoundsCache = self.childrenBoundingRect()
+            bounds = self.childrenBoundingRect()
+            if not self._arrayRealized and self._rows * self._cols > 1:
+                # Array clones are not yet materialised (or cannot be without
+                # a scene): extend the base-element bounds over the mosaic
+                # extent so hit tests and the encoder's saved bbox stay right.
+                bounds = bounds.united(bounds.translated(
+                    (self._cols - 1) * self._colPitch,
+                    (self._rows - 1) * self._rowPitch))
+            self._childBoundsCache = bounds
         return self._childBoundsCache
 
     def boundingRect(self) -> QRectF:
@@ -925,6 +1054,33 @@ class layoutInstance(layoutShape):
     def counter(self, value: int):
         if isinstance(value, int):
             self._counter = value
+
+    @property
+    def rows(self) -> int:
+        return self._rows
+
+    @property
+    def cols(self) -> int:
+        return self._cols
+
+    @property
+    def rowPitch(self) -> float:
+        return self._rowPitch
+
+    @property
+    def colPitch(self) -> float:
+        return self._colPitch
+
+    @property
+    def arrayShapes(self) -> list:
+        """Realized array-element clones (elements other than (0,0)).
+
+        Display/export materialization only -- the base ``shapes`` hold the
+        (0,0) element's geometry and these clones carry pitch offsets, so
+        flattening emits both sets while a hierarchical AREF export uses
+        only ``shapes`` plus the repetition parameters."""
+        self._ensureArray()
+        return self._arrayShapes
 
     def addShape(self, shape: layoutShape):
         self._ensureShapes()
@@ -1695,7 +1851,16 @@ class layoutRuler(layoutShape):
                 )
 
             finalLine = QLineF(p2, p2 + perpTickMajor)
-            lengthStr = f"{round(self._lengthToLayoutUnits(lineLength), 3):g}"
+            # The ruler's mode rotation is applied to the item, not the local
+            # draftLine, so the measured end-to-end delta lives in scene
+            # coordinates; mapToScene folds in the item transform.
+            sceneDelta = self.mapToScene(p2) - self.mapToScene(p1)
+            dX = self._lengthToLayoutUnits(sceneDelta.x())
+            dY = self._lengthToLayoutUnits(sceneDelta.y())
+            lengthStr = (
+                f"{round(self._lengthToLayoutUnits(lineLength), 3):g} "
+                f"({round(dX, 3):g},{round(dY, 3):g})"
+            )
             self._tickTuples.append(
                 ddef.rulerTuple(
                     p2 + direction * 2,
@@ -2092,6 +2257,16 @@ class layoutLabel(layoutShape):
     def labelOrient(self, value):
         self.prepareGeometryChange()
         self._labelOrient = value
+
+    def addExtraRotation(self, extraAngle: float) -> None:
+        """Rotate ``extraAngle`` degrees on top of the labelOrient rotation.
+
+        The amount is stored in ``_angle`` so the encoder persists it as the
+        label's ``ang`` field; the loader re-applies it additively after
+        ``setOrient`` (see ``loadJSON.createLabelShape``)."""
+        self.prepareGeometryChange()
+        self._angle = float(extraAngle)
+        self.setRotation(self.rotation() + float(extraAngle))
 
 
 class layoutPin(layoutShape):
@@ -2793,6 +2968,276 @@ class layoutPolygon(layoutShape):
             self._selectedCornerIndex = 999
 
 
+class layoutMultipart(layoutShape):
+    """Editable composite shape: one selectable item backed by several
+    ``layoutShape`` children regenerated from a plain-JSON ``params`` dict.
+
+    Unlike a pcell the parameter set is fixed and stored verbatim in the
+    ``Multipart`` record, so the item stays editable through the properties
+    dialogue after load instead of hiding behind generated code.
+
+    Subclasses set ``KIND`` and implement ``_build()`` to (re)create
+    ``self._shapes`` in item-local coordinates. Geometry anchors live in
+    ``params`` as ``(x, y)`` lists and layers are stored by name -- the
+    record stays valid across PDK reloads, and the loader resolves names
+    through ``layoutLayers.pdkAllLayers`` / ``process.processVias``.
+    """
+
+    KIND = "multipart"
+
+    def __init__(self, params: dict):
+        super().__init__()
+        self._params = dict(params)
+        self._shapes: list[layoutShape] = []
+        self._selectedPen = QPen(self._get_cached_color("yellow"), 4, Qt.DashLine)
+        self._selectedPen.setCosmetic(True)
+        self.setFiltersChildEvents(True)
+        self.setHandlesChildEvents(True)
+        self.setFlag(QGraphicsItem.ItemContainsChildrenInShape, True)
+        self._build()
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}({self._params})"
+
+    @staticmethod
+    def _layerByName(name: str):
+        """Resolve a persisted layer name through the active PDK."""
+        layerModule = importPDKModule("layoutLayers")
+        if layerModule is None:
+            return None
+        for layer in layerModule.pdkAllLayers:
+            if layer.name == name:
+                return layer
+        return None
+
+    def _build(self) -> None:
+        raise NotImplementedError
+
+    def _adoptShapes(self, shapes: list) -> None:
+        for item in shapes:
+            item.setFlags(QGraphicsItem.ItemStacksBehindParent)
+            layer = getattr(item, "layer", None)
+            if layer is not None and getattr(layer, "visible", True) is False:
+                item.setVisible(False)
+            item.setParentItem(self)
+        self._shapes = list(shapes)
+
+    def _clearShapes(self) -> None:
+        scene = self.scene()
+        for item in self._shapes:
+            item.setParentItem(None)
+            if scene is not None:
+                scene.removeItem(item)
+        self._shapes = []
+
+    def setParams(self, params: dict) -> None:
+        """Merge ``params`` and rebuild the child geometry."""
+        self.prepareGeometryChange()
+        self._params.update(params)
+        self._clearShapes()
+        self._build()
+        self.update()
+
+    @property
+    def params(self) -> dict:
+        return dict(self._params)
+
+    @property
+    def kind(self) -> str:
+        return self.KIND
+
+    @property
+    def shapes(self):
+        return self._shapes
+
+    def updateDraftGeometry(self, scenePoint: QPointF) -> None:
+        """Grow the in-progress item toward ``scenePoint`` (two-click draw).
+
+        Subclasses that support interactive drawing override this to update
+        the geometry anchor in ``params`` and rebuild."""
+        raise NotImplementedError
+
+    def boundingRect(self) -> QRectF:
+        return self.childrenBoundingRect().adjusted(-2, -2, 2, 2)
+
+    def paint(self, painter, option, widget) -> None:
+        # Children render themselves; the item only shows a selection frame.
+        if option.state & QStyle.State_Selected:
+            painter.setPen(self._selectedPen)
+            painter.drawRect(self.childrenBoundingRect())
+
+    def sceneEvent(self, event):
+        scene = self.scene()
+        if scene is None:
+            return False
+        if not (scene.selectModes.selectAll):
+            return False
+        return super().sceneEvent(event)
+
+
+def _multipartOffset(p1, p2, distance: float) -> QPointF:
+    """Unit perpendicular to p1->p2 scaled by ``distance``."""
+    direction = QPointF(p2) - QPointF(p1)
+    length = math.hypot(direction.x(), direction.y())
+    if length < 1e-9:
+        return QPointF(0, 0)
+    return QPointF(-direction.y() / length, direction.x() / length) * distance
+
+
+class layoutGuardRing(layoutMultipart):
+    """Rectangular ring on a metal layer with an optional process-via
+    stitch ring (e.g. a ``con`` ring tying active to m1)."""
+
+    KIND = "guardRing"
+
+    def _build(self) -> None:
+        p = self._params
+        x0, y0 = p["tl"]
+        x1, y1 = p["br"]
+        x0, x1 = min(x0, x1), max(x0, x1)
+        y0, y1 = min(y0, y1), max(y0, y1)
+        width = float(p.get("width", 0))
+        layerName = p.get("layer", "")
+        viaName = p.get("via", "")
+        shapes = []
+        layer = self._layerByName(layerName)
+        viaDef = None
+        if viaName:
+            processModule = importPDKModule("process")
+            if processModule is not None:
+                viaDef = next(
+                    (v for v in processModule.processVias
+                     if v.name == viaName), None)
+                # The via's top metal forms the ring when no explicit
+                # layer was picked.
+                if viaDef is not None and layer is None:
+                    layer = getattr(viaDef, "topLayer", None)
+        if layer is not None and width > 0 and x1 - x0 > 0 and y1 - y0 > 0:
+            shapes.extend([
+                layoutRect(QPoint(int(x0), int(y0)),
+                           QPoint(int(x1), int(y0 + width)), layer),
+                layoutRect(QPoint(int(x0), int(y1 - width)),
+                           QPoint(int(x1), int(y1)), layer),
+                layoutRect(QPoint(int(x0), int(y0 + width)),
+                           QPoint(int(x0 + width), int(y1 - width)), layer),
+                layoutRect(QPoint(int(x1 - width), int(y0 + width)),
+                           QPoint(int(x1), int(y1 - width)), layer),
+            ])
+        if viaDef is not None:
+            dbu = getProcessDBU() or 1000
+            cut = float(viaDef.minWidth) * dbu
+            pitch = (float(viaDef.minWidth) + float(viaDef.minSpacing)) * dbu
+            if cut > 0 and pitch > 0 and x1 - x0 > 2 * cut and y1 - y0 > 2 * cut:
+                centreY0 = y0 + width / 2
+                centreY1 = y1 - width / 2
+                centreX0 = x0 + width / 2
+                centreX1 = x1 - width / 2
+                hLen = x1 - x0 - width
+                vLen = y1 - y0 - width
+                hNum = max(1, int(hLen / pitch))
+                vNum = max(1, int(vLen / pitch))
+                hPitch = hLen / hNum if hNum else pitch
+                vPitch = vLen / vNum if vNum else pitch
+                # layoutViaArray steps by gap + cut, so the desired
+                # centre-to-centre pitch must be passed as pitch - cut.
+                hGap = max(0.0, hPitch - cut)
+                vGap = max(0.0, vPitch - cut)
+                for edge in ("top", "bottom", "left", "right"):
+                    viaProto = layoutVia(
+                        QPoint(0, 0), viaDef, cut, cut,
+                        getattr(viaDef, "bottomEnclosure", None),
+                        getattr(viaDef, "topEnclosure", None),
+                    )
+                    if edge in ("top", "bottom"):
+                        start = QPoint(
+                            int(centreX0 - cut / 2),
+                            int((centreY0 if edge == "top" else centreY1) - cut / 2),
+                        )
+                        arr = layoutViaArray(
+                            start, viaProto, hGap, 0, hNum, 1,
+                            legacyStart=True,
+                        )
+                    else:
+                        start = QPoint(
+                            int((centreX0 if edge == "left" else centreX1) - cut / 2),
+                            int(centreY0 - cut / 2),
+                        )
+                        arr = layoutViaArray(
+                            start, viaProto, 0, vGap, 1, vNum,
+                            legacyStart=True,
+                        )
+                    shapes.append(arr)
+        self._adoptShapes(shapes)
+
+    def updateDraftGeometry(self, scenePoint: QPointF) -> None:
+        local = self.mapFromScene(scenePoint)
+        self.setParams({"br": [local.x(), local.y()]})
+
+
+class layoutShieldedPath(layoutMultipart):
+    """Signal path flanked by two shield paths on another layer."""
+
+    KIND = "shieldedPath"
+
+    def _build(self) -> None:
+        p = self._params
+        p1 = QPointF(*p["p1"])
+        p2 = QPointF(*p["p2"])
+        signalLayer = self._layerByName(p.get("signalLayer", ""))
+        shieldLayer = self._layerByName(p.get("shieldLayer", ""))
+        signalW = float(p.get("signalWidth", 0))
+        shieldW = float(p.get("shieldWidth", 0))
+        gap = float(p.get("gap", 0))
+        shapes = []
+        if signalLayer is not None and signalW > 0:
+            shapes.append(
+                layoutPath(QLineF(p1, p2), signalLayer, signalW, 0, 0, 2))
+        if shieldLayer is not None and shieldW > 0:
+            offset = _multipartOffset(p1, p2, signalW / 2 + gap + shieldW / 2)
+            shapes.append(layoutPath(
+                QLineF(p1 + offset, p2 + offset), shieldLayer, shieldW, 0, 0, 2))
+            shapes.append(layoutPath(
+                QLineF(p1 - offset, p2 - offset), shieldLayer, shieldW, 0, 0, 2))
+        self._adoptShapes(shapes)
+
+    def updateDraftGeometry(self, scenePoint: QPointF) -> None:
+        local = self.mapFromScene(scenePoint)
+        self.setParams({"p2": [local.x(), local.y()]})
+
+
+class layoutBusRoute(layoutMultipart):
+    """``count`` parallel paths fanned out symmetrically about the centreline."""
+
+    KIND = "busRoute"
+
+    def _build(self) -> None:
+        p = self._params
+        p1 = QPointF(*p["p1"])
+        p2 = QPointF(*p["p2"])
+        layer = self._layerByName(p.get("layer", ""))
+        width = float(p.get("width", 0))
+        spacing = float(p.get("spacing", 0))
+        count = max(1, int(p.get("count", 1)))
+        shapes = []
+        if layer is not None and width > 0:
+            pitch = width + spacing
+            for i in range(count):
+                offset = _multipartOffset(p1, p2, (i - (count - 1) / 2) * pitch)
+                shapes.append(layoutPath(
+                    QLineF(p1 + offset, p2 + offset), layer, width, 0, 0, 2))
+        self._adoptShapes(shapes)
+
+    def updateDraftGeometry(self, scenePoint: QPointF) -> None:
+        local = self.mapFromScene(scenePoint)
+        self.setParams({"p2": [local.x(), local.y()]})
+
+
+MULTIPART_KINDS = {
+    cls.KIND: cls
+    for cls in (layoutGuardRing, layoutShieldedPath, layoutBusRoute)
+}
+
+
 class alignLine(layoutShape):
     def __init__(
             self,
@@ -2901,3 +3346,57 @@ class alignLine(layoutShape):
             self.mapToScene(self._draftLine.p1()).toPoint(),
             self.mapToScene(self._draftLine.p2()).toPoint(),
         ]
+
+
+class layoutFlightLine(QGraphicsLineItem):
+    """Ephemeral unrouted-connection guide (schematic->layout rat's nest).
+
+    Drawn by ``layoutScene.rebuildFlylines`` between instance-pin endpoints
+    the schematic joins on one net but layout connectivity has not merged.
+    Not a ``layoutShape``: never persisted, never selected, invisible to
+    connectivity — pure overlay like the net-highlight rects.
+
+    ``pinA``/``pinB`` keep the endpoint items so the line re-anchors when
+    their owning instances move — :meth:`syncLine` returns False once a pin
+    is gone (deleted instance, unrealized child) and the scene drops it.
+    """
+
+    def __init__(self, line: QLineF, netName: str = "",
+                 pinA=None, pinB=None):
+        super().__init__(line)
+        self._netName = netName
+        self._pinA = pinA
+        self._pinB = pinB
+        pen = QPen(QColor(255, 255, 40), 0, Qt.DashLine)
+        pen.setCosmetic(True)
+        self.setPen(pen)
+        self.setZValue(998)
+        self.setFlag(QGraphicsItem.ItemIsSelectable, False)
+
+    def __repr__(self) -> str:
+        return f"layoutFlightLine({self.line()}, {self._netName})"
+
+    @property
+    def netName(self) -> str:
+        return self._netName
+
+    @property
+    def pinA(self):
+        return self._pinA
+
+    @property
+    def pinB(self):
+        return self._pinB
+
+    def syncLine(self) -> bool:
+        """Re-anchor to current pin positions. False when a pin is gone."""
+        if self._pinA is None or self._pinB is None:
+            return True
+        if not (shiboken6.isValid(self._pinA)
+                and shiboken6.isValid(self._pinB)
+                and self._pinA.scene() is not None
+                and self._pinB.scene() is not None):
+            return False
+        self.setLine(QLineF(self._pinA.sceneBoundingRect().center(),
+                            self._pinB.sceneBoundingRect().center()))
+        return True

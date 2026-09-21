@@ -41,6 +41,7 @@ import revedaEditor.backend.dataDefinitions as ddef
 import revedaEditor.backend.libBackEnd as libb
 import revedaEditor.backend.libraryMethods as libm
 import revedaEditor.common.shapes as shp
+from revedaEditor.netlisting import exprSupport
 from revedaEditor.scenes.schematicScene import schematicScene
 
 if TYPE_CHECKING:
@@ -111,6 +112,8 @@ class spectreNetlist:
         # Caches to avoid repeated Qt model traversals for the same cells.
         self._viewNameCache: dict[tuple, str] = {}
         self._cellItemCache: dict[tuple, libb.cellItem | None] = {}
+        # (lib, cell, view) -> {exprName: default} implicit-terminal defs.
+        self._exprDefsCache: dict[tuple, dict] = {}
 
     def __repr__(self):
         return (
@@ -202,7 +205,10 @@ class spectreNetlist:
             content: List to append netlist lines to.
         """
         schematicScene = schematic.centralW.scene
-        schematicScene.nameSceneNets()
+        # Terminal mode: this scene's net expressions resolve to their
+        # expression names — each is an implicit subcircuit terminal.
+        schematicScene.nameSceneNets(netSet=exprSupport.terminalNetSet(
+            schematicScene.collectNetExprNames()))
         sceneSymbolSet = schematicScene.findSceneSymbolSet()
         schematicScene.generatePinNetMap(sceneSymbolSet)
 
@@ -216,7 +222,12 @@ class spectreNetlist:
                 netlistView = self.determineNetlistView(elementSymbol, cellItem)
 
                 if "schematic" in netlistView:
-                    lines = self.createSpectreSymbolLine(elementSymbol)
+                    exprDefs = self._exprDefsFor(elementSymbol, cellItem,
+                                                 netlistView)
+                    exprNets = exprSupport.exprNetsForInstance(
+                        elementSymbol, exprDefs)
+                    lines = self.createSpectreSymbolLine(elementSymbol,
+                                                         exprNets=exprNets)
                     content.extend(lines if isinstance(lines, list) else [lines])
                     if not self._isStopView(netlistView):
                         viewTuple = ddef.viewNameTuple(
@@ -235,6 +246,10 @@ class spectreNetlist:
                             expandedPinsString = self.expandPinNames(
                                 list(elementSymbol.pinNetMap.keys())
                             )
+                            terminals = exprSupport.exprTerminals(exprDefs)
+                            if terminals:
+                                expandedPinsString += " " + " ".join(
+                                    terminals)
                             subcktContent: list[str] = []
                             self.collectSubcircuitContent(schematicObj, subcktContent)
                             subcktDef = (
@@ -283,6 +298,10 @@ class spectreNetlist:
             schematicPinsSet = schematicEdObj.centralW.scene.findSceneSchemPinsSet()
             pinNames = [pin.pinName for pin in schematicPinsSet]
             expandedPinsString = self.expandPinNames(pinNames)
+            topExprDefs = schematicEdObj.centralW.scene.collectNetExprNames()
+            topTerminals = exprSupport.exprTerminals(topExprDefs)
+            if topTerminals:
+                expandedPinsString += " " + " ".join(topTerminals)
 
             subcktContent: list[str] = []
             self.collectSubcircuitContent(schematicEdObj, subcktContent)
@@ -350,6 +369,22 @@ class spectreNetlist:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    def _exprDefsFor(self, elementSymbol, cellItem,
+                     netlistView: str) -> dict:
+        """{exprName: default} implicit-terminal defs of a subckt's view.
+
+        Read from the child schematic's records (no editor needed) and
+        cached per (lib, cell, view) so every instance of a cell shares
+        the same terminal list."""
+        key = (elementSymbol.libraryName, elementSymbol.cellName,
+               netlistView)
+        if key not in self._exprDefsCache:
+            self._exprDefsCache[key] = (
+                exprSupport.exprDefsForSchematicView(
+                    cellItem, netlistView, self.libraryDict)
+                if cellItem is not None else {})
+        return self._exprDefsCache[key]
 
     def _getCellItem(self, libraryName: str, cellName: str) -> libb.cellItem | None:
         """Return the cellItem for *(libraryName, cellName)*, cached to avoid repeated model traversals.
@@ -441,7 +476,12 @@ class spectreNetlist:
     ):
         """Create the appropriate Spectre netlist line(s) for a symbol based on its view type."""
         if "schematic" in netlistView:
-            elementLines = self.createSpectreSymbolLine(elementSymbol)
+            exprDefs = self._exprDefsFor(elementSymbol, cellItem,
+                                         netlistView)
+            exprNets = exprSupport.exprNetsForInstance(elementSymbol,
+                                                       exprDefs)
+            elementLines = self.createSpectreSymbolLine(elementSymbol,
+                                                        exprNets=exprNets)
             for line in elementLines:
                 cirFile.write(f"{line}\n")
 
@@ -467,6 +507,9 @@ class spectreNetlist:
                     expandedPinsString = self.expandPinNames(
                         list(elementSymbol.pinNetMap.keys())
                     )
+                    terminals = exprSupport.exprTerminals(exprDefs)
+                    if terminals:
+                        expandedPinsString += " " + " ".join(terminals)
                     subcktContent: list[str] = []
                     self.collectSubcircuitContent(schematicObj, subcktContent)
                     subcktDef = (
@@ -499,6 +542,7 @@ class spectreNetlist:
         self,
         elementSymbol: shp.schematicSymbol,
         netlistLineKey: str,
+        exprNets: list = None,
     ) -> list[str]:
         """Shared netlist line creation logic.
 
@@ -509,6 +553,9 @@ class spectreNetlist:
             elementSymbol: The symbol instance to create netlist lines for.
             netlistLineKey: The attribute key for the netlist line template
                 (e.g. ``"SpectreNetlistLine"`` or ``"lvsNetlistLine"``).
+            exprNets: ordered nets for the child subcircuit's implicit
+                net-expression terminals (inherited connections); appended
+                after the pinOrder nets.
 
         Returns:
             List of netlist line strings (one per array element if arrayed).
@@ -609,18 +656,19 @@ class spectreNetlist:
                         canUseVectorNotation = False
                         break
 
+            exprNets = list(exprNets or ())
             if canUseVectorNotation:
                 # Preserve vector notation: I5<0:3> (OUT<0:3> INP<0:3>) resistor r=1k
                 vectorNetsList = " ".join([
                     f"{baseName}<{netTuple[0]}:{netTuple[1]}>"
                     if netTuple else baseName
                     for baseName, netTuple in netVectorInfos
-                ])
+                ] + exprNets)
                 vectorLvsNetsList = " ".join([
                     f"{baseName}<{netTuple[0]}:{netTuple[1]}>"
                     if netTuple else baseName
                     for baseName, netTuple in lvsNetVectorInfos
-                ])
+                ] + exprNets)
                 vectorInstName = f"{baseInstName}<{arrayTuple[0]}:{arrayTuple[1]}>"
                 symbolLines.append(
                     processLine(createInstanceLine(
@@ -660,9 +708,10 @@ class spectreNetlist:
                     return pickedNets
 
                 if arraySize == 1:
-                    flatNetsList = " ".join([nets[0] for nets in expandedPinNets])
+                    flatNetsList = " ".join([nets[0] for nets in expandedPinNets]
+                                            + exprNets)
                     flatLvsNetsList = " ".join(
-                        [nets[0] for nets in expandedLvsPinNets])
+                        [nets[0] for nets in expandedLvsPinNets] + exprNets)
                     symbolLines.append(
                         processLine(createInstanceLine(
                             baseInstName, flatNetsList, flatLvsNetsList))
@@ -672,9 +721,10 @@ class spectreNetlist:
                         range(arrayTuple[0], arrayTuple[1] + arrayStep, arrayStep)
                     )
                     for j, i in enumerate(arrayIndices):
-                        specificNetsList = " ".join(selectNets(expandedPinNets, j))
+                        specificNetsList = " ".join(
+                            selectNets(expandedPinNets, j) + exprNets)
                         specificLvsNetsList = " ".join(
-                            selectNets(expandedLvsPinNets, j))
+                            selectNets(expandedLvsPinNets, j) + exprNets)
                         symbolLines.append(
                             processLine(
                                 createInstanceLine(f"{baseInstName}<{i}>",
@@ -694,15 +744,18 @@ class spectreNetlist:
             ]
 
     def createSpectreSymbolLine(
-        self, elementSymbol: shp.schematicSymbol
+        self, elementSymbol: shp.schematicSymbol, exprNets: list = None
     ) -> list[str]:
         """Create Spectre netlist lines for a symbol instance.
 
         In LVS mode uses the ``lvsNetlistLine`` attribute, otherwise uses
-        ``SpectreNetlistLine``.
+        ``SpectreNetlistLine``.  ``exprNets`` carries the resolved
+        implicit-terminal nets when the instance expands to a subcircuit
+        with net expressions.
         """
         netlistLineKey = "lvsNetlistLine" if self._lvsMode else "SpectreNetlistLine"
-        return self._createNetlistLine(elementSymbol, netlistLineKey)
+        return self._createNetlistLine(elementSymbol, netlistLineKey,
+                                       exprNets=exprNets)
 
     def createSpiceLine(self, elementSymbol: shp.schematicSymbol) -> list[str]:
         """Create Spectre-wrapped SPICE subcircuit netlist lines with include file handling.

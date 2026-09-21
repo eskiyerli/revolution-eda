@@ -147,29 +147,6 @@ def _netSceneRect(netItem: snet.schematicNet) -> QRectF:
     return netItem.mapToScene(netItem.boundingRect()).boundingRect()
 
 
-def _pinNetGroup(pinItem, pinPoint: QPoint, netSet, netGroupOf,
-                 snapDist: int) -> Optional[int]:
-    """Net group a pin attaches to: any net the pin shape touches, or any
-    net endpoint within snap distance of the pin point."""
-    for item in pinItem.collidingItems(Qt.IntersectsItemShape):
-        if isinstance(item, snet.schematicNet) and item in netGroupOf:
-            return netGroupOf[item]
-    for netItem in netSet:
-        if any((pinPoint - endPoint).manhattanLength() <= snapDist
-               for endPoint in netItem.sceneEndPoints):
-            return netGroupOf[netItem]
-    return None
-
-
-def _disjointFind(parent: Dict, item):
-    root = item
-    while parent[root] != root:
-        root = parent[root]
-    while parent[item] != item:
-        parent[item], item = root, parent[item]
-    return root
-
-
 def buildCheckContext(scene) -> schematicCheckContext:
     """Collect scene data shared by all check rules and build the net
     connectivity graph: nets joined by coincident endpoints or by an endpoint
@@ -188,34 +165,24 @@ def buildCheckContext(scene) -> schematicCheckContext:
             pinItem.mapToScene(pinItem.start).toPoint(),
             _pinOwnerName(pinItem)))
 
-    # Union nets that electrically touch.
-    parent = {netItem: netItem for netItem in netSet}
-    for netItem in netSet:
-        for endPoint in netItem.sceneEndPoints:
-            probe = QRectF(endPoint.x() - 1, endPoint.y() - 1, 2, 2)
-            for item in scene.items(probe):
-                if (not isinstance(item, snet.schematicNet)
-                        or item is netItem or item not in parent):
-                    continue
-                touches = any(
-                    (endPoint - otherEnd).manhattanLength() <= 1
-                    for otherEnd in item.sceneEndPoints)
-                if touches or item.sceneShapeRect.contains(endPoint):
-                    rootA = _disjointFind(parent, netItem)
-                    rootB = _disjointFind(parent, item)
-                    if rootA != rootB:
-                        parent[rootB] = rootA
+    # Union nets that electrically touch — delegated to the unified
+    # connectivity engine (same endpoint + endpoint-on-body semantics this
+    # union-find used to implement). Rebuilt fresh: checks are a batch
+    # entry point and must reflect the current scene.
+    result = scene.rebuildConnectivity()
+    segIdByItem = getattr(scene, "_connectivitySegIdByItem", {})
+    portIdByItem = getattr(scene, "_connectivityPortIdByItem", {})
 
-    grouped = defaultdict(set)
-    for netItem in netSet:
-        grouped[_disjointFind(parent, netItem)].add(netItem)
-    netGroups = list(grouped.values())
+    netGroups = []
+    for group in result.groups:
+        netGroups.append({segItem for segId in group.members
+                          if (segItem := scene._connectivitySegById[segId])
+                          in netSet})
     netGroupOf = {netItem: index for index, group in enumerate(netGroups)
                   for netItem in group}
 
     pinGroupOf = {
-        pin.item: _pinNetGroup(pin.item, pin.point, netSet, netGroupOf,
-                               snapDist)
+        pin.item: result.portGroup.get(portIdByItem.get(pin.item))
         for pin in pins}
 
     return schematicCheckContext(scene, symbolSet, netSet, pins, snapDist,

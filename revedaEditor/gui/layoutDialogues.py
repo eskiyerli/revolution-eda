@@ -10,12 +10,13 @@
 ##
 
 from pathlib import Path
-from typing import Dict
+from typing import ClassVar, Dict
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import (
     QDoubleValidator,
     QFontDatabase,
+    QIntValidator,
     QStandardItem,
 )
 from PySide6.QtWidgets import (
@@ -39,11 +40,11 @@ from PySide6.QtWidgets import (
 import revedaEditor.backend.drcModelView as drcmv
 import revedaEditor.common.layoutShapes as lshp
 import revedaEditor.gui.editFunctions as edf
-from revedaEditor.backend.pdkLoader import importPDKModule
+from revedaEditor.backend.pdkLoader import importPDKModule, lazyPDKModule
 
 # from dotenv import load_dotenv
 
-process = importPDKModule("process")
+process = lazyPDKModule("process")
 
 
 class layoutInstanceDialogue(QDialog):
@@ -77,6 +78,26 @@ class layoutInstanceDialogue(QDialog):
         vLayout.addWidget(self.pcellParamsGroup)
         self.pcellParamsGroup.hide()
 
+        # Mosaic: rows x cols copies of the cell spaced by the pitches below
+        # (in um). A 1x1 array is a plain placement.
+        self.arrayGroup = QGroupBox("Instance Array (Mosaic)")
+        self.arrayLayout = QFormLayout()
+        self.arrayGroup.setLayout(self.arrayLayout)
+        self.rowsEdit = edf.shortLineEdit()
+        self.rowsEdit.setValidator(QIntValidator(1, 100000, self))
+        self.arrayLayout.addRow(edf.boldLabel("Rows:"), self.rowsEdit)
+        self.colsEdit = edf.shortLineEdit()
+        self.colsEdit.setValidator(QIntValidator(1, 100000, self))
+        self.arrayLayout.addRow(edf.boldLabel("Columns:"), self.colsEdit)
+        self.rowPitchEdit = edf.shortLineEdit()
+        self.rowPitchEdit.setValidator(QDoubleValidator(0.0, 1e9, 6, self))
+        self.arrayLayout.addRow(edf.boldLabel("Row Pitch (um):"), self.rowPitchEdit)
+        self.colPitchEdit = edf.shortLineEdit()
+        self.colPitchEdit.setValidator(QDoubleValidator(0.0, 1e9, 6, self))
+        self.arrayLayout.addRow(edf.boldLabel("Column Pitch (um):"), self.colPitchEdit)
+        vLayout.addWidget(self.arrayGroup)
+        self.arrayGroup.hide()
+
         self.locationGroup = QGroupBox("Location")
         self.locationLayout = QFormLayout()
         self.locationGroup.setLayout(self.locationLayout)
@@ -89,6 +110,22 @@ class layoutInstanceDialogue(QDialog):
         vLayout.addWidget(self.buttonBox)
         self.setLayout(vLayout)
         self.show()
+
+    def arraySpec(self) -> tuple[int, int, float, float] | None:
+        """(rows, cols, rowPitch_um, colPitch_um), or None for a 1x1/invalid form."""
+        try:
+            rows = max(1, int(self.rowsEdit.text() or "1"))
+            cols = max(1, int(self.colsEdit.text() or "1"))
+        except ValueError:
+            return None
+        if rows * cols <= 1:
+            return None
+        try:
+            rowPitch = float(self.rowPitchEdit.text())
+            colPitch = float(self.colPitchEdit.text())
+        except ValueError:
+            return None
+        return rows, cols, rowPitch, colPitch
 
 
 class layoutInstancePropertiesDialogue(layoutInstanceDialogue):
@@ -802,6 +839,283 @@ class formDictionary:
                     value = field
                     data[key] = value
         return data
+
+
+class createMultipartDialogue(QDialog):
+    """Pick a multipart kind and its parameters before the two-click draw.
+
+    ``selectedSpec`` returns ``(kind, params)`` with dimensions converted to
+    scene units (dbu); the geometry anchors are placeholders the draw flow
+    fills in on the second click."""
+
+    # kind -> [(paramKey, label, default, kindOfField)]
+    # kindOfField: "layer" (combo of PDK layers), "via" (combo of process
+    # vias + blank), "um" (float, converted x dbu), "int", "str".
+    FIELDS: ClassVar[dict] = {
+        "guardRing": [
+            ("layer", "Ring Layer:", "", "layer"),
+            ("width", "Ring Width (um):", "0.3", "um"),
+            ("via", "Stitch Via:", "", "via"),
+        ],
+        "shieldedPath": [
+            ("signalLayer", "Signal Layer:", "", "layer"),
+            ("signalWidth", "Signal Width (um):", "0.2", "um"),
+            ("shieldLayer", "Shield Layer:", "", "layer"),
+            ("shieldWidth", "Shield Width (um):", "0.2", "um"),
+            ("gap", "Gap (um):", "0.2", "um"),
+        ],
+        "busRoute": [
+            ("layer", "Layer:", "", "layer"),
+            ("width", "Width (um):", "0.2", "um"),
+            ("spacing", "Spacing (um):", "0.2", "um"),
+            ("count", "Count:", "4", "int"),
+        ],
+    }
+    KIND_LABELS: ClassVar[dict] = {
+        "guardRing": "Guard Ring",
+        "shieldedPath": "Shielded Path",
+        "busRoute": "Bus Route",
+    }
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.setWindowTitle("Create Multipart")
+        self.setMinimumWidth(420)
+        mainLayout = QVBoxLayout()
+        groupBox = QGroupBox()
+        self.formLayout = QFormLayout()
+        groupBox.setLayout(self.formLayout)
+        self.kindCB = QComboBox()
+        for kind, label in self.KIND_LABELS.items():
+            self.kindCB.addItem(label, kind)
+        self.formLayout.addRow(edf.boldLabel("Kind:"), self.kindCB)
+        self._fieldWidgets = {}
+        mainLayout.addWidget(groupBox)
+        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        self.buttonBox = QDialogButtonBox(QBtn)
+        self.buttonBox.accepted.connect(self.accept)
+        self.buttonBox.rejected.connect(self.reject)
+        mainLayout.addWidget(self.buttonBox)
+        self.setLayout(mainLayout)
+        _laylyr = importPDKModule("layoutLayers")
+        self._layerNames = [
+            layer.name for layer in (_laylyr.pdkAllLayers if _laylyr else [])
+        ]
+        self.kindCB.currentIndexChanged.connect(self._rebuildFields)
+        self._rebuildFields(0)
+        self.show()
+
+    def _clearFields(self):
+        while self.formLayout.rowCount() > 1:
+            self.formLayout.removeRow(1)
+        self._fieldWidgets = {}
+
+    def _rebuildFields(self, index):
+        self._clearFields()
+        kind = self.kindCB.itemData(index)
+        for key, label, default, fieldKind in self.FIELDS[kind]:
+            if fieldKind == "layer":
+                widget = QComboBox()
+                widget.addItems(self._layerNames)
+            elif fieldKind == "via":
+                widget = QComboBox()
+                widget.addItem("")
+                if process:
+                    widget.addItems(
+                        getattr(process, "processViaNames", []))
+            else:
+                widget = edf.shortLineEdit()
+                widget.setText(default)
+                if fieldKind == "um":
+                    widget.setValidator(QDoubleValidator(0.0, 1e9, 6, self))
+                elif fieldKind == "int":
+                    widget.setValidator(QIntValidator(1, 10000, self))
+            self.formLayout.addRow(edf.boldLabel(label), widget)
+            self._fieldWidgets[key] = (widget, fieldKind)
+
+    def selectedSpec(self):
+        kind = self.kindCB.itemData(self.kindCB.currentIndex())
+        dbu = getattr(process, "dbu", 1000)
+        params = {}
+        for key, (widget, fieldKind) in self._fieldWidgets.items():
+            if fieldKind in ("layer", "via"):
+                params[key] = widget.currentText()
+            elif fieldKind == "um":
+                try:
+                    params[key] = float(widget.text()) * dbu
+                except ValueError:
+                    params[key] = 0.0
+            elif fieldKind == "int":
+                try:
+                    params[key] = int(widget.text())
+                except ValueError:
+                    params[key] = 1
+            else:
+                params[key] = widget.text()
+        # Geometry anchors: the two-click draw writes the real extents.
+        if kind == "guardRing":
+            params.setdefault("tl", [0, 0])
+            params.setdefault("br", [0, 0])
+        else:
+            params.setdefault("p1", [0, 0])
+            params.setdefault("p2", [0, 0])
+        return kind, params
+
+
+class makeCellDialogue(QDialog):
+    """Ask for the library and cell name used by Edit > Make Cell."""
+
+    def __init__(self, parent, libraries):
+        super().__init__(parent)
+        self.setWindowTitle("Make Cell From Selection")
+        mainLayout = QVBoxLayout()
+        groupBox = QGroupBox()
+        formLayout = QFormLayout()
+        groupBox.setLayout(formLayout)
+        self.libNameCB = QComboBox()
+        self.libNameCB.setEditable(True)
+        self.libNameCB.addItems(libraries)
+        formLayout.addRow(edf.boldLabel("Library:"), self.libNameCB)
+        self.cellNameEdit = edf.longLineEdit()
+        formLayout.addRow(edf.boldLabel("Cell Name:"), self.cellNameEdit)
+        mainLayout.addWidget(groupBox)
+        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        self.buttonBox = QDialogButtonBox(QBtn)
+        self.buttonBox.accepted.connect(self.accept)
+        self.buttonBox.rejected.connect(self.reject)
+        mainLayout.addWidget(self.buttonBox)
+        self.setLayout(mainLayout)
+        self.show()
+
+    @property
+    def libName(self) -> str:
+        return self.libNameCB.currentText().strip()
+
+    @property
+    def cellName(self) -> str:
+        return self.cellNameEdit.text().strip()
+
+
+class multipartPropertiesDialogue(QDialog):
+    """Generic key->value editor for a multipart item's ``params`` dict.
+
+    Numeric strings parse back as numbers and ``x,y`` pairs as point lists,
+    so geometry anchors stay round-trippable through plain text."""
+
+    def __init__(self, parent, item):
+        super().__init__(parent)
+        self.setWindowTitle(f"{item.kind} Properties")
+        self._item = item
+        mainLayout = QVBoxLayout()
+        groupBox = QGroupBox(f"Kind: {item.kind}")
+        self.formLayout = QFormLayout()
+        groupBox.setLayout(self.formLayout)
+        self._edits = {}
+        for key, value in item.params.items():
+            edit = edf.longLineEdit()
+            if isinstance(value, (list, tuple)):
+                edit.setText(",".join(str(v) for v in value))
+            else:
+                edit.setText(str(value))
+            self.formLayout.addRow(edf.boldLabel(f"{key}:"), edit)
+            self._edits[key] = edit
+        mainLayout.addWidget(groupBox)
+        hint = QLabel(
+            "Dimensions are in scene units (dbu); point params are 'x,y'.")
+        hint.setWordWrap(True)
+        mainLayout.addWidget(hint)
+        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        self.buttonBox = QDialogButtonBox(QBtn)
+        self.buttonBox.accepted.connect(self.accept)
+        self.buttonBox.rejected.connect(self.reject)
+        mainLayout.addWidget(self.buttonBox)
+        self.setLayout(mainLayout)
+        self.show()
+
+    def parsedParams(self) -> dict:
+        params = {}
+        for key, edit in self._edits.items():
+            text = edit.text().strip()
+            original = self._item.params.get(key)
+            if isinstance(original, (list, tuple)):
+                try:
+                    params[key] = [
+                        float(part) for part in text.split(",") if part != ""
+                    ]
+                    continue
+                except ValueError:
+                    pass
+            try:
+                params[key] = int(text)
+                continue
+            except ValueError:
+                pass
+            try:
+                params[key] = float(text)
+                continue
+            except ValueError:
+                pass
+            params[key] = text
+        return params
+
+
+class layerOpDialogue(QDialog):
+    """Pick a boolean/size operation for the selected shapes.
+
+    ``selectedOp``/``selectedAmount`` are read after ``exec_``; the amount is
+    in layout units (um) and only meaningful for grow/shrink.
+    """
+
+    OPS = (
+        ("Or (Union)", "or"),
+        ("And (Intersect)", "and"),
+        ("Xor", "xor"),
+        ("Not (A minus other layers)", "not"),
+        ("Grow", "grow"),
+        ("Shrink", "shrink"),
+    )
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.setWindowTitle("Layer Operations")
+        mainLayout = QVBoxLayout()
+        groupBox = QGroupBox()
+        formLayout = QFormLayout()
+        groupBox.setLayout(formLayout)
+        self.opCB = QComboBox()
+        for label, _op in self.OPS:
+            self.opCB.addItem(label)
+        formLayout.addRow(edf.boldLabel("Operation:"), self.opCB)
+        self.amountEdit = edf.shortLineEdit()
+        self.amountEdit.setValidator(QDoubleValidator(0.0, 1e6, 6, self))
+        self.amountEdit.setText("0.1")
+        formLayout.addRow(edf.boldLabel("Amount (um):"), self.amountEdit)
+        mainLayout.addWidget(groupBox)
+
+        def opChanged(index):
+            self.amountEdit.setEnabled(self.OPS[index][1] in ("grow", "shrink"))
+
+        self.opCB.currentIndexChanged.connect(opChanged)
+        opChanged(0)
+
+        QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        self.buttonBox = QDialogButtonBox(QBtn)
+        self.buttonBox.accepted.connect(self.accept)
+        self.buttonBox.rejected.connect(self.reject)
+        mainLayout.addWidget(self.buttonBox)
+        self.setLayout(mainLayout)
+        self.show()
+
+    @property
+    def selectedOp(self) -> str:
+        return self.OPS[self.opCB.currentIndex()][1]
+
+    @property
+    def selectedAmount(self) -> float:
+        try:
+            return float(self.amountEdit.text())
+        except ValueError:
+            return 0.0
 
 
 class drcErrorsDialogue(QDialog):

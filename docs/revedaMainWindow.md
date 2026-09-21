@@ -124,7 +124,9 @@ Revolution EDA uses a **project directory** concept. A project directory contain
 
 - `.env` — environment variables (PDK path, plugin path, VA module path)
 - `library.json` — library definitions for the project
-- `reveda.conf` — saved application state (window geometry, view lists, thread pool settings)
+- `reveda.conf` — saved application state (window geometry, view lists, thread pool
+  settings, autosave preferences, and the open-cellview session list)
+- `bindkeys.json` — *optional* per-project keyboard shortcut overrides for editor windows
 
 **How project loading works (via `ProjectManager`):**
 
@@ -272,7 +274,9 @@ netlisting with SPICE-like simulators.
   tool is especially useful when migrating symbol sets from an Xschem-based flow.
 - `Import GDS...`: imports geometry from a GDS file into a dedicated Revolution EDA library.
   The dialog asks for a target library name plus GDS unit and precision values, making it a
-  practical bridge from external layout data into native layout cellviews.
+  practical bridge from external layout data into native layout cellviews. Checking
+  **Merge into existing cells** appends imported shapes to same-named cells in the target
+  library instead of replacing the library contents — useful for incremental stream-ins.
 
 Practical notes:
 
@@ -433,6 +437,81 @@ confirmation dialog is shown. If the user confirms:
 
 During a project-switch restart, the confirmation dialog is suppressed — the close proceeds
 immediately.
+
+## Session Save and Restore
+
+Revolution EDA remembers which editor windows were open when a project closes. On
+exit or project switch, `reveda.conf` gains an `openCellviews` list recording, per
+window: library, cell, view, window geometry, and the visible scene rectangle (your
+zoom level). On the next open of the same project, those editors are reopened
+automatically with the same sizes, positions, and zoom.
+
+Details worth knowing:
+
+- Missing cells or deleted cellviews are skipped quietly — restoring a session never
+  blocks startup.
+- Already-open views are not duplicated.
+- Non-graphics windows (text editors, dialogs) are not part of the session.
+
+## Cellview Locking and Read-Only Mode
+
+When you open a cellview, Revolution EDA creates a `<view>.json.lock` file next to
+the cellview JSON recording the process id, user, host, and timestamp.
+
+- **Same cellview opened in a second Revolution EDA process:** the second window
+  opens **read-only** — a "cellview is locked by ..." message names the owner, the
+  `Read Only` toolbar button is checked and disabled, and Save/Check actions are
+  disabled. It cannot overwrite or lock-clobber the owner's file.
+- **Stale locks:** if the owning process crashed or the lock is unreadable, the
+  new session takes the lock over automatically.
+- **Unlocking:** closing the window removes its lock. Read-only windows release
+  nothing — they never owned one.
+
+## Autosave and Crash Recovery
+
+Each editor autosaves dirty work on a timer (default: every 300 seconds) to a
+`<view>.json.autosave` sidecar file next to the cellview.
+
+- Autosave only writes when the scene has unsaved changes, and only for windows
+  holding the cellview lock — read-only windows never write.
+- Undo history is not disturbed by autosave.
+- On next open, if the autosave is **newer than the cellview** (i.e. the last
+  session ended without a clean save), a dialog offers to restore it:
+  **Yes** loads the autosave content; **No** deletes the sidecar.
+- A truncated or corrupt autosave (e.g. a crash mid-write) is ignored rather than
+  offered.
+- Successful saves and clean closes delete the autosave file.
+
+Autosave is configured in `reveda.conf`:
+
+```json
+"autosaveEnabled": true,
+"autosaveIntervalSec": 300
+```
+
+## Bindkey Configuration
+
+Editor keyboard shortcuts are configurable. Key sequences map to editor actions
+per view type, in JSON:
+
+```json
+{
+  "*":         {"Ctrl+S": "saveCellAction", "Ctrl+Z": "undoAction"},
+  "schematic": {"W": "createNetAction"},
+  "layout":    {"W": "createPathAction"},
+  "symbol":    {"W": "createLineAction"}
+}
+```
+
+- `"*"` applies to every editor window; view-type sections (`schematic`,
+  `layout`, `symbol`) override it per editor.
+- Values are the action's attribute name on the editor window (visible in
+  developmentDocs under `revedaEditor/gui/`).
+- Defaults ship in `revedaEditor/resources/bindkeys.json`. To customize, create
+  `bindkeys.json` in the project directory — project entries merge over (and
+  win against) the defaults, so you only list what you change.
+- Bindkeys apply when an editor opens; existing windows need to be reopened for
+  changes to take effect.
 
 ## Final Notes
 

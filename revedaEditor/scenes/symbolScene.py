@@ -39,16 +39,18 @@ from PySide6.QtWidgets import (
 import revedaEditor.backend.dataDefinitions as ddef
 import revedaEditor.backend.undoStack as us
 import revedaEditor.common.labels as lbl
+import revedaEditor.common.params as prm
 import revedaEditor.common.shapes as shp  # import the shapes
+import revedaEditor.connectivity as conn
 import revedaEditor.fileio.loadJSON as lj
 import revedaEditor.fileio.schemaValidation as sv
 import revedaEditor.fileio.symbolEncoder as symenc
 import revedaEditor.gui.alignItems as alg
 import revedaEditor.gui.propertyDialogues as pdlg
-from revedaEditor.backend.pdkLoader import importPDKModule
+from revedaEditor.backend.pdkLoader import lazyPDKModule
 from revedaEditor.scenes.editorScene import editorScene
 
-symlyr = importPDKModule('symLayers')
+symlyr = lazyPDKModule('symLayers')
 
 
 # noinspection PyUnresolvedReferences
@@ -108,6 +110,7 @@ class symbolScene(editorScene):
         self.pinName = ""
         self.pinType = shp.symbolPin.pinTypes[0]
         self.pinDir = shp.symbolPin.pinDirs[0]
+        self.pinExpr = ""
         self.labelDefinition = ""
         self.labelType = lbl.symbolLabel.labelTypes[0]
         self.labelOrient = lbl.symbolLabel.labelOrients[0]
@@ -295,6 +298,7 @@ class symbolScene(editorScene):
 
     def pinDraw(self, current):
         pin = shp.symbolPin(current, self.pinName, self.pinDir, self.pinType)
+        pin.netExpr = self.pinExpr
         # self.addItem(pin)
         self.addUndoStack(pin)
         return pin
@@ -561,6 +565,7 @@ class symbolScene(editorScene):
         queryDlg.pinName.setText(str(item.pinName))
         queryDlg.pinType.setCurrentText(item.pinType)
         queryDlg.pinDir.setCurrentText(item.pinDir)
+        queryDlg.netExprEdit.setText(item.netExpr)
         sceneStartPoint = item.mapToScene(item.start).toPoint()
         queryDlg.pinXLine.setText(str(sceneStartPoint.x()))
         queryDlg.pinYLine.setText(str(sceneStartPoint.y()))
@@ -573,6 +578,12 @@ class symbolScene(editorScene):
             pinType = queryDlg.pinType.currentText()
             pinDir = queryDlg.pinDir.currentText()
             newPin = shp.symbolPin(start, pinName, pinDir, pinType)
+            netExpr = queryDlg.netExprEdit.text().strip()
+            if netExpr and conn.parseNetExpr(netExpr) is None:
+                self.logger.warning(
+                    f"Malformed net expression {netExpr!r}; ignored.")
+            else:
+                newPin.netExpr = netExpr
             self.undoStack.push(us.addDeleteShapeUndo(self, newPin, item))
 
     def updateSymbolPolygon(self, item):
@@ -671,13 +682,20 @@ class symbolScene(editorScene):
                     continue
                 if itemType == "attr":
                     self.attributeList.append(factory.createSymbolAttribute(itemDict))
+                    if itemDict.get("nam") == prm.PARAMDEFS_ATTR:
+                        _defs, paramErrs = prm.paramDefsFromJson(
+                            itemDict.get("def", ""))
+                        for paramErr in paramErrs:
+                            self.logger.warning(f"paramDefs: {paramErr}")
 
-    def saveSymbolCell(self, fileName: pathlib.Path) -> bool:
+    def saveSymbolCell(self, fileName: pathlib.Path, markClean: bool = True) -> bool:
         """
         Save symbol cell to file.
 
         Args:
             fileName: Path to save the symbol cell
+            markClean: Clear the undo stack after a real save; autosave passes
+                False so the undo history is preserved.
 
         Returns:
             bool: True if save successful, False otherwise
@@ -705,7 +723,8 @@ class symbolScene(editorScene):
             with fileName.open("w") as f:
                 json.dump(save_data, f, cls=symenc.symbolEncoder, indent=4)
 
-            self.undoStack.clear()
+            if markClean:
+                self.undoStack.clear()
             lj.schematicItems._load_sym_json.cache_clear()
             return True
 
@@ -745,6 +764,15 @@ class symbolScene(editorScene):
                             item.text(), symbolPropDialogue.attributeDefList[i].text()
                         )
                     )
+            # Typed parameter definitions are authored in the Parameters
+            # table and persisted as the reserved ``paramDefs`` attribute.
+            paramDefs = symbolPropDialogue.paramDefs()
+            for paramErr in prm.validateParamDefs(paramDefs):
+                self.logger.warning(f"paramDefs: {paramErr}")
+            if paramDefs:
+                localAttributeList.append(
+                    symenc.symbolAttribute(
+                        prm.PARAMDEFS_ATTR, prm.paramDefsToJson(paramDefs)))
             self.attributeList = deepcopy(localAttributeList)
 
     def copySelectedItems(self):

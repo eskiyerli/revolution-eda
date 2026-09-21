@@ -1,14 +1,3 @@
-.VSCodeCounter/
-*.pyc
-__pycache__/
-*.log
-dist/
-build/
-library.json
-reveda.conf
-*.zip
-*.xml
-
 # Secrets and credentials
 .env
 .env.*
@@ -18,6 +7,13 @@ reveda.conf
 *.p12
 *.pfx
 *.jks
+
+# Development docs
+developmentDocs/
+
+# tests
+tests/
+revedaEditor/tests/
 
 # License module (proprietary, compiled separately)
 revedaLicense/
@@ -31,19 +27,30 @@ scripts/generate_license.py
 scripts/obfuscate_key.py
 
 # Build artifacts
-*.pyd
-*.so
+__pycache__/
+*.pyc
+build/
+dist/
 *.dll
 *.exe
+*.pyd
+*.so
 *.spec
+*.zip
+*.xml
+*.gds
+*.oas
+*.lyrdb
+
+library.json
+reveda.conf
+drcSettings.json
+*.log
 
 # IDE
 .idea/
-.vscode/
 .kiro/
+.vscode/
+.VSCodeCounter/
 *.swp
 *.swo
-*.gds
-*.oas
-drcSettings.json
-*.lyrdb

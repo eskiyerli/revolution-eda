@@ -1,6 +1,7 @@
 import json
 import math
 import pathlib
+from itertools import chain
 
 import gdstk
 from PySide6.QtCore import QLineF, QPoint
@@ -8,16 +9,24 @@ from PySide6.QtWidgets import QMainWindow
 
 import revedaEditor.backend.dataDefinitions as ddef
 import revedaEditor.backend.libBackEnd as libb
+import revedaEditor.backend.libraryMethods as libm
 import revedaEditor.common.layoutShapes as lshp
 import revedaEditor.fileio.layoutEncoder as layenc
-from revedaEditor.backend.pdkLoader import importPDKModule
+from revedaEditor.backend.pdkLoader import lazyPDKModule
 
-fabproc = importPDKModule("process")
-laylyr = importPDKModule("layoutLayers")
+fabproc = lazyPDKModule("process")
+laylyr = lazyPDKModule("layoutLayers")
 
-dbu = float(fabproc.dbu)
-snapGrid = float(fabproc.snapGrid)
-majorGrid = float(fabproc.majorGrid)
+
+def __getattr__(name: str):
+    # Deferred module-level constants: resolving the PDK process module here
+    # at import time can capture a partially-initialized module during PDK
+    # import cycles, so resolve on first access instead.
+    if name in ("dbu", "snapGrid", "majorGrid"):
+        value = float(getattr(fabproc, name))
+        globals()[name] = value
+        return value
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 class gdsImporter:
@@ -39,17 +48,44 @@ class gdsImporter:
         # Scene unit: 1 / dbu layout units.  gdstk returns coordinates in the
         # GDS user unit (meters).  Scale from gdstk user units to scene units:
         #   scene = gdstk_value * unit(m) / (1e-6 / dbu)
-        self._scale = (self._gdsLibrary.unit * dbu) / 1e-6
-        self._snapGrid = round(snapGrid * dbu)
+        self._scale = (self._gdsLibrary.unit * float(fabproc.dbu)) / 1e-6
+        self._snapGrid = round(float(fabproc.snapGrid) * float(fabproc.dbu))
         self._processedCells: set[str] = set()
         self._instanceCounters: dict[str, int] = {}
+        # Merge mode: when a cell with the same name already exists in the
+        # target library, append the imported shapes to its layout view
+        # instead of creating a fresh cell. Instance names get re-offset so
+        # merged content does not collide with existing instance names.
+        self.mergeMode = False
+
+    def _cellItemFor(self, cellName: str):
+        """Reuse the existing cell item in merge mode; otherwise create one."""
+        if self.mergeMode:
+            existing = libm.getCellItem(self._libItem, cellName)
+            if existing is not None:
+                return existing
+        return libb.createNewCellItem(
+            self._libItem, self._libItem.libraryPath.joinpath(cellName))
+
+    def _viewItemFor(self, cellItem):
+        """Reuse the existing layout view item in merge mode.
+
+        ``createCellviewItem`` truncates the file, so an existing layout.json
+        is wrapped in a bare ``viewItem`` (no write) to preserve its records.
+        """
+        viewPath = cellItem.cellPath.joinpath("layout.json")
+        if self.mergeMode:
+            existing = libm.getViewItem(cellItem, "layout")
+            if existing is not None:
+                return existing
+            if viewPath.exists():
+                return libb.viewItem(viewPath)
+        return libb.createCellviewItem("layout", viewPath)
 
     def importGDS(self):
         for cell in self._topCells:
-            cellPath = self._libItem.libraryPath.joinpath(cell.name)
-            cellItem = libb.createNewCellItem(self._libItem, cellPath)
-            viewPath = cellItem.cellPath.joinpath("layout.json")
-            viewItem = libb.createCellviewItem("layout", viewPath)
+            cellItem = self._cellItemFor(cell.name)
+            viewItem = self._viewItemFor(cellItem)
             self._processInstance(cell, viewItem)
         self._parent.logger.info(f"Imported {self.inputFile.stem} GDS File")
         self._parent.libraryBrowser.designView.reworkDesignLibrariesView(
@@ -57,25 +93,50 @@ class gdsImporter:
         )
 
     def _processInstance(self, cell: gdstk.Cell, viewItem: libb.viewItem):
+        mergeRecords = []
+        if self.mergeMode and viewItem.viewPath.exists():
+            try:
+                existing = json.loads(viewItem.viewPath.read_text())
+                if isinstance(existing, list):
+                    mergeRecords = [
+                        record for record in existing
+                        if isinstance(record, dict)
+                        and "viewType" not in record
+                        and "snapGrid" not in record
+                    ]
+                    # Keep merged instance names unique: counters are keyed by
+                    # the referenced cell name, so seed each one past the
+                    # highest existing counter ("ic") for that cell.
+                    for record in mergeRecords:
+                        if record.get("type") == "Inst":
+                            refCell = record.get("cell", "")
+                            counter = int(record.get("ic") or 0)
+                            self._instanceCounters[refCell] = max(
+                                self._instanceCounters.get(refCell, 0),
+                                counter,
+                            )
+            except (OSError, json.JSONDecodeError):
+                mergeRecords = []
+
         # Open file in context manager and write header
         with viewItem.viewPath.open("w") as file:
             file.write("[\n")
-            file.write('    {"viewType": "layout"},\n')
             # Write as floats: loadDesign treats float snapGrid values as
             # layout units and ints as legacy scene-unit values.
-            gridString = f"[{float(majorGrid)}, {float(snapGrid)}]"
-            snapGridLine = '    {"snapGrid": ' + gridString + "},\n"
-            file.write(snapGridLine)
+            headerRecords = (
+                {"viewType": "layout"},
+                {"snapGrid": [float(fabproc.majorGrid), float(fabproc.snapGrid)]},
+            )
             # Track if we need to write comma between items
             need_comma = False
-
+            records = chain(
+                headerRecords, mergeRecords, self._processShapes(cell, viewItem))
             # Process instances
-            for shape in self._processShapes(cell, viewItem):
+            for record in records:
                 if need_comma:
                     file.write(",\n")
-                json.dump(shape, file, cls=layenc.gdsImportEncoder, indent=4)
+                json.dump(record, file, cls=layenc.gdsImportEncoder, indent=4)
                 need_comma = True
-
             # Close the JSON array
             file.write("\n]")
 
@@ -158,17 +219,16 @@ class gdsImporter:
                     f"Skipping unresolved GDS reference to '{ref.cell_name}'"
                 )
                 continue
-            cellPath = self._libItem.libraryPath.joinpath(ref.cell_name)
-            cellItem = libb.createNewCellItem(self._libItem, cellPath)
-            viewPath = cellItem.cellPath.joinpath("layout.json")
+            cellItem = self._cellItemFor(ref.cell_name)
 
             # Import the referenced cell once; subsequent references reuse the
             # already-written layout file. This avoids repeated I/O and breaks
-            # accidental self-references.
+            # accidental self-references. In merge mode an existing cell/view is
+            # reused so imported shapes append to the current content.
             if ref.cell_name not in self._processedCells:
                 self._processedCells.add(ref.cell_name)
                 self._processInstance(
-                    ref.cell, libb.createCellviewItem("layout", viewPath)
+                    ref.cell, self._viewItemFor(cellItem)
                 )
 
             counter = self._instanceCounters.get(ref.cell_name, 0) + 1

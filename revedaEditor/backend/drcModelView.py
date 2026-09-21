@@ -14,9 +14,9 @@ from PySide6.QtCore import (QAbstractTableModel, Qt, QModelIndex, QPersistentMod
                             Signal, QPoint, QRect)
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (QHeaderView, QTableView, QMenu)
-from revedaEditor.backend.pdkLoader import importPDKModule
+from revedaEditor.backend.pdkLoader import lazyPDKModule
 
-process = importPDKModule("process")
+process = lazyPDKModule("process")
 
 
 

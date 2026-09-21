@@ -1,0 +1,47 @@
+{
+    "*": {
+        "Ctrl+S": "saveCellAction",
+        "Shift+U": "redoAction",
+        "U": "undoAction",
+        "Q": "objPropAction",
+        "Shift+M": "constrainedMoveAction",
+        "C": "copyAction",
+        "Ctrl+R": "rotateAction",
+        "Shift+L": "createTextAction",
+        "F": "fitAction",
+        "Delete": "deleteAction",
+        "Ctrl+A": "selectAllAction",
+        "Shift+A": "alignItemsAction"
+    },
+    "schematic": {
+        "I": "createInstAction",
+        "W": "createNetAction",
+        "P": "createPinAction",
+        "Shift+E": "goDownAction",
+        "Ctrl+F": "findAction",
+        "Ctrl+C": "clipboardCopyAction",
+        "Ctrl+V": "pasteAction"
+    },
+    "layout": {
+        "R": "createRectAction",
+        "W": "createPathAction",
+        "I": "createInstAction",
+        "P": "createPinAction",
+        "L": "createLabelAction",
+        "V": "createViaAction",
+        "G": "createPolygonAction",
+        "S": "stretchAction",
+        "K": "rulerAction",
+        "Ctrl+K": "delSelectedRulerAction",
+        "Shift+K": "delRulerAction",
+        "Shift+C": "cutAction",
+        "Ctrl+M": "mergeAction"
+    },
+    "symbol": {
+        "S": "stretchAction",
+        "R": "createRectAction",
+        "W": "createLineAction",
+        "L": "createLabelAction",
+        "P": "createPinAction"
+    }
+}

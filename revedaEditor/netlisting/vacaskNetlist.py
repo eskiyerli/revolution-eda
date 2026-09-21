@@ -56,6 +56,7 @@ import revedaEditor.backend.dataDefinitions as ddef
 import revedaEditor.backend.libBackEnd as libb
 import revedaEditor.backend.libraryMethods as libm
 import revedaEditor.common.shapes as shp
+from revedaEditor.netlisting import exprSupport
 from revedaEditor.scenes.schematicScene import schematicScene
 
 if TYPE_CHECKING:
@@ -126,6 +127,8 @@ class vacaskNetlist:
         self.loadLines: set[str] = set()
         self.groundNets: set[str] = set()
         self.globalNets: set[str] = set()
+        # (lib, cell, view) -> {exprName: default} implicit-terminal defs.
+        self._exprDefsCache: dict[tuple, dict] = {}
         self.modelLines: set[str] = set()
         self.osdiLoadLines: set[str] = set()
         self.includeLibLines: set[str] = set()
@@ -264,7 +267,10 @@ class vacaskNetlist:
             content: List to append netlist lines to.
         """
         schematicScene = schematic.centralW.scene
-        schematicScene.nameSceneNets()
+        # Terminal mode: this scene's net expressions resolve to their
+        # expression names — each is an implicit subcircuit terminal.
+        schematicScene.nameSceneNets(netSet=exprSupport.terminalNetSet(
+            schematicScene.collectNetExprNames()))
         sceneSymbolSet = schematicScene.findSceneSymbolSet()
         schematicScene.generatePinNetMap(sceneSymbolSet)
 
@@ -278,7 +284,12 @@ class vacaskNetlist:
                 netlistView = self.determineNetlistView(elementSymbol, cellItem)
 
                 if "schematic" in netlistView:
-                    lines = self.createVacaskSymbolLine(elementSymbol)
+                    exprDefs = self._exprDefsFor(elementSymbol, cellItem,
+                                                 netlistView)
+                    exprNets = exprSupport.exprNetsForInstance(
+                        elementSymbol, exprDefs)
+                    lines = self.createVacaskSymbolLine(elementSymbol,
+                                                        exprNets=exprNets)
                     content.extend(lines if isinstance(lines, list) else [lines])
                     if not self._isStopView(netlistView):
                         viewTuple = ddef.viewNameTuple(
@@ -297,6 +308,10 @@ class vacaskNetlist:
                             expandedPinsString = self.expandPinNames(
                                 list(elementSymbol.pinNetMap.keys())
                             )
+                            terminals = exprSupport.exprTerminals(exprDefs)
+                            if terminals:
+                                expandedPinsString += " " + " ".join(
+                                    terminals)
                             subcktContent: list[str] = []
                             self.collectSubcircuitContent(schematicObj, subcktContent)
                             # Build parameters line from NLP labels using default values
@@ -356,6 +371,10 @@ class vacaskNetlist:
             schematicPinsSet = schematicEdObj.centralW.scene.findSceneSchemPinsSet()
             pinNames = [pin.pinName for pin in schematicPinsSet]
             expandedPinsString = self.expandPinNames(pinNames)
+            topExprDefs = schematicEdObj.centralW.scene.collectNetExprNames()
+            topTerminals = exprSupport.exprTerminals(topExprDefs)
+            if topTerminals:
+                expandedPinsString += " " + " ".join(topTerminals)
 
             subcktContent: list[str] = []
             self.collectSubcircuitContent(schematicEdObj, subcktContent)
@@ -423,6 +442,22 @@ class vacaskNetlist:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    def _exprDefsFor(self, elementSymbol, cellItem,
+                     netlistView: str) -> dict:
+        """{exprName: default} implicit-terminal defs of a subckt's view.
+
+        Read from the child schematic's records (no editor needed) and
+        cached per (lib, cell, view) so every instance of a cell shares
+        the same terminal list."""
+        key = (elementSymbol.libraryName, elementSymbol.cellName,
+               netlistView)
+        if key not in self._exprDefsCache:
+            self._exprDefsCache[key] = (
+                exprSupport.exprDefsForSchematicView(
+                    cellItem, netlistView, self.libraryDict)
+                if cellItem is not None else {})
+        return self._exprDefsCache[key]
 
     def _processGlobalNet(self, netName: str) -> str:
         """Strip trailing ``!`` from global net names and track them for directives.
@@ -635,7 +670,12 @@ class vacaskNetlist:
     ):
         """Create the appropriate VACASK netlist line(s) for a symbol based on its view type."""
         if "schematic" in netlistView:
-            elementLines = self.createVacaskSymbolLine(elementSymbol)
+            exprDefs = self._exprDefsFor(elementSymbol, cellItem,
+                                         netlistView)
+            exprNets = exprSupport.exprNetsForInstance(elementSymbol,
+                                                       exprDefs)
+            elementLines = self.createVacaskSymbolLine(elementSymbol,
+                                                       exprNets=exprNets)
             for line in elementLines:
                 cirFile.write(f"{line}\n")
 
@@ -661,6 +701,9 @@ class vacaskNetlist:
                     expandedPinsString = self.expandPinNames(
                         list(elementSymbol.pinNetMap.keys())
                     )
+                    terminals = exprSupport.exprTerminals(exprDefs)
+                    if terminals:
+                        expandedPinsString += " " + " ".join(terminals)
                     subcktContent: list[str] = []
                     self.collectSubcircuitContent(schematicObj, subcktContent)
                     # Build parameters line from NLP labels using default values
@@ -704,6 +747,7 @@ class vacaskNetlist:
         self,
         elementSymbol: shp.schematicSymbol,
         netlistLineKey: str,
+        exprNets: list = None,
     ) -> list[str]:
         """Shared netlist line creation logic.
 
@@ -714,6 +758,9 @@ class vacaskNetlist:
             elementSymbol: The symbol instance to create netlist lines for.
             netlistLineKey: The attribute key for the netlist line template
                 (e.g. ``"VacaskNetlistLine"`` or ``"lvsNetlistLine"``).
+            exprNets: ordered nets for the child subcircuit's implicit
+                net-expression terminals (inherited connections); appended
+                after the pinOrder nets.
 
         Returns:
             List of netlist line strings (one per array element if arrayed).
@@ -784,6 +831,11 @@ class vacaskNetlist:
 
             # Process net names: strip ! from global nets and track them.
             pinNets = [self._processGlobalNet(n) for n in elementSymbol.pinNetMap.values()]
+            # Implicit-terminal nets: same global-net processing, quoted.
+            exprNets = [
+                vacaskNetlist._quoteId(self._processGlobalNet(n))
+                for n in (exprNets or ())
+            ]
 
             # Collect net vector information
             netVectorInfos = [
@@ -827,12 +879,12 @@ class vacaskNetlist:
                     _q(f"{baseName}<{netTuple[0]}:{netTuple[1]}>")
                     if netTuple else baseName
                     for baseName, netTuple in netVectorInfos
-                ])
+                ] + exprNets)
                 vectorLvsNetsList = " ".join([
                     _q(f"{baseName}<{netTuple[0]}:{netTuple[1]}>")
                     if netTuple else baseName
                     for baseName, netTuple in lvsNetVectorInfos
-                ])
+                ] + exprNets)
                 vectorInstName = _q(f"{baseInstName}<{arrayTuple[0]}:{arrayTuple[1]}>")
                 symbolLines.append(
                     processLine(createInstanceLine(
@@ -866,9 +918,10 @@ class vacaskNetlist:
                     return pickedNets
 
                 if arraySize == 1:
-                    flatNetsList = " ".join([nets[0] for nets in expandedPinNets])
+                    flatNetsList = " ".join([nets[0] for nets in expandedPinNets]
+                                            + exprNets)
                     flatLvsNetsList = " ".join(
-                        [nets[0] for nets in expandedLvsPinNets])
+                        [nets[0] for nets in expandedLvsPinNets] + exprNets)
                     symbolLines.append(
                         processLine(createInstanceLine(
                             baseInstName, flatNetsList, flatLvsNetsList))
@@ -878,9 +931,10 @@ class vacaskNetlist:
                         range(arrayTuple[0], arrayTuple[1] + arrayStep, arrayStep)
                     )
                     for j, i in enumerate(arrayIndices):
-                        specificNetsList = " ".join(selectNets(expandedPinNets, j))
+                        specificNetsList = " ".join(
+                            selectNets(expandedPinNets, j) + exprNets)
                         specificLvsNetsList = " ".join(
-                            selectNets(expandedLvsPinNets, j))
+                            selectNets(expandedLvsPinNets, j) + exprNets)
                         symbolLines.append(
                             processLine(
                                 createInstanceLine(
@@ -902,15 +956,18 @@ class vacaskNetlist:
             ]
 
     def createVacaskSymbolLine(
-        self, elementSymbol: shp.schematicSymbol
+        self, elementSymbol: shp.schematicSymbol, exprNets: list = None
     ) -> list[str]:
         """Create VACASK netlist lines for a symbol instance.
 
         In LVS mode uses the ``lvsNetlistLine`` attribute, otherwise uses
-        ``VacaskNetlistLine``.
+        ``VacaskNetlistLine``.  ``exprNets`` carries the resolved
+        implicit-terminal nets when the instance expands to a subcircuit
+        with net expressions.
         """
         netlistLineKey = "lvsNetlistLine" if self._lvsMode else "VacaskNetlistLine"
-        return self._createNetlistLine(elementSymbol, netlistLineKey)
+        return self._createNetlistLine(elementSymbol, netlistLineKey,
+                                       exprNets=exprNets)
 
     def createSpiceLine(self, elementSymbol: shp.schematicSymbol) -> list[str]:
         """Create VACASK-wrapped SPICE subcircuit netlist lines with include file handling.

@@ -51,6 +51,7 @@ def test_ruler_snap_to_closest_edge_qpoint():
 
 
 def test_ruler_ticks_calculation():
+    # Tick labels are rendered in layout units (scene units / process dbu).
     ruler = lshp.layoutRuler(
         draftLine=QLineF(QPointF(0, 0), QPointF(100, 0)),
         width=1.0,
@@ -60,7 +61,7 @@ def test_ruler_ticks_calculation():
     )
     labels = [t.text for t in ruler._tickTuples if t.text]
     assert "0" in labels
-    assert "100" in labels
+    assert "0.1" in labels
     # Verify labels aren't crowded
     assert len(labels) <= 10
 
@@ -74,10 +75,11 @@ def test_ruler_large_distance_uncrowded_labels():
         tickFont=QFont("Arial", 10),
     )
     text_labels = [t.text for t in ruler._tickTuples if t.text]
-    # For a distance of 5000 units, text labels should be limited to ~5-10 clean intervals
+    # For a distance of 5000 scene units (5 layout units), text labels should
+    # be limited to ~5-10 clean intervals
     assert len(text_labels) <= 12
     assert "0" in text_labels
-    assert "5000" in text_labels
+    assert "5" in text_labels
 
 
 def test_ruler_text_angle_upright():

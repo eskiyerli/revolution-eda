@@ -15,7 +15,8 @@ from pathlib import Path
 import shutil
 from typing import List, Dict
 
-from PySide6.QtCore import QThreadPool, QThread, Slot, Signal, QTimer, QObject, QSize
+from PySide6.QtCore import (QThreadPool, QThread, Slot, Signal, QTimer, QObject,
+                            QSize, QRectF, Qt)
 from PySide6.QtGui import (
     QAction,
     QIcon,
@@ -35,6 +36,7 @@ from PySide6.QtWidgets import (
 )
 from dotenv import load_dotenv
 
+import revedaEditor.backend.bindkeys as bkeys
 import revedaEditor.backend.dataDefinitions as ddef
 import revedaEditor.backend.libraryMethods as libm
 import revedaEditor.fileio.importGDS as igds
@@ -151,6 +153,10 @@ class MainWindow(QMainWindow):
         self.stopViewList: List[str] = self.VIEW_TYPES["stop"]
         self.openViews: Dict = {}
         self._restartingForProjectSwitch: bool = False
+        self.autosaveEnabled: bool = True
+        self.autosaveIntervalSec: int = 300
+        self._savedSessionItems: list = []
+        self.bindkeyMap: dict = {}
 
     def _initPaths(self) -> None:
         """Initialize application paths."""
@@ -199,6 +205,8 @@ class MainWindow(QMainWindow):
 
             # Final initialization
             self.loadAppState()
+            self.bindkeyMap = bkeys.loadBindkeyMap(
+                userPath=self.runPath / "bindkeys.json")
 
             # Populate the Recent Projects menu from persistent store
             self._updateRecentProjectsMenu()
@@ -508,8 +516,9 @@ class MainWindow(QMainWindow):
         if dlg.exec() == QDialog.DialogCode.Accepted:
             gdsImportLibName = dlg.libNameEdit.text().strip()
             gdsImportFileObj = Path(dlg.inputFileEdit.text().strip())
+            mergeMode = dlg.mergeCheckBox.isChecked()
             gdsImportLibDirObj = self.libraryDict.get(gdsImportLibName)
-            if gdsImportLibDirObj:
+            if gdsImportLibDirObj and not mergeMode:
                 if gdsImportLibDirObj.exists():
                     shutil.rmtree(gdsImportLibDirObj, ignore_errors=True)
 
@@ -527,6 +536,17 @@ class MainWindow(QMainWindow):
                 )
                 gdsImportLibDirObj.mkdir(parents=True, exist_ok=True)
                 gdsImportLibDirObj.joinpath("reveda.lib").touch(exist_ok=True)
+            elif gdsImportLibDirObj:
+                # Merge mode: keep the library and its model entry; the
+                # importer appends to existing cells.
+                gdsImportLibItem = libm.getLibItem(
+                    self.libraryBrowser.designView.libraryModel, gdsImportLibName
+                )
+                if gdsImportLibItem is None:
+                    gdsImportLibItem = (
+                        self.libraryBrowser.designView.libraryModel
+                        .addLibraryToModel(gdsImportLibDirObj)
+                    )
             else:
                 gdsImportLibDirObj, gdsImportLibItem = self.createNewLibrary(
                     gdsImportLibName
@@ -535,6 +555,7 @@ class MainWindow(QMainWindow):
                 gdsImportObj = igds.gdsImporter(
                     self, gdsImportFileObj, gdsImportLibItem
                 )
+                gdsImportObj.mergeMode = mergeMode
                 if gdsImportObj:
                     gdsImportObj.importGDS()
                     self.logger.info("GDS Import completed.")
@@ -649,6 +670,16 @@ class MainWindow(QMainWindow):
             if "threadPoolMaxCount" in items:
                 self.threadPool.setMaxThreadCount(items["threadPoolMaxCount"])
 
+            # Autosave preferences
+            self.autosaveEnabled = bool(items.get("autosaveEnabled", True))
+            self.autosaveIntervalSec = int(items.get("autosaveIntervalSec", 300))
+
+            # Stash the saved session; restore once the event loop runs so
+            # appMainW is fully wired when editors are constructed.
+            self._savedSessionItems = items.get("openCellviews", [])
+            if self._savedSessionItems:
+                QTimer.singleShot(0, self._restorePendingSession)
+
         except (json.JSONDecodeError, IOError) as e:
             self.logger.error(f"Error loading configuration: {e}")
 
@@ -661,9 +692,88 @@ class MainWindow(QMainWindow):
             "stopViewList": self.stopViewList,
             "windowGeometry": [self.x(), self.y(), self.width(), self.height()],
             "threadPoolMaxCount": self.threadPool.maxThreadCount(),
+            "autosaveEnabled": self.autosaveEnabled,
+            "autosaveIntervalSec": self.autosaveIntervalSec,
+            "openCellviews": self._sessionSnapshot(),
         }
         with self.confFilePath.open(mode="w", encoding="utf") as f:
             json.dump(items, f, indent=4)
+
+    def _sessionSnapshot(self) -> list:
+        """Serialize open editor windows for session restore in reveda.conf.
+
+        Each entry records the cellview identity plus window geometry and the
+        view's zoomed scene rect. Windows without a graphics view (text
+        editors, plugin windows) are not persisted.
+        """
+        entries = []
+        for viewNameT, window in list(self.openViews.items()):
+            view = getattr(getattr(window, "centralW", None), "view", None)
+            if view is None:
+                continue
+            if not all(hasattr(viewNameT, attr) for attr in
+                       ("libraryName", "cellName", "viewName")):
+                continue
+            try:
+                geom = window.geometry()
+                rect = view.viewRect
+                if rect is None or rect.isNull():
+                    rect = view.mapToScene(view.rect()).boundingRect()
+            except (RuntimeError, AttributeError) as e:
+                self.logger.warning(f"Skipping session entry for {viewNameT}: {e}")
+                continue
+            entries.append({
+                "library": viewNameT.libraryName,
+                "cell": viewNameT.cellName,
+                "view": viewNameT.viewName,
+                "geometry": [geom.x(), geom.y(), geom.width(), geom.height()],
+                "viewRect": [rect.x(), rect.y(), rect.width(), rect.height()],
+            })
+        return entries
+
+    def _restoreSessionViews(self, entries) -> None:
+        """Reopen cellviews persisted in reveda.conf; missing ones are skipped."""
+        if not entries:
+            return
+        for entry in entries:
+            try:
+                libItem = libm.getLibItem(self.libraryModel,
+                                          entry.get("library"))
+                cellItem = (libm.getCellItem(libItem, entry.get("cell"))
+                            if libItem is not None else None)
+                viewItem = (libm.getViewItem(cellItem, entry.get("view"))
+                            if cellItem is not None else None)
+                if viewItem is None:
+                    self.logger.info(
+                        f"Session cellview {entry} no longer exists; skipped")
+                    continue
+                viewItemT = ddef.viewItemTuple(libItem, cellItem, viewItem)
+                viewNameT = viewItemT.convertToViewNameTuple()
+                if viewNameT in self.openViews:
+                    continue
+                self.libraryBrowser.designView.openCellView(viewItemT)
+                editor = self.openViews.get(viewNameT)
+                if editor is None:
+                    continue
+                geom = entry.get("geometry")
+                if isinstance(geom, list) and len(geom) == 4:
+                    editor.setGeometry(*geom)
+                viewRect = entry.get("viewRect")
+                view = getattr(getattr(editor, "centralW", None), "view", None)
+                if view is not None and isinstance(viewRect, list) and len(
+                        viewRect) == 4:
+                    view.fitInView(QRectF(*viewRect),
+                                   Qt.AspectRatioMode.KeepAspectRatio)
+                    view.determineViewRect()
+            except Exception as e:  # noqa: BLE001 - per-entry isolation: one
+                # bad record must not block restoring the rest of the session.
+                self.logger.warning(
+                    f"Cannot restore session cellview {entry}: {e}")
+
+    def _restorePendingSession(self) -> None:
+        """Deferred entry point: restore the session saved in reveda.conf."""
+        self._restoreSessionViews(getattr(self, "_savedSessionItems", []))
+        self._savedSessionItems = []
 
     def closeEvent(self, event):
         # Skip confirmation dialog when restarting for a project switch

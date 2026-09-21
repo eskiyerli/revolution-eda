@@ -213,6 +213,11 @@ class ProjectManager:
                 self._main_window.height(),
             ],
             "threadPoolMaxCount": self._main_window.threadPool.maxThreadCount(),
+            "autosaveEnabled": getattr(
+                self._main_window, "autosaveEnabled", True),
+            "autosaveIntervalSec": getattr(
+                self._main_window, "autosaveIntervalSec", 300),
+            "openCellviews": self._main_window._sessionSnapshot(),
         }
 
         conf_file = self._active_project / "reveda.conf"
@@ -377,3 +382,15 @@ class ProjectManager:
             self._main_window.threadPool.setMaxThreadCount(
                 conf["threadPoolMaxCount"]
             )
+
+        # Autosave preferences
+        self._main_window.autosaveEnabled = bool(
+            conf.get("autosaveEnabled",
+                     getattr(self._main_window, "autosaveEnabled", True)))
+        self._main_window.autosaveIntervalSec = int(
+            conf.get("autosaveIntervalSec",
+                     getattr(self._main_window, "autosaveIntervalSec", 300)))
+
+        # Reopen the cellviews saved in the previous session. openCellView
+        # deduplicates via openViews, so views already open are untouched.
+        self._main_window._restoreSessionViews(conf.get("openCellviews"))

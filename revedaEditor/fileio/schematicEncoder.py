@@ -37,7 +37,7 @@ class schematicEncoder(json.JSONEncoder):
                   for label in item.labels.values()}
         )
         scene_origin = item.scene().origin
-        return {
+        record = {
             "type": "sys",
             "lib": item.libraryName,
             "cell": item.cellName,
@@ -51,19 +51,25 @@ class schematicEncoder(json.JSONEncoder):
             "br": item.boundingRect().getCoords(),
             "fl": item.flipTuple,
         }
+        if item.netSet:
+            record["nst"] = dict(item.netSet)
+        return record
 
     def _encodeSchematicNet(self, item: net.schematicNet) -> Dict[str, Any]:
         scene_origin = item.scene().origin
-        return {
+        record = {
             "type": "scn",
             "st": self._subtract_point(item.mapToScene(item.draftLine.p1()), scene_origin),
             "end": self._subtract_point(item.mapToScene(item.draftLine.p2()), scene_origin),
             "nam": item.name,
             "ns": item.nameStrength.value,
         }
+        if item.netExpr:
+            record["nx"] = item.netExpr
+        return record
 
     def _encodeSchematicPin(self, item: shp.schematicPin) -> Dict[str, Any]:
-        return {
+        record = {
             "type": "scp",
             "st": self._subtract_point(item.mapToScene(item.start), item.scene().origin),
             "pn": item.pinName,
@@ -72,6 +78,9 @@ class schematicEncoder(json.JSONEncoder):
             "ang": item.angle,
             "fl": item.flipTuple,
         }
+        if item.netExpr:
+            record["nx"] = item.netExpr
+        return record
 
     def _encodeText(self, item: shp.text) -> Dict[str, Any]:
         return {

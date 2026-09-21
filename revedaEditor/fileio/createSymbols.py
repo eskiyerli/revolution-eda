@@ -15,6 +15,7 @@ from PySide6.QtWidgets import QMainWindow, QDialog
 import revedaEditor.backend.dataDefinitions as ddef
 import revedaEditor.backend.hdlBackEnd as hdl
 # import revedaEditor.backend.libBackEnd as scb  # import the backend
+import revedaEditor.common.params as prm
 import revedaEditor.common.shapes as shp
 from revedaEditor.backend import dataDefinitions as ddef, hdlBackEnd as hdl, \
     libBackEnd as scb
@@ -22,6 +23,19 @@ from revedaEditor.fileio import symbolEncoder as se
 from revedaEditor.gui import libraryBrowser as libw, fileDialogues as fd, \
     symbolEditor as syed, \
     propertyDialogues as pdlg
+
+
+def _paramDefsAttribute(paramDict: dict):
+    """Typed ``paramDefs`` attribute for imported instance parameters.
+
+    Returns a ``symbolAttribute`` or None when there are no parameters;
+    each imported default's type is inferred (int/float/boolean/string)."""
+    if not paramDict:
+        return None
+    defs = [prm.ParamDef(name=str(key), type=prm.inferType(str(value)),
+                         default=str(value))
+            for key, value in paramDict.items()]
+    return se.symbolAttribute(prm.PARAMDEFS_ATTR, prm.paramDefsToJson(defs))
 
 
 def drawBaseSymbol(symbolScene, dlg):
@@ -269,6 +283,9 @@ def createVaSymbol(
             symbolScene.attributeList.append(
                 se.symbolAttribute("pinOrder", importedVaObj.pinOrder)
             )
+            paramDefsAttr = _paramDefsAttribute(importedVaObj.instanceParams)
+            if paramDefsAttr is not None:
+                symbolScene.attributeList.append(paramDefsAttr)
             symbolWindow.show()
             symbolViewTuple = ddef.viewNameTuple(
                 vaItemTuple.libraryItem.libraryName,
@@ -350,6 +367,10 @@ def createSpiceSymbol(
                 se.symbolAttribute("SpiceNetlistLine",
                                    importedSpiceObj.netlistLine)
             )
+            paramDefsAttr = _paramDefsAttribute(
+                importedSpiceObj.subcktParams["params"])
+            if paramDefsAttr is not None:
+                symbolScene.attributeList.append(paramDefsAttr)
 
             symbolWindow.show()
             symbolViewTuple = ddef.viewNameTuple(
@@ -427,6 +448,10 @@ def createSpectreSymbol(
                 se.symbolAttribute("SpectreNetlistLine",
                                    importedSpectreObj.netlistLine)
             )
+            paramDefsAttr = _paramDefsAttribute(
+                importedSpectreObj.subcktParams["params"])
+            if paramDefsAttr is not None:
+                symbolScene.attributeList.append(paramDefsAttr)
 
             symbolWindow.show()
             symbolViewTuple = ddef.viewNameTuple(
@@ -505,6 +530,10 @@ def createVacaskSymbol(
                 se.symbolAttribute("VacaskIncludeFile",
                                    importedVacaskObj.pathObj.name)
             )
+            paramDefsAttr = _paramDefsAttribute(
+                importedVacaskObj.subcktParams["params"])
+            if paramDefsAttr is not None:
+                symbolScene.attributeList.append(paramDefsAttr)
 
             symbolWindow.show()
             symbolViewTuple = ddef.viewNameTuple(

@@ -35,9 +35,9 @@ from PySide6.QtWidgets import (
     QGraphicsSimpleTextItem,
 )
 
-from revedaEditor.backend.pdkLoader import importPDKModule
+from revedaEditor.backend.pdkLoader import lazyPDKModule
 
-schlyr = importPDKModule("schLayers")
+schlyr = lazyPDKModule("schLayers")
 
 
 class NetMode(IntEnum):
@@ -80,6 +80,7 @@ class schematicNet(QGraphicsItem):
         self._probed: bool = False
         self._probePen: Optional[QPen] = None
         self._nameStrength: int = netNameStrengthEnum.NONAME
+        self._netExpr: str = ""  # optional "[@name[:default]]" net expression
 
         # Collections
         self._flightLinesSet: Set["schematicNet"] = set()
@@ -108,10 +109,12 @@ class schematicNet(QGraphicsItem):
     def draftLine(self, line: QLineF):
         # Snap endpoints to grid if scene is available
         scene = self.scene()
-        if scene:
+        if scene and hasattr(scene, "snapToGrid"):
             p1 = scene.snapToGrid(line.p1().toPoint())
             p2 = scene.snapToGrid(line.p2().toPoint())
             line = QLineF(p1, p2)
+        if scene and hasattr(scene, "markConnectivityDirty"):
+            scene.markConnectivityDirty()
 
         # Early exit if the line hasn't changed
         if hasattr(self, "_draftLine") and self._draftLine == line:
@@ -583,8 +586,9 @@ class schematicNet(QGraphicsItem):
         if self_strength == 1:  # WEAK
             match other_strength:
                 case 0:  # NONAME
-                    otherNet.nameStrength = netNameStrengthEnum.WEAK
+                    # name setter forces SET strength; assign name first.
                     otherNet.name = self.name
+                    otherNet.nameStrength = netNameStrengthEnum.WEAK
                     return True
                 case 1:  # WEAK
                     if self.name != otherNet.name:
@@ -644,6 +648,7 @@ class schematicNet(QGraphicsItem):
     def inherit(self, otherNet):
         self.name = otherNet.name
         self.nameStrength = otherNet.nameStrength
+        self._netExpr = getattr(otherNet, "netExpr", "") or ""
 
     @property
     def name(self) -> str:
@@ -662,6 +667,9 @@ class schematicNet(QGraphicsItem):
             self._nameItem.name = name
             self._nameItem.nameStrength = netNameStrengthEnum.SET
             self._nameItem.setPos(self._draftLine.center())
+        scene = self.scene()
+        if scene and hasattr(scene, "markConnectivityDirty"):
+            scene.markConnectivityDirty()
 
     @property
     def nameStrength(self) -> int:
@@ -673,6 +681,24 @@ class schematicNet(QGraphicsItem):
     @nameStrength.setter
     def nameStrength(self, value: netNameStrengthEnum):
         self._nameItem.nameStrength = value
+        scene = self.scene()
+        if scene and hasattr(scene, "markConnectivityDirty"):
+            scene.markConnectivityDirty()
+
+    @property
+    def netExpr(self) -> str:
+        """Net expression carried by this wire ('[@name[:default]]').
+
+        Empty when unset. Evaluated by the connectivity engine against the
+        active netSet bindings (see connectivity/netexpr.py)."""
+        return self._netExpr
+
+    @netExpr.setter
+    def netExpr(self, value: str):
+        self._netExpr = value or ""
+        scene = self.scene()
+        if scene and hasattr(scene, "markConnectivityDirty"):
+            scene.markConnectivityDirty()
 
     @property
     def nameConflict(self) -> bool:
@@ -905,7 +931,9 @@ class netName(QGraphicsSimpleTextItem):
             self._draftLineCenter = self._parent.draftLine.center()
 
     def paint(self, painter, option, widget, /):
-        if self._nameStrength == netNameStrengthEnum.SET:
+        if self._nameStrength == netNameStrengthEnum.SET or (
+                self._nameStrength != netNameStrengthEnum.NONAME
+                and getattr(self.scene(), "showResolvedNames", False)):
             super().paint(painter, option, widget)
         else:
             # Do not paint the name if the strength is not SET
@@ -930,10 +958,15 @@ class netName(QGraphicsSimpleTextItem):
     @nameStrength.setter
     def nameStrength(self, value: int):
         self._nameStrength = value
-        if self._nameStrength == netNameStrengthEnum.SET:
-            self.setVisible(True)
-        else:
-            self.setVisible(False)
+        self.updateVisibility()
+
+    def updateVisibility(self):
+        """Re-evaluate visibility from strength + scene's resolved-name flag."""
+        showResolved = getattr(self.scene(), "showResolvedNames", False)
+        self.setVisible(
+            self._nameStrength == netNameStrengthEnum.SET or
+            (showResolved and
+             self._nameStrength != netNameStrengthEnum.NONAME))
 
     @property
     def name(self) -> str:
@@ -965,11 +998,10 @@ class netName(QGraphicsSimpleTextItem):
 
 
 class netFlightLine(QGraphicsPathItem):
-    wireHighlightPen = QPen(
-        schlyr.wireHilightLayer.pcolor,
-        schlyr.wireHilightLayer.pwidth,
-        schlyr.wireHilightLayer.pstyle,
-    )
+    @classmethod
+    def wireHighlightPen(cls) -> QPen:
+        layer = schlyr.wireHilightLayer
+        return QPen(layer.pcolor, layer.pwidth, layer.pstyle)
 
     def __init__(self, start: QPoint, end: QPoint):
         self._start = start
@@ -993,7 +1025,7 @@ class netFlightLine(QGraphicsPathItem):
         self.setPath(path)
 
     def paint(self, painter: QPainter, *_) -> None:
-        painter.setPen(netFlightLine.wireHighlightPen)
+        painter.setPen(netFlightLine.wireHighlightPen())
         painter.drawPath(self.path())
 
 
@@ -1007,6 +1039,7 @@ class guideLine(QGraphicsLineItem):
         self.setPen(schlyr.guideLinePen)
         self._name: str = ""
         self._nameStrength: netNameStrengthEnum = netNameStrengthEnum.NONAME
+        self._netExpr: str = ""
         self._width = 0
         self._horizontalFirst: Optional[bool] = None
 
@@ -1054,6 +1087,14 @@ class guideLine(QGraphicsLineItem):
         assert isinstance(value, netNameStrengthEnum)
         self._nameStrength = value
 
+    @property
+    def netExpr(self) -> str:
+        return self._netExpr
+
+    @netExpr.setter
+    def netExpr(self, value: str):
+        self._netExpr = value or ""
+
     def inherit(self, otherNet: schematicNet):
         """
         This method is used to carry the name information of the original net
@@ -1062,6 +1103,7 @@ class guideLine(QGraphicsLineItem):
         assert isinstance(otherNet, schematicNet)
         self.name = otherNet.name
         self.nameStrength = otherNet.nameStrength
+        self._netExpr = otherNet.netExpr
         self._width = otherNet.width
         line = otherNet.draftLine
         self._horizontalFirst = abs(line.dx()) >= abs(line.dy())

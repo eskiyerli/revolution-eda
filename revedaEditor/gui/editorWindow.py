@@ -25,7 +25,8 @@ from contextlib import contextmanager
 from logging import getLogger
 from typing import TYPE_CHECKING, Optional
 
-from PySide6.QtCore import (Qt, QSize, QSizeF, QMarginsF, QRect, QRectF, QBuffer, QIODevice)
+from PySide6.QtCore import (Qt, QSize, QSizeF, QMarginsF, QRect, QRectF, QBuffer,
+                            QIODevice, QTimer)
 from PySide6.QtGui import (QAction, QIcon, QImage, QKeySequence, QPageSize, QPainter, QColor)
 from PySide6.QtPrintSupport import QPrintDialog, QPrinter, QPrintPreviewDialog
 from PySide6.QtSvg import QSvgGenerator
@@ -33,6 +34,8 @@ from PySide6.QtWidgets import (QApplication, QDialog, QFileDialog, QGraphicsScen
                                QLabel, QMainWindow, QDialogButtonBox,
                                QMenu, QToolBar, QWidget, QMessageBox)
 
+import revedaEditor.backend.bindkeys as bkeys
+import revedaEditor.backend.cellviewState as cvstate
 import revedaEditor.backend.dataDefinitions as ddef
 import revedaEditor.backend.libBackEnd as libb
 import revedaEditor.backend.libraryModelView as lmview
@@ -58,6 +61,21 @@ class editorWindow(QMainWindow):
     MAJOR_GRID_DEFAULT = 20
     SNAP_GRID_DEFAULT = 10
     SNAP_CONNECT_DISTANCE_DEFAULT = 20
+    READ_ONLY_SAFE_ACTIONS = frozenset({
+        "updateCellAction", "printAction", "printPreviewAction",
+        "exportImageAction", "exitAction", "fitAction", "zoomInAction",
+        "zoomOutAction", "panAction", "redrawAction", "dispConfigAction",
+        "selectConfigAction", "panZoomConfigAction", "copyAction", "goUpAction",
+        "goDownAction", "selectAllAction", "deselectAllAction", "viewErrorsAction",
+        "selectDeviceAction", "selectNetAction", "selectWireAction",
+        "selectPinAction", "removeSelectFilterAction", "selectShapeAction",
+        "selectLabelAction", "selectTextAction", "helpAction", "aboutAction",
+        "exportGDSAction", "exportOASAction", "flylinesAction",
+        "clearFlylinesAction", "probeSchematicAction", "highlightNetAction",
+        "clearNetHighlightsAction", "hilightNetAction", "probeNetAction",
+        "removeProbeNetAction", "removeAllProbesAction", "showResolvedNamesAction",
+        "probeLayoutAction", "simulateAction",
+    })
 
     def __init__(self, viewItem: libb.viewItem, libraryDict: dict,
                  libraryView: lmview.BaseDesignLibrariesView) -> None:
@@ -89,6 +107,8 @@ class editorWindow(QMainWindow):
         self.snapConnectDistance = self.SNAP_CONNECT_DISTANCE_DEFAULT
         self.processManager = prm.ProcessManager(3, self)
         self.init_UI()
+        self._initSessionState()
+        self._applyConfiguredBindkeys()
         self._createSignalConnections()
 
     def __repr__(self):
@@ -542,6 +562,141 @@ class editorWindow(QMainWindow):
         self.selectAllAction.setShortcut("Ctrl+A")
         self.stretchAction.setShortcut(Qt.Key.Key_S)
         self.alignItemsAction.setShortcut("Shift+A")
+
+    AUTOSAVE_DEFAULT_INTERVAL_SEC = 300
+
+    def _initSessionState(self) -> None:
+        """Acquire the cellview lock and arm the autosave timer."""
+        self._lockPath = cvstate.lockPathFor(self.file)
+        self._autosavePath = cvstate.autosavePathFor(self.file)
+        self._lockHeld = False
+        self._lastAutosaveIndex = -1
+        self._acquireCellviewLock()
+        self._autosaveTimer = QTimer(self)
+        self._autosaveTimer.timeout.connect(self.autosaveCellview)
+        if getattr(self.appMainW, "autosaveEnabled", True):
+            intervalSec = int(getattr(self.appMainW, "autosaveIntervalSec",
+                                      self.AUTOSAVE_DEFAULT_INTERVAL_SEC))
+            if intervalSec > 0:
+                self._autosaveTimer.start(intervalSec * 1000)
+
+    def _acquireCellviewLock(self) -> None:
+        """Take the .lock file next to the cellview; contention opens read-only."""
+        if getattr(self, "_isPcellPreview", False):
+            return
+        status, record = cvstate.acquireLock(self._lockPath)
+        if status == "held":
+            self._lockHeld = True
+        else:
+            self._applyLockContention(record)
+
+    def _setLockReadOnlyActions(self) -> None:
+        """Disable every named editor action except non-mutating view operations."""
+        for name, action in vars(self).items():
+            if isinstance(action, QAction):
+                action.setEnabled(name in editorWindow.READ_ONLY_SAFE_ACTIONS)
+
+    def _applyLockContention(self, record: dict) -> None:
+        """Switch the editor into read-only mode for a foreign live lock."""
+        owner = (f"{record.get('user', '?')}@{record.get('host', '?')} "
+                 f"(pid {record.get('pid', '?')})")
+        self.centralW.scene.readOnly = True
+        editorWindow._setLockReadOnlyActions(self)
+        # Subclass __init__ bodies create their actions after the base class
+        # acquires the lock, so the sweep above misses them; run it again
+        # once construction has finished and the event loop starts.
+        QTimer.singleShot(
+            0, lambda: editorWindow._setLockReadOnlyActions(self))
+        self.readOnlyCellAction.setChecked(True)
+        self.readOnlyCellAction.setEnabled(False)
+        self.saveCellAction.setEnabled(False)
+        self.checkCellAction.setEnabled(False)
+        self.messageLine.setText(
+            f"Cellview locked by {owner} — opened read-only")
+        self.logger.warning(
+            f"{self.libName}/{self.cellName}/{self.viewName} locked by {owner}; "
+            "opened read-only")
+
+    def autosaveCellview(self) -> None:
+        """Timer slot: snapshot a dirty scene to the .autosave file."""
+        if getattr(self, "_isPcellPreview", False) or not self._lockHeld:
+            return
+        scene = getattr(getattr(self, "centralW", None), "scene", None)
+        if scene is None or getattr(scene, "readOnly", False):
+            return
+        undoStack = getattr(scene, "undoStack", None)
+        index = undoStack.index() if undoStack is not None else -1
+        if undoStack is not None and (
+                undoStack.isClean() or index == self._lastAutosaveIndex):
+            return
+        if self._saveCellviewTo(self._autosavePath):
+            self._lastAutosaveIndex = index
+
+    def _saveCellviewTo(self, path: pathlib.Path) -> bool:
+        """Write the scene to *path* preserving undo state (autosave path)."""
+        scene = getattr(getattr(self, "centralW", None), "scene", None)
+        if scene is None:
+            return False
+        for methodName in ("saveSchematic", "saveLayoutCell", "saveSymbolCell"):
+            saveMethod = getattr(scene, methodName, None)
+            if callable(saveMethod):
+                try:
+                    saveMethod(path, markClean=False)
+                    return True
+                except Exception as e:  # noqa: BLE001 - autosave must never
+                    # crash the editor; any failure is logged and retried.
+                    self.logger.error(
+                        f"Autosave failed for {self.cellName}:{self.viewName}: {e}")
+                    return False
+        return False
+
+    def _resolveLoadPath(self) -> pathlib.Path:
+        """Return the file to load: the autosave when the user accepts recovery."""
+        if not self._lockHeld:
+            return self.file
+        if cvstate.isAutosaveNewer(self.file, self._autosavePath):
+            if not cvstate.isAutosaveUsable(self._autosavePath):
+                self.logger.warning(
+                    f"Autosave {self._autosavePath} is malformed; removing it")
+                self._autosavePath.unlink(missing_ok=True)
+                return self.file
+            reply = QMessageBox.question(
+                self, "Recover Autosave",
+                f"A newer autosave exists for "
+                f"{self.libName}/{self.cellName}/{self.viewName}.\n"
+                f"Restore the autosaved version?",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
+            if reply == QMessageBox.Yes:
+                self.logger.info(f"Restoring autosave {self._autosavePath}")
+                self.messageLine.setText(
+                    "Restored unsaved changes from autosave — save to keep them.")
+                return self._autosavePath
+            # Recovery declined: drop the stale autosave so it never nags again.
+            try:
+                self._autosavePath.unlink(missing_ok=True)
+            except OSError as e:
+                self.logger.warning(
+                    f"Cannot remove declined autosave {self._autosavePath}: {e}")
+        return self.file
+
+    def _clearAutosave(self) -> None:
+        """Drop the autosave file after a real save or a clean close."""
+        autosavePath = getattr(self, "_autosavePath", None)
+        if autosavePath is not None:
+            try:
+                autosavePath.unlink(missing_ok=True)
+            except OSError as e:
+                self.logger.warning(
+                    f"Cannot remove autosave {autosavePath}: {e}")
+        self._lastAutosaveIndex = -1
+
+    def _applyConfiguredBindkeys(self) -> None:
+        """Overlay configured bindkeys onto the editor's QActions."""
+        keyMap = getattr(self.appMainW, "bindkeyMap", None)
+        if not keyMap:
+            return
+        viewType = getattr(self.viewItem, "viewType", "*")
+        bkeys.applyBindkeys(self, keyMap, viewType, self.logger)
 
     def _editorContextMenu(self):
         self.centralW.scene.itemContextMenu.addAction(self.copyAction)
@@ -1115,6 +1270,12 @@ class editorWindow(QMainWindow):
     def closeEvent(self, event):
         cellViewTuple = ddef.viewNameTuple(self.libName, self.cellName, self.viewName)
         self.appMainW.openViews.pop(cellViewTuple, None)
+        if getattr(self, "_lockHeld", False):
+            cvstate.releaseLock(self._lockPath)
+            self._lockHeld = False
+            self._clearAutosave()
+        if hasattr(self, "_autosaveTimer"):
+            self._autosaveTimer.stop()
         event.accept()
         super().closeEvent(event)
 

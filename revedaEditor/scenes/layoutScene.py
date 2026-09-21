@@ -12,7 +12,7 @@
 import inspect
 import json
 import pathlib
-from typing import Any, Dict, List, Union, Optional
+from typing import Any, ClassVar, Dict, List, Union, Optional
 
 import orjson
 import shiboken6
@@ -30,14 +30,19 @@ from PySide6.QtWidgets import (
     QDialog,
     QGraphicsItem,
     QGraphicsLineItem,
+    QGraphicsRectItem,
     QGraphicsScene,
     QGraphicsSceneMouseEvent,
 )
 
+import revedaEditor.backend.correspondence as corr
 import revedaEditor.backend.dataDefinitions as ddef
+import revedaEditor.connectivity as conn
 import revedaEditor.backend.libraryMethods as libm
 import revedaEditor.backend.libraryModelView as lmview
 import revedaEditor.backend.undoStack as us
+import revedaEditor.common.layoutBoolean as lbool
+import revedaEditor.common.layoutFlatten as lflat
 import revedaEditor.common.layoutMerge as lmerge
 import revedaEditor.common.layoutShapes as lshp  # import layout shapes
 import revedaEditor.fileio.exportGDS as gdse
@@ -48,14 +53,14 @@ import revedaEditor.gui.editFunctions as edf
 import revedaEditor.gui.fileDialogues as fd
 import revedaEditor.gui.layoutDialogues as ldlg
 import revedaEditor.gui.propertyDialogues as pdlg
-from revedaEditor.backend.pdkLoader import importPDKModule
+from revedaEditor.backend.pdkLoader import lazyPDKModule
 from revedaEditor.gui.alignItems import alignItemsDialogue, alignToLine
 from revedaEditor.scenes.editorScene import editorScene
 
-fabproc = importPDKModule("process")
-laylyr = importPDKModule("layoutLayers")
-schlyr = importPDKModule("schLayers")
-pcells = importPDKModule("pcells")
+fabproc = lazyPDKModule("process")
+laylyr = lazyPDKModule("layoutLayers")
+schlyr = lazyPDKModule("schLayers")
+pcells = lazyPDKModule("pcells")
 
 
 class layoutScene(editorScene):
@@ -68,6 +73,7 @@ class layoutScene(editorScene):
         lshp.layoutViaArray,
         lshp.layoutInstance,
         lshp.layoutPcell,
+        lshp.layoutMultipart,
         lshp.layoutRuler,
     )
     # Object filter categories shown below the LSW, mapped to the layout
@@ -78,7 +84,7 @@ class layoutScene(editorScene):
         "Vias": (lshp.layoutVia, lshp.layoutViaArray),
         "Labels": (lshp.layoutLabel,),
         "Paths": (lshp.layoutPath,),
-        "Shapes": (lshp.layoutRect, lshp.layoutPolygon),
+        "Shapes": (lshp.layoutRect, lshp.layoutPolygon, lshp.layoutMultipart),
     }
     alignLineFinished = Signal(lshp.alignLine)
 
@@ -98,18 +104,17 @@ class layoutScene(editorScene):
             zoomView=False,
             drawPath=False,
             drawPin=False,
-            drawArc=False,
             drawPolygon=False,
             addLabel=False,
             addVia=False,
             drawRect=False,
-            drawLine=False,
-            drawCircle=False,
             drawRuler=False,
+            drawMultipart=False,
             stretchItem=False,
             addInstance=False,
             cutShape=False,
             alignItems=False,
+            highlightNet=False,
         )
         self.editModes.setMode("selectItem")
         self.selectModes = ddef.layoutSelectModes(
@@ -128,16 +133,15 @@ class layoutScene(editorScene):
         self.messages.update({
             "drawPath": "Draw Path",
             "drawPin": "Draw Pin",
-            "drawArc": "Draw Arc",
             "drawPolygon": "Draw Polygon",
             "addLabel": "Add Label",
             "addVia": "Add Via",
             "drawRect": "Draw Rect",
-            "drawLine": "Draw Line",
-            "drawCircle": "Draw Circle",
             "drawRuler": "Draw Ruler",
+            "drawMultipart": "Draw Multipart: click start, click to finish",
             "addInstance": "Add Instance",
             "cutShape": "Cut Shape",
+            "highlightNet": "Highlight Net: click a shape, pin, or label",
         })
         self.newInstance = None
         self.layoutInstanceTuple = None
@@ -168,6 +172,10 @@ class layoutScene(editorScene):
         self.polygonGuideLine = None
         self._newRuler = None
         self._newCutLine = None
+        self._newMultipart = None
+        # (kind, params) set by the multipart create dialogue; params carry
+        # item-local geometry anchors that the two-click draw fills in.
+        self.newMultipartSpec = None
         self._selectionRectItem = None
         self.rulersSet = set()
         self.rulerFont = self.setRulerFont(12 * fabproc.dbu)
@@ -183,6 +191,23 @@ class layoutScene(editorScene):
         self.setMinimumRenderSize(0.2)
         self.newAlignLine = None
         self.alignLineFinished.connect(alignToLine)
+        # Unified layout connectivity cache (revedaEditor.connectivity.layout
+        # engine, shared with RCX's record-level path).
+        self._connectivityCache = None
+        self._connectivityItemGroup = {}
+        # member item -> overlay QGraphicsRectItem
+        self._netHighlightItems = {}
+        # Schematic->layout rat's nest: drawn layoutFlightLine items, their
+        # cached endpoint pins (net -> [layoutPin]), the source schematic
+        # tuple, and a re-entrancy guard for sync loops.
+        self._flylines = []
+        self._flylinePins = {}
+        self._flylineSource = None
+        self._syncingFlylines = False
+        self.changed.connect(self.markConnectivityDirty)
+        # Undo/redo moves don't emit changed() reliably — refresh flyline
+        # topology (island merge/split) on command-stack index changes.
+        self.undoStack.indexChanged.connect(self._onUndoIndexChanged)
 
     @property
     def drawMode(self):
@@ -190,11 +215,10 @@ class layoutScene(editorScene):
             (
                 self.editModes.drawPath,
                 self.editModes.drawPin,
-                self.editModes.drawArc,
                 self.editModes.drawPolygon,
                 self.editModes.drawRect,
-                self.editModes.drawCircle,
                 self.editModes.drawRuler,
+                self.editModes.drawMultipart,
             )
         )
 
@@ -249,6 +273,11 @@ class layoutScene(editorScene):
         self.mousePressLoc = self.snapToGrid(event.scenePos().toPoint())
         if self.editModes.cutShape:
             self.startCutLine()
+        elif (self.editModes.highlightNet
+              and event.button() == Qt.MouseButton.LeftButton):
+            self.highlightNetAtPoint(self.mousePressLoc)
+            event.accept()
+            return
         super().mousePressEvent(event)
 
     def _updateLabelPlacementMarker(self, point: QPoint) -> None:
@@ -330,6 +359,8 @@ class layoutScene(editorScene):
             self._newRuler.draftLine = QLineF(
                 self._newRuler.draftLine.p1(), self.mouseMoveLoc
             )
+        elif self.editModes.drawMultipart and self._newMultipart is not None:
+            self._newMultipart.updateDraftGeometry(self.mouseMoveLoc)
         # Handle adding via mode with array via tuple
         elif self.editModes.addVia and self.arrayVia is not None:
             self.arrayVia.setPos(self.mouseMoveLoc - self.arrayVia.start)
@@ -352,11 +383,13 @@ class layoutScene(editorScene):
         )
         self.messageLine.setText(self.messages.get(self.editModes.mode(), self.editModes.mode()))
 
-    # def mouseReleaseEvent(self, mouse_event: QGraphicsSceneMouseEvent) -> None:
-    #     super().mouseReleaseEvent(mouse_event)
-    #     if mouse_event.button() == Qt.LeftButton:
-    #         self.mouseReleaseLoc = mouse_event.scenePos().toPoint()
-    #         self._handleMouseRelease(self.mouseReleaseLoc, mouse_event.button())
+    def mouseReleaseEvent(self, event) -> None:
+        super().mouseReleaseEvent(event)
+        # The changed signal re-anchors flyline geometry live; a committed
+        # move can also merge/split connectivity islands, so force the
+        # connectivity rebuild (-> _syncFlylines) once per release.
+        if self._flylinePins:
+            _ = self.connectivity
 
     def _handleMouseRelease(self, mousePos: QPoint, button: Qt.MouseButton) -> None:
         if button != Qt.MouseButton.LeftButton:
@@ -376,6 +409,8 @@ class layoutScene(editorScene):
                 self.drawLayoutPolygon()
             elif self.editModes.drawRuler:
                 self.drawLayoutRuler()
+            elif self.editModes.drawMultipart:
+                self.drawLayoutMultipart(mousePos)
             elif self.editModes.cutShape:
                 self.finishCutLine()
             elif self.editModes.addVia:
@@ -479,6 +514,29 @@ class layoutScene(editorScene):
             )
             self.addUndoStack(self._newRuler)
 
+    def drawLayoutMultipart(self, mousePos: QPoint):
+        """Two-click draw for composite items: first click anchors the item
+        at the cursor, the second fixes the geometry (ring extents for a
+        guard ring, far endpoint for shielded path / bus route)."""
+        if self._newMultipart is not None:
+            self._newMultipart.updateDraftGeometry(mousePos)
+            if self._newMultipart.childrenBoundingRect().isEmpty():
+                # Degenerate geometry (start == end): drop the draft.
+                self.undoStack.removeLastCommand()
+            self._newMultipart = None
+            return
+        if self.newMultipartSpec is None:
+            return
+        kind, params = self.newMultipartSpec
+        cls = lshp.MULTIPART_KINDS.get(kind)
+        if cls is None:
+            self.messageLine.setText(f"Unknown multipart kind: {kind}")
+            return
+        self._newMultipart = cls(dict(params))
+        self._newMultipart.setPos(mousePos)
+        self._newMultipart.updateDraftGeometry(mousePos)
+        self.addUndoStack(self._newMultipart)
+
     def finishCutLine(self):
         if self._newCutLine is None:
             return
@@ -520,6 +578,163 @@ class layoutScene(editorScene):
         self.messageLine.setText(
             f"Merged {len(consumed)} items into {len(produced)} shape(s)"
         )
+
+    def booleanSelectedItems(self, op: str, amount: float = 0.0):
+        """Apply a boolean/size layer op to the selection (see
+        common/layoutBoolean.py). ``op`` is one of or/and/xor/not/grow/shrink;
+        ``amount`` is the sizing distance in scene units for grow/shrink."""
+        if self.selectedItemGroup is not None:
+            self.destroyItemGroup(self.selectedItemGroup)
+            self.selectedItemGroup = None
+        produced, consumed = lbool.booleanLayerItems(
+            list(self.selectedItemsSet), op, amount, self.logger
+        )
+        if not produced:
+            self.messageLine.setText(f"Layer op '{op}' produced no shapes")
+            return
+        for item in consumed:
+            item.setSelected(False)
+        self.undoStack.push(us.addDeleteShapesUndo(self, produced, consumed))
+        for item in produced:
+            self._applyObjectFilter(item)
+        self.setSelectedItems(set(produced))
+        self.messageLine.setText(
+            f"Layer op '{op}': {len(consumed)} -> {len(produced)} shape(s)"
+        )
+
+    def flattenSelection(self):
+        """Replace selected layout instances with their contents as
+        top-level shapes (see common/layoutFlatten.py). Mosaic elements and
+        nested instances are expanded recursively."""
+        if self.selectedItemGroup is not None:
+            self.destroyItemGroup(self.selectedItemGroup)
+            self.selectedItemGroup = None
+        instances = [
+            item
+            for item in self.selectedItemsSet
+            if isinstance(item, (lshp.layoutInstance, lshp.layoutMultipart))
+        ]
+        if not instances:
+            self.messageLine.setText("No instances selected to flatten")
+            return
+        produced = []
+        for instance in instances:
+            produced.extend(lflat.flattenInstance(instance, self.logger))
+        if not produced:
+            self.messageLine.setText("Flatten produced no shapes")
+            return
+        for item in instances:
+            item.setSelected(False)
+        self.undoStack.push(us.addDeleteShapesUndo(self, produced, instances))
+        for item in produced:
+            self._applyObjectFilter(item)
+        self.setSelectedItems(set(produced))
+        self.messageLine.setText(
+            f"Flattened {len(instances)} instance(s) into {len(produced)} shape(s)"
+        )
+
+    def makeCellFromSelection(self, libName: str, cellName: str,
+                              overwrite: bool = False):
+        """Write the selected top-level items to ``lib/cell/layout.json`` and
+        replace them with an instance of the new cell.
+
+        The cell's contents are shifted so the selection's bounding-box
+        bottom-left is the cell origin; the replacement instance is placed at
+        that offset, leaving the view unchanged.  An existing cellview file
+        is never clobbered unless ``overwrite`` is true (the GUI asks first);
+        the new cell is registered in the library model so the browser shows
+        it without a refresh."""
+        if self.selectedItemGroup is not None:
+            self.destroyItemGroup(self.selectedItemGroup)
+            self.selectedItemGroup = None
+        items = [
+            item
+            for item in self.selectedItemsSet
+            if item.parentItem() is None
+            and isinstance(item, tuple(self.LAYOUT_SHAPES))
+            and not isinstance(item, lshp.layoutRuler)
+        ]
+        if not items:
+            self.messageLine.setText("No layout shapes selected")
+            return False
+        libPath = self.libraryDict.get(libName)
+        if libPath is None:
+            self.messageLine.setText(f"Unknown library: {libName}")
+            return False
+        cellDir = pathlib.Path(libPath) / cellName
+        filePathObj = cellDir / "layout.json"
+        if filePathObj.exists() and not overwrite:
+            self.messageLine.setText(
+                f"{libName}/{cellName}/layout already exists")
+            return False
+        cellDir.mkdir(parents=True, exist_ok=True)
+
+        # Rebuild items at cell-local coordinates: origin at the selection
+        # bounds' bottom-left so the instance lands back on the same spot.
+        bounds = None
+        for item in items:
+            itemBounds = item.sceneBoundingRect()
+            bounds = itemBounds if bounds is None else bounds.united(itemBounds)
+        origin = QPointF(bounds.bottomLeft())
+        factory = lj.layoutItems(self)
+        records = json.loads(json.dumps(items, cls=layenc.layoutEncoder))
+        cellShapes = [
+            shape
+            for data in records
+            if (shape := factory.create(data)) is not None
+        ]
+        for shape in cellShapes:
+            shape.moveBy(-origin.x(), -origin.y())
+
+        cellRecords = json.loads(json.dumps(cellShapes, cls=layenc.layoutEncoder))
+        cellData = [
+            {"viewType": "layout", "schemaVersion": "1.0"},
+            {"snapGrid": (self.majorGrid / fabproc.dbu,
+                          self.snapGrid / fabproc.dbu)},
+            *cellRecords,
+        ]
+        with filePathObj.open("w") as f:
+            json.dump(cellData, f, cls=layenc.layoutEncoder, separators=(",", ":"))
+        self._registerNewCellview(libName, cellName, cellDir, filePathObj)
+
+        instance = lshp.layoutInstance(cellShapes)
+        instance.libraryName = libName
+        instance.cellName = cellName
+        instance.viewName = "layout"
+        self.itemCounter += 1
+        instance.counter = self.itemCounter
+        instance.instanceName = f"I{self.itemCounter}"
+        instance.setPos(origin)
+
+        for item in items:
+            item.setSelected(False)
+        self.undoStack.push(us.addDeleteShapesUndo(self, [instance], items))
+        self.setSelectedItems({instance})
+        self.messageLine.setText(
+            f"Created {libName}/{cellName}/layout from {len(items)} item(s)"
+        )
+        return True
+
+    def _registerNewCellview(self, libName: str, cellName: str,
+                             cellDir: pathlib.Path,
+                             viewPath: pathlib.Path) -> None:
+        """Insert the freshly written cell/view into the app library model so
+        the browser shows it without a rescan.  No-op when no model is
+        attached (headless/test contexts)."""
+        model = getattr(getattr(self.editorWindow, "appMainW", None),
+                        "libraryModel", None)
+        if model is None:
+            return
+        import revedaEditor.backend.libBackEnd as libb
+        libItem = libm.getLibItem(model, libName)
+        if libItem is None:
+            return
+        cellIt = libm.getCellItem(libItem, cellName)
+        if cellIt is None:
+            cellIt = libb.cellItem(cellDir)
+            libItem.appendRow(cellIt)
+        if libm.getViewItem(cellIt, "layout") is None:
+            cellIt.appendRow(libb.viewItem(viewPath))
 
     def _splitPolygonalShape(self, item, line: QLineF):
         """Split a polygonal shape (rectangle or polygon) at intersections with the cut line."""
@@ -758,6 +973,26 @@ class layoutScene(editorScene):
             continuation = False
         self._createLayoutPath(startPoint, continuation)
 
+    _PATH_MODE_NAMES: ClassVar = {0: "Manhattan", 1: "Diagonal", 2: "Any Angle",
+                                  3: "Horizontal", 4: "Vertical"}
+    _PATH_MODE_CYCLE: ClassVar = (0, 1, 2)  # manhattan -> diagonal -> any angle
+
+    def cyclePathMode(self) -> None:
+        """Cycle the path snap mode mid-draw (F3) — the layout counterpart
+        of ``schematicScene.cycleWireDrawMode``. Updates the in-progress
+        segment's constraint as well as future segments."""
+        if self.newPathTuple is None:
+            return
+        order = self._PATH_MODE_CYCLE
+        current = self.newPathTuple.pathMode
+        nextMode = (order[(order.index(current) + 1) % len(order)]
+                    if current in order else order[0])
+        self.newPathTuple = self.newPathTuple._replace(pathMode=nextMode)
+        if self.newPath is not None:
+            self.newPath.mode = nextMode
+        self.editorWindow.messageLine.setText(
+            f"Path Angle: {self._PATH_MODE_NAMES[nextMode]}")
+
     def _createLayoutPath(self, point: QPoint, continuation: bool = False):
         startExtend = int(self.newPathTuple.startExtend)
         if continuation:
@@ -782,6 +1017,12 @@ class layoutScene(editorScene):
             dlg.instanceLibName.setText(newInstance.libraryName)
             dlg.instanceCellName.setText(newInstance.cellName)
             dlg.instanceViewName.setText(newInstance.viewName)
+            # Single-step mosaic placement: array fields on the same form.
+            dlg.arrayGroup.show()
+            dlg.rowsEdit.setText("1")
+            dlg.colsEdit.setText("1")
+            dlg.rowPitchEdit.setText("0")
+            dlg.colPitchEdit.setText("0")
             lineEditDict = self.extractPcellInstanceParameters(newInstance)
             if lineEditDict:
                 dlg.pcellParamsGroup.show()
@@ -793,6 +1034,13 @@ class layoutScene(editorScene):
                     instanceValuesDict[key] = value.text()
                 if instanceValuesDict:
                     newInstance(*instanceValuesDict.values())
+                arraySpec = dlg.arraySpec()
+                if arraySpec is not None:
+                    rows, cols, rowPitch, colPitch = arraySpec
+                    newInstance.setArray(
+                        rows, cols,
+                        rowPitch * fabproc.dbu, colPitch * fabproc.dbu,
+                    )
         self.layoutInstanceTuple = None
         return newInstance
 
@@ -1010,76 +1258,131 @@ class layoutScene(editorScene):
             self._applyObjectFilter(item)
 
     def loadSchematicInstances(self, schematicTuple: ddef.viewItemTuple) -> None:
-        """Load schematic and create corresponding layout instances.
+        """Back-compat entry point — now performs an incremental sync.
 
-        Args:
-            schematicTuple: Tuple containing library/cell/view for the schematic
+        Kept for aiTerminal/older callers; forwards to
+        :meth:`updateFromSchematic`, which adds missing instances, removes
+        SDL-owned instances whose schematic source disappeared, and
+        re-applies drifted parameters instead of wiping the layout.
         """
-        from PySide6.QtWidgets import QMessageBox
+        self.updateFromSchematic(schematicTuple)
 
-        # Check for existing layout instances
-        existingInstances = self.findScenelayoutCellSet()
-        if existingInstances:
-            reply = QMessageBox.question(
-                self.editorWindow,
-                "Existing Layout Instances",
-                f"There are {len(existingInstances)} layout instances on the scene.\n\n"
-                "Continuing will remove all existing instances and place new ones from the schematic.\n\n"
-                "Do you want to proceed?",
-                QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
-                QMessageBox.StandardButton.Cancel
-            )
-            if reply != QMessageBox.StandardButton.Ok:
-                self.logger.info("Schematic-driven layout cancelled by user")
-                return
+    def updateFromSchematic(self, schematicTuple: ddef.viewItemTuple) -> dict:
+        """Incrementally sync layout instances against a schematic cellview.
 
-            # Remove existing instances
-            for inst in existingInstances:
-                self.deleteUndoStack(inst)
+        The correspondence diff (``backend/correspondence.py``) decides the
+        plan; this method applies it inside one undo macro:
 
+        * ``to_add``    — schematic instances with no layout counterpart are
+          placed via :meth:`_createLayoutInstanceFromSch` (layout or pcell
+          view resolution as before).
+        * ``to_remove`` — instances whose ``sdl`` names this schematic but
+          whose source instance vanished are deleted.
+        * ``to_update`` — matched instances whose stored labels drifted get
+          their pcell parameters re-applied.
+        * ``adopted``   — unsourced instances matching a schematic instance
+          by name+cell are stamped with ``sdl`` and treated as managed.
+
+        Returns a stats dict: ``added/removed/updated/adopted/skipped``.
+        """
+        sourceKey = (
+            schematicTuple.libraryItem.libraryName,
+            schematicTuple.cellItem.cellName,
+            schematicTuple.viewItem.viewName,
+        )
         schematicPath = schematicTuple.viewItem.viewPath
         try:
             with schematicPath.open("rb") as f:
                 data = orjson.loads(f.read())
-        except Exception as e:
+        except (OSError, orjson.JSONDecodeError) as e:
             self.logger.error(f"Failed to load schematic: {e}")
-            return
+            return {"added": 0, "removed": 0, "updated": 0, "adopted": 0,
+                    "skipped": 0}
 
-        # Parse schematic instances (type "sys")
-        schInstances = [
-            {
-                "lib": item.get("lib", ""),
-                "cell": item.get("cell", ""),
-                "view": item.get("view", ""),
-                "name": item.get("nam", ""),
-                "counter": item.get("ic", 0),
-                "loc": item.get("loc", (0, 0)),
-                "ang": item.get("ang", 0),
-                "fl": item.get("fl", (1, 1)),
-                "labels": item.get("ld", {}),
-            }
-            for item in (data[2:] if len(data) > 2 else [])
-            if isinstance(item, dict) and item.get("type") == "sys"
-        ]
+        schInsts = corr.schematicInstances(data[2:] if len(data) > 2 else [])
+        if not schInsts:
+            self.logger.info("No schematic instances found to sync")
+        descriptors = self._sdlDescriptors()
+        plan = corr.correspondenceDiff(schInsts, descriptors, sourceKey)
 
-        if not schInstances:
-            self.logger.info("No schematic instances found to place")
-            return
+        stats = {"added": 0, "removed": 0, "updated": 0, "adopted": 0,
+                 "skipped": 0}
+        if not (plan.to_add or plan.to_remove or plan.to_update
+                or plan.adopted):
+            self.logger.info("Layout already matches schematic")
+        else:
+            self.undoStack.beginMacro("Update from schematic")
+            try:
+                if plan.to_remove:
+                    self.deleteListUndoStack(
+                        [desc["item"] for desc in plan.to_remove])
+                    stats["removed"] = len(plan.to_remove)
+                for desc, record in plan.adopted:
+                    item = desc["item"]
+                    item._sdlSource = corr.makeSdlSource(
+                        *sourceKey, record.get("nam", ""),
+                        record.get("ld", {}))
+                    stats["adopted"] += 1
+                    if self._syncInstanceParams(item, record):
+                        stats["updated"] += 1
+                for desc, record in plan.to_update:
+                    item = desc["item"]
+                    if self._syncInstanceParams(item, record):
+                        item._sdlSource = corr.makeSdlSource(
+                            *sourceKey, record.get("nam", ""),
+                            record.get("ld", {}))
+                        stats["updated"] += 1
+                for record in plan.to_add:
+                    layoutTuple = self._resolveLayoutView(
+                        record.get("lib", ""), record.get("cell", ""))
+                    if layoutTuple and self._createLayoutInstanceFromSch(
+                            layoutTuple, record, schematicTuple):
+                        stats["added"] += 1
+                    else:
+                        stats["skipped"] += 1
+                        self.logger.warning(
+                            f"No layout/pcell view for "
+                            f"{record.get('lib')}/{record.get('cell')}")
+            finally:
+                self.undoStack.endMacro()
 
-        # Create layout instances for each schematic instance
-        createdCount = 0
-        for sch_inst in schInstances:
-            # Resolve layout view (try "layout" or "pcell" with same cell name)
-            layoutTuple = self._resolveLayoutView(sch_inst["lib"], sch_inst["cell"])
-            if layoutTuple:
-                if self._createLayoutInstanceFromSch(layoutTuple, sch_inst):
-                    createdCount += 1
-            else:
-                self.logger.warning(
-                    f"No layout/pcell view found for {sch_inst['lib']}/{sch_inst['cell']}"
-                )
+        # Remember the source so flylines/cross-probing can rebuild without
+        # re-picking the schematic, then redraw the rat's nest.
+        self._flylineSource = schematicTuple
+        self.rebuildFlylines(schematicTuple)
+        self.logger.info(
+            f"Schematic sync: +{stats['added']} -{stats['removed']} "
+            f"~{stats['updated']} adopted {stats['adopted']} "
+            f"skipped {stats['skipped']}")
+        return stats
 
-        self.logger.info(f"Created {createdCount} layout instances from schematic")
+    def _sdlDescriptors(self) -> list:
+        """Top-level instance descriptors for the correspondence diff."""
+        descriptors = []
+        for item in self.items():
+            if item.parentItem() is not None:
+                continue
+            if not isinstance(item, lshp.layoutInstance):
+                continue
+            descriptors.append({
+                "item": item,
+                "name": item.instanceName,
+                "cell": item.cellName,
+                "sdl": getattr(item, "_sdlSource", None),
+            })
+        return descriptors
+
+    def _syncInstanceParams(self, item, record: dict) -> bool:
+        """Re-apply a schematic record's labels to a matched instance.
+
+        PCells get mapped parameters recomputed and re-evaluated; plain
+        layout instances just need the stored ``sdl`` refreshed (done by
+        the caller). Returns True on success.
+        """
+        if isinstance(item, lshp.layoutPcell):
+            return self._applyPcellParams(
+                item, record.get("cell", ""), record.get("ld", {}))
+        return True
 
     def _resolveLayoutView(self, lib_name: str, cell_name: str) -> Union[ddef.viewItemTuple, None]:
         """Find layout or pcell view for a given schematic cell.
@@ -1112,22 +1415,95 @@ class layoutScene(editorScene):
 
         return None
 
-    def _getPcellParameterMap(self, cellName: str) -> dict:
+    def _loadPcellParameterMap(self) -> dict:
+        """Raw ``pcellParameterMap.json`` contents (``mappings``,
+        ``pinMappings``), or ``{}`` when the PDK ships none."""
         mapPath = pathlib.Path(fabproc.__file__).parent / "pcellParameterMap.json"
         try:
             with mapPath.open("rb") as mapFile:
-                parameterMap = orjson.loads(mapFile.read())
+                return orjson.loads(mapFile.read())
         except (OSError, orjson.JSONDecodeError) as error:
             self.logger.error(f"Failed to load PCell parameter map: {error}")
             return {}
-        return parameterMap.get("mappings", {}).get(cellName, {})
 
-    def _createLayoutInstanceFromSch(self, viewTuple: ddef.viewItemTuple, sch_inst: dict) -> bool:
-        """Create a layout instance from schematic instance data.
+    def _getPcellParameterMap(self, cellName: str) -> dict:
+        return self._loadPcellParameterMap().get(
+            "mappings", {}).get(cellName, {})
+
+    def _getPcellPinMap(self, cellName: str) -> dict:
+        """Schematic-pin -> layout-pin name map declared for ``cellName``.
+
+        PDK cells whose symbol pins are named differently from their
+        layout/pcell pins (e.g. symbol ``P``/``M`` vs layout
+        ``PLUS``/``MINUS``) declare the correspondence under
+        ``pinMappings`` in pcellParameterMap.json. Cells with matching
+        names need no entry.
+        """
+        return self._loadPcellParameterMap().get(
+            "pinMappings", {}).get(cellName, {})
+
+    def _layoutPinInInstance(self, inst, pinName: str,
+                             pinMap: dict | None = None):
+        """First descendant layoutPin of ``inst`` matching schematic pin
+        ``pinName``, translated through the cell's pinMappings entry.
+        ``pinMap`` lets callers reuse a fetched map across lookups."""
+        if pinMap is None:
+            pinMap = self._getPcellPinMap(getattr(inst, "cellName", ""))
+        layPinName = pinMap.get(pinName, pinName)
+        for pin in self._childLayoutPins(inst):
+            if pin.pinName == layPinName:
+                return pin
+        return None
+
+    def _schematicPinName(self, inst, layPinName: str) -> str:
+        """Inverse of the cell's pinMappings entry (layout pin -> symbol
+        pin), identity when unmapped."""
+        for schName, layName in self._getPcellPinMap(
+                getattr(inst, "cellName", "")).items():
+            if layName == layPinName:
+                return schName
+        return layPinName
+
+    def _applyPcellParams(self, inst, schCellName: str, labels: dict) -> bool:
+        """Apply schematic labels to a pcell via the PDK parameter map.
+
+        With no map the pcell keeps its current/default values. Returns
+        False when required parameters have no matching label.
+        """
+        if not isinstance(inst, lshp.layoutPcell):
+            return True
+        callParameters = inspect.signature(inst.__call__).parameters
+        parameterMap = self._getPcellParameterMap(schCellName)
+        if not parameterMap:
+            # No schematic->PCell parameter mapping: fall back to the
+            # PCell's default parameter values rather than failing.
+            lineEditDict = self.extractPcellInstanceParameters(inst)
+            if lineEditDict:
+                instanceValuesDict = {
+                    key: value.text() for key, value in lineEditDict.items()
+                }
+                if instanceValuesDict:
+                    inst(*instanceValuesDict.values())
+            return True
+        params, missing = corr.pcellParamsFor(
+            callParameters, parameterMap, labels)
+        if missing:
+            self.logger.error(
+                f"Missing PCell parameters for {inst.instanceName}: "
+                f"{', '.join(missing)}")
+            return False
+        inst(**params)
+        return True
+
+    def _createLayoutInstanceFromSch(
+            self, viewTuple: ddef.viewItemTuple, record: dict,
+            schematicTuple: ddef.viewItemTuple) -> bool:
+        """Create a layout instance from a schematic ``sys`` record.
 
         Args:
             viewTuple: Library/cell/view tuple for layout/pcell
-            sch_inst: Schematic instance data dict
+            record: Decoded schematic ``sys`` record (nam/cell/lib/ld/loc...)
+            schematicTuple: Source schematic cellview — stamped into ``sdl``
 
         Returns:
             True if instance created successfully, False otherwise
@@ -1141,73 +1517,28 @@ class layoutScene(editorScene):
             if new_inst is None:
                 return False
 
-            # For PCells, apply matching schematic instance labels.
-            if isinstance(new_inst, lshp.layoutPcell):
-                labels = sch_inst.get("labels", {})
-                callParameters = inspect.signature(new_inst.__call__).parameters
-                parameterMap = self._getPcellParameterMap(sch_inst["cell"])
-                if not parameterMap:
-                    # No schematic->PCell parameter mapping: fall back to the
-                    # PCell's default parameter values rather than failing.
-                    lineEditDict = self.extractPcellInstanceParameters(new_inst)
-                    if lineEditDict:
-                        instanceValuesDict = {
-                            key: value.text()
-                            for key, value in lineEditDict.items()
-                        }
-                        if instanceValuesDict:
-                            new_inst(*instanceValuesDict.values())
-                else:
-                    instanceParameters = {
-                        name: labels[labelName][0]
-                        for name, parameter in callParameters.items()
-                        if parameter.kind in (
-                            inspect.Parameter.POSITIONAL_OR_KEYWORD,
-                            inspect.Parameter.KEYWORD_ONLY,
-                        )
-                        and (labelName := parameterMap.get(name)) in labels
-                    }
-                    missingParameters = [
-                        name
-                        for name, parameter in callParameters.items()
-                        if parameter.kind in (
-                            inspect.Parameter.POSITIONAL_OR_KEYWORD,
-                            inspect.Parameter.KEYWORD_ONLY,
-                        )
-                        and parameter.default is inspect.Parameter.empty
-                        and name not in instanceParameters
-                    ]
-                    if missingParameters:
-                        self.logger.error(
-                            f"Missing PCell parameters for {sch_inst['name']}: "
-                            f"{', '.join(missingParameters)}"
-                        )
-                        return False
-                    new_inst(**instanceParameters)
+            if not self._applyPcellParams(
+                    new_inst, record.get("cell", ""),
+                    record.get("ld", {})):
+                return False
 
             # Inherit properties from schematic
-            new_inst.instanceName = sch_inst["name"]
-            new_inst.counter = sch_inst["counter"]
-            new_inst.angle = sch_inst["ang"]
-            new_inst.flipTuple = tuple(sch_inst["fl"])
+            new_inst.instanceName = record.get("nam", "")
+            new_inst.counter = record.get("ic", 0)
+            new_inst.angle = record.get("ang", 0)
+            new_inst.flipTuple = tuple(record.get("fl", (1, 1)))
 
             # Convert the schematic grid location to layout scene coordinates.
-            loc: tuple[int, int] = (
-                sch_inst["loc"][0] * 10,
-                sch_inst["loc"][1] * 10,
-            )
-
+            loc = record.get("loc", (0, 0))
             if isinstance(loc, (list, tuple)) and len(loc) >= 2:
-                new_inst.setPos(loc[0], loc[1])
+                new_inst.setPos(loc[0] * 10, loc[1] * 10)
 
-
-            # Store SDL metadata for tracking
-            new_inst._sdlSource = {
-                "schematicLib": sch_inst["lib"],
-                "schematicCell": sch_inst["cell"],
-                "schematicInstance": sch_inst["name"],
-                "labels": sch_inst.get("labels", {}),
-            }
+            # Persisted correspondence stamp (see backend/correspondence).
+            new_inst._sdlSource = corr.makeSdlSource(
+                schematicTuple.libraryItem.libraryName,
+                schematicTuple.cellItem.cellName,
+                schematicTuple.viewItem.viewName,
+                record.get("nam", ""), record.get("ld", {}))
 
             # Add to scene via undo stack
             self.addUndoStack(new_inst)
@@ -1220,11 +1551,14 @@ class layoutScene(editorScene):
             # Restore original tuple
             self.layoutInstanceTuple = oldTuple
 
-    def saveLayoutCell(self, filePathObj: pathlib.Path) -> None:
+    def saveLayoutCell(self, filePathObj: pathlib.Path,
+                       markClean: bool = True) -> None:
         """Save the layout cell to a JSON file.
 
         Args:
             filePathObj (pathlib.Path): Path object for the output file
+            markClean (bool): Clear the undo stack after a real save; autosave
+                passes False so the undo history is preserved.
 
         Raises:
             IOError: If there are issues writing to the file
@@ -1295,6 +1629,8 @@ class layoutScene(editorScene):
             self.logger.info(
                 f"Saved layout to {self.editorWindow.cellName}:{self.editorWindow.viewName}"
             )
+            if markClean:
+                self.undoStack.clear()
             lj.PCellCache.clear_caches()
             lj.layoutItems._load_json_file.cache_clear()
 
@@ -1311,9 +1647,14 @@ class layoutScene(editorScene):
             raise
 
     def _exportCell(
-            self, export_dir: pathlib.Path, unit: float, precision: float, dbu: int, format_type: str = "GDS"
+            self, export_dir: pathlib.Path, unit: float, precision: float, dbu: int,
+            format_type: str = "GDS", layerMap: dict | None = None,
+            cellNameMap: dict | None = None, flattenDepth: int | None = None,
     ):
         """Export cell in the specified format (GDS or OAS)."""
+        # layerMap: {(gdsLayer, datatype): (gdsLayer, datatype)}; cellNameMap:
+        # {lib_cell_view or cellName: exported name}; flattenDepth: None keeps
+        # full hierarchy, N keeps refs only for instances at depth <= N.
         format_upper = format_type.upper()
         file_extension = ".gds" if format_upper == "GDS" else ".oas"
         export_path = export_dir / f"{self.cellName}{file_extension}"
@@ -1337,6 +1678,9 @@ class layoutScene(editorScene):
             exportObj.unit = unit
             exportObj.precision = precision
             exportObj.dbu = dbu
+            exportObj.layerMap = layerMap
+            exportObj.cellNameMap = cellNameMap
+            exportObj.flattenDepth = flattenDepth
 
             self.logger.info(f"{format_upper} Export started.")
             with self.measureDuration():
@@ -1359,16 +1703,22 @@ class layoutScene(editorScene):
             raise
 
     def exportCellGDS(
-            self, gdsExportDir: pathlib.Path, gdsUnit: float, gdsPrecision: float, dbu: int
+            self, gdsExportDir: pathlib.Path, gdsUnit: float, gdsPrecision: float,
+            dbu: int, layerMap: dict | None = None,
+            cellNameMap: dict | None = None, flattenDepth: int | None = None,
     ):
         """Export cell as GDS format."""
-        self._exportCell(gdsExportDir, gdsUnit, gdsPrecision, dbu, "GDS")
+        self._exportCell(gdsExportDir, gdsUnit, gdsPrecision, dbu, "GDS",
+                         layerMap, cellNameMap, flattenDepth)
 
     def exportCellOAS(
-            self, oasExportDir: pathlib.Path, gdsUnit: float, gdsPrecision: float, dbu: int
+            self, oasExportDir: pathlib.Path, gdsUnit: float, gdsPrecision: float,
+            dbu: int, layerMap: dict | None = None,
+            cellNameMap: dict | None = None, flattenDepth: int | None = None,
     ):
         """Export cell as OAS format."""
-        self._exportCell(oasExportDir, gdsUnit, gdsPrecision, dbu, "OAS")
+        self._exportCell(oasExportDir, gdsUnit, gdsPrecision, dbu, "OAS",
+                         layerMap, cellNameMap, flattenDepth)
 
     def loadDesign(self, filePathObj: pathlib.Path) -> bool:
         """Load the layout cell from the given JSON file."""
@@ -1420,6 +1770,20 @@ class layoutScene(editorScene):
                         pass
                 if len(decodedData) > 2:
                     self.createLayoutItems(decodedData[2:])
+                    # Semantic connectivity check on the decoded records via
+                    # the shared layout engine (same path RCX uses).
+                    try:
+                        _groups, _names, diagnostics = \
+                            conn.checkLayoutRecords(
+                                decodedData[2:], laylyr, fabproc)
+                        for diag in diagnostics:
+                            if diag.severity == "error":
+                                self.logger.error(diag.message)
+                            else:
+                                self.logger.warning(diag.message)
+                    except Exception as e:
+                        self.logger.warning(
+                            f"Layout connectivity check skipped: {e}")
             return True
         except orjson.JSONDecodeError:
             self.logger.error("Invalid file format.")
@@ -1454,8 +1818,9 @@ class layoutScene(editorScene):
                                     child = stack.pop()
                                     refAdd(child)
                                     stack.extend(child.childItems())
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        self.logger.error(
+                            f"Layout record skipped on load: {e}")
         finally:
             self.setItemIndexMethod(index_method)
         if hasattr(self, "_applyObjectFilters"):
@@ -1497,6 +1862,8 @@ class layoutScene(editorScene):
                         case _:
                             if isinstance(item, lshp.layoutPcell):
                                 self.layoutInstanceProperties(item, True)
+                            elif isinstance(item, lshp.layoutMultipart):
+                                self.layoutMultipartProperties(item)
 
         except Exception as e:
             self.logger.error(f"{type(item)} property editor error: {e}")
@@ -1528,6 +1895,16 @@ class layoutScene(editorScene):
             newPoints = tempPoints
             newPolygon = lshp.layoutPolygon(newPoints, newLayer)
             self.undoStack.push(us.addDeleteShapeUndo(self, newPolygon, item))
+
+    def layoutMultipartProperties(self, item):
+        dlg = ldlg.multipartPropertiesDialogue(self.editorWindow, item)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        newItem = type(item)(dlg.parsedParams())
+        newItem.setPos(item.pos())
+        newItem.angle = item.angle
+        newItem.flipTuple = item.flipTuple
+        self.undoStack.push(us.addDeleteShapeUndo(self, newItem, item))
 
     def layoutRectProperties(self, item):
         dlg = ldlg.layoutRectProperties(self.editorWindow)
@@ -1881,6 +2258,13 @@ class layoutScene(editorScene):
         )
         dlg.instanceNameEdit.setText(item.instanceName)
 
+        # Mosaic fields (pitches are scene dbu; the dialog works in um).
+        dlg.arrayGroup.show()
+        dlg.rowsEdit.setText(str(item.rows))
+        dlg.colsEdit.setText(str(item.cols))
+        dlg.rowPitchEdit.setText(str(item.rowPitch / fabproc.dbu))
+        dlg.colPitchEdit.setText(str(item.colPitch / fabproc.dbu))
+
         # Use pos() (parent-coordinate translation), not scenePos(). scenePos()
         # bakes in this item's rotation/flip about its origin; writing it back
         # through setPos() (which sets pos()) would apply that transform a
@@ -1918,6 +2302,13 @@ class layoutScene(editorScene):
             # is derived from the item's (post-rotation) bounding rect.
             newLayoutInstance.angle = item.angle
             newLayoutInstance.flipTuple = item.flipTuple
+            arraySpec = dlg.arraySpec()
+            if arraySpec is not None:
+                rows, cols, rowPitch, colPitch = arraySpec
+                newLayoutInstance.setArray(
+                    rows, cols,
+                    rowPitch * fabproc.dbu, colPitch * fabproc.dbu,
+                )
             newLayoutInstance.setPos(
                 QPoint(
                     self.snapToBase(
@@ -2054,9 +2445,526 @@ class layoutScene(editorScene):
         }
         if sceneRulerSet:
             self.deleteListUndoStack(list(sceneRulerSet))
-        # for ruler in self.rulersSet:
-        #     undoCommand = us.deleteShapeUndo(self, ruler)
-        #     self.undoStack.push(undoCommand)
+
+    def deleteSelectedRulers(self):
+        """Delete only the rulers in the current selection (Shift+K still
+        clears all). Returns True when at least one ruler was removed."""
+        selectedRulers = [
+            item
+            for item in self.selectedItems()
+            if isinstance(item, lshp.layoutRuler)
+        ]
+        # A live move/copy selection group hides its members from
+        # selectedItems(); check group children as well.
+        if self.selectedItemGroup is not None:
+            selectedRulers.extend(
+                item
+                for item in self.selectedItemGroup.childItems()
+                if isinstance(item, lshp.layoutRuler)
+            )
+        if not selectedRulers:
+            return False
+        self.deleteListUndoStack(selectedRulers)
+        return True
+
+    # --- Layout connectivity (revedaEditor.connectivity.layout engine) ---
+
+    def markConnectivityDirty(self, *args):
+        """Invalidate the cached connectivity result on any scene change."""
+        self._connectivityCache = None
+        self._updateFlylineGeometry()
+
+    def addItem(self, item):
+        super().addItem(item)
+        self.markConnectivityDirty()
+
+    def removeItem(self, item):
+        super().removeItem(item)
+        self.markConnectivityDirty()
+        # Drop the highlight overlay if a highlighted member was removed.
+        overlay = self._netHighlightItems.pop(item, None)
+        if overlay is not None and shiboken6.isValid(overlay) \
+                and overlay.scene() is self:
+            super().removeItem(overlay)
+
+    def rebuildConnectivity(self):
+        """Rebuild layout net groups from current scene contents.
+
+        Uses the same connectivity.layout engine as RCX's record-level path.
+        Top-level shapes, pins, labels, and vias participate, and instance/
+        Pcell/multipart internals are expanded into the groups (the adapter
+        resolves children in scene coordinates) so highlight-net reaches
+        metal inside instances such as substrate taps. Internal items carry
+        no name anchors — nets are still named by top-level pins/labels.
+        """
+        topLevelItems = [item for item in self.items()
+                         if item.parentItem() is None]
+        groups, _names, conflicts, _s, _v, _a = conn.analyzeLayoutItems(
+            topLevelItems, touchTolerance=1.0)
+        self._connectivityCache = groups
+        self._connectivityItemGroup = {}
+        for group in groups:
+            for shape in group.shapes:
+                if shape.item is not None:
+                    self._connectivityItemGroup[shape.item] = group
+            for via in group.vias:
+                if via.item is not None:
+                    self._connectivityItemGroup[via.item] = group
+        for conflict in conflicts:
+            self.logger.error(conflict)
+        # Drop highlight overlays whose member left every net (deleted
+        # shapes, realized/unrealized instance children, etc.).
+        kept = {}
+        for item, overlay in self._netHighlightItems.items():
+            if (shiboken6.isValid(item)
+                    and item in self._connectivityItemGroup):
+                kept[item] = overlay
+                continue
+            if shiboken6.isValid(overlay) and overlay.scene() is self:
+                super().removeItem(overlay)
+        self._netHighlightItems = kept
+        # Islands may have merged/split — re-evaluate flyline topology
+        # against the fresh map.
+        self._syncFlylines()
+        return groups
+
+    @property
+    def connectivity(self):
+        """Cached list of connectivity.layout NetGroups, rebuilt on change."""
+        if self._connectivityCache is None:
+            self.rebuildConnectivity()
+        return self._connectivityCache
+
+    def _layoutGroupAtPoint(self, x: float, y: float, tol: float = 1.0):
+        """First net group whose shape/via footprint contains (x, y)."""
+        for group in self.connectivity:
+            if any(s.footprint.contains_point(x, y, tol)
+                   for s in group.shapes) or \
+               any(v.footprint.contains_point(x, y, tol)
+                   for v in group.vias):
+                return group
+        return None
+
+    def highlightNetAtPoint(self, point) -> str | None:
+        """Highlight every member of the net under ``point`` (scene coords).
+
+        Clicked labels resolve through their anchor position. Highlights are
+        additive until clearNetHighlights(). Returns the net name, or None
+        when no net was found.
+        """
+        _ = self.connectivity  # ensure the item->group map is fresh
+        target = None
+        for item in self.items(point):
+            target = self._connectivityItemGroup.get(item)
+            if target is not None:
+                break
+            if isinstance(item, lshp.layoutLabel):
+                anchor = item.mapToScene(item.start)
+                target = self._layoutGroupAtPoint(anchor.x(), anchor.y())
+                if target is not None:
+                    break
+        if target is None:
+            target = self._layoutGroupAtPoint(point.x(), point.y())
+        if target is None:
+            self.messageLine.setText("No net found at this point")
+            return None
+        for shape in target.shapes:
+            self._addNetHighlightRect(shape.item)
+        for via in target.vias:
+            self._addNetHighlightRect(via.item)
+        self.messageLine.setText(f"Highlighted net: {target.name}")
+        return target.name
+
+    def _addNetHighlightRect(self, item) -> None:
+        if item is None or not shiboken6.isValid(item):
+            return
+        if item in self._netHighlightItems:
+            return
+        color = getattr(getattr(item, "layer", None), "pcolor", None)
+        pen = QPen(color if isinstance(color, QColor)
+                   else QColor(255, 255, 0))
+        pen.setWidth(3)
+        pen.setCosmetic(True)
+        pen.setStyle(Qt.PenStyle.DashLine)
+        highlight = QGraphicsRectItem(item.sceneBoundingRect())
+        highlight.setPen(pen)
+        highlight.setZValue(1e9)
+        highlight.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
+        highlight.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable,
+                          False)
+        self.addItem(highlight)
+        self._netHighlightItems[item] = highlight
+
+    def clearNetHighlights(self) -> None:
+        """Remove all net-highlight overlay rectangles."""
+        for highlight in self._netHighlightItems.values():
+            if shiboken6.isValid(highlight) and highlight.scene() is self:
+                self.removeItem(highlight)
+        self._netHighlightItems = {}
+
+    def _clearFlylineItems(self) -> None:
+        """Remove drawn flyline items; cached endpoint pins survive."""
+        for flyline in self._flylines:
+            if shiboken6.isValid(flyline) and flyline.scene() is self:
+                # Bypass the overridden removeItem — flylines are pure
+                # overlay and must not dirty connectivity.
+                super().removeItem(flyline)
+        self._flylines = []
+
+    def clearFlylines(self) -> None:
+        """Remove all drawn flylines and forget their endpoints."""
+        self._clearFlylineItems()
+        self._flylinePins = {}
+
+    def _inferFlylineSource(self):
+        """Locate the schematic cellview named by an SDL-stamped instance."""
+        import revedaEditor.backend.libBackEnd as libb
+
+        for item in self.items():
+            if item.parentItem() is not None or \
+                    not isinstance(item, lshp.layoutInstance):
+                continue
+            key = corr.sdlSourceKey(getattr(item, "_sdlSource", None))
+            if not key:
+                continue
+            lib, cell, view = key
+            libPath = self.libraryDict.get(lib)
+            if libPath is None:
+                continue
+            viewPath = libPath / cell / f"{view or 'schematic'}.json"
+            if not viewPath.exists():
+                continue
+            return ddef.viewItemTuple(
+                libb.libraryItem(libPath),
+                libb.cellItem(libPath / cell),
+                libb.viewItem(viewPath))
+        return None
+
+    @staticmethod
+    def _childLayoutPins(container) -> list:
+        """All descendant layoutPin items (nested instances, arrays)."""
+        pins, stack, seen = [], [], set()
+        stack += list(getattr(container, "shapes", []) or [])
+        stack += list(getattr(container, "arrayShapes", []) or [])
+        while stack:
+            child = stack.pop()
+            if id(child) in seen or not shiboken6.isValid(child):
+                continue
+            seen.add(id(child))
+            if isinstance(child, lshp.layoutPin):
+                pins.append(child)
+            stack += list(getattr(child, "shapes", []) or [])
+            stack += list(getattr(child, "arrayShapes", []) or [])
+        return pins
+
+    def rebuildFlylines(self, schematicTuple=None) -> int:
+        """Redraw the schematic->layout rat's nest.
+
+        Schematic pin->net endpoints (``corr.flylineEndpoints``) are mapped
+        onto layout pin positions; a flyline is drawn between connectivity
+        islands the schematic joins but the layout has not merged, so routed
+        segments produce no line. Returns the number of flylines drawn.
+        """
+        self.clearFlylines()
+        if schematicTuple is None:
+            schematicTuple = self._flylineSource \
+                or self._inferFlylineSource()
+        if schematicTuple is None:
+            return 0
+        self._flylineSource = schematicTuple
+        try:
+            with schematicTuple.viewItem.viewPath.open("rb") as f:
+                data = orjson.loads(f.read())
+        except (OSError, orjson.JSONDecodeError) as e:
+            self.logger.error(f"Failed to load schematic for flylines: {e}")
+            return 0
+        pinLocator = lj.makeSymbolPinLocator(self.libraryDict)
+        endpoints, _diags = corr.flylineEndpoints(
+            data[2:] if len(data) > 2 else [], pinLocator)
+
+        sdlInsts, namedInsts, topPins = {}, {}, {}
+        for item in self.items():
+            if item.parentItem() is not None:
+                continue
+            if isinstance(item, lshp.layoutInstance):
+                sdlName = corr.sdlInstName(
+                    getattr(item, "_sdlSource", None))
+                if sdlName:
+                    sdlInsts.setdefault(sdlName, item)
+                if item.instanceName:
+                    namedInsts.setdefault(item.instanceName, item)
+            elif isinstance(item, lshp.layoutPin):
+                topPins.setdefault(item.pinName, item)
+
+        pinMaps = {}  # cellName -> pinMappings entry, fetched once per cell
+
+        def resolveEndpoint(endpoint):
+            instName, pinName = endpoint
+            if not instName:
+                pin = topPins.get(pinName)
+                return (pin.sceneBoundingRect().center(), pin) \
+                    if pin else None
+            inst = sdlInsts.get(instName) or namedInsts.get(instName)
+            if inst is None:
+                return None
+            cellName = getattr(inst, "cellName", "")
+            if cellName not in pinMaps:
+                pinMaps[cellName] = self._getPcellPinMap(cellName)
+            pin = self._layoutPinInInstance(inst, pinName,
+                                            pinMaps[cellName])
+            return (pin.sceneBoundingRect().center(), pin) \
+                if pin is not None else None
+
+        _ = self.connectivity  # ensure the item->group map is fresh
+        self._flylinePins = {}
+        drawn = 0
+        for netName, eps in endpoints.items():
+            pins = [r[1] for r in
+                    (resolveEndpoint(e) for e in eps) if r]
+            if len(pins) < 2:
+                continue
+            # Cache endpoint items so _syncFlylines re-resolves islands
+            # after moves without re-reading the schematic.
+            self._flylinePins[netName] = pins
+            drawn += self._drawFlylineIslands(netName, pins)
+        if drawn:
+            self.messageLine.setText(
+                f"Flylines: {drawn} unrouted connection(s)")
+        return drawn
+
+    def _drawFlylineIslands(self, netName: str, pins: list) -> int:
+        """Draw flylines between connectivity islands of ``pins``.
+
+        Pins already merged into one layout net group collapse to a single
+        island representative; each remaining island gets a line to the
+        first. Returns the number of lines drawn.
+        """
+        _ = self.connectivity  # ensure the item->group map is fresh
+        islands, ungrouped = {}, []
+        for pin in pins:
+            group = self._connectivityItemGroup.get(pin)
+            if group is None:
+                ungrouped.append(pin)
+            else:
+                islands.setdefault(id(group), pin)
+        reps = list(islands.values()) + ungrouped
+        if len(reps) < 2:
+            return 0
+        anchorPin = reps[0]
+        anchor = anchorPin.sceneBoundingRect().center()
+        drawn = 0
+        for pin in reps[1:]:
+            flyline = lshp.layoutFlightLine(
+                QLineF(anchor, pin.sceneBoundingRect().center()),
+                netName, anchorPin, pin)
+            self.addItem(flyline)
+            self._flylines.append(flyline)
+            drawn += 1
+        return drawn
+
+    def _onUndoIndexChanged(self, *_):
+        """Refresh flyline topology after undo/redo positional changes."""
+        if self._flylinePins:
+            _ = self.connectivity  # rebuild -> _syncFlylines
+
+    def _updateFlylineGeometry(self):
+        """Re-anchor drawn flylines to current pin positions.
+
+        Called from markConnectivityDirty on every scene change — cheap
+        (no connectivity work), so lines track instance moves live.
+        Flylines whose endpoint pins left the scene are dropped.
+        """
+        if self._syncingFlylines or not self._flylines:
+            return
+        self._syncingFlylines = True
+        try:
+            alive = []
+            for flyline in self._flylines:
+                if not shiboken6.isValid(flyline):
+                    continue
+                if flyline.scene() is not self or not flyline.syncLine():
+                    super().removeItem(flyline)
+                    continue
+                alive.append(flyline)
+            self._flylines = alive
+        finally:
+            self._syncingFlylines = False
+
+    def _syncFlylines(self):
+        """Recompute flyline islands from cached endpoint pins.
+
+        Runs at the end of rebuildConnectivity — pins re-resolve against
+        the fresh item->group map, so islands that merged (routing
+        completed) drop their line and newly-split islands gain one. No
+        file I/O: endpoints were resolved once by rebuildFlylines.
+        """
+        if self._syncingFlylines or not self._flylinePins:
+            return
+        self._syncingFlylines = True
+        try:
+            self._clearFlylineItems()
+            drawn = 0
+            for netName, pins in self._flylinePins.items():
+                pins = [p for p in pins if shiboken6.isValid(p)
+                        and p.scene() is self]
+                if len(pins) < 2:
+                    continue
+                drawn += self._drawFlylineIslands(netName, pins)
+            if drawn:
+                self.messageLine.setText(
+                    f"Flylines: {drawn} unrouted connection(s)")
+        finally:
+            self._syncingFlylines = False
+
+    # ------------------------------------------------------------------
+    # Schematic<->layout cross-probing
+    # ------------------------------------------------------------------
+
+    def _sdlSourceKeyForScene(self):
+        """(lib, cell, view) of the schematic this layout was synced from."""
+        if self._flylineSource is not None:
+            t = self._flylineSource
+            return (t.libraryItem.libraryName, t.cellItem.cellName,
+                    t.viewItem.viewName)
+        for item in self.items():
+            if item.parentItem() is None and \
+                    isinstance(item, lshp.layoutInstance):
+                key = corr.sdlSourceKey(
+                    getattr(item, "_sdlSource", None))
+                if key:
+                    return key
+        return None
+
+    def _layoutPinForEndpoint(self, instName: str, pinName: str):
+        """Scene layoutPin matching an (instName, pinName) endpoint."""
+        if not instName:
+            for item in self.items():
+                if item.parentItem() is None and \
+                        isinstance(item, lshp.layoutPin) and \
+                        item.pinName == pinName:
+                    return item
+            return None
+        for item in self.items():
+            if item.parentItem() is not None or \
+                    not isinstance(item, lshp.layoutInstance):
+                continue
+            if corr.sdlInstName(getattr(item, "_sdlSource", None)) \
+                    == instName or item.instanceName == instName:
+                pin = self._layoutPinInInstance(item, pinName)
+                if pin is not None:
+                    return pin
+        return None
+
+    def _endpointsForGroup(self, group) -> list:
+        """(instName, pinName) endpoints for member pins of a net group."""
+        endpoints = []
+        for shape in group.shapes:
+            item = shape.item
+            if item is None or not isinstance(item, lshp.layoutPin):
+                continue
+            ancestor = item.parentItem()
+            while ancestor is not None and \
+                    not isinstance(ancestor, lshp.layoutInstance):
+                ancestor = ancestor.parentItem()
+            if ancestor is None:
+                endpoints.append(("", item.pinName))
+            else:
+                sdlName = corr.sdlInstName(
+                    getattr(ancestor, "_sdlSource", None))
+                endpoints.append(
+                    (sdlName or ancestor.instanceName,
+                     self._schematicPinName(ancestor, item.pinName)))
+        return endpoints
+
+    def _probeTargets(self):
+        """(instanceNames, netEndpoints) for the current selection."""
+        _ = self.connectivity  # ensure the item->group map is fresh
+        instances, netEndpoints = [], []
+        for item in self.selectedItems():
+            if isinstance(item, lshp.layoutInstance) and \
+                    item.parentItem() is None:
+                instances.append(
+                    corr.sdlInstName(getattr(item, "_sdlSource", None))
+                    or item.instanceName)
+                continue
+            group = self._connectivityItemGroup.get(item)
+            if group is not None:
+                netEndpoints.extend(self._endpointsForGroup(group))
+        return instances, netEndpoints
+
+    def probeSchematic(self) -> None:
+        """Cross-probe selected instances/nets into the source schematic."""
+        key = self._sdlSourceKeyForScene()
+        if key is None:
+            self.messageLine.setText(
+                "No schematic source — run Update from Schematic")
+            return
+        appMainW = getattr(self.editorWindow, "appMainW", None)
+        editor = (appMainW.openViews.get(ddef.viewNameTuple(*key))
+                  if appMainW is not None else None)
+        if editor is None:
+            self.messageLine.setText(
+                f"Open {key[0]}/{key[1]}/{key[2]} to probe")
+            return
+        instances, netEndpoints = self._probeTargets()
+        if not instances and not netEndpoints:
+            self.messageLine.setText(
+                "Select instances or net members to probe")
+            return
+        count = editor.centralW.scene.selectProbeTargets(
+            instances=instances, netEndpoints=netEndpoints)
+        self.messageLine.setText(f"Probed {count} item(s) in schematic")
+        editor.raise_()
+        editor.activateWindow()
+
+    def selectProbeTargets(self, instances=(), netEndpoints=()) -> int:
+        """Select instances by name; highlight groups for endpoints.
+
+        ``instances`` are schematic instance names (matched against sdl
+        source names and layout instanceName); ``netEndpoints`` are
+        (instName, pinName) pairs resolved through layout connectivity.
+        """
+        wanted = set(instances)
+        count = 0
+        if wanted:
+            self.clearSelection()
+            for item in self.items():
+                if item.parentItem() is not None or \
+                        not isinstance(item, lshp.layoutInstance):
+                    continue
+                if item.instanceName in wanted or \
+                        corr.sdlInstName(
+                            getattr(item, "_sdlSource", None)) in wanted:
+                    item.setSelected(True)
+                    count += 1
+            if count and self.views():
+                rect = self.selectedItems()[0].sceneBoundingRect()
+                for it in self.selectedItems()[1:]:
+                    rect = rect.united(it.sceneBoundingRect())
+                self.views()[0].fitInView(
+                    rect.adjusted(-200, -200, 200, 200),
+                    Qt.KeepAspectRatio)
+        count += self.highlightNetGroupsForEndpoints(netEndpoints)
+        return count
+
+    def highlightNetGroupsForEndpoints(self, endpoints) -> int:
+        """Highlight net groups containing any resolved endpoint pin."""
+        _ = self.connectivity  # ensure the item->group map is fresh
+        seen, count = set(), 0
+        for instName, pinName in endpoints:
+            pin = self._layoutPinForEndpoint(instName, pinName)
+            if pin is None:
+                continue
+            group = self._connectivityItemGroup.get(pin)
+            if group is None or id(group) in seen:
+                continue
+            seen.add(id(group))
+            for shape in group.shapes:
+                self._addNetHighlightRect(shape.item)
+            for via in group.vias:
+                self._addNetHighlightRect(via.item)
+            count += 1
+        return count
 
     def goDownHier(self):
         if self.selectedItems():

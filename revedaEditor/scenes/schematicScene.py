@@ -13,6 +13,7 @@
 import json
 import os
 import pathlib
+from dataclasses import dataclass
 from typing import Dict, List, Optional, Set, Tuple, Union
 
 import orjson
@@ -32,11 +33,13 @@ from PySide6.QtGui import (
     QFont,
     QFontDatabase,
     QPen,
+    QTransform,
 )
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QGraphicsItem,
+    QGraphicsItemGroup,
     QGraphicsRectItem,
     QGraphicsScene,
     QGraphicsSceneMouseEvent,
@@ -48,7 +51,9 @@ import revedaEditor.backend.libraryMethods as libm
 import revedaEditor.backend.undoStack as us
 import revedaEditor.checks.schematic as schk
 import revedaEditor.common.labels as lbl
+import revedaEditor.connectivity as conn
 import revedaEditor.common.net as snet
+import revedaEditor.common.params as prm
 import revedaEditor.common.shapes as shp  # import the shapes
 import revedaEditor.fileio.loadJSON as lj
 import revedaEditor.fileio.schematicEncoder as schenc
@@ -56,11 +61,24 @@ import revedaEditor.fileio.schemaValidation as sv
 import revedaEditor.gui.alignItems as alg
 import revedaEditor.gui.fileDialogues as fd
 import revedaEditor.gui.propertyDialogues as pdlg
-from revedaEditor.backend.pdkLoader import importPDKModule
+from revedaEditor.backend.pdkLoader import lazyPDKModule
 from revedaEditor.common.fileCache import FileCache
 from revedaEditor.scenes.editorScene import editorScene
 
-schlyr = importPDKModule('schLayers')
+schlyr = lazyPDKModule('schLayers')
+
+
+@dataclass
+class findHit:
+    """One find/replace result.
+
+    ``items`` are the scene items to select/zoom (every member wire for a
+    net hit); ``rect`` is the union bounding box in scene coordinates."""
+    kind: str           # "instance" | "net" | "pin"
+    name: str           # matched name
+    detail: str         # extra display info (cell ref, direction, ...)
+    items: tuple        # member scene items
+    rect: QRectF        # union scene bounding rect
 
 
 class schematicScene(editorScene):
@@ -77,6 +95,13 @@ class schematicScene(editorScene):
         self.instCounter = 0
         self.instanceCounter = 0
         self.netCounter = 0
+
+        # Unified connectivity cache (revedaEditor.connectivity engine).
+        # Rebuilt by rebuildConnectivity(); invalidated on any scene change.
+        self._connectivityCache = None
+        self._connectivitySegIdByItem = {}
+        self._connectivityPortIdByItem = {}
+        self.changed.connect(self.markConnectivityDirty)
 
         # Initialize modes with default values
         self.editModes = ddef.schematicModes(selectItem=True, deleteItem=False,
@@ -111,6 +136,10 @@ class schematicScene(editorScene):
         self.pinName = ""
         self.pinType = "Signal"
         self.pinDir = "Input"
+        self.pinExpr = ""
+        # When True, resolved (inherited/auto) net names are drawn on wires
+        # alongside SET names — toggled via the editor's Show Resolved Names.
+        self.showResolvedNames = False
 
         # Initialize internal state trackers
         self._newNet = None
@@ -122,6 +151,9 @@ class schematicScene(editorScene):
         self.textTuple = None
         self.netNameString = None
         self.newInstanceTuple = None
+        # Parameter values captured by the place-with-params form
+        # (createInstClick); applied to each placed instance's labels.
+        self.pendingInstanceParams = None
         self.newAlignLine = None
         self._snapPointRect = self.defineSnapRect()
         self._moveMacroActive = False
@@ -136,6 +168,11 @@ class schematicScene(editorScene):
         self._wireResumePoints = []
         self._wireWidth = 0
         self._suppressWireRestart = False
+        # Bus ripper state: member name carried by the in-progress wire
+        # chain, and a one-shot index override (tests/scripts skip the
+        # member-index prompt by setting _busRipIndex first).
+        self._wirePendingName = ""
+        self._busRipIndex = None
 
         # Stretch state
         self._stretchBody = None
@@ -153,6 +190,8 @@ class schematicScene(editorScene):
         self.hierarchyTrail = ""
         self.parentEditor = None
         self.parentObj = None
+        # Edit-in-place ghost groups: {schematicSymbol: QGraphicsItemGroup}
+        self._eipGroups = {}
 
         # Probe state
         self.probeMode = False
@@ -380,7 +419,31 @@ class schematicScene(editorScene):
         if self._newInstance:
             self._newInstance = None
         self._newInstance = self.drawInstance(self.newInstanceTuple, eventLoc)
+        if self._newInstance is None:
+            return
+        self._applyPendingInstanceParams(self._newInstance)
         self._newInstance.setSelected(True)
+
+    def _applyPendingInstanceParams(self, instance) -> None:
+        """Write place-with-form parameter values onto a placed instance.
+
+        Values are keyed by parameter name; they land on the matching
+        ``@name`` label. Labels are re-resolved afterwards so NLP/pyLabel
+        dependents see the new values."""
+        pending = getattr(self, "pendingInstanceParams", None)
+        if not pending:
+            return
+        for name, value in pending.items():
+            label = instance.labels.get(f"@{name}") or instance.labels.get(
+                name)
+            if label is not None:
+                label.labelValue = value
+        for labelItem in instance.labels.values():
+            if labelItem.labelType == lbl.symbolLabel.labelTypes[1]:
+                labelItem.labelDefs()
+        for labelItem in instance.labels.values():
+            if labelItem.labelType == lbl.symbolLabel.labelTypes[2]:
+                labelItem.labelDefs()
 
     def _handleDrawPin(self, mouseReleaseLoc: QPoint) -> None:
         """
@@ -425,7 +488,10 @@ class schematicScene(editorScene):
         if self._newNet is None:
             # First click of a new wire.
             self._routeHorizontalFirst = None
+            self._wirePendingName = self._ripBusMemberName(snapPoint, width)
             self._createNet(snapPoint, width)
+            if self._wirePendingName and self._newNet is not None:
+                self._newNet.name = self._wirePendingName
             return
         endPoint = self._commitWirePoint(snapPoint, width)
         if endPoint is None:
@@ -482,14 +548,25 @@ class schematicScene(editorScene):
         segment = snet.schematicNet(start, end, width, self._wireDrawMode)
         if segment.draftLine.isNull():
             return None
+        if self._wirePendingName:
+            segment.name = self._wirePendingName
         startPoint, endPoint = segment.sceneEndPoints
         netsBefore = self.findSceneNetsSet()
         self.addItem(segment)
         self.mergeSplitNets(segment)
+        # Nets created by the drawn segment's own merge are the wire being
+        # drawn; pierced-bus fragments split below keep their bus name.
+        ownNets = self.findSceneNetsSet() - netsBefore
         self._splitPiercedNets(startPoint, endPoint)
         netsAfter = self.findSceneNetsSet()
         newNets = list(netsAfter - netsBefore)
         oldNets = list(netsBefore - netsAfter)
+        if self._wirePendingName:
+            # Skip bus-width results: a member wire merged into the trunk
+            # extends the bus rather than ripping a member off it.
+            for netItem in ownNets & netsAfter:
+                if not netItem.width:
+                    netItem.name = self._wirePendingName
         if newNets or oldNets:
             command = us.addDeleteShapesUndo(self, newNets, oldNets)
             self.undoStack.push(command)
@@ -511,6 +588,7 @@ class schematicScene(editorScene):
             for item in list(self.items(probe)):
                 if (isinstance(item, snet.schematicNet)
                         and item.scene() is self
+                        and not self._isEipGhost(item)
                         and item.sceneShapeRect.contains(point)
                         and point not in item.sceneEndPoints):
                     self.mergeSplitNets(item)
@@ -584,6 +662,7 @@ class schematicScene(editorScene):
         self._wireCommands = []
         self._wireResumePoints = []
         self._routeHorizontalFirst = None
+        self._wirePendingName = ""
         self._clearRouteGhost()
 
     def popWireVertex(self) -> None:
@@ -654,6 +733,57 @@ class schematicScene(editorScene):
     def _handleDrawBus(self, eventLoc: QPoint):
         """Handle draw bus logic with continuous mode."""
         self._handleDrawNet(eventLoc, width=1)
+
+    # ---- bus ripper ------------------------------------------------------
+
+    def _ripBusMemberName(self, point: QPoint, width: int) -> str:
+        """Bus ripper: a plain wire started on a bus-named net or pin gets
+        named ``base<i>`` for the chosen member index. Returns "" when the
+        start point is not on a bus (or the rip is cancelled)."""
+        if width:
+            return ""  # drawing a bus trunk, not a member
+        target = self._busRangeAtPoint(point)
+        if target is None:
+            return ""
+        base, lo, hi = target
+        index = self._busMemberIndex(base, lo, hi)
+        return f"{base}<{index}>" if index is not None else ""
+
+    def _busRangeAtPoint(self, point: QPoint):
+        """Return (base, lo, hi) when a bus-named net or pin sits at point."""
+        probe = QRectF(point.x() - 2, point.y() - 2, 4, 4)
+        for item in self.items(probe):
+            if self._isEipGhost(item):
+                continue
+            if isinstance(item, snet.schematicNet):
+                name = item.name
+            elif isinstance(item, (shp.symbolPin, shp.schematicPin)):
+                name = item.pinName
+            else:
+                continue
+            if name:
+                base, (lo, hi) = snet.schematicNet.parseArrayNotation(name)
+                if lo >= 0:
+                    return base, lo, hi
+        return None
+
+    def _busMemberIndex(self, base: str, lo: int, hi: int) -> Optional[int]:
+        """Pick the member index for a rip: one-shot ``_busRipIndex``
+        override, immediate for single-member pins, else prompt."""
+        # Buses may descend (a<7:0>): normalize before range checks/prompts.
+        loB, hiB = min(lo, hi), max(lo, hi)
+        if self._busRipIndex is not None:
+            index = self._busRipIndex
+            self._busRipIndex = None
+            return index if loB <= index <= hiB else None
+        if hiB == loB:
+            return lo
+        from PySide6.QtWidgets import QInputDialog
+        view = self.views()[0] if self.views() else None
+        index, ok = QInputDialog.getInt(
+            view, "Rip Bus Member",
+            f"Member index of {base}<{lo}:{hi}>:", lo, loB, hiB)
+        return index if ok else None
 
     def _handleDrawText(self, mouseReleaseLoc: QPoint) -> None:
         """
@@ -802,7 +932,8 @@ class schematicScene(editorScene):
         # Find the schematicNet under the cursor in a single click
         clickedNet = next(
             (item for item in self.items(mouseReleaseLoc)
-             if isinstance(item, snet.schematicNet)), None)
+             if isinstance(item, snet.schematicNet)
+             and not self._isEipGhost(item)), None)
         if clickedNet is None:
             # Missed the net: stay in nameNet mode for another try.
             self.messageLine.setText(
@@ -951,6 +1082,7 @@ class schematicScene(editorScene):
         """Run mergeSplitNets on every net in the scene to remove duplicates."""
         netSnapshot = list(
             item for item in self.items() if isinstance(item, snet.schematicNet)
+            and not self._isEipGhost(item)
         )
         for netItem in netSnapshot:
             if netItem.scene() is self:
@@ -989,7 +1121,8 @@ class schematicScene(editorScene):
 
     def splitInputNet(self, inputNet) -> tuple[bool, Set[snet.schematicNet]]:
         sceneShapeRect = inputNet.sceneShapeRect
-        sceneItems = self.items(sceneShapeRect)
+        sceneItems = [item for item in self.items(sceneShapeRect)
+                      if not self._isEipGhost(item)]
 
         splitPointsSet = set()
 
@@ -1085,7 +1218,8 @@ class schematicScene(editorScene):
         body (for T-junction snaps). Points are snapped to grid so that
         snapping to them can never drag a net endpoint off-grid."""
         snapPoints = set()
-        rectItems = set(self.items(sceneRect)) - ignoredSet
+        rectItems = {item for item in self.items(sceneRect)
+                     if not self._isEipGhost(item)} - ignoredSet
         probePoint = sceneRect.center()
         for item in rectItems:
             if isinstance(item, snet.schematicNet):
@@ -1430,16 +1564,31 @@ class schematicScene(editorScene):
         for symbolItem in sceneSymbolSet:
             self.genSymbolPinNetMap(symbolItem)
 
+    @staticmethod
+    def _isEipGhost(item) -> bool:
+        """True for items hosted by an edit-in-place ghost group — they
+        render inside the parent scene but belong to the child cellview.
+        Only direct group children carry ``_eipChild``, so walk the
+        ``parentItem`` chain to catch nested pins/labels inside ghost
+        symbols."""
+        while item is not None:
+            if getattr(item, "_eipChild", False):
+                return True
+            item = item.parentItem()
+        return False
+
     def findSceneSymbolSet(self) -> set[shp.schematicSymbol]:
         """
         Find all the symbols on the scene as a set.
         """
         return {item for item in self.items() if
-                isinstance(item, shp.schematicSymbol)}
+                isinstance(item, shp.schematicSymbol)
+                and not self._isEipGhost(item)}
 
     def findSceneNetsSet(self) -> set[snet.schematicNet]:
         return {item for item in self.items() if
-                isinstance(item, snet.schematicNet)}
+                isinstance(item, snet.schematicNet)
+                and not self._isEipGhost(item)}
 
     def _filterBySelectModes(self, items: set) -> set:
         """Filter rubber-band selected items by the active selection filter."""
@@ -1461,18 +1610,21 @@ class schematicScene(editorScene):
 
     def findRectSymbolPin(self, rect: Union[QRect, QRectF]) -> set[shp.symbolPin]:
         pinsRectSet = {item for item in self.items(rect) if
-                       isinstance(item, shp.symbolPin)}
+                       isinstance(item, shp.symbolPin)
+                       and not self._isEipGhost(item)}
         return pinsRectSet
 
     def findRectSchemPins(self, rect: Union[QRect, QRectF]) -> set[
         shp.schematicPin]:
         pinsRectSet = {item for item in self.items(rect) if
-                       isinstance(item, shp.schematicPin)}
+                       isinstance(item, shp.schematicPin)
+                       and not self._isEipGhost(item)}
         return pinsRectSet
 
     def findSceneSchemPinsSet(self) -> set[shp.schematicPin]:
         pinsSceneSet = {item for item in self.items() if
-                        isinstance(item, shp.schematicPin)}
+                        isinstance(item, shp.schematicPin)
+                        and not self._isEipGhost(item)}
         if pinsSceneSet:  # check pinsSceneSet is empty
             return pinsSceneSet
         else:
@@ -1524,6 +1676,7 @@ class schematicScene(editorScene):
     def addPin(self, pos: QPoint) -> shp.schematicPin:
         try:
             pin = shp.schematicPin(pos, self.pinName, self.pinDir, self.pinType)
+            pin.netExpr = self.pinExpr
             self.addUndoStack(pin)
             return pin
         except Exception as e:
@@ -1544,10 +1697,26 @@ class schematicScene(editorScene):
         instance = self.instSymbol(instanceTuple, pos)
         if instance:  # Add check for None
             self.addUndoStack(instance)
-            self.instanceCounter += 1
             return instance
         else:
             return None
+
+    def _allocInstanceName(self, used: Optional[set] = None) -> tuple[int, str]:
+        """Allocate a unique ``I<n>`` counter/name pair, skipping instance
+        names already present on the scene (manually renamed or pasted
+        instances included).  ``used`` may carry extra names — e.g. several
+        symbols pasted at once aren't in the scene yet — and is updated with
+        the allocated name."""
+        if used is None:
+            used = {item.instanceName for item in self.items()
+                    if isinstance(item, shp.schematicSymbol)
+                    and not self._isEipGhost(item)}
+        self.instanceCounter += 1
+        while f"I{self.instanceCounter}" in used:
+            self.instanceCounter += 1
+        name = f"I{self.instanceCounter}"
+        used.add(name)
+        return self.instanceCounter, name
 
     def instSymbol(self, instanceTuple: ddef.viewNameTuple, pos: QPoint):
         viewItem = libm.findViewItem(self.appMainW.libraryModel,
@@ -1584,8 +1753,9 @@ class schematicScene(editorScene):
             symbolInstance.setPos(pos)
 
             # Batch property assignments
-            instanceProperties = {"counter": self.instanceCounter,
-                                  "instanceName": f"I{self.instanceCounter}",
+            counter, instanceName = self._allocInstanceName()
+            instanceProperties = {"counter": counter,
+                                  "instanceName": instanceName,
                                   "libraryName": libItem.libraryName,
                                   "cellName": cellItem.cellName,
                                   "viewName": viewItem.viewName, }
@@ -1620,15 +1790,18 @@ class schematicScene(editorScene):
             return
         copyShapesList = []
         if selectedItems:
+            usedNames = {item.instanceName for item in self.items()
+                         if isinstance(item, shp.schematicSymbol)
+                         and not self._isEipGhost(item)}
             for item in selectedItems:
                 selectedItemJson = json.dumps(item, cls=schenc.schematicEncoder)
                 itemCopyDict = json.loads(selectedItemJson)
                 shape = lj.schematicItems(self).create(itemCopyDict)
                 if shape is not None:
                     if isinstance(shape, shp.schematicSymbol):
-                        self.instanceCounter += 1
-                        shape.instanceName = f"I{self.instanceCounter}"
-                        shape.counter = int(self.instanceCounter)
+                        counter, name = self._allocInstanceName(usedNames)
+                        shape.instanceName = name
+                        shape.counter = counter
                         [label.labelDefs() for label in shape.labels.values()]
                     copyShapesList.append(shape)
             self.addListUndoStack(copyShapesList)
@@ -1640,12 +1813,72 @@ class schematicScene(editorScene):
             self._initialGroupPos = self.selectedItemGroup.pos()
             self.selectedItemGroup.setSelected(True)
 
-    def saveSchematic(self, file: pathlib.Path) -> bool:
+    # ---- clipboard copy/paste -------------------------------------------
+
+    _CLIPBOARD_TYPES = {"sys", "scn", "scp", "txt"}
+
+    def copySelectionToClipboard(self) -> int:
+        """Serialize selected top-level items to the system clipboard as a
+        schematic-encoder JSON fragment. Returns the item count."""
+        from PySide6.QtGui import QGuiApplication
+        selectedItems = [item for item in self.selectedItems()
+                         if item.parentItem() is None
+                         and isinstance(item, self.SCHEMATIC_SHAPES)]
+        if not selectedItems:
+            return 0
+        records = [json.loads(json.dumps(item, cls=schenc.schematicEncoder))
+                   for item in selectedItems]
+        QGuiApplication.clipboard().setText(json.dumps(records))
+        return len(records)
+
+    def pasteClipboard(self, at: Optional[QPoint] = None) -> int:
+        """Instantiate a clipboard fragment at ``at`` (defaults to the last
+        cursor position). The fragment's bounding box top-left lands on the
+        point; fresh instance names are assigned. Returns the item count."""
+        from PySide6.QtGui import QGuiApplication
+        text = QGuiApplication.clipboard().text()
+        try:
+            records = json.loads(text) if text else None
+        except json.JSONDecodeError:
+            return 0
+        if not (isinstance(records, list) and records and all(
+                isinstance(r, dict) and r.get("type") in self._CLIPBOARD_TYPES
+                for r in records)):
+            return 0
+        factory = lj.schematicItems(self)
+        shapes = [factory.create(record) for record in records]
+        shapes = [shape for shape in shapes if shape is not None]
+        if not shapes:
+            return 0
+        if at is None:
+            at = self.mouseMoveLoc or QPoint(0, 0)
+        topLeft = shapes[0].sceneBoundingRect().topLeft()
+        for shape in shapes[1:]:
+            topLeft = QPointF(
+                min(topLeft.x(), shape.sceneBoundingRect().left()),
+                min(topLeft.y(), shape.sceneBoundingRect().top()))
+        delta = self.snapToGrid(at) - self.snapToGrid(topLeft.toPoint())
+        usedNames = {item.instanceName for item in self.items()
+                     if isinstance(item, shp.schematicSymbol)
+                     and not self._isEipGhost(item)}
+        for shape in shapes:
+            shape.setPos(shape.pos() + delta)
+            if isinstance(shape, shp.schematicSymbol):
+                counter, name = self._allocInstanceName(usedNames)
+                shape.instanceName = name
+                shape.counter = counter
+                [label.labelDefs() for label in shape.labels.values()]
+        self.addListUndoStack(shapes)
+        return len(shapes)
+
+    def saveSchematic(self, file: pathlib.Path, markClean: bool = True) -> bool:
         """
         Save the schematic to a file with optimized memory usage and error handling.
 
         Args:
             file (pathlib.Path): The file path to save the schematic to.
+            markClean (bool): Clear the undo stack after a real save; autosave
+                passes False so the undo history is preserved.
 
         Raises:
             IOError: If there are file operation errors
@@ -1673,7 +1906,8 @@ class schematicScene(editorScene):
                     f.write(",\n")
                     json.dump(header_items[1], f)
                     topLevelItems = filter(
-                        lambda item: isinstance(item, self.SCHEMATIC_SHAPES),
+                        lambda item: isinstance(item, self.SCHEMATIC_SHAPES)
+                        and not self._isEipGhost(item),
                         self.items())
                     # Stream items
                     for item in list(topLevelItems):
@@ -1684,6 +1918,12 @@ class schematicScene(editorScene):
                             self.logger.error(
                                 f"Failed to serialize item: {str(json_err)}")
                             return
+
+                    # Persist check markers so the error browser survives
+                    # save/load without re-running checks.
+                    for violation in self.lastCheckViolations:
+                        f.write(",\n")
+                        json.dump(self._violationToRecord(violation), f)
 
                     # Close array
                     f.write("\n]")
@@ -1699,7 +1939,8 @@ class schematicScene(editorScene):
                     f"Saved schematic to {self.editorWindow.cellName}:"
                     f"{self.editorWindow.viewName}")
                 lj.schematicItems._load_sym_json.cache_clear()
-                self.undoStack.clear()
+                if markClean:
+                    self.undoStack.clear()
                 return True
         except IOError as io_err:
             self.logger.error(f"IO Error while saving schematic: {str(io_err)}")
@@ -1759,6 +2000,7 @@ class schematicScene(editorScene):
             with self.measureDuration():
                 viewDict, gridSettings, *itemData = decodedData
 
+                self._restoreMarkers(itemData)
                 if gridSettings and gridSettings.get("snapGrid"):
                     self.editorWindow.configureGridSettings(
                         decodedData[1].get("snapGrid",
@@ -1772,6 +2014,9 @@ class schematicScene(editorScene):
                     self.createSchematicItems(itemData)
                 finally:
                     self.blockSignals(False)
+                # Semantic connectivity check on the decoded records via the
+                # shared engine — same diagnostics aiTerminal/importers get.
+                self._logRecordDiagnostics(itemData)
             self.itemsRefSet = set(self.items())
             return True
 
@@ -1784,6 +2029,34 @@ class schematicScene(editorScene):
         except Exception as e:
             self.logger.error(f"Unexpected error loading schematic: {e}")
             return
+
+    def _logRecordDiagnostics(self, itemData: List[Dict]) -> None:
+        """Run conn.checkRecords on loaded records and log the findings.
+
+        Errors (name conflicts, malformed records) are logged individually;
+        warnings (floating pins, dangling ends) are summarized to keep the
+        log readable on in-progress schematics.
+        """
+        try:
+            _result, diagnostics = conn.checkRecords(
+                itemData,
+                pinLocator=lj.makeSymbolPinLocator(self.libraryDict),
+                endpointTol=1.0,
+                bodyTol=max(self.snapDistance // 2, 2),
+                portTol=self.snapDistance)
+        except Exception as e:
+            self.logger.warning(f"Connectivity record check skipped: {e}")
+            return
+        warnings = []
+        for diag in diagnostics:
+            if diag.severity == "error":
+                self.logger.error(diag.message)
+            else:
+                warnings.append(diag.message)
+        if warnings:
+            self.logger.warning(
+                f"Connectivity check: {len(warnings)} warning(s) in "
+                f"schematic records. First: {warnings[0]}")
 
     def createSchematicItems(self, itemsList: List[Dict]):
         factory = lj.schematicItems(self)
@@ -1849,13 +2122,16 @@ class schematicScene(editorScene):
         dlg.xLocationEdit.setText(str(location[0]))
         dlg.yLocationEdit.setText(str(location[1]))
         dlg.angleEdit.setText(str(item.angle))
+        dlg.netSetEdit.setText(conn.formatNetSet(item.netSet))
 
         # Build the label rows in a stable, deterministic order and remember
         # the widgets so that Apply/OK can share the same read-back path.
         self._buildInstanceLabelRows(dlg, item)
 
-        # now list instance attributes
-        for counter, name in enumerate(item.symattrs.keys()):
+        # now list instance attributes; the reserved paramDefs attr is
+        # authored via the Parameters table, not as raw JSON here
+        for counter, name in enumerate(
+                k for k in item.symattrs.keys() if k != prm.PARAMDEFS_ATTR):
             dlg.instanceAttributesLayout.addWidget(edf.boldLabel(name, dlg),
                                                    counter, 0)
             labelNameEdit = edf.longLineEdit()
@@ -1898,17 +2174,35 @@ class schematicScene(editorScene):
             if label.labelDefinition not in lbl.symbolLabel.predefinedLabels]
         editableLabels.sort(key=sortKey)
 
+        # Typed parameters (symbol paramDefs) get typed widgets; other
+        # editable labels keep the free-text field.
+        paramDefMap = {pdef.name: pdef for pdef in item.paramDefs}
+
         dlg.labelRows = []
-        for rowIndex, label in enumerate(editableLabels):
+        dlg.hiddenLabelNames = []
+        for label in editableLabels:
             isPyLabel = label.labelType == pyLabelType
+            pdef = paramDefMap.get(label.labelName.lstrip("@"))
+            if pdef is not None and not pdef.display:
+                # Hidden parameter: not written back from the dialog; its
+                # value is carried over from the original item instead.
+                dlg.hiddenLabelNames.append(label.labelName)
+                continue
+            rowIndex = len(dlg.labelRows)
             dlg.instanceLabelsLayout.addWidget(
                 edf.boldLabel(label.labelName[1:], dlg), rowIndex, 0)
-            labelValueEdit = edf.longLineEdit()
-            labelValueEdit.setText(str(label.labelValue))
+            if pdef is not None and not isPyLabel:
+                valueWidget, getValue, setValue = pdlg.paramValueWidget(
+                    pdef, str(label.labelValue), dlg)
+            else:
+                valueWidget = edf.longLineEdit()
+                valueWidget.setText(str(label.labelValue))
+                getValue = valueWidget.text
+                setValue = valueWidget.setText
             if isPyLabel:
-                labelValueEdit.setReadOnly(True)
-                labelValueEdit.setToolTip("Computed pyLabel (Read Only)")
-            dlg.instanceLabelsLayout.addWidget(labelValueEdit, rowIndex, 1)
+                valueWidget.setReadOnly(True)
+                valueWidget.setToolTip("Computed pyLabel (Read Only)")
+            dlg.instanceLabelsLayout.addWidget(valueWidget, rowIndex, 1)
             visibleCombo = QComboBox(dlg)
             visibleCombo.setInsertPolicy(QComboBox.NoInsert)
             visibleCombo.addItems(["True", "False"])
@@ -1917,7 +2211,10 @@ class schematicScene(editorScene):
             dlg.labelRows.append({
                 "labelName": label.labelName,
                 "isPyLabel": isPyLabel,
-                "valueEdit": labelValueEdit,
+                "paramDef": pdef,
+                "valueEdit": valueWidget,
+                "getValue": getValue,
+                "setValue": setValue,
                 "visibleCombo": visibleCombo, })
 
     def _buildInstanceFromDialog(self, dlg, item: shp.schematicSymbol,
@@ -1938,8 +2235,13 @@ class schematicScene(editorScene):
         newInstance.instanceName = dlg.instNameEdit.text().strip()
         newInstance.angle = float(dlg.angleEdit.text().strip())
         newInstance.counter = item.counter
+        newInstance.netSet = dlg.netSetEdit.text().strip()
 
         # Copy edited values from the dialog into the new instance labels.
+        # Typed parameters are validated against their ParamDef; invalid
+        # values are rejected (the existing value is kept) and reported.
+        siblingValues = {row["labelName"]: row["getValue"]()
+                         for row in dlg.labelRows}
         for row in dlg.labelRows:
             if row["isPyLabel"]:
                 # pyLabel values are computed, not taken from the dialog.
@@ -1947,8 +2249,34 @@ class schematicScene(editorScene):
             label = newInstance.labels.get(row["labelName"])
             if label is None:
                 continue
-            label.labelValue = row["valueEdit"].text()
+            newValue = row["getValue"]()
+            pdef = row.get("paramDef")
+            if pdef is not None:
+                errors = prm.validateValue(pdef, newValue, siblingValues)
+                if errors:
+                    self.logger.warning(
+                        f"{newInstance.instanceName} "
+                        f"{row['labelName']}: {'; '.join(errors)}")
+                    # Fall back to the *existing* instance's value, not the
+                    # freshly-built default.
+                    oldLabel = item.labels.get(row["labelName"])
+                    newValue = str(oldLabel.labelValue) if (
+                        oldLabel is not None) else str(label.labelValue)
+                else:
+                    newValue = prm.normalizeValue(pdef, newValue)
+            label.labelValue = newValue
             label.labelVisible = row["visibleCombo"].currentText() == "True"
+
+        # Hidden parameters never appeared in the dialog; carry their
+        # existing values over so an unrelated edit doesn't reset them to
+        # symbol defaults.  Done before the labelDefs passes so pyLabels and
+        # NLP labels can still reference them.
+        for name in getattr(dlg, "hiddenLabelNames", ()):
+            oldLabel = item.labels.get(name)
+            newLabel = newInstance.labels.get(name)
+            if oldLabel is not None and newLabel is not None:
+                newLabel.labelValue = oldLabel.labelValue
+                newLabel.labelVisible = oldLabel.labelVisible
 
         # Recompute derived labels: NLPLabels first, then pyLabels which may
         # depend on them.
@@ -1980,7 +2308,7 @@ class schematicScene(editorScene):
                 continue
             label = previewInstance.labels.get(row["labelName"])
             if label is not None:
-                row["valueEdit"].setText(str(label.labelValue))
+                row["setValue"](str(label.labelValue))
 
     def setNetProperties(self, netItem: snet.schematicNet):
         dlg = pdlg.netProperties(self.editorWindow)
@@ -1993,6 +2321,7 @@ class schematicScene(editorScene):
         dlg.netEndPointEditY.setText(
             str(round(netItem.mapToScene(netItem.draftLine.p2()).y())))
         dlg.netNameEdit.setText(netItem.name)
+        dlg.netExprEdit.setText(netItem.netExpr)
         dlg.widthButtonGroup.button(netItem.width).setChecked(True)
         if dlg.exec() == QDialog.DialogCode.Accepted:
             netName = dlg.netNameEdit.text().strip()
@@ -2010,6 +2339,12 @@ class schematicScene(editorScene):
                 self.logger.warning(f"{netName} is malformed, please correct.")
                 newNet.name = netItem.name
             newNet.width = dlg.widthButtonGroup.checkedId()
+            netExpr = dlg.netExprEdit.text().strip()
+            if netExpr and conn.parseNetExpr(netExpr) is None:
+                self.logger.warning(
+                    f"Malformed net expression {netExpr!r}; ignored.")
+            else:
+                newNet.netExpr = netExpr
             self.undoStack.push(us.addDeleteShapeUndo(self, newNet, netItem))
 
     def setTextProperties(self, item):
@@ -2038,6 +2373,7 @@ class schematicScene(editorScene):
         dlg.pinName.setText(item.pinName)
         dlg.pinDir.setCurrentText(item.pinDir)
         dlg.pinType.setCurrentText(item.pinType)
+        dlg.netExprEdit.setText(item.netExpr)
         dlg.angleEdit.setText(str(item.angle))
         dlg.xlocationEdit.setText(str(item.mapToScene(item.start).x()))
         dlg.ylocationEdit.setText(str(item.mapToScene(item.start).y()))
@@ -2052,6 +2388,12 @@ class schematicScene(editorScene):
             newPin = shp.schematicPin(QPoint(0, 0), pinName, pinDir, pinType)
             newPin.setPos(start)
             newPin.angle = angle
+            netExpr = dlg.netExprEdit.text().strip()
+            if netExpr and conn.parseNetExpr(netExpr) is None:
+                self.logger.warning(
+                    f"Malformed net expression {netExpr!r}; ignored.")
+            else:
+                newPin.netExpr = netExpr
             self.undoStack.push(us.addDeleteShapeUndo(self, newPin, item))
 
     def hilightNets(self):
@@ -2221,22 +2563,15 @@ class schematicScene(editorScene):
             parentSymbol = w.parentObj
             if not hasattr(parentSymbol, 'pins'):
                 continue
-            # Find which pins of the parent symbol are connected to the probed net
+            # Find which pins of the parent symbol are connected to the
+            # probed net, using the connectivity engine's pin->group map.
             childPinNames = set()
-            for pinName, pinItem in parentSymbol.pins.items():
-                try:
-                    connectedNets = [
-                        n for n in pinItem.collidingItems(
-                            Qt.IntersectsItemBoundingRect)
-                        if isinstance(n, snet.schematicNet)
-                    ]
-                except RuntimeError:
-                    continue
-                for netItem in connectedNets:
-                    if (snet.schematicNet._namesMatch(netItem.name, netName)
-                            and not netItem.name.startswith("dnet")):
-                        childPinNames.add(pinName)
-                        break
+            self.genSymbolPinNetMap(parentSymbol)
+            for pinName, pinNetName in parentSymbol.pinNetMap.items():
+                if (pinNetName and not pinNetName.startswith("dnet")
+                        and snet.schematicNet._namesMatch(pinNetName,
+                                                          netName)):
+                    childPinNames.add(pinName)
             if childPinNames:
                 childScene.probePinNames |= childPinNames
                 childScene.applyProbe(colorIndex)
@@ -2252,19 +2587,17 @@ class schematicScene(editorScene):
         finding nets connected to the matching pins on the parent symbol."""
         parentNetNames = set()
         self.nameSceneNets()
-        # Find child schematic pins connected to the probed net
+        # Find child schematic pins connected to the probed net via the
+        # connectivity engine's port->group map.
+        result = self.connectivity
+        portIdByItem = self._connectivityPortIdByItem
         matchingPinNames = set()
         for pinItem in self.findSceneSchemPinsSet():
-            try:
-                connectedNets = [
-                    n for n in pinItem.collidingItems(
-                        Qt.IntersectsItemBoundingRect)
-                    if isinstance(n, snet.schematicNet)
-                ]
-            except RuntimeError:
-                continue
-            if connectedNets and snet.schematicNet._namesMatch(
-                    connectedNets[0].name, netName):
+            portId = portIdByItem.get(pinItem)
+            groupIndex = (result.portGroup.get(portId)
+                          if portId is not None else None)
+            if (groupIndex is not None and snet.schematicNet._namesMatch(
+                    result.groups[groupIndex].name, netName)):
                 matchingPinNames.add(pinItem.pinName)
 
         if not matchingPinNames or not editor.parentEditor:
@@ -2277,19 +2610,11 @@ class schematicScene(editorScene):
         if not hasattr(parentSymbol, 'pins'):
             return parentNetNames
 
-        for pinName, pinItem in parentSymbol.pins.items():
-            if pinName in matchingPinNames:
-                try:
-                    connectedNets = [
-                        n for n in pinItem.collidingItems(
-                            Qt.IntersectsItemBoundingRect)
-                        if isinstance(n, snet.schematicNet)
-                    ]
-                except RuntimeError:
-                    continue
-                for netItem in connectedNets:
-                    if not netItem.name.startswith("dnet"):
-                        parentNetNames.add(netItem.name)
+        parentScene.genSymbolPinNetMap(parentSymbol)
+        for pinName, pinNetName in parentSymbol.pinNetMap.items():
+            if pinName in matchingPinNames and not pinNetName.startswith(
+                    "dnet"):
+                parentNetNames.add(pinNetName)
         return parentNetNames
 
     def _propagateRemoveProbe(self, netName: str, visited: set):
@@ -2331,15 +2656,15 @@ class schematicScene(editorScene):
         sceneNetsSet = self.findSceneNetsSet()
         schemPinsSet = self.findSceneSchemPinsSet()
 
+        result = self.connectivity
+        portIdByItem = self._connectivityPortIdByItem
         for pinItem in schemPinsSet:
             if pinItem.pinName in self.probePinNames:
-                connectedNets = [
-                    netItem for netItem in pinItem.collidingItems(
-                        Qt.IntersectsItemBoundingRect)
-                    if isinstance(netItem, snet.schematicNet)
-                ]
-                if connectedNets:
-                    probeName = connectedNets[0].name
+                portId = portIdByItem.get(pinItem)
+                groupIndex = (result.portGroup.get(portId)
+                              if portId is not None else None)
+                if groupIndex is not None:
+                    probeName = result.groups[groupIndex].name
                     if probeName in self._probedNets:
                         continue
                     matchingNets = {
@@ -2426,21 +2751,12 @@ class schematicScene(editorScene):
         self.nameSceneNets()
         if not hasattr(selectedSymbol, 'pins'):
             return
-        # Build a map of pin name → connected net name for the symbol
-        pinToNet = {}
-        for pinName, pinItem in selectedSymbol.pins.items():
-            try:
-                connectedNets = [
-                    n for n in pinItem.collidingItems(
-                        Qt.IntersectsItemBoundingRect)
-                    if isinstance(n, snet.schematicNet)
-                ]
-            except RuntimeError:
-                continue
-            for netItem in connectedNets:
-                if not netItem.name.startswith("dnet"):
-                    pinToNet[pinName] = netItem.name
-                    break
+        # Build a map of pin name → connected net name for the symbol via
+        # the connectivity engine's pin->group map.
+        self.genSymbolPinNetMap(selectedSymbol)
+        pinToNet = {pinName: netName for pinName, netName in
+                    selectedSymbol.pinNetMap.items()
+                    if netName and not netName.startswith("dnet")}
         # For each probed net, find matching pins and apply probe to child
         childScene.probeMode = True
         for idx, probedNetName in enumerate(self._probedNets):
@@ -2452,6 +2768,187 @@ class schematicScene(editorScene):
                 childScene.probePinNames |= childPinNames
                 childScene.applyProbe(idx % len(schlyr.probePens))
 
+    # ---- descend edit-in-place -----------------------------------------
+
+    def descendInPlace(self, symbolItem=None,
+                     viewName: str = "schematic") -> Optional[
+        QGraphicsItemGroup]:
+        """Render the selected instance's child cellview ghosted inside
+        this scene.
+
+        Child items are created by the normal ``schematicItems`` factory,
+        grouped under the instance's transform (pos/angle/flip) and marked
+        ``_eipChild`` so connectivity, checks and save paths ignore them.
+        ``setEipEditable(True)`` lets ghost children be selected for
+        property edits; ``saveInPlaceEdits`` writes them back to the child
+        file. Re-descending the same instance returns the existing group.
+        """
+        if symbolItem is None:
+            symbols = [item for item in self.selectedItems()
+                       if isinstance(item, shp.schematicSymbol)]
+            if not symbols:
+                return None
+            symbolItem = symbols[0]
+        if symbolItem in self._eipGroups:
+            return self._eipGroups[symbolItem]
+        file = self._childViewFile(symbolItem, viewName)
+        if file is None:
+            self.logger.warning(
+                f"Edit-in-place: no child view for "
+                f"{symbolItem.libraryName}/{symbolItem.cellName}")
+            return None
+        children, skipped = self._loadChildItems(file)
+        if not children:
+            return None
+        group = QGraphicsItemGroup()
+        group.setHandlesChildEvents(False)
+        self.addItem(group)
+        group.setZValue(-10)  # ghosts render below real items
+        # Children join at identity transform first (addToGroup preserves
+        # apparent scene position); the instance transform is applied to
+        # the finished group afterwards.
+        for child in children:
+            child._eipChild = True
+            child.setOpacity(0.35)
+            child.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable,
+                          False)
+            group.addToGroup(child)
+        # Compose like the live item transform: flipTuple sits in the item's
+        # manual transform matrix which Qt applies *outside* rotation, so the
+        # chain must be translate -> scale(flip) -> rotate(angle).
+        tr = QTransform()
+        pos = symbolItem.scenePos()
+        tr.translate(pos.x(), pos.y())
+        tr.scale(*symbolItem.flipTuple)
+        tr.rotate(symbolItem.angle)
+        group.setTransform(tr)
+        group._eipSkippedRecords = skipped
+        self._eipGroups[symbolItem] = group
+        self.markConnectivityDirty()
+        return group
+
+    def _childViewFile(self, symbolItem,
+                       viewName: str = "schematic") -> Optional[pathlib.Path]:
+        """Resolve the child cellview file for edit-in-place: the cell's
+        schematic view first, then the instance's own view as fallback."""
+        libraryPath = self.libraryDict.get(symbolItem.libraryName)
+        if libraryPath is None:
+            return None
+        cellDir = libraryPath.joinpath(symbolItem.cellName)
+        for name in (viewName, symbolItem.viewName):
+            file = cellDir.joinpath(f"{name}.json")
+            if file.exists():
+                return file
+        return None
+
+    def _loadChildItems(self, file: pathlib.Path) -> list:
+        """Instantiate a child cellview's records as scene items (not added
+        to any scene yet)."""
+        try:
+            decodedData = orjson.loads(file.read_bytes())
+        except (orjson.JSONDecodeError, OSError) as e:
+            self.logger.error(f"Edit-in-place read failed for {file}: {e}")
+            return []
+        factory = lj.schematicItems(self)
+        children, skipped = [], []
+        for record in decodedData[2:]:
+            shape = factory.create(record) if isinstance(record, dict) else None
+            if shape is not None:
+                children.append(shape)
+            else:
+                # Records the factory cannot instantiate (e.g. 'mrk' check
+                # markers, unknown types) must survive a saveInPlaceEdits
+                # round-trip; keep them verbatim for re-emission.
+                skipped.append(record)
+        return children, skipped
+
+    def setEipEditable(self, flag: bool) -> None:
+        """Allow/prevent selecting ghost children for property edits."""
+        for group in self._eipGroups.values():
+            for child in group.childItems():
+                child.setFlag(
+                    QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, flag)
+                if not flag:
+                    child.setSelected(False)
+
+    def saveInPlaceEdits(self, symbolItem=None) -> int:
+        """Write edited ghost children back to their child cellview file.
+
+        Item records are encoded with ``mapToScene`` (parent coords) then
+        back-transformed through the inverse instance transform into the
+        child file's coordinate frame. ``ang``/``fl`` fields are item-local
+        already and pass through unchanged. Returns files written."""
+        written = 0
+        for inst, group in (self._eipGroups.items() if symbolItem is None
+                            else [(symbolItem,
+                                   self._eipGroups.get(symbolItem))]):
+            if group is None:
+                continue
+            file = self._childViewFile(inst)
+            if file is None:
+                continue
+            trInv, ok = group.transform().inverted()
+            if not ok:
+                self.logger.error("Edit-in-place: non-invertible transform")
+                continue
+            try:
+                decoded = orjson.loads(file.read_bytes())
+            except (orjson.JSONDecodeError, OSError) as e:
+                self.logger.error(f"Edit-in-place reload failed: {e}")
+                continue
+            out = list(decoded[:2])  # preserve child header + grid settings
+            for child in group.childItems():
+                record = json.loads(
+                    json.dumps(child, cls=schenc.schematicEncoder))
+                self._eipRecordToLocal(record, trInv)
+                out.append(record)
+            # Re-emit records the item factory could not create (markers,
+            # unknown types) so a save doesn't silently drop them.
+            out.extend(getattr(group, "_eipSkippedRecords", ()))
+            try:
+                file.write_bytes(orjson.dumps(
+                    out, option=orjson.OPT_INDENT_2))
+                written += 1
+                self.logger.info(f"Edit-in-place saved {file}")
+            except OSError as e:
+                self.logger.error(f"Edit-in-place write failed: {e}")
+        return written
+
+    def _eipRecordToLocal(self, record: dict, trInv: QTransform) -> None:
+        """Back-transform a record's scene-coordinate fields into the child
+        file's coordinate frame (the ghost group's local space)."""
+        origin = self.origin
+
+        def toLocal(value):
+            point = trInv.map(
+                QPointF(value[0] + origin.x(), value[1] + origin.y()))
+            return [point.x(), point.y()]
+
+        for key in ("st", "end", "loc"):
+            if key in record:
+                record[key] = toLocal(record[key])
+        if "br" in record:
+            x0, y0, x1, y1 = record["br"]
+            corners = [toLocal((x0, y0)), toLocal((x1, y0)),
+                       toLocal((x0, y1)), toLocal((x1, y1))]
+            xs = [p[0] for p in corners]
+            ys = [p[1] for p in corners]
+            record["br"] = [min(xs), min(ys), max(xs), max(ys)]
+
+    def ascendInPlace(self, symbolItem=None) -> int:
+        """Remove edit-in-place ghost groups. Returns groups removed."""
+        targets = ([symbolItem] if symbolItem is not None
+                   else list(self._eipGroups))
+        removed = 0
+        for inst in targets:
+            group = self._eipGroups.pop(inst, None)
+            if group is not None and group.scene() is self:
+                self.removeItem(group)
+                removed += 1
+        if removed:
+            self.markConnectivityDirty()
+        return removed
+
     def ignoreSymbol(self):
         if self.selectedItems() is not None:
             for item in self.selectedItems():
@@ -2462,7 +2959,8 @@ class schematicScene(editorScene):
 
     def renumberInstances(self):
         symbolList = [item for item in self.items() if
-                      isinstance(item, shp.schematicSymbol)]
+                      isinstance(item, shp.schematicSymbol)
+                      and not self._isEipGhost(item)]
 
         for index, symbolInstance in enumerate(symbolList):
             symbolInstance.counter = index
@@ -2482,21 +2980,31 @@ class schematicScene(editorScene):
 
     ### netlisting related methods
     def genSymbolPinNetMap(self, symbolItem: shp.schematicSymbol):
+        """Populate symbolItem.pinNetMap from the connectivity engine."""
+        result = self.connectivity
+        portIdByItem = self._connectivityPortIdByItem
         # Process connected pins and collect unconnected ones in single pass
         unconnectedPins = []
         for pinName, pinItem in symbolItem.pins.items():
-            netsConnectedToPin = [netItem for netItem in pinItem.collidingItems(
-                Qt.IntersectsItemBoundingRect) if
-                                  isinstance(netItem, snet.schematicNet)]
-
-            if netsConnectedToPin:
-                # all the nets connected to this pin should have the same name
-                netName = netsConnectedToPin[0].name
-                symbolItem.pinNetMap[pinName] = netName
+            portId = portIdByItem.get(pinItem)
+            groupIndex = (result.portGroup.get(portId)
+                          if portId is not None else None)
+            if groupIndex is not None:
+                symbolItem.pinNetMap[pinName] = result.groups[
+                    groupIndex].name
                 pinItem.connected = True
             else:
-                pinItem.connected = False
-                unconnectedPins.append(pinName)
+                # An unconnected pin carrying a net expression is an
+                # inherited connection — it netlists to the resolved
+                # expression, not a dangling dnet.
+                exprNet = (result.portExprNet.get(portId)
+                           if portId is not None else None)
+                if exprNet:
+                    symbolItem.pinNetMap[pinName] = exprNet
+                    pinItem.connected = True
+                else:
+                    pinItem.connected = False
+                    unconnectedPins.append(pinName)
 
         # Assign nets to unconnected pins
         for pin in unconnectedPins:
@@ -2517,181 +3025,329 @@ class schematicScene(editorScene):
                         f"'{pinName}' has no matching pin, skipping.")
             symbolItem.pinNetMap = ordered_map
 
-    def _processNetGroup(self, namedNets: Set[snet.schematicNet],
-                         remainingNets: Set[snet.schematicNet]):
-        """Process a group of named nets and their connections."""
-        while namedNets:
-            net = namedNets.pop()
-            connectedNets = self.findConnectedNets(net, remainingNets)
-            for connectedNet in connectedNets:
-                connectedNet.mergeNetName(net)
-            remainingNets -= connectedNets
 
-    def findConnectedNets(self, startNet: snet.schematicNet,
-                          candidateNets: Set[snet.schematicNet]) -> Set[
-        snet.schematicNet]:
-        """Find all nets connected to startNet using DFS without mutating input."""
-        connected = set()
-        stack = [startNet]
-        visited = {startNet}
+    # --- Unified connectivity (revedaEditor.connectivity engine) -----------
 
-        while stack:
-            currentNet = stack.pop()
-            for candidateNet in candidateNets:
-                if candidateNet not in visited and self.checkNetConnect(
-                        currentNet, candidateNet):
-                    connected.add(candidateNet)
-                    stack.append(candidateNet)
-                    visited.add(candidateNet)
+    def markConnectivityDirty(self, *args):
+        """Invalidate the cached connectivity result on any scene change."""
+        self._connectivityCache = None
 
-        return connected
+    def addItem(self, item):
+        super().addItem(item)
+        self.markConnectivityDirty()
 
-    def nameSceneNets(self):
+    def removeItem(self, item):
+        super().removeItem(item)
+        self.markConnectivityDirty()
+
+    def rebuildConnectivity(self, netSet: Optional[dict] = None
+                            ) -> conn.ConnectivityResult:
+        """Rebuild the connectivity model from current scene contents.
+
+        Returns the fresh ConnectivityResult and caches it along with the
+        item<->primitive id maps used to push results back onto items.
+
+        ``netSet`` optionally supplies {exprName: localNet} bindings for
+        net-expression evaluation (inherited connections); ``None``
+        evaluates expressions to their defaults — the normal canvas
+        context. Pass ``conn.terminalBinds(names)`` when collecting a
+        subcircuit definition so expression names stay symbolic.
         """
-        Name all nets in the scene.
+        pinItems = [pinItem for symbolItem in self.findSceneSymbolSet()
+                    for pinItem in symbolItem.pins.values()]
+        pinItems.extend(self.findSceneSchemPinsSet())
+        result, segById, portById = conn.analyzeItems(
+            self.findSceneNetsSet(), pinItems,
+            endpointTol=1.0,
+            bodyTol=max(self.snapDistance // 2, 2),
+            portTol=self.snapDistance,
+            netSet=netSet)
+        self._connectivityCache = result
+        self._connectivitySegById = segById
+        self._connectivityPortById = portById
+        self._connectivitySegIdByItem = {item: segId for segId, item in
+                                         segById.items()}
+        self._connectivityPortIdByItem = {item: portId for portId, item in
+                                          portById.items()}
+        return result
+
+    @property
+    def connectivity(self) -> conn.ConnectivityResult:
+        """Cached connectivity result, rebuilt when the scene changed."""
+        if self._connectivityCache is None:
+            self.rebuildConnectivity()
+        return self._connectivityCache
+
+    _STRENGTH_TO_ENUM = {
+        conn.NONAME: snet.netNameStrengthEnum.NONAME,
+        conn.WEAK: snet.netNameStrengthEnum.WEAK,
+        conn.INHERIT: snet.netNameStrengthEnum.INHERIT,
+        conn.SET: snet.netNameStrengthEnum.SET,
+    }
+
+    def collectNetExprNames(self) -> dict[str, str]:
+        """{exprName: default} for every net expression used in this scene.
+
+        Covers net/pin ``netExpr`` attributes including pins of symbol
+        instances — i.e. the implicit terminal names this cell needs when
+        netlisted as a subcircuit.
         """
-        netCounter = 0
-        schematicSymbolSet = self.findSceneSymbolSet()
-        sceneNetsSet: Set[snet.schematicNet] = self.findSceneNetsSet()
+        names, problems = conn.exprNamesFromItems(
+            item for item in self.items() if not self._isEipGhost(item))
+        for problem in problems:
+            self.logger.warning(problem)
+        return names
 
-        # Clear existing names
-        for netItem in sceneNetsSet:
-            netItem.clearName()
+    def nameSceneNets(self, netSet: Optional[dict] = None):
+        """Name all nets in the scene via the unified connectivity engine.
 
-        # Process in priority order
-        result, globalNetsSet = self.findGlobalNets(schematicSymbolSet)
-        if not result:
-            self.logger.error("Net name conflict in global pins.")
+        Resolves names (global pins > schematic pins > SET names > auto
+        net<N>), writes them back onto the net items, and reports conflicts
+        collected by the engine. ``netSet`` supplies net-expression
+        bindings (see rebuildConnectivity).
+        """
+        result = self.rebuildConnectivity(netSet=netSet)
+        segIdByItem = self._connectivitySegIdByItem
+        for netItem in self.findSceneNetsSet():
+            segId = segIdByItem.get(netItem)
+            name, strength = result.segName.get(segId, ("", conn.NONAME))
+            if name:
+                # name setter forces SET; assign name first, then strength.
+                netItem.name = name
+                netItem.nameStrength = self._STRENGTH_TO_ENUM[strength]
+            else:
+                netItem.clearName()
+            netItem.nameConflict = segId in result.segConflicts
+        for conflict in result.conflicts:
+            self.logger.error(conflict.message)
+        self.netCounter = result.autoCount
+
+    def toggleResolvedNames(self, flag: bool):
+        """Show/hide resolved (non-SET) net names on the canvas.
+
+        When enabled, every wire whose name was resolved by the
+        connectivity engine — inherited, global-pin, expression or auto
+        names — displays it alongside explicitly SET names.
+        """
+        self.showResolvedNames = flag
+        if flag:
+            self.nameSceneNets()  # ensure resolved names are current
+        for netItem in self.findSceneNetsSet():
+            netItem.nameItem.updateVisibility()
+        self.update()
+
+    # ---- find / replace -------------------------------------------------
+
+    def findItems(self, kind: str = "any", pattern: str = "",
+                  prop: str = "") -> List["findHit"]:
+        """Search the scene for items matching a name pattern.
+
+        ``kind`` is one of ``"instance"``, ``"net"``, ``"pin"`` or ``"any"``.
+        ``pattern`` accepts shell-style wildcards (``*``, ``?``); an empty
+        pattern matches everything. ``prop`` optionally filters instances by
+        property as ``name=value`` (label value, or ``lib``/``cell``/``view``
+        for the referenced cell) or bare ``name`` for existence.
+
+        Nets are searched by their resolved connectivity name (one hit per
+        electrical net, carrying every member wire). Returns ``findHit``
+        records in deterministic order.
+        """
+        import fnmatch
+        pat = (pattern or "").strip() or "*"
+        hits: List[findHit] = []
+        if kind in ("instance", "any"):
+            hits.extend(self._findInstances(pat, prop))
+        if kind in ("net", "any"):
+            hits.extend(self._findNets(pat))
+        if kind in ("pin", "any"):
+            hits.extend(h for h in self._findPins(pat))
+        hits.sort(key=lambda h: (h.kind, h.name))
+        return hits
+
+    def _findInstances(self, pattern: str, prop: str) -> List["findHit"]:
+        import fnmatch
+        hits = []
+        for item in self.findSceneSymbolSet():
+            if not fnmatch.fnmatchcase(item.instanceName, pattern):
+                continue
+            if prop and not self._instancePropMatch(item, prop):
+                continue
+            hits.append(findHit(
+                kind="instance", name=item.instanceName,
+                detail=f"{item.libraryName}/{item.cellName}/{item.viewName}",
+                items=(item,), rect=item.sceneBoundingRect()))
+        return hits
+
+    @staticmethod
+    def _instancePropMatch(item, prop: str) -> bool:
+        key, sep, value = prop.partition("=")
+        key = key.strip().lstrip("@")
+        value = value.strip()
+        if key in ("lib", "cell", "view"):
+            actual = {"lib": item.libraryName, "cell": item.cellName,
+                      "view": item.viewName}[key]
+            return actual == value if sep else bool(actual)
+        label = item.labels.get(key)
+        if label is None:
+            return False
+        return (label.labelValue.strip() == value if sep
+                else bool(label.labelValue.strip()))
+
+    def _findNets(self, pattern: str) -> List["findHit"]:
+        import fnmatch
+        result = self.connectivity
+        segById = self._connectivitySegById
+        membersByName: Dict[str, list] = {}
+        for segId, (name, _strength) in result.segName.items():
+            if name and fnmatch.fnmatchcase(name, pattern):
+                membersByName.setdefault(name, []).append(segId)
+        hits = []
+        for name, segIds in membersByName.items():
+            items = tuple(segById[s] for s in segIds if s in segById)
+            if not items:
+                continue
+            rect = items[0].sceneBoundingRect()
+            for it in items[1:]:
+                rect = rect.united(it.sceneBoundingRect())
+            hits.append(findHit(kind="net", name=name,
+                                detail=f"{len(items)} segment(s)",
+                                items=items, rect=rect))
+        return hits
+
+    def _findPins(self, pattern: str) -> List["findHit"]:
+        import fnmatch
+        hits = []
+        for item in self.findSceneSchemPinsSet():
+            if fnmatch.fnmatchcase(item.pinName, pattern):
+                hits.append(findHit(
+                    kind="pin", name=item.pinName,
+                    detail=f"{item.pinDir} {item.pinType}",
+                    items=(item,), rect=item.sceneBoundingRect()))
+        return hits
+
+    def replaceHitName(self, hit: "findHit", findText: str,
+                       replaceText: str) -> str:
+        """Rename one find hit. Literal ``findText`` is substring-replaced;
+        a wildcard pattern renames to ``replaceText`` verbatim. Returns the
+        new name (empty string when nothing changed)."""
+        if not hit.name:
+            return ""
+        if any(ch in findText for ch in "*?"):
+            newName = replaceText
+        elif findText and findText in hit.name:
+            newName = hit.name.replace(findText, replaceText)
+        else:
+            return ""
+        if not newName or newName == hit.name:
+            return ""
+        if hit.kind == "instance":
+            hit.items[0].instanceName = newName
+        elif hit.kind == "pin":
+            hit.items[0].pinName = newName
+        elif hit.kind == "net":
+            for netItem in hit.items:
+                netItem.name = newName
+            self.markConnectivityDirty()
+        return newName
+
+    # ------------------------------------------------------------------
+    # Schematic<->layout cross-probing
+    # ------------------------------------------------------------------
+
+    def netEndpointsForItem(self, netItem) -> list:
+        """(instName, pinName) ports of the group containing ``netItem``.
+
+        Sheet-level pins come back as ``("", pinName)`` — the same endpoint
+        convention ``backend/correspondence.flylineEndpoints`` produces, so
+        the layout side resolves both identically.
+        """
+        result = self.connectivity
+        segId = self._connectivitySegIdByItem.get(netItem)
+        if segId is None:
+            return []
+        group = result.groupOf(segId)
+        if group is None:
+            return []
+        endpoints = []
+        for portId in group.ports:
+            pinItem = self._connectivityPortById.get(portId)
+            if pinItem is None:
+                continue
+            parent = pinItem.parentItem()
+            if isinstance(parent, shp.schematicSymbol):
+                endpoints.append((parent.instanceName, pinItem.pinName))
+            else:
+                endpoints.append(("", pinItem.pinName))
+        return endpoints
+
+    def selectProbeTargets(self, instances=(), netEndpoints=()) -> int:
+        """Select instances by name plus nets containing any endpoint port.
+
+        Used by cross-probing (and scriptable tooling): ``instances`` are
+        schematic instance names, ``netEndpoints`` are (instName, pinName)
+        pairs as produced by ``netEndpointsForItem``/``flylineEndpoints``.
+        Returns the number of items selected.
+        """
+        items = []
+        wanted = set(instances)
+        if wanted:
+            items += [i for i in self.findSceneSymbolSet()
+                      if i.instanceName in wanted]
+        if netEndpoints:
+            result = self.connectivity
+            wantedEP = set(netEndpoints)
+            segIds = set()
+            for portId, pinItem in self._connectivityPortById.items():
+                parent = pinItem.parentItem()
+                key = ((parent.instanceName, pinItem.pinName)
+                       if isinstance(parent, shp.schematicSymbol)
+                       else ("", pinItem.pinName))
+                if key not in wantedEP:
+                    continue
+                groupIndex = result.portGroup.get(portId)
+                if groupIndex is not None:
+                    segIds |= result.groups[groupIndex].members
+            segById = self._connectivitySegById
+            items += [segById[s] for s in segIds if s in segById]
+        if not items:
+            return 0
+        self.clearSelection()
+        rect = items[0].sceneBoundingRect()
+        for it in items:
+            it.setSelected(True)
+            rect = rect.united(it.sceneBoundingRect())
+        if self.views():
+            self.views()[0].fitInView(
+                rect.adjusted(-100, -100, 100, 100), Qt.KeepAspectRatio)
+        return len(items)
+
+    def probeLayout(self) -> None:
+        """Cross-probe selected symbols/nets into the sibling layout editor."""
+        appMainW = getattr(self.editorWindow, "appMainW", None)
+        key = ddef.viewNameTuple(self.editorWindow.libName,
+                                 self.editorWindow.cellName, "layout")
+        editor = (appMainW.openViews.get(key)
+                  if appMainW is not None else None)
+        if editor is None:
+            self.messageLine.setText(
+                f"Open {key.libraryName}/{key.cellName}/layout to probe")
             return
-        sceneNetsSet -= globalNetsSet
-        # now follow all the connected nets to globalNetsSet nets
-        self._processNetGroup(globalNetsSet, sceneNetsSet)
-
-        result, schemPinConNetsSet = self.findSchPinNets()
-        if not result:
-            self.logger.error("Net name conflict in schematic pins.")
+        instances, netEndpoints = [], []
+        for item in self.selectedItems():
+            if isinstance(item, shp.schematicSymbol):
+                instances.append(item.instanceName)
+            elif isinstance(item, snet.schematicNet):
+                netEndpoints.extend(self.netEndpointsForItem(item))
+            elif isinstance(item, shp.schematicPin):
+                netEndpoints.append(("", item.pinName))
+        if not instances and not netEndpoints:
+            self.messageLine.setText("Select symbols or nets to probe")
             return
-        sceneNetsSet -= schemPinConNetsSet
-        self._processNetGroup(schemPinConNetsSet, sceneNetsSet)
-
-        namedNetsSet = {net for net in sceneNetsSet if
-                        net.nameStrength.value == 3}
-        sceneNetsSet -= namedNetsSet
-        self._processNetGroup(namedNetsSet, sceneNetsSet)
-
-        # Auto-name remaining nets
-        while sceneNetsSet:
-            net = sceneNetsSet.pop()
-            net.name = f"net{netCounter}"
-            net.nameStrength = snet.netNameStrengthEnum.WEAK
-            connectedNets = self.findConnectedNets(net, sceneNetsSet)
-            for connectedNet in connectedNets:
-                connectedNet.mergeNetName(net)
-            sceneNetsSet -= connectedNets
-            netCounter += 1
-
-        self.netCounter = netCounter
-
-    # Net finding methods
-    def findGlobalNets(self, symbolSet: set[shp.schematicSymbol]) -> tuple[
-        bool, set[snet.schematicNet]]:
-        """
-        This method finds all nets connected to global pins.
-        """
-        globalNetsSet = set()
-
-        # Find all global pins in one pass
-        globalPins = (pinItem for symbol in symbolSet for pinName, pinItem in
-                      symbol.pins.items() if pinName.endswith("!"))
-
-        for pinItem in globalPins:
-            try:
-                # Get nets connected to this global pin
-                connectedNets = (netItem for netItem in
-                                 pinItem.collidingItems(Qt.IntersectsItemShape) if
-                                 isinstance(netItem, snet.schematicNet))
-
-                for netItem in connectedNets:
-                    if netItem.nameStrength.value == 3:  # Strong name
-                        if netItem.name != pinItem.pinName:
-                            netItem.nameConflict = True
-                            self.logger.error(
-                                f"Net name conflict at {pinItem.pinName} of "
-                                f"{pinItem.parent.instanceName}.")
-                            return False, set()
-                        else:
-                            globalNetsSet.add(netItem)
-                    else:
-                        globalNetsSet.add(netItem)
-                        netItem.name = pinItem.pinName
-                        netItem.nameStrength = snet.netNameStrengthEnum.SET
-
-            except AttributeError as e:
-                self.logger.error(f"Error processing global pin {pinItem}: {e}")
-                return False, set()
-
-        return True, globalNetsSet
-
-    def findSchPins(self, net: snet.schematicNet) -> set[shp.schematicPin]:
-        return {pinItem for pinItem in net.collidingItems(Qt.IntersectsItemShape)
-                if isinstance(pinItem, shp.schematicPin)}
-
-    def findSchPinNets(self) -> tuple[bool, set[snet.schematicNet]]:
-        """Find nets connected to schematic pins."""
-        connectedNetsSet = set()
-
-        for sceneSchemPin in self.findSceneSchemPinsSet():
-            try:
-                # Use collision detection for better performance
-                connectedNets = (netItem for netItem in
-                                 sceneSchemPin.collidingItems(
-                                     Qt.IntersectsItemShape) if
-                                 isinstance(netItem, snet.schematicNet))
-
-                # Parse pin name once
-                pinBaseName, pinIndices = self.parseBusNotation(
-                    sceneSchemPin.pinName)
-
-                for netItem in connectedNets:
-                    netBaseName, netIndices = self.parseBusNotation(netItem.name)
-                    if netItem.nameStrength.value == 3:
-                        if netBaseName != pinBaseName:
-                            netItem.nameConflict = True
-                            self.logger.error(
-                                f"Net name conflict: net '{netItem.name}' vs pin '{sceneSchemPin.pinName}'")
-                            return False, set()
-                        else:  # names are the same, check if bus sizes are the same
-                            if abs(pinIndices[0] - pinIndices[1]) != abs(
-                                    netIndices[0] - netIndices[1]):
-                                netItem.nameConflict = True
-                                self.logger.error(
-                                    f"Incompatible bus sizes: {sceneSchemPin.pinName} <-> {netItem.name}")
-                                return False, set()
-                            connectedNetsSet.add(netItem)
-                    elif netItem.nameStrength.value != 3:
-                        netItem.name = sceneSchemPin.pinName
-                        netItem.nameStrength = snet.netNameStrengthEnum.INHERIT
-                        connectedNetsSet.add(netItem)
-
-            except (AttributeError, ValueError) as e:
-                self.logger.error(
-                    f"Error processing schematic pin {sceneSchemPin.pinName}: {e}")
-                return False, set()
-        return True, connectedNetsSet
-
-    def _processNetPinConnection(self, net: snet.schematicNet, pinName: str) -> \
-            set[snet.schematicNet]:
-        """Common logic for processing net-pin connections."""
-        if net.nameStrength.value == 3 and net.name != pinName:
-            net.nameConflict = True
-            self.logger.error(
-                f"Net name conflict: net '{net.name}' vs pin '{pinName}'")
-            return set()
-
-        if net.nameStrength.value != 3:
-            net.name = pinName
-            net.nameStrength = snet.netNameStrengthEnum.INHERIT
-        return {net}
+        count = editor.centralW.scene.selectProbeTargets(
+            instances=instances, netEndpoints=netEndpoints)
+        self.messageLine.setText(f"Probed {count} item(s) in layout")
+        editor.raise_()
+        editor.activateWindow()
 
     def checkErrors(self, enabledRuleIds=None):
         """
@@ -2708,24 +3364,69 @@ class schematicScene(editorScene):
             return
         context = schk.buildCheckContext(self)
         violations = schk.runChecks(context, enabledRuleIds)
-        errorPen = QPen(Qt.red, 1, Qt.DashDotLine)
-        warningPen = QPen(Qt.magenta, 1, Qt.DashDotLine)
-        errorCount = warningCount = 0
+        self._drawViolations(violations)
+        errorCount = sum(
+            1 for v in violations
+            if v.severity == schk.checkSeverity.ERROR)
+        for violation in violations:
+            if violation.severity == schk.checkSeverity.ERROR:
+                self.logger.error(violation.message)
+            else:
+                self.logger.warning(violation.message)
+        self.lastCheckViolations = violations
+        self.logger.info(
+            f"Check complete: {errorCount} error(s), "
+            f"{len(violations) - errorCount} warning(s).")
+
+    _SEVERITY_PENS = {
+        "error": lambda: QPen(Qt.red, 1, Qt.DashDotLine),
+        "warning": lambda: QPen(Qt.magenta, 1, Qt.DashDotLine),
+    }
+
+    def _drawViolations(self, violations) -> None:
+        """Draw marker rects for violations into ``overlapRectSet``."""
+        errorPen = self._SEVERITY_PENS["error"]()
+        warningPen = self._SEVERITY_PENS["warning"]()
         for violation in violations:
             pen = (errorPen if violation.severity == schk.checkSeverity.ERROR
                    else warningPen)
             for marker in violation.markers:
                 self.overlapRectSet.add(self.addRect(marker, pen))
-            if violation.severity == schk.checkSeverity.ERROR:
-                self.logger.error(violation.message)
-                errorCount += 1
-            else:
-                self.logger.warning(violation.message)
-                warningCount += 1
+
+    @staticmethod
+    def _violationToRecord(violation) -> dict:
+        """Encode a checkViolation as an ``mrk`` record."""
+        return {
+            "type": "mrk",
+            "rule": violation.ruleId,
+            "sev": ("error" if violation.severity == schk.checkSeverity.ERROR
+                    else "warning"),
+            "msg": violation.message,
+            "rects": [[r.x(), r.y(), r.width(), r.height()]
+                      for r in violation.markers],
+        }
+
+    def _restoreMarkers(self, itemData: List[Dict]) -> None:
+        """Rebuild ``lastCheckViolations`` and markers from ``mrk`` records."""
+        records = [r for r in itemData
+                   if isinstance(r, dict) and r.get("type") == "mrk"]
+        if not records:
+            return
+        violations = []
+        for record in records:
+            try:
+                violations.append(schk.checkViolation(
+                    ruleId=record["rule"],
+                    severity=(schk.checkSeverity.ERROR
+                              if record.get("sev") == "error"
+                              else schk.checkSeverity.WARNING),
+                    message=record.get("msg", ""),
+                    markers=[QRectF(r[0], r[1], r[2], r[3])
+                             for r in record.get("rects", [])]))
+            except (KeyError, TypeError, IndexError) as e:
+                self.logger.warning(f"Malformed mrk record skipped: {e}")
         self.lastCheckViolations = violations
-        self.logger.info(
-            f"Check complete: {errorCount} error(s), "
-            f"{warningCount} warning(s).")
+        self._drawViolations(violations)
 
     def deleteErrors(self):
         self.logger.info("Deleting errors...")
@@ -2733,19 +3434,6 @@ class schematicScene(editorScene):
             if shiboken6.isValid(rectItem) and rectItem.scene() is self:
                 self.removeItem(rectItem)
         self.overlapRectSet.clear()
-
-    @staticmethod
-    def checkNetConnect(netItem, otherNetItem):
-        """
-        Determine if a net is connected to another one. One net should end on the other net.
-        """
-        if netItem is otherNetItem:
-            return False
-
-        # Check if any endpoint pairs are within connection tolerance
-        return any((netEnd - otherEnd).manhattanLength() <= 1 for netEnd in
-                   netItem.sceneEndPoints for otherEnd in
-                   otherNetItem.sceneEndPoints)
 
     @staticmethod
     def isValidNetName(text: str) -> bool:

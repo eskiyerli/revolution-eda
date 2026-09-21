@@ -32,11 +32,14 @@ import revedaEditor.checks.schematic as schk
 import revedaEditor.backend.libBackEnd as libb
 import revedaEditor.backend.libraryMethods as libm
 import revedaEditor.backend.libraryModelView as lmview
+import revedaEditor.common.params as prm
 import revedaEditor.common.shapes as shp
+import revedaEditor.fileio.loadJSON as lj
 import revedaEditor.fileio.symbolEncoder as symenc
 import revedaEditor.gui.editorViews as edv
 import revedaEditor.gui.editorWindow as edw
 import revedaEditor.gui.fileDialogues as fd
+import revedaEditor.gui.findDialogue as finddlg
 import revedaEditor.gui.propertyDialogues as pdlg
 import revedaEditor.gui.toolsDialogues as tdlg
 import revedaEditor.scenes.schematicScene as schscn
@@ -114,14 +117,38 @@ class schematicEditor(edw.editorWindow):
         self.removeProbeNetAction.setCheckable(True)
         self.removeAllProbesAction = QAction("Remove All Probes", self)
         self.removeAllProbesAction.setToolTip("Remove All Net Probes Across the Hierarchy")
+        self.showResolvedNamesAction = QAction("Show Resolved Net Names", self)
+        self.showResolvedNamesAction.setToolTip(
+            "Display resolved net names on wires, including inherited "
+            "connections and net expressions")
+        self.showResolvedNamesAction.setCheckable(True)
         self.renumberInstanceAction = QAction("Renumber Instances", self)
         self.renumberInstanceAction.setToolTip("Renumber Instances")
         simulationIcon = QIcon("icons/application-run.png")
         self.simulateAction = QAction(simulationIcon, "Revolution EDA SAE...", self)
+        self.descendInPlaceAction = QAction("Descend Edit-in-Place", self)
+        self.descendInPlaceAction.setToolTip(
+            "Render the selected instance's schematic ghosted inside this "
+            "scene for in-place editing")
+        self.ascendInPlaceAction = QAction("Ascend from Edit-in-Place", self)
+        self.ascendInPlaceAction.setToolTip("Remove edit-in-place ghosts")
+        self.saveInPlaceAction = QAction("Save In-Place Edits", self)
+        self.saveInPlaceAction.setToolTip(
+            "Write ghosted child items back to their cellview files")
         self.findRelatedEditors = QAction("Find Related Editors", self)
+        self.findAction = QAction("Find/Replace...", self)
+        self.findAction.setToolTip(
+            "Find and replace instances, nets and pins by name")
+        self.clipboardCopyAction = QAction("Copy to Clipboard", self)
+        self.clipboardCopyAction.setToolTip(
+            "Serialize selected items to the system clipboard")
+        self.pasteAction.setToolTip("Paste items from the system clipboard")
         self.checkRulesAction = QAction("Check Rules Setup...", self)
         self.checkRulesAction.setToolTip(
             "Select which schematic check rules are applied")
+        self.probeLayoutAction = QAction("Probe in Layout", self)
+        self.probeLayoutAction.setToolTip(
+            "Cross-probe selected symbols/nets into the layout editor")
         # Repurpose the base-class check action for schematic rule checking.
         self.viewCheckAction.setText("Check Schematic")
         self.viewCheckAction.setToolTip(
@@ -133,7 +160,9 @@ class schematicEditor(edw.editorWindow):
         self.menuFile.insertAction(self.checkCellAction,
                                    self.viewCheckAction)
         # edit menu
+        self.menuEdit.addAction(self.findAction)
         self.menuEdit.addAction(self.netNameAction)
+        self.menuEdit.addAction(self.clipboardCopyAction)
         # self.menuEdit.removeAction(self.stretchAction)
 
         self.propertyMenu = self.menuEdit.addMenu("Properties")
@@ -143,6 +172,10 @@ class schematicEditor(edw.editorWindow):
         self.hierMenu = self.menuEdit.addMenu("Hierarchy")
         self.hierMenu.addAction(self.goUpAction)
         self.hierMenu.addAction(self.goDownAction)
+        self.hierMenu.addSeparator()
+        self.hierMenu.addAction(self.descendInPlaceAction)
+        self.hierMenu.addAction(self.ascendInPlaceAction)
+        self.hierMenu.addAction(self.saveInPlaceAction)
 
         # create menu
         self.menuCreate.addAction(self.createInstAction)
@@ -163,6 +196,8 @@ class schematicEditor(edw.editorWindow):
         self.menuTools.addAction(self.removeProbeNetAction)
         self.menuTools.addAction(self.removeAllProbesAction)
         self.menuTools.addAction(self.renumberInstanceAction)
+        self.menuTools.addAction(self.showResolvedNamesAction)
+        self.menuTools.addAction(self.probeLayoutAction)
         self.menuTools.addAction(self.findRelatedEditors)
         # utilities Menu
         self.selectMenu = self.menuUtilities.addMenu("Selection")
@@ -194,9 +229,12 @@ class schematicEditor(edw.editorWindow):
         self.netlistAction.triggered.connect(self.createNetlistClick)
         self.ignoreAction.triggered.connect(self.ignoreClick)
         self.goDownAction.triggered.connect(self.goDownClick)
+        self.descendInPlaceAction.triggered.connect(self.descendInPlaceClick)
+        self.ascendInPlaceAction.triggered.connect(self.ascendInPlaceClick)
+        self.saveInPlaceAction.triggered.connect(self.saveInPlaceClick)
         self.checkRulesAction.triggered.connect(self.checkRulesClick)
         self.viewCheckAction.triggered.connect(self.checkErrorsClick)
-        self.viewErrorsAction.triggered.connect(self.checkErrorsClick)
+        self.viewErrorsAction.triggered.connect(self.viewErrorsClick)
         self.deleteErrorsAction.triggered.connect(self.deleteErrorsClick)
 
         self.hilightNetAction.triggered.connect(self.hilightNetClick)
@@ -210,7 +248,14 @@ class schematicEditor(edw.editorWindow):
         self.selectTextAction.triggered.connect(self.selectTextClick)
         self.removeSelectFilterAction.triggered.connect(self.removeSelectFilterClick)
         self.renumberInstanceAction.triggered.connect(self.renumberInstanceClick)
+        self.showResolvedNamesAction.triggered.connect(
+            self.showResolvedNamesClick)
         self.findRelatedEditors.triggered.connect(self.findRelatedEditorsClick)
+        self.probeLayoutAction.triggered.connect(
+            lambda: self.centralW.scene.probeLayout())
+        self.findAction.triggered.connect(self.findClick)
+        self.clipboardCopyAction.triggered.connect(self.clipboardCopyClick)
+        self.pasteAction.triggered.connect(self.pasteClick)
 
     def _createToolBars(self):
         super()._createToolBars()
@@ -250,6 +295,9 @@ class schematicEditor(edw.editorWindow):
         self.createNetAction.setShortcut(Qt.Key.Key_W)
         self.createPinAction.setShortcut(Qt.Key.Key_P)
         self.goDownAction.setShortcut("Shift+E")
+        self.findAction.setShortcut("Ctrl+F")
+        self.clipboardCopyAction.setShortcut("Ctrl+C")
+        self.pasteAction.setShortcut("Ctrl+V")
         # unset stretch shortcut for schematic editor
         # self.stretchAction.setShortcut("")
 
@@ -268,9 +316,41 @@ class schematicEditor(edw.editorWindow):
                                                self.symbolChooser.cellCB.currentText(),
                                                self.symbolChooser.viewCB.currentText(), )
 
+            # Place-with-form: when the symbol declares typed parameters,
+            # offer a compact form first; cancelling aborts placement.
+            paramDefs = self._symbolParamDefs(instanceTuple)
+            if paramDefs:
+                paramsDlg = pdlg.placeInstanceDialog(self, paramDefs)
+                if paramsDlg.exec() != QDialog.DialogCode.Accepted:
+                    return
+                self.centralW.scene.pendingInstanceParams = (
+                    paramsDlg.paramValues())
+            else:
+                self.centralW.scene.pendingInstanceParams = None
+
             self.centralW.scene.newInstanceTuple = instanceTuple
 
             self.centralW.scene.editModes.setMode("addInstance")
+
+    def _symbolParamDefs(self, instanceTuple) -> list:
+        """ParamDefs declared by the selected symbol's attributes."""
+        try:
+            libraryPath = self.libraryDict.get(instanceTuple.libraryName)
+            if libraryPath is None:
+                return []
+            file = libraryPath.joinpath(
+                instanceTuple.cellName, f"{instanceTuple.viewName}.json")
+            if not file.exists():
+                return []
+            items = lj.schematicItems._load_sym_json(str(file))
+            if items is None:
+                return []
+            attrs = {item["nam"]: item["def"] for item in items[2:]
+                     if isinstance(item, dict) and item.get("type") == "attr"}
+            return prm.paramDefsFromSymattrs(attrs)
+        except Exception as e:
+            self.logger.error(f"paramDefs lookup failed: {e}")
+            return []
 
     def createPinClick(self, s):
         createPinDlg = pdlg.createSchematicPinDialog(self)
@@ -278,6 +358,7 @@ class schematicEditor(edw.editorWindow):
             self.centralW.scene.pinName = createPinDlg.pinName.text()
             self.centralW.scene.pinType = createPinDlg.pinType.currentText()
             self.centralW.scene.pinDir = createPinDlg.pinDir.currentText()
+            self.centralW.scene.pinExpr = createPinDlg.netExprEdit.text().strip()
             self.centralW.scene.editModes.setMode("drawPin")
 
     def createNoteClick(self, s):
@@ -306,6 +387,7 @@ class schematicEditor(edw.editorWindow):
     def checkSaveCell(self):
         self.centralW.scene.nameSceneNets()
         self.centralW.scene.saveSchematic(self.file)
+        self._clearAutosave()
         self.centralW.scene.reloadScene()
         if hasattr(self.centralW.scene, 'reapplyProbesAfterReload'):
             self.centralW.scene.reapplyProbesAfterReload()
@@ -315,13 +397,14 @@ class schematicEditor(edw.editorWindow):
 
     def saveCell(self):
         self.centralW.scene.saveSchematic(self.file)
+        self._clearAutosave()
         self.centralW.scene.reloadScene()
         self.centralW.scene.reapplyProbesAfterReload()
 
     def loadSchematic(self, register: bool = True):
         try:
             self.logger.info(f'Loading schematic from {self.cellName} - {self.viewName}')
-            self.centralW.scene.loadDesign(self.file)
+            self.centralW.scene.loadDesign(self._resolveLoadPath())
             if register:
                 viewNameTuple = ddef.viewNameTuple(self.libItem.libraryName,
                                                    self.cellItem.cellName,
@@ -424,7 +507,8 @@ class schematicEditor(edw.editorWindow):
 
     def closeEvent(self, event):
         try:
-            self.centralW.scene.saveSchematic(self.file)
+            if self._lockHeld:
+                self.centralW.scene.saveSchematic(self.file)
             if self.parentEditor is not None:
                 self.parentEditor.centralW.scene.reloadScene()
                 parentScene = self.parentEditor.centralW.scene
@@ -555,6 +639,10 @@ class schematicEditor(edw.editorWindow):
 
     def removeProbeNetClick(self, s):
         self.centralW.scene.removeProbeMode()
+
+    def showResolvedNamesClick(self, s):
+        self.centralW.scene.toggleResolvedNames(
+            self.showResolvedNamesAction.isChecked())
 
     def removeAllProbesClick(self, s):
         self.probeNetAction.setChecked(False)
@@ -771,6 +859,62 @@ class schematicEditor(edw.editorWindow):
                 relatedEditor.show()
                 relatedEditor.raise_()
                 relatedEditor.activateWindow()
+
+    def descendInPlaceClick(self):
+        scene = self.centralW.scene
+        group = scene.descendInPlace()
+        if group is None:
+            self.messageLine.setText(
+                "Select an instance to descend into")
+            return
+        # Ghost children become selectable so property edits proxy through.
+        scene.setEipEditable(True)
+        self.messageLine.setText(
+            "Edit-in-place: ghost children editable; 'Save In-Place Edits' "
+            "writes the child cellview")
+
+    def ascendInPlaceClick(self):
+        scene = self.centralW.scene
+        scene.setEipEditable(False)
+        removed = scene.ascendInPlace()
+        self.messageLine.setText(f"Removed {removed} ghost group(s)")
+
+    def saveInPlaceClick(self):
+        written = self.centralW.scene.saveInPlaceEdits()
+        self.messageLine.setText(f"Saved {written} child cellview(s)")
+
+    def viewErrorsClick(self):
+        """Open the non-modal check-violation browser (reused if open)."""
+        dlg = getattr(self, "_markerDlg", None)
+        if dlg is None or not dlg.isVisible():
+            dlg = finddlg.markerBrowserDialogue(self)
+            self._markerDlg = dlg
+        dlg.refresh()
+        dlg.show()
+        dlg.raise_()
+        dlg.activateWindow()
+
+    def clipboardCopyClick(self):
+        count = self.centralW.scene.copySelectionToClipboard()
+        self.messageLine.setText(
+            f"Copied {count} item(s) to clipboard" if count
+            else "Nothing selected to copy")
+
+    def pasteClick(self):
+        count = self.centralW.scene.pasteClipboard()
+        self.messageLine.setText(
+            f"Pasted {count} item(s)" if count
+            else "Clipboard holds no schematic fragment")
+
+    def findClick(self):
+        """Open the non-modal find/replace panel (reused if already open)."""
+        dlg = getattr(self, "_findDlg", None)
+        if dlg is None or not dlg.isVisible():
+            dlg = finddlg.findDialogue(self)
+            self._findDlg = dlg
+        dlg.show()
+        dlg.raise_()
+        dlg.activateWindow()
 
 
 class schematicContainer(edw.editorContainer):

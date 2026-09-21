@@ -19,9 +19,9 @@ from PySide6.QtWidgets import (
 )
 from lxml import etree
 
-from revedaEditor.backend.pdkLoader import importPDKModule
+from revedaEditor.backend.pdkLoader import lazyPDKModule
 
-process = importPDKModule("process")
+process = lazyPDKModule("process")
 
 
 class DRCErrorPolygon(QGraphicsPolygonItem):

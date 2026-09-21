@@ -40,11 +40,11 @@ import revedaEditor.backend.LVSModelView as lvsmv
 import revedaEditor.common.layoutShapes as lshp
 import revedaEditor.common.net as snet
 import revedaEditor.common.shapes as shp
-from revedaEditor.backend.pdkLoader import importPDKModule
+from revedaEditor.backend.pdkLoader import lazyPDKModule
 from revedaEditor.fileio.importlvsdb import LVSDBParser, LVSErrorRect
 from revedaEditor.fileio import spiceNetlist
 
-process = importPDKModule("process")
+process = lazyPDKModule("process")
 
 
 class lvsResultsDialogue(QDialog):

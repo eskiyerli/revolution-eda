@@ -109,16 +109,15 @@ class schematicModes(editModes):
 class layoutModes(editModes):
     drawPath: bool
     drawPin: bool
-    drawArc: bool
     drawPolygon: bool
     addLabel: bool
     addVia: bool
     drawRect: bool
-    drawLine: bool
-    drawCircle: bool
     drawRuler: bool
+    drawMultipart: bool
     addInstance: bool
     cutShape: bool
+    highlightNet: bool = False
 
 
 @dataclass

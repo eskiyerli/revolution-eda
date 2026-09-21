@@ -32,15 +32,15 @@ from PySide6.QtWidgets import (
 )
 
 import revedaEditor.common.net as net
-from revedaEditor.backend.pdkLoader import importPDKModule
+from revedaEditor.backend.pdkLoader import lazyPDKModule
 from revedaEditor.scenes.editorScene import editorScene
 from revedaEditor.scenes.layoutScene import layoutScene
 from revedaEditor.scenes.schematicScene import schematicScene
 from revedaEditor.scenes.symbolScene import symbolScene
 
-schlyr = importPDKModule("schLayers")
-symlyr = importPDKModule("symLayers")
-fabproc = importPDKModule("process")
+schlyr = lazyPDKModule("schLayers")
+symlyr = lazyPDKModule("symLayers")
+fabproc = lazyPDKModule("process")
 
 
 class editorView(QGraphicsView):
@@ -662,4 +662,10 @@ class layoutView(editorView):
                 self.viewScene.arrayViaTuple = None
                 self.viewScene.arrayVia = None
                 self.viewScene.editModes.setMode("selectItem")
+        elif self.viewScene.editModes.drawPath:
+            # Same snap-mode key as schematic wire drawing (F3 cycles
+            # manhattan -> diagonal -> any angle).
+            if event.key() == Qt.Key.Key_F3:
+                self.viewScene.cyclePathMode()
+                return
         super().keyPressEvent(event)

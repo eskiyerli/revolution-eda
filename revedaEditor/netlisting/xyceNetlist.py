@@ -30,6 +30,7 @@ import revedaEditor.backend.dataDefinitions as ddef
 import revedaEditor.backend.libBackEnd as libb
 import revedaEditor.backend.libraryMethods as libm
 import revedaEditor.common.shapes as shp
+from revedaEditor.netlisting import exprSupport
 from revedaEditor.scenes.schematicScene import schematicScene
 
 if TYPE_CHECKING:
@@ -89,6 +90,10 @@ class xyceNetlist:
         # Caches to avoid repeated Qt model traversals for the same cells.
         self._viewNameCache: dict[tuple, str] = {}  # (libName, cellName) -> netlist view name
         self._cellItemCache: dict[tuple, libb.cellItem | None] = {}  # (libName, cellName) -> cellItem
+        # (lib, cell, view) -> {exprName: default} implicit-terminal defs.
+        self._exprDefsCache: dict[tuple, dict] = {}
+        # Global (!) nets resolved from net expressions; emitted as .GLOBAL.
+        self.globalNets: set[str] = {"gnd!"}
 
     def __repr__(self):
         return f"xyceNetlist(filePathObj={self.filePathObj}, schematic={self.schematic}, useConfig={self._useConfig}, lvsMode={self._lvsMode})"
@@ -140,6 +145,11 @@ class xyceNetlist:
             # now go down the rabbit hole to track all circuit elements.
             self.recursiveNetlisting(self.schematic, cirFile)
 
+            # Declare global nets resolved from net expressions / netSet
+            # bindings during the run (gnd! is already in the header).
+            for globalNet in sorted(self.globalNets - {"gnd!"}):
+                cirFile.write(f".GLOBAL {globalNet}\n")
+
             # Write all subcircuit definitions at the end
             if self.subcircuitDefs:
                 cirFile.write("\n* Subcircuit Definitions\n")
@@ -162,7 +172,10 @@ class xyceNetlist:
             content: List to append netlist lines to.
         """
         schematicScene = schematic.centralW.scene
-        schematicScene.nameSceneNets()
+        # Terminal mode: this scene's net expressions resolve to their
+        # expression names — each is an implicit subcircuit terminal.
+        schematicScene.nameSceneNets(netSet=exprSupport.terminalNetSet(
+            schematicScene.collectNetExprNames()))
         sceneSymbolSet = schematicScene.findSceneSymbolSet()
         schematicScene.generatePinNetMap(sceneSymbolSet)
         for elementSymbol in sceneSymbolSet:
@@ -183,8 +196,15 @@ class xyceNetlist:
                 netlistView = self.determineNetlistView(elementSymbol, cellItem)
 
                 if "schematic" in netlistView:
-                    lines = self.createXyceSymbolLine(elementSymbol)
+                    exprDefs = self._exprDefsFor(elementSymbol, cellItem,
+                                                 netlistView)
+                    exprNets = exprSupport.exprNetsForInstance(
+                        elementSymbol, exprDefs)
+                    lines = self.createXyceSymbolLine(elementSymbol,
+                                                      exprNets=exprNets)
                     content.extend(lines if isinstance(lines, list) else [lines])
+                    self.globalNets |= exprSupport.globalNets(
+                        exprDefs, getattr(elementSymbol, "netSet", {}))
                     if not self._isStopView(netlistView):
                         # Check deduplication before loading the schematic to avoid
                         # creating a schematicEditor object for every repeated instance.
@@ -199,6 +219,10 @@ class xyceNetlist:
                             schematicObj.loadSchematic(register=False)
                             expandedPinsString = self.expandPinNames(
                                 list(elementSymbol.pinNetMap.keys()))
+                            terminals = exprSupport.exprTerminals(exprDefs)
+                            if terminals:
+                                expandedPinsString += " " + " ".join(
+                                    terminals)
                             subcktContent = []
                             self.collectSubcircuitContent(schematicObj, subcktContent)
                             subcktDef = f".SUBCKT {schematicObj.cellName} {expandedPinsString}\n" + '\n'.join(
@@ -252,6 +276,10 @@ class xyceNetlist:
             pinNames = [pin.pinName for pin in schematicPinsSet]
             self._scene.logger.info(f"Schematic pins found for {schematicEdObj.cellName}: {pinNames}")
             expandedPinsString = self.expandPinNames(pinNames)
+            topExprDefs = schematicScene.collectNetExprNames()
+            topTerminals = exprSupport.exprTerminals(topExprDefs)
+            if topTerminals:
+                expandedPinsString += " " + " ".join(topTerminals)
             self._scene.logger.info(f"Expanded pins string for {schematicEdObj.cellName}: {expandedPinsString}")
 
             subcktContent = []
@@ -264,6 +292,12 @@ class xyceNetlist:
             schematicScene.nameSceneNets()  # name all nets in the schematic
             sceneSymbolSet = schematicScene.findSceneSymbolSet()
             schematicScene.generatePinNetMap(sceneSymbolSet)
+            # Global nets reached through net expressions on this sheet
+            # (inherited connections resolving to '!' nets).
+            for elementSymbol in sceneSymbolSet:
+                self.globalNets |= {
+                    netName for netName in elementSymbol.pinNetMap.values()
+                    if netName.endswith("!")}
             for elementSymbol in sceneSymbolSet:
                 self.processElementSymbol(elementSymbol, schematicEdObj, cirFile)
 
@@ -305,6 +339,22 @@ class xyceNetlist:
 
             # Create the netlist line for the item.
             self.createItemLine(cirFile, elementSymbol, cellItem, netlistView)
+
+    def _exprDefsFor(self, elementSymbol, cellItem,
+                     netlistView: str) -> dict:
+        """{exprName: default} implicit-terminal defs of a subckt's view.
+
+        Read from the child schematic's records (no editor needed) and
+        cached per (lib, cell, view) so every instance of a cell shares
+        the same terminal list."""
+        key = (elementSymbol.libraryName, elementSymbol.cellName,
+               netlistView)
+        if key not in self._exprDefsCache:
+            self._exprDefsCache[key] = (
+                exprSupport.exprDefsForSchematicView(
+                    cellItem, netlistView, self.libraryDict)
+                if cellItem is not None else {})
+        return self._exprDefsCache[key]
 
     def _getCellItem(self, libraryName: str, cellName: str) -> libb.cellItem | None:
         """Return the cellItem for (libraryName, cellName), cached to avoid repeated model traversals.
@@ -399,9 +449,16 @@ class xyceNetlist:
                        cellItem: libb.cellItem, netlistView: str, ):
         """Create the appropriate netlist line(s) for a symbol based on its view type."""
         if "schematic" in netlistView:
-            elementLines = self.createXyceSymbolLine(elementSymbol)
+            exprDefs = self._exprDefsFor(elementSymbol, cellItem,
+                                         netlistView)
+            exprNets = exprSupport.exprNetsForInstance(elementSymbol,
+                                                       exprDefs)
+            elementLines = self.createXyceSymbolLine(elementSymbol,
+                                                     exprNets=exprNets)
             for line in elementLines:
                 cirFile.write(f"{line}\n")
+            self.globalNets |= exprSupport.globalNets(
+                exprDefs, getattr(elementSymbol, "netSet", {}))
 
             if not self._isStopView(netlistView):
                 # Build viewTuple from symbol attributes before touching the filesystem;
@@ -421,6 +478,9 @@ class xyceNetlist:
                     schematicObj.loadSchematic(register=False)
                     expandedPinsString = self.expandPinNames(
                         list(elementSymbol.pinNetMap.keys()))
+                    terminals = exprSupport.exprTerminals(exprDefs)
+                    if terminals:
+                        expandedPinsString += " " + " ".join(terminals)
                     subcktContent = []
                     self.collectSubcircuitContent(schematicObj, subcktContent)
                     subcktDef = f"\n.SUBCKT {schematicObj.cellName} {expandedPinsString}\n" + '\n'.join(
@@ -448,7 +508,8 @@ class xyceNetlist:
             for line in textLines:
                 cirFile.write(f"{line}\n")
 
-    def _createNetlistLine(self, elementSymbol: shp.schematicSymbol, netlistLineKey: str) -> \
+    def _createNetlistLine(self, elementSymbol: shp.schematicSymbol, netlistLineKey: str,
+                           exprNets: list = None) -> \
             list[str]:
         """Shared netlist line creation logic.
 
@@ -458,6 +519,9 @@ class xyceNetlist:
         Args:
             elementSymbol: The symbol instance to create netlist lines for.
             netlistLineKey: The attribute key for the netlist line template.
+            exprNets: ordered nets for the child subcircuit's implicit
+                net-expression terminals (inherited connections); appended
+                after the pinOrder nets.
 
         Returns:
             List of netlist line strings (one per array element if arrayed).
@@ -544,10 +608,13 @@ class xyceNetlist:
                 return pickedNets
 
             # Generate instance lines
+            exprNets = list(exprNets or ())
             if arraySize == 1:
                 # Scalar instance logic
-                flatNetsList = " ".join([nets[0] for nets in expandedPinNets])
-                flatLvsNetsList = " ".join([nets[0] for nets in expandedLvsPinNets])
+                flatNetsList = " ".join([nets[0] for nets in expandedPinNets]
+                                        + exprNets)
+                flatLvsNetsList = " ".join(
+                    [nets[0] for nets in expandedLvsPinNets] + exprNets)
                 symbolLines.append(processLine(createInstanceLine(
                     baseInstName, flatNetsList, flatLvsNetsList)))
             else:
@@ -555,8 +622,10 @@ class xyceNetlist:
                 arrayIndices = list(range(arrayTuple[0], arrayTuple[1] + arrayStep, arrayStep))
 
                 for j, i in enumerate(arrayIndices):
-                    specificNetsList = " ".join(selectNets(expandedPinNets, j))
-                    specificLvsNetsList = " ".join(selectNets(expandedLvsPinNets, j))
+                    specificNetsList = " ".join(selectNets(expandedPinNets, j)
+                                                + exprNets)
+                    specificLvsNetsList = " ".join(
+                        selectNets(expandedLvsPinNets, j) + exprNets)
                     symbolLines.append(
                         processLine(createInstanceLine(
                             f"{baseInstName}<{i}>", specificNetsList,
@@ -571,13 +640,17 @@ class xyceNetlist:
             return [
                 f"*Netlist line is not defined for symbol of {elementSymbol.instanceName}\n"]
 
-    def createXyceSymbolLine(self, elementSymbol: shp.schematicSymbol) -> list[str]:
+    def createXyceSymbolLine(self, elementSymbol: shp.schematicSymbol,
+                             exprNets: list = None) -> list[str]:
         """Create Xyce netlist lines for a symbol instance.
 
         In LVS mode, uses the 'lvsNetlistLine' attribute, otherwise 'SpiceNetlistLine'.
+        ``exprNets`` carries the resolved implicit-terminal nets when the
+        instance expands to a subcircuit with net expressions.
         """
         netlistLineKey = "lvsNetlistLine" if self._lvsMode else "SpiceNetlistLine"
-        return self._createNetlistLine(elementSymbol, netlistLineKey)
+        return self._createNetlistLine(elementSymbol, netlistLineKey,
+                                       exprNets=exprNets)
 
     def createSpiceLine(self, elementSymbol: shp.schematicSymbol) -> list[str]:
         """Create Spice subcircuit netlist lines with include file handling.

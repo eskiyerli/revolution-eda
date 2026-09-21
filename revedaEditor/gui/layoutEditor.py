@@ -23,6 +23,7 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
+    QMessageBox,
     QSplitter,
     QToolBar,
     QVBoxLayout,
@@ -40,11 +41,11 @@ import revedaEditor.gui.editorWindow as edw
 import revedaEditor.gui.fileDialogues as fd
 import revedaEditor.gui.layoutDialogues as ldlg
 import revedaEditor.gui.lsw as lsw
-from revedaEditor.backend.pdkLoader import importPDKModule
+from revedaEditor.backend.pdkLoader import lazyPDKModule
 from revedaEditor.scenes.layoutScene import layoutScene
 
-fabproc = importPDKModule("process")
-laylyr = importPDKModule("layoutLayers")
+fabproc = lazyPDKModule("process")
+laylyr = lazyPDKModule("layoutLayers")
 
 
 class layoutEditor(edw.editorWindow):
@@ -96,12 +97,42 @@ class layoutEditor(edw.editorWindow):
         self.cutAction.setToolTip("Cut selected objects")
         self.mergeAction = QAction("Merge Shapes", self)
         self.mergeAction.setToolTip("Merge selected paths, rectangles, or polygons")
+        self.layerOpsAction = QAction("Layer Operations...", self)
+        self.layerOpsAction.setToolTip(
+            "Boolean (or/and/xor/not) and size (grow/shrink) operations on selected shapes")
         self.exportGDSAction = QAction("Export GDS", self)
         self.exportGDSAction.setToolTip("Export GDS from Layout")
         self.exportOASAction = QAction("Export OAS", self)
         self.exportGDSAction.setToolTip("Export OAS from Layout")
-        self.sdlLoadAction = QAction("Load from Schematic...", self)
-        self.sdlLoadAction.setToolTip("Create layout instances from schematic")
+        self.sdlLoadAction = QAction("Update from Schematic...", self)
+        self.sdlLoadAction.setToolTip(
+            "Incrementally sync layout instances from schematic")
+        self.flylinesAction = QAction("Show Flylines", self)
+        self.flylinesAction.setToolTip(
+            "Redraw the schematic->layout rat's nest")
+        self.clearFlylinesAction = QAction("Clear Flylines", self)
+        self.clearFlylinesAction.setToolTip("Remove all flylines")
+        self.probeSchematicAction = QAction("Probe in Schematic", self)
+        self.probeSchematicAction.setToolTip(
+            "Cross-probe selected instances/nets into the schematic")
+        self.highlightNetAction = QAction("Highlight Net", self)
+        self.highlightNetAction.setToolTip(
+            "Click a shape, pin, or label to highlight its whole net")
+        self.clearNetHighlightsAction = QAction("Clear Net Highlights", self)
+        self.clearNetHighlightsAction.setToolTip(
+            "Remove all net highlight overlays")
+        self.delSelectedRulerAction = QAction("Delete Selected Rulers", self)
+        self.delSelectedRulerAction.setToolTip(
+            "Delete the rulers in the current selection")
+        self.multipartAction = QAction("Create Multipart...", self)
+        self.multipartAction.setToolTip(
+            "Guard ring, shielded path, or bus route (editable composite)")
+        self.flattenAction = QAction("Flatten Selection", self)
+        self.flattenAction.setToolTip(
+            "Replace selected instances with their contents as shapes")
+        self.makeCellAction = QAction("Make Cell From Selection...", self)
+        self.makeCellAction.setToolTip(
+            "Write selected items to a new cell and replace with an instance")
 
     def _addActions(self):
         super()._addActions()
@@ -114,6 +145,7 @@ class layoutEditor(edw.editorWindow):
         self.menuEdit.addAction(self.stretchAction)
         self.menuEdit.addAction(self.cutAction)
         self.menuEdit.addAction(self.mergeAction)
+        self.menuEdit.addAction(self.layerOpsAction)
         self.menuCreate.addAction(self.createInstAction)
         self.menuCreate.addAction(self.createRectAction)
         self.menuCreate.addAction(self.createPathAction)
@@ -121,19 +153,30 @@ class layoutEditor(edw.editorWindow):
         self.menuCreate.addAction(self.createLabelAction)
         self.menuCreate.addAction(self.createViaAction)
         self.menuCreate.addAction(self.createPolygonAction)
+        self.menuCreate.addAction(self.multipartAction)
         self.menuCreate.addSeparator()
         self.menuCreate.addAction(self.rulerAction)
+        self.menuCreate.addAction(self.delSelectedRulerAction)
         self.menuCreate.addAction(self.delRulerAction)
         self.menuTools.addAction(self.renumberInstanceAction)
         self.menuTools.addAction(self.exportGDSAction)
         self.menuTools.addAction(self.exportOASAction)
         self.menuTools.addSeparator()
         self.menuTools.addAction(self.sdlLoadAction)
+        self.menuTools.addAction(self.flylinesAction)
+        self.menuTools.addAction(self.clearFlylinesAction)
+        self.menuTools.addAction(self.probeSchematicAction)
+        self.menuTools.addSeparator()
+        self.menuTools.addAction(self.highlightNetAction)
+        self.menuTools.addAction(self.clearNetHighlightsAction)
 
         # hierarchy submenu
         self.hierMenu = self.menuEdit.addMenu("Hierarchy")
         self.hierMenu.addAction(self.goUpAction)
         self.hierMenu.addAction(self.goDownAction)
+        self.hierMenu.addSeparator()
+        self.hierMenu.addAction(self.flattenAction)
+        self.hierMenu.addAction(self.makeCellAction)
 
         if hasattr(self._app, "pluginsObj") and hasattr(
             self._app.pluginsObj, "applyPluginMenus"
@@ -178,18 +221,32 @@ class layoutEditor(edw.editorWindow):
         self.exportOASAction.triggered.connect(self.exportOASClick)
         self.cutAction.triggered.connect(self.cutClick)
         self.mergeAction.triggered.connect(self.mergeClick)
+        self.layerOpsAction.triggered.connect(self.layerOpsClick)
         self.createPathAction.triggered.connect(self.createPathClick)
         self.createPinAction.triggered.connect(self.createPinClick)
         self.createLabelAction.triggered.connect(self.createLabelClick)
         self.createViaAction.triggered.connect(self.createViaClick)
         self.createPolygonAction.triggered.connect(self.createPolygonClick)
+        self.multipartAction.triggered.connect(self.createMultipartClick)
         self.rulerAction.triggered.connect(self.createRulerClick)
+        self.delSelectedRulerAction.triggered.connect(self.delSelectedRulerClick)
         self.delRulerAction.triggered.connect(self.delRulerClick)
         self.deleteAction.triggered.connect(self.deleteClick)
         self.objPropAction.triggered.connect(self.objPropClick)
         self.goDownAction.triggered.connect(self.goDownClick)
+        self.flattenAction.triggered.connect(self.flattenClick)
+        self.makeCellAction.triggered.connect(self.makeCellClick)
         self.renumberInstanceAction.triggered.connect(self.renumberInstanceClick)
         self.sdlLoadAction.triggered.connect(self.sdlLoadClick)
+        self.flylinesAction.triggered.connect(
+            lambda: self.centralW.scene.rebuildFlylines())
+        self.clearFlylinesAction.triggered.connect(
+            lambda: self.centralW.scene.clearFlylines())
+        self.probeSchematicAction.triggered.connect(
+            lambda: self.centralW.scene.probeSchematic())
+        self.highlightNetAction.triggered.connect(self.highlightNetClick)
+        self.clearNetHighlightsAction.triggered.connect(
+            self.clearNetHighlightsClick)
 
     def _createShortcuts(self):
         super()._createShortcuts()
@@ -202,15 +259,55 @@ class layoutEditor(edw.editorWindow):
         self.createPolygonAction.setShortcut(Qt.Key.Key_G)
         self.stretchAction.setShortcut(Qt.Key.Key_S)
         self.rulerAction.setShortcut(Qt.Key.Key_K)
+        self.delSelectedRulerAction.setShortcut("Ctrl+K")
         self.delRulerAction.setShortcut("Shift+K")
         self.cutAction.setShortcut("Shift+C")
         self.mergeAction.setShortcut("Ctrl+M")
+
+    def highlightNetClick(self, s):
+        self.centralW.scene.editModes.setMode("highlightNet")
+        self.messageLine.setText(
+            "Highlight Net: click a shape, pin, or label. Esc to exit.")
+
+    def clearNetHighlightsClick(self, s):
+        self.centralW.scene.clearNetHighlights()
+        self.messageLine.setText("Net highlights cleared")
 
     def cutClick(self):
         self.centralW.scene.editModes.setMode("cutShape")
 
     def mergeClick(self):
         self.centralW.scene.mergeSelectedItems()
+
+    def layerOpsClick(self, s):
+        dlg = ldlg.layerOpDialogue(self)
+        if dlg.exec_() == QDialog.DialogCode.Accepted:
+            amount = dlg.selectedAmount * (fabproc.dbu if fabproc else 1000)
+            self.centralW.scene.booleanSelectedItems(dlg.selectedOp, amount)
+
+    def flattenClick(self, s):
+        self.centralW.scene.flattenSelection()
+
+    def makeCellClick(self, s):
+        dlg = ldlg.makeCellDialogue(self, sorted(self.libraryDict.keys()))
+        if dlg.exec_() == QDialog.DialogCode.Accepted:
+            if not dlg.cellName:
+                self.messageLine.setText("Make Cell needs a cell name")
+                return
+            overwrite = False
+            libPath = self.libraryDict.get(dlg.libName)
+            if libPath is not None and (
+                    pathlib.Path(libPath) / dlg.cellName / "layout.json"
+            ).exists():
+                answer = QMessageBox.question(
+                    self, "Overwrite Cell",
+                    f"{dlg.libName}/{dlg.cellName}/layout already exists.\n"
+                    "Overwrite it?")
+                if answer != QMessageBox.StandardButton.Yes:
+                    return
+                overwrite = True
+            self.centralW.scene.makeCellFromSelection(
+                dlg.libName, dlg.cellName, overwrite=overwrite)
 
     def createRectClick(self, s):
         self.centralW.scene.editModes.setMode("drawRect")
@@ -219,13 +316,20 @@ class layoutEditor(edw.editorWindow):
         self.centralW.scene.editModes.setMode("drawRuler")
         self.messageLine.setText("Click on the first point of the ruler.")
 
+    def delSelectedRulerClick(self, s):
+        if self.centralW.scene.deleteSelectedRulers():
+            self.messageLine.setText("Selected rulers deleted")
+        else:
+            self.messageLine.setText("No rulers selected")
+        self.centralW.scene.editModes.setMode("selectItem")
+
     def delRulerClick(self, s):
         self.messageLine.setText("Deleting all rulers")
         self.centralW.scene.deleteAllRulers()
         self.centralW.scene.editModes.setMode("selectItem")
 
     def createPathClick(self, s):
-        if fabproc is None:
+        if not fabproc:
             self.messageLine.setText("Error: PDK process module not loaded")
             return
 
@@ -447,6 +551,14 @@ class layoutEditor(edw.editorWindow):
         else:
             self.centralW.scene.editModes.setMode("selectItem")
 
+    def createMultipartClick(self, s):
+        dlg = ldlg.createMultipartDialogue(self)
+        if dlg.exec_() == QDialog.DialogCode.Accepted:
+            self.centralW.scene.newMultipartSpec = dlg.selectedSpec()
+            self.centralW.scene.editModes.setMode("drawMultipart")
+            self.messageLine.setText(
+                "Click the start point, then click again to finish.")
+
     def createPolygonClick(self):
         self.centralW.scene.editModes.setMode("drawPolygon")
 
@@ -461,6 +573,7 @@ class layoutEditor(edw.editorWindow):
         if getattr(self, '_isPcellPreview', False):
             return
         self.centralW.scene.saveLayoutCell(self.file)
+        self._clearAutosave()
         if self.parentEditor:
             self.parentEditor.centralW.scene.reloadScene()
 
@@ -468,6 +581,7 @@ class layoutEditor(edw.editorWindow):
         if getattr(self, '_isPcellPreview', False):
             return
         self.centralW.scene.saveLayoutCell(self.file)
+        self._clearAutosave()
 
     def loadLayout(self):
         self.logger.info(f"Loading layout from {self.cellName} - {self.viewName}")
@@ -475,7 +589,7 @@ class layoutEditor(edw.editorWindow):
         QApplication.setOverrideCursor(Qt.WaitCursor)
         QApplication.processEvents()
         try:
-            self.centralW.scene._safeLoadDesign(self.file)
+            self.centralW.scene._safeLoadDesign(self._resolveLoadPath())
             viewNameTuple = ddef.viewNameTuple(
                 self.libItem.libraryName, self.cellItem.cellName, self.viewName
             )
@@ -522,14 +636,20 @@ class layoutEditor(edw.editorWindow):
             gdsUnit = Quantity(dlg.unitEdit.text().strip()).real
             gdsPrecision = Quantity(dlg.precisionEdit.text().strip()).real
 
+            layerMap = dlg.layerMap()
+            cellNameMap = dlg.cellNameMap()
+            flattenDepth = dlg.flattenDepth()
+
             # Call the appropriate export method
             if export_format.upper() == "OAS":
                 self.centralW.scene.exportCellOAS(
-                    self.gdsExportDir, gdsUnit, gdsPrecision, fabproc.dbu
+                    self.gdsExportDir, gdsUnit, gdsPrecision, fabproc.dbu,
+                    layerMap, cellNameMap, flattenDepth,
                 )
             else:
                 self.centralW.scene.exportCellGDS(
-                    self.gdsExportDir, gdsUnit, gdsPrecision, fabproc.dbu
+                    self.gdsExportDir, gdsUnit, gdsPrecision, fabproc.dbu,
+                    layerMap, cellNameMap, flattenDepth,
                 )
 
     def exportGDSClick(self):
@@ -611,7 +731,12 @@ class layoutEditor(edw.editorWindow):
         self.centralW.scene.renumberInstances()
 
     def sdlLoadClick(self):
-        """Open dialog to select schematic and create layout instances from it."""
+        """Open dialog to select a schematic and sync layout instances from it.
+
+        Sync is incremental (``updateFromSchematic``): existing user geometry
+        is preserved, SDL-owned instances are added/removed/re-parameterized
+        to match the schematic, and matching unsourced instances are adopted.
+        """
         libraryModel = lmview.schematicViewsModel(self.libraryDict)
         dialog = fd.selectCellViewDialog(self, libraryModel)
         dialog.libNamesCB.setCurrentText(self.libName)
@@ -622,13 +747,7 @@ class layoutEditor(edw.editorWindow):
             libItem = libm.getLibItem(libraryModel, dialog.libNamesCB.currentText())
             cellItem = libm.getCellItem(libItem, dialog.cellCB.currentText())
             viewItem = libm.getViewItem(cellItem, dialog.viewCB.currentText())
-            self.centralW.scene.clear()
-            # clear() removes items from the scene but does not touch
-            # itemsRefSet; without this the cleared shapes linger as ghosts
-            # in the item set.
-            self.centralW.scene.itemsRefSet.clear()
-            # Call scene to load schematic instances
-            self.centralW.scene.loadSchematicInstances(
+            self.centralW.scene.updateFromSchematic(
                 ddef.viewItemTuple(libItem, cellItem, viewItem)
             )
 
@@ -676,7 +795,7 @@ class layoutEditor(edw.editorWindow):
 
     def closeEvent(self, event):
         try:
-            if not getattr(self, '_isPcellPreview', False):
+            if not getattr(self, '_isPcellPreview', False) and self._lockHeld:
                 self.centralW.scene.saveLayoutCell(self.file)
             if self.parentEditor is not None:
                 self.parentEditor.centralW.scene.reloadScene()

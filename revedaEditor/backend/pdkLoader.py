@@ -82,6 +82,49 @@ def importPDKModule(moduleName: str) -> ModuleType | None:
         return None
 
 
+class _LazyPDKModule:
+    """Proxy that defers PDK module loading until first attribute access.
+
+    Use for module-level bindings. Unlike ``x = importPDKModule(...)`` at
+    module top, the proxy cannot capture ``None`` or a partially-initialized
+    module when the importing module is itself loaded inside a PDK import
+    cycle, and it follows ``clearPDKModuleCache()`` PDK switches because the
+    resolution is delegated on every access.
+    """
+
+    def __init__(self, moduleName: str):
+        object.__setattr__(self, "_pdkModuleName", moduleName)
+
+    def _resolve(self) -> ModuleType | None:
+        return importPDKModule(object.__getattribute__(self, "_pdkModuleName"))
+
+    def __getattr__(self, name):
+        module = self._resolve()
+        if module is None:
+            module_name = object.__getattribute__(self, "_pdkModuleName")
+            raise AttributeError(f"PDK module {module_name!r} is not loaded")
+        return getattr(module, name)
+
+    def __setattr__(self, name, value):
+        module = self._resolve()
+        if module is None:
+            module_name = object.__getattribute__(self, "_pdkModuleName")
+            raise AttributeError(f"PDK module {module_name!r} is not loaded")
+        setattr(module, name, value)
+
+    def __bool__(self) -> bool:
+        return self._resolve() is not None
+
+    def __repr__(self) -> str:
+        module_name = object.__getattribute__(self, "_pdkModuleName")
+        return f"<lazyPDKModule {module_name!r} -> {self._resolve()!r}>"
+
+
+def lazyPDKModule(moduleName: str) -> _LazyPDKModule:
+    """Return a lazy proxy for a PDK submodule, safe for module-level binding."""
+    return _LazyPDKModule(moduleName)
+
+
 def clearPDKModuleCache() -> None:
     """Clear the PDK module cache and remove stale PDK modules from sys.modules.
 

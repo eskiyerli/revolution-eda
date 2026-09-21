@@ -43,8 +43,100 @@ from PySide6.QtWidgets import (
 
 import revedaEditor.common.labels as lbl
 import revedaEditor.common.net as net
+import revedaEditor.common.params as prm
 import revedaEditor.common.shapes as shp
 import revedaEditor.gui.editFunctions as edf
+
+
+def paramValueWidget(pdef: prm.ParamDef, value: str, parent=None):
+    """Build the editor widget for a typed parameter.
+
+    Returns ``(widget, getValue, setValue)`` where ``getValue() -> str``
+    and ``setValue(str)``. This is the single widget-construction path
+    shared by the instance properties form and the place-with-params
+    form."""
+    if pdef.type == "boolean":
+        widget = QCheckBox(parent)
+        widget.setChecked(str(value).strip().lower() in prm._BOOL_TRUE)
+        return (widget,
+                lambda w=widget: "true" if w.isChecked() else "false",
+                lambda v, w=widget: w.setChecked(
+                    str(v).strip().lower() in prm._BOOL_TRUE))
+    if pdef.type == "choice":
+        widget = QComboBox(parent)
+        widget.setEditable(True)  # tolerate legacy values outside choices
+        widget.addItems(list(pdef.choices))
+        widget.setCurrentText(str(value))
+        return (widget,
+                lambda w=widget: w.currentText(),
+                lambda v, w=widget: w.setCurrentText(str(v)))
+    # float / int / string: quantiphy-capable line edit
+    widget = edf.longLineEdit()
+    widget.setText(str(value))
+    hints = [pdef.type]
+    if pdef.minimum:
+        hints.append(f"min {pdef.minimum}")
+    if pdef.maximum:
+        hints.append(f"max {pdef.maximum}")
+    if pdef.parse and pdef.type in ("float", "int"):
+        hints.append("SI suffixes allowed")
+    widget.setToolTip(", ".join(hints))
+    return (widget,
+            lambda w=widget: w.text(),
+            lambda v, w=widget: w.setText(str(v)))
+
+
+class placeInstanceDialog(QDialog):
+    """Compact parameter form shown while placing an instance.
+
+    Lists the symbol's display-able typed parameters (``paramDefs``) with
+    their resolved defaults so the user can set values before placement.
+    Validation runs on accept; invalid values are rejected with a warning
+    and the dialog stays open.
+    """
+
+    def __init__(self, parent, paramDefs: list):
+        super().__init__(parent)
+        self.parent = parent
+        self.setWindowTitle("Instance Parameters")
+        self.setMinimumWidth(320)
+        mainLayout = QVBoxLayout()
+        formLayout = QFormLayout()
+        self.paramRows = []  # [(ParamDef, getValue)]
+        siblings = prm.applyDefaults(paramDefs, {})
+        for pdef in paramDefs:
+            if not pdef.display:
+                continue
+            value = siblings.get(f"@{pdef.name}", pdef.default)
+            widget, getValue, _setValue = paramValueWidget(
+                pdef, value, self)
+            formLayout.addRow(edf.boldLabel(pdef.name, self), widget)
+            self.paramRows.append((pdef, getValue))
+        mainLayout.addLayout(formLayout)
+        buttonBox = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok
+            | QDialogButtonBox.StandardButton.Cancel)
+        mainLayout.addWidget(buttonBox)
+        self.setLayout(mainLayout)
+        buttonBox.accepted.connect(self._validateAndAccept)
+        buttonBox.rejected.connect(self.reject)
+
+    def _validateAndAccept(self):
+        errors = []
+        for pdef, getValue in self.paramRows:
+            errors.extend(
+                f"{pdef.name}: {e}"
+                for e in prm.validateValue(pdef, getValue(),
+                                           self.paramValues()))
+        if errors:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "Invalid parameters", "\n".join(errors))
+            return
+        self.accept()
+
+    def paramValues(self) -> dict:
+        """Current form values as ``{paramName: value}``."""
+        return {pdef.name: getValue() for pdef, getValue in self.paramRows}
 
 
 class rectPropertyDialog(QDialog):
@@ -265,6 +357,11 @@ class createPinDialog(QDialog):
         self.pinType.addItems(shp.symbolPin.pinTypes)
         self.pinType.setToolTip("Select pin type")
         self.fLayout.addRow(QLabel("Pin Type"), self.pinType)
+        self.netExprEdit = edf.longLineEdit()
+        self.netExprEdit.setPlaceholderText("[@name] or [@name:default]")
+        self.netExprEdit.setToolTip(
+            "Net expression for inherited connections, e.g. [@vdd:vdd!]")
+        self.fLayout.addRow(QLabel("Net Expression"), self.netExprEdit)
         self.mainLayout.addLayout(self.fLayout)
         self.buttonBox = QDialogButtonBox(QBtn)
         self.buttonBox.accepted.connect(self.accept)
@@ -378,10 +475,96 @@ class symbolLabelsDialogue(QDialog):
         self.mainLayout.addWidget(propsGroup)
         self.mainLayout.addStretch(1)
         # self.mainLayout.addLayout(self.symbolPropsLayout)
+        # Typed parameter definitions (CDF-lite) edit the reserved
+        # ``paramDefs`` attribute structurally rather than as raw JSON.
+        paramsGroup = QGroupBox("Parameters")
+        paramsLayout = QVBoxLayout()
+        self.paramsTable = QTableWidget(self)
+        self.paramsTable.setColumnCount(9)
+        self.paramsTable.setHorizontalHeaderLabels(
+            ["Del.", "Name", "Type", "Default", "Min", "Max", "Choices",
+             "Display", "Parse"])
+        paramsLayout.addWidget(self.paramsTable)
+        paramsGroup.setLayout(paramsLayout)
+        self.mainLayout.addWidget(paramsGroup)
+        self._populateParamsTable()
         self.mainLayout.addWidget(self.buttonBox)
         self.setLayout(self.mainLayout)
         self.buttonBox.accepted.connect(self.accept)
         self.buttonBox.rejected.connect(self.reject)
+
+    _PARAMDEF_COL = {"name": 1, "type": 2, "default": 3, "min": 4,
+                     "max": 5, "choices": 6, "display": 7, "parse": 8}
+
+    def _populateParamsTable(self):
+        """Fill the parameters table from the ``paramDefs`` attribute."""
+        paramDefsAttr = next(
+            (item for item in self.attributes
+             if item.name == prm.PARAMDEFS_ATTR), None)
+        self._paramDefs, errors = prm.paramDefsFromJson(
+            paramDefsAttr.definition if paramDefsAttr else "")
+        for err in errors:
+            self.paramsTable.setToolTip(f"paramDefs warnings: {'; '.join(errors)}")
+        self.paramsTable.setRowCount(len(self._paramDefs) + 1)
+        for row, pdef in enumerate(self._paramDefs):
+            self._setParamRow(row, pdef)
+        self._setParamRow(len(self._paramDefs), None)
+        self.paramsTable.cellChanged.connect(self._paramCellChanged)
+
+    def _setParamRow(self, row: int, pdef):
+        deleteBox = QCheckBox()
+        deleteBox.stateChanged.connect(
+            lambda _state, r=row: self.paramsTable.removeRow(r))
+        self.paramsTable.setCellWidget(row, 0, deleteBox)
+        self.paramsTable.setItem(
+            row, 1, QTableWidgetItem(pdef.name if pdef else ""))
+        typeCombo = QComboBox()
+        typeCombo.addItems(list(prm.PARAM_TYPES))
+        typeCombo.setCurrentText(pdef.type if pdef else "string")
+        self.paramsTable.setCellWidget(row, 2, typeCombo)
+        for col, text in ((3, pdef.default if pdef else ""),
+                          (4, pdef.minimum if pdef else ""),
+                          (5, pdef.maximum if pdef else ""),
+                          (6, ", ".join(pdef.choices) if pdef else "")):
+            self.paramsTable.setItem(row, col, QTableWidgetItem(text))
+        for col, checked in ((7, pdef.display if pdef else True),
+                             (8, pdef.parse if pdef else True)):
+            box = QCheckBox()
+            box.setChecked(checked)
+            self.paramsTable.setCellWidget(row, col, box)
+
+    def _paramCellChanged(self, row: int, column: int):
+        """Auto-append a row when the last row's name field is filled."""
+        if row == self.paramsTable.rowCount() - 1 and column == 1:
+            item = self.paramsTable.item(row, column)
+            if item is not None and item.text().strip():
+                self.paramsTable.insertRow(row + 1)
+                self._setParamRow(row + 1, None)
+
+    def paramDefs(self) -> list:
+        """ParamDefs edited in the parameters table."""
+        defs = []
+        for row in range(self.paramsTable.rowCount()):
+            nameItem = self.paramsTable.item(row, 1)
+            name = nameItem.text().strip() if nameItem else ""
+            if not name:
+                continue
+            typeCombo = self.paramsTable.cellWidget(row, 2)
+            cell = lambda c: (self.paramsTable.item(row, c).text().strip()
+                              if self.paramsTable.item(row, c) else "")
+            defs.append(prm.ParamDef(
+                name=name,
+                type=typeCombo.currentText() if typeCombo else "string",
+                default=cell(3),
+                minimum=cell(4),
+                maximum=cell(5),
+                choices=tuple(
+                    c.strip() for c in cell(6).split(",") if c.strip()),
+                display=(self.paramsTable.cellWidget(row, 7).isChecked()
+                         if self.paramsTable.cellWidget(row, 7) else True),
+                parse=(self.paramsTable.cellWidget(row, 8).isChecked()
+                       if self.paramsTable.cellWidget(row, 8) else True)))
+        return defs
 
     def symbolAttrsMethod(self):
         self.attributeNameList = []
@@ -393,6 +576,10 @@ class symbolLabelsDialogue(QDialog):
         self.symbolPropsLayout.addWidget(QLabel("Definition"), 0, 1)
         i = 0
         for item in self.attributes:
+            # paramDefs is authored structurally in the Parameters table,
+            # not as raw JSON in the attribute grid.
+            if item.name == prm.PARAMDEFS_ATTR:
+                continue
             self.attributeNameList.append(edf.longLineEdit())
             self.attributeNameList[i].setText(item.name)
             self.symbolPropsLayout.addWidget(self.attributeNameList[i], i + 1, 0)
@@ -515,6 +702,13 @@ class instanceProperties(QDialog):
         self.angleEdit = edf.longLineEdit()
 
         formLayout.addRow(edf.boldLabel("Angle", self), self.angleEdit)
+        self.netSetEdit = edf.longLineEdit()
+        self.netSetEdit.setPlaceholderText("name=net,name=net")
+        self.netSetEdit.setToolTip(
+            "Inherited-connection overrides (netSet): binds the "
+            "subcircuit's net-expression names to local nets, "
+            "e.g. vdd=vdd!,avss=gnd!")
+        formLayout.addRow(edf.boldLabel("Net Set", self), self.netSetEdit)
         formLayout.setVerticalSpacing(10)
         mainLayout.addLayout(formLayout)
         propertiesGroup = QGroupBox()
@@ -659,6 +853,12 @@ class netProperties(QDialog):
         formLayout = QFormLayout()
         self.netNameEdit = edf.longLineEdit()
         formLayout.addRow(edf.boldLabel("Net Name", self), self.netNameEdit)
+        self.netExprEdit = edf.longLineEdit()
+        self.netExprEdit.setPlaceholderText("[@name] or [@name:default]")
+        self.netExprEdit.setToolTip(
+            "Net expression for inherited connections, e.g. [@vdd:vdd!]")
+        formLayout.addRow(edf.boldLabel("Net Expression", self),
+                          self.netExprEdit)
         formBox.setLayout(formLayout)
         mainLayout.addWidget(formBox)
         mainLayout.addSpacing(20)

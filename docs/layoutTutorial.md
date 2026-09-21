@@ -133,6 +133,15 @@ The Edit menu contains the core geometry editing commands.
   width that are collinear and overlapping or touching become one longer path; same-layer
   rectangles and polygons that overlap or touch are unioned into a polygon (or a rectangle
   when the union is an exact rectangle). Disjoint or incompatible items are left unchanged.
+- `Edit -> Layer Operations...`: boolean and sizing operations over the selected shapes,
+  similar to Virtuoso's *Tools -> Layer Operations*. The dialog offers:
+  - **Or (Union)** — union of all selected same-layer shapes.
+  - **And (Intersect)** — pairwise-folded intersection of selected shapes per layer.
+  - **Xor** — symmetric difference per layer.
+  - **Not (A minus other layers)** — shapes on the first-selected layer minus the rest.
+  - **Grow / Shrink** — size each selected shape by the entered amount (in um).
+  Results are added back as rectangles/polygons through the undo stack, so the whole
+  operation is undoable.
 - `Edit -> Selection`: contains `Select All` and `Unselect All`.
 
 Property editing works on these layout object types:
@@ -178,6 +187,12 @@ item that will be cut.
   editor. The dialog lets you choose the destination layout view and whether it opens in
   `Edit` or `Read Only` mode.
 - `Edit -> Hierarchy -> Go Up`: returns to the parent layout and refreshes the parent view.
+- `Edit -> Hierarchy -> Flatten Selection`: replaces each selected instance with its
+  leaf-level geometry, in place. Instance rotation, flip, and mosaic element offsets are
+  composed into the resulting shapes. Undoable.
+- `Edit -> Hierarchy -> Make Cell From Selection...`: writes the selected items to a new
+  cell's layout view (you choose the name) and replaces the selection with an instance of
+  the new cell — the inverse of flatten, for building hierarchy bottom-up. Undoable.
 
 <!-- Screenshot placeholder: Go Down Hierarchy dialog -->
 
@@ -198,6 +213,8 @@ Edit menu actions and shortcuts:
 | `Edit -> Vertical Flip` | None | Mirrors selected items vertically. |
 | `Edit -> Align Items...` | `Shift+A` | Opens the alignment dialog. |
 | `Edit -> Cut Item` | `Shift+C` | Cuts selected path/rectangle/polygon geometry. |
+| `Edit -> Merge Shapes` | `Ctrl+M` | Merges/unions compatible selected shapes. |
+| `Edit -> Layer Operations...` | None | Boolean/sizing ops over the selection. |
 | `Edit -> Selection -> Select All` | `Ctrl+A` | Selects all scene items. |
 | `Edit -> Selection -> Unselect All` | None | Clears the current selection. |
 | `Edit -> Properties -> Object Properties...` | `Q` | Opens the relevant object properties dialog. |
@@ -229,6 +246,13 @@ Standard layout instances and PCell instances can later be
 edited through the object properties dialog.
 
 ![layoutEditorPcellInstancePropertiesDialogue.png](assets/layoutEditorPcellInstancePropertiesDialogue.png)
+
+**Instance arrays (mosaics):** the placement dialog includes an
+*Instance Array (Mosaic)* group — rows, columns, and row/column pitch in um.
+A 1x1 form places a normal instance; larger counts create a mosaic whose
+elements render, select, and export as one unit. Array fields are editable
+later from the instance properties dialog, and GDS export emits native
+stream repetitions.
 
 
 ### Create -> Create Rectangle... (`R`)
@@ -355,14 +379,35 @@ Polygon properties allow direct point-table editing and layer reassignment.
 
 ![layoutEditorPolygonPropertiesDialogue.png](assets/layoutEditorPolygonPropertiesDialogue.png)
 
+### Create -> Create Multipart...
+
+Creates compound layout objects that draw as a unit, like Virtuoso's
+multipart paths (guard rings, shielded routes):
+
+- **Guard Ring** — four rectangles forming a ring plus an optional stitch
+  via ring; parameters: ring layer, ring width, stitch via.
+- **Shielded Path** — a signal path with flanking shield paths; parameters:
+  signal/shield layers and widths, gap.
+- **Bus Route** — N parallel paths fanned out together; parameters: layer,
+  width, spacing, count.
+
+After choosing a kind and filling in its parameters, draw with two clicks:
+the first anchors the start, the second the end. Multipart objects are
+stored as parameters (kind + values) rather than baked geometry, so the
+parameter editor can rebuild them — child shapes are never saved to the
+layout file directly.
+
 ### Create -> Add Ruler (`K`) / Delete Rulers (`Shift+K`)
 
 Rulers are measurement aids drawn in the layout canvas.
 
 - `K` adds a ruler.
+- `Ctrl+K` deletes the selected rulers.
 - `Shift+K` removes all rulers.
 
-Rulers display measurement ticks and numeric values and follow the layout grid.
+Rulers display measurement ticks and follow the layout grid. The endpoint
+label shows `length (dX,dY)` in layout units — both the total distance and
+the per-axis displacement.
 
 ![layoutEditorRuler.png](assets/layoutEditorRuler.png)
 
@@ -408,10 +453,44 @@ Treat these as optional, PDK-provided features rather than core layout-editor fu
 - `Tools -> Renumber Instances`: renumbers layout instances in sequence (`I0`, `I1`, `I2`,
   ...). This operation is saved immediately, reloads the layout afterwards, and is not
   undoable.
-- `Tools -> Export GDS`: exports the current layout hierarchy to GDS. The dialog lets you set
-  unit, precision, and export directory. Defaults come from the active PDK process settings.
+- `Tools -> Export GDS` / `Export OAS`: exports the current layout hierarchy
+  to GDS or OASIS. The dialog lets you set unit, precision, and export
+  directory. Defaults come from the active PDK process settings. A *Stream
+  Options* group adds:
+  - **Layer Map** — remap `(layer,datatype)` pairs on export, e.g.
+    `1,0=11,0;2,0=12,0`. Applies everywhere layers are emitted, including
+    via cuts and enclosures.
+  - **Cell Name Map** — rename cells in the stream, e.g. `myCell=MYCELL`.
+  - **Flatten hierarchy / Keep Depth** — flatten geometry deeper than the
+    keep-depth into parent cells. Depth 0 flattens everything; the default
+    keeps native references.
 
 ![layoutEditorGDSExport.png](assets/layoutEditorGDSExport.png)
+
+- `Tools -> Update from Schematic...`: incremental schematic-driven layout
+  sync (Virtuoso XL-lite style). Layout instances carry a link to their
+  source schematic instance; this command diffs the current layout against
+  the schematic in one undoable step — adding instances whose symbols were
+  newly placed, removing layout instances whose source disappeared, and
+  re-applying pcell parameters that drifted (via the PDK's
+  `pcellParameterMap.json` label→parameter mapping). Layout instances with no
+  schematic link, or pointing at a different schematic, are never touched.
+- `Tools -> Show Flylines` / `Clear Flylines`: toggles unrouted-connection
+  guides between instance pins. Flylines are dashed overlays — not layout
+  shapes, never saved — drawn between pin pairs that share a schematic net
+  but aren't yet connected in the layout. They follow pins live as instances
+  move, and a line disappears automatically once its endpoints merge into
+  one layout net.
+- `Tools -> Probe in Schematic`: cross-probing into the schematic editor of
+  the same cell — the counterpart of `Tools -> Probe in Layout` there. A
+  selected layout instance selects and zooms to its source schematic
+  instance; a selected layout shape highlights every layout member of the
+  corresponding net in both directions.
+- `Tools -> Highlight Net` / `Clear Net Highlights`: enables net
+  highlighting in the layout canvas. Highlighting is hierarchy-aware —
+  clicking metal inside an instance (e.g. the metal1 inside a psub tap)
+  resolves the whole net, including internal pins, device internals, mosaic
+  elements, and nested instances. Clear Net Highlights removes all overlays.
 
 Some PDKs and plugins may also add extra commands to the menu bar or tools area.
 
@@ -465,6 +544,8 @@ This quick appendix collects the most frequently used layout shortcuts in one pl
 | `Ctrl+R` | Rotate |
 | `Shift+A` | Align items |
 | `Shift+C` | Cut item |
+| `Ctrl+M` | Merge shapes |
+| `Ctrl+K` | Delete selected rulers |
 | `U` | Undo |
 | `Shift+U` | Redo |
 | `F` | Fit to window |

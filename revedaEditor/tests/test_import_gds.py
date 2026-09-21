@@ -234,3 +234,87 @@ def test_import_preserves_reference_rotation_and_flip(tmp_path: Path):
     assert inst["loc"] == [1000, 2000]
     assert inst["ang"] == pytest.approx(90)
     assert inst["fl"] == [1, -1]
+
+
+def test_import_merge_mode_appends_to_existing_cell(tmp_path: Path):
+    """With mergeMode on, a second import appends shapes to the same cell
+    instead of recreating it."""
+    parent = _make_parent(tmp_path)
+    import_lib = _make_import_lib(tmp_path)
+
+    lib1 = gdstk.Library(unit=1e-6, precision=1e-9)
+    cell1 = lib1.new_cell("merged")
+    cell1.add(gdstk.rectangle((0, 0), (1, 1), layer=1, datatype=0))
+    gds1 = tmp_path / "first.gds"
+    lib1.write_gds(str(gds1))
+
+    importer = gdsImporter(parent, gds1, import_lib)
+    importer.importGDS()
+
+    layout_file = import_lib.libraryPath / "merged" / "layout.json"
+    data = json.loads(layout_file.read_text())
+    assert len([i for i in data if i.get("type") == "Polygon"]) == 1
+
+    lib2 = gdstk.Library(unit=1e-6, precision=1e-9)
+    cell2 = lib2.new_cell("merged")
+    cell2.add(gdstk.rectangle((5, 5), (6, 6), layer=1, datatype=0))
+    gds2 = tmp_path / "second.gds"
+    lib2.write_gds(str(gds2))
+
+    importer2 = gdsImporter(parent, gds2, import_lib)
+    importer2.mergeMode = True
+    importer2.importGDS()
+
+    data = json.loads(layout_file.read_text())
+    polygons = [i for i in data if i.get("type") == "Polygon"]
+    assert len(polygons) == 2
+    # Both the original (0,0)-(1000,1000) and merged (5000,5000)-(6000,6000)
+    # rectangles are present in scene units.
+    xs = sorted(
+        min(p[0] for p in poly["ps"]) for poly in polygons
+    )
+    assert xs == [0, 5000]
+
+
+def test_import_merge_mode_creates_missing_cell(tmp_path: Path):
+    """Merge mode still creates cells that do not exist yet."""
+    parent = _make_parent(tmp_path)
+    import_lib = _make_import_lib(tmp_path)
+
+    lib = gdstk.Library(unit=1e-6, precision=1e-9)
+    cell = lib.new_cell("fresh")
+    cell.add(gdstk.rectangle((0, 0), (1, 1), layer=1, datatype=0))
+    gds_path = tmp_path / "fresh.gds"
+    lib.write_gds(str(gds_path))
+
+    importer = gdsImporter(parent, gds_path, import_lib)
+    importer.mergeMode = True
+    importer.importGDS()
+
+    layout_file = import_lib.libraryPath / "fresh" / "layout.json"
+    data = json.loads(layout_file.read_text())
+    assert len([i for i in data if i.get("type") == "Polygon"]) == 1
+
+
+def test_import_merge_mode_preserves_valid_json_for_empty_cell(tmp_path: Path):
+    parent = _make_parent(tmp_path)
+    import_lib = _make_import_lib(tmp_path)
+
+    initial = gdstk.Library(unit=1e-6, precision=1e-9)
+    cell = initial.new_cell("merged")
+    cell.add(gdstk.rectangle((0, 0), (1, 1), layer=1, datatype=0))
+    initialPath = tmp_path / "initial.gds"
+    initial.write_gds(str(initialPath))
+    gdsImporter(parent, initialPath, import_lib).importGDS()
+
+    empty = gdstk.Library(unit=1e-6, precision=1e-9)
+    empty.new_cell("merged")
+    emptyPath = tmp_path / "empty.gds"
+    empty.write_gds(str(emptyPath))
+    importer = gdsImporter(parent, emptyPath, import_lib)
+    importer.mergeMode = True
+    importer.importGDS()
+
+    layoutFile = import_lib.libraryPath / "merged" / "layout.json"
+    data = json.loads(layoutFile.read_text())
+    assert len([item for item in data if item.get("type") == "Polygon"]) == 1

@@ -26,10 +26,10 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (QTableView, QStyledItemDelegate,
                                QStyle, QHeaderView)
 
-from revedaEditor.backend.pdkLoader import importPDKModule
+from revedaEditor.backend.pdkLoader import lazyPDKModule
 
-fabproc = importPDKModule('process')
-laylyr = importPDKModule('layoutLayers')
+fabproc = lazyPDKModule('process')
+laylyr = lazyPDKModule('layoutLayers')
 
 
 class layerDataModel(QStandardItemModel):

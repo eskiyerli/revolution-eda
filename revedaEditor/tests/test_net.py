@@ -1,7 +1,9 @@
 import pytest
 from PySide6.QtCore import (QPoint, QLineF)
+from PySide6.QtGui import QPen
 from PySide6.QtWidgets import (QGraphicsScene, QGraphicsView)
 
+import revedaEditor.common.net as snet
 from revedaEditor.common.net import schematicNet, netNameStrengthEnum
 
 
@@ -54,10 +56,11 @@ def test_inheritNetName_set_to_set_conflict(setup_nets):
 
 def test_inheritNetName_inherit_to_noname(setup_nets):
     net1, net2, scene = setup_nets
-    net1.nameStrength = netNameStrengthEnum.INHERIT
+    # Assigning .name forces SET strength; override strength afterwards.
     net1.name = "Net1"
-    net2.nameStrength = netNameStrengthEnum.NONAME
+    net1.nameStrength = netNameStrengthEnum.INHERIT
     net2.name = "Net2"
+    net2.nameStrength = netNameStrengthEnum.NONAME
     result = net1.inheritNetName(net2)
     assert result
     assert net2.name == "Net1"
@@ -66,10 +69,10 @@ def test_inheritNetName_inherit_to_noname(setup_nets):
 
 def test_inheritNetName_inherit_to_weak(setup_nets):
     net1, net2, scene = setup_nets
-    net1.nameStrength = netNameStrengthEnum.INHERIT
     net1.name = "Net1"
-    net2.nameStrength = netNameStrengthEnum.WEAK
+    net1.nameStrength = netNameStrengthEnum.INHERIT
     net2.name = "Net2"
+    net2.nameStrength = netNameStrengthEnum.WEAK
     result = net1.inheritNetName(net2)
     assert result
     assert net2.name == "Net1"
@@ -90,10 +93,10 @@ def test_inheritNetName_inherit_to_inherit(setup_nets):
 
 def test_inheritNetName_inherit_to_set(setup_nets):
     net1, net2, scene = setup_nets
-    net1.nameStrength = netNameStrengthEnum.INHERIT
     net1.name = "Net1"
-    net2.nameStrength = netNameStrengthEnum.SET
+    net1.nameStrength = netNameStrengthEnum.INHERIT
     net2.name = "Net2"
+    net2.nameStrength = netNameStrengthEnum.SET
     result = net1.inheritNetName(net2)
     assert result
     assert net1.name == "Net2"
@@ -102,8 +105,8 @@ def test_inheritNetName_inherit_to_set(setup_nets):
 
 def test_inheritNetName_weak_to_noname(setup_nets):
     net1, net2, scene = setup_nets
-    net1.nameStrength = netNameStrengthEnum.WEAK
     net1.name = "Net1"
+    net1.nameStrength = netNameStrengthEnum.WEAK
     net2.nameStrength = netNameStrengthEnum.NONAME
     result = net1.inheritNetName(net2)
     assert result
@@ -123,10 +126,10 @@ def test_inheritNetName_weak_to_weak_different_name(setup_nets):
 
 def test_inheritNetName_weak_to_same_name(setup_nets):
     net1, net2, scene = setup_nets
-    net1.nameStrength = netNameStrengthEnum.WEAK
     net1.name = "Net1"
-    net2.nameStrength = netNameStrengthEnum.WEAK
+    net1.nameStrength = netNameStrengthEnum.WEAK
     net2.name = "Net1"
+    net2.nameStrength = netNameStrengthEnum.WEAK
     result = net1.inheritNetName(net2)
     assert result
     assert net2.name == "Net1"
@@ -135,10 +138,10 @@ def test_inheritNetName_weak_to_same_name(setup_nets):
 
 def test_inheritNetName_weak_to_inherit(setup_nets):
     net1, net2, scene = setup_nets
-    net1.nameStrength = netNameStrengthEnum.WEAK
     net1.name = "Net1"
-    net2.nameStrength = netNameStrengthEnum.INHERIT
+    net1.nameStrength = netNameStrengthEnum.WEAK
     net2.name = "Net2"
+    net2.nameStrength = netNameStrengthEnum.INHERIT
     result = net1.inheritNetName(net2)
     assert result
     assert net1.name == "Net2"
@@ -147,10 +150,10 @@ def test_inheritNetName_weak_to_inherit(setup_nets):
 
 def test_inheritNetName_weak_to_set(setup_nets):
     net1, net2, scene = setup_nets
-    net1.nameStrength = netNameStrengthEnum.WEAK
     net1.name = "Net1"
-    net2.nameStrength = netNameStrengthEnum.SET
+    net1.nameStrength = netNameStrengthEnum.WEAK
     net2.name = "Net2"
+    net2.nameStrength = netNameStrengthEnum.SET
     result = net1.inheritNetName(net2)
     assert result
     assert net1.name == "Net2"
@@ -193,8 +196,10 @@ def test_inheritNetName_noname_to_noname(setup_nets):
 
 def test_findOverlapNets_no_overlap(setup_nets):
     net1, net2, scene = setup_nets
+    # collidingItems() uses shape() inflated by _clickMargin on both nets,
+    # so the gap between endpoints must exceed twice the margin.
     net1.draftLine = QLineF(QPoint(0, 0), QPoint(0, 10))
-    net2.draftLine = QLineF(QPoint(0, 20), QPoint(0, 30))
+    net2.draftLine = QLineF(QPoint(0, 40), QPoint(0, 50))
     overlap_nets = net1.findOverlapNets()
     assert len(overlap_nets) == 0
 
@@ -206,6 +211,27 @@ def test_findOverlapNets_with_overlap(setup_nets):
     overlap_nets = net1.findOverlapNets()
     assert len(overlap_nets) == 1
     assert net2 in overlap_nets
+
+
+def test_schlyr_deferred_until_access(qapp):
+    """schlyr must be a lazy proxy, not an eager top-level import.
+
+    PDK layer modules (e.g. ihp_pdk.schLayers) import common.net while
+    common.net is itself importing the PDK — an eager importPDKModule()
+    at module top returns None inside a partially-initialized cycle.
+    """
+    assert type(snet.schlyr).__name__ == "_LazyPDKModule"
+    # First access resolves and caches the real module.
+    layer = snet.schlyr.wireHilightLayer
+    assert layer.pcolor.isValid()
+
+
+def test_netFlightLine_highlight_pen_resolves_pdk_layer(qapp):
+    pen = snet.netFlightLine.wireHighlightPen()
+    layer = snet.schlyr.wireHilightLayer
+    assert isinstance(pen, QPen)
+    assert pen.color() == layer.pcolor
+    assert pen.widthF() == layer.pwidth
 
 
 def test_findOverlapNets_multiple_overlaps(setup_nets):

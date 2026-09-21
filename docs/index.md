@@ -97,3 +97,12 @@ allows per-cell view selection with customizable switch and stop view lists.
 ------
 
 ### [Plugins](./plugins.md)
+
+------
+
+### Development Documentation
+
+The `developmentDocs/` directory in the repository is an Obsidian vault with
+per-file notes for every module — purpose, structure, and relationships —
+plus an architecture overview and a data-formats reference. Open
+`developmentDocs/Home.md` to start.

@@ -128,6 +128,8 @@
         "pd": { "type": "string", "enum": ["Input", "Output", "Inout"] },
         "pt": { "type": "string",
                 "enum": ["Signal", "Ground", "Power", "Clock", "Digital", "Analog"] },
+        "nx": { "type": "string",
+                "description": "net expression '[@name[:default]]' for inherited connections on this pin" },
         "loc": { "$ref": "#/$defs/point" },
         "ang": { "type": "number" },
         "fl": { "$ref": "#/$defs/flipTuple" }
@@ -173,6 +175,7 @@
     "symbolAttr": {
       "type": "object",
       "required": ["type", "nam", "def"],
+      "description": "Free-form symbol attribute. Reserved names: 'paramDefs' holds a JSON-encoded ordered list of typed parameter definitions {name, type(float|int|string|boolean|choice), default, min, max, choices, display, parse} validated by revedaEditor.common.params; instance values live in the schematic 'sys' record 'ld' map.",
       "properties": {
         "type": { "const": "attr" },
         "nam": { "type": "string" },

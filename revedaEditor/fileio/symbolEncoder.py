@@ -118,7 +118,7 @@ class symbolEncoder(json.JSONEncoder):
         }
 
     def _encodeSymbolPin(self, item: shp.symbolPin) -> Dict[str, Any]:
-        return {
+        record = {
             "type": "pin",
             "st": item.start.toTuple(),
             "nam": item.pinName,
@@ -128,6 +128,9 @@ class symbolEncoder(json.JSONEncoder):
             "ang": item.angle,
             "fl": item.flipTuple,
         }
+        if item.netExpr:
+            record["nx"] = item.netExpr
+        return record
 
     def _encodeText(self, item: shp.text) -> Dict[str, Any]:
         return {

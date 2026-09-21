@@ -28,17 +28,65 @@ from PySide6.QtWidgets import (
 import revedaEditor.common.labels as lbl
 import revedaEditor.common.layoutShapes as lshp
 import revedaEditor.common.net as net
+import revedaEditor.common.params as prm
 import revedaEditor.common.shapes as shp
 import revedaEditor.fileio.symbolEncoder as se
-from revedaEditor.backend.pdkLoader import importPDKModule
+from revedaEditor.backend.pdkLoader import lazyPDKModule
 
-laylyr = importPDKModule('layoutLayers')
-pcells = importPDKModule('pcells')
-fabproc = importPDKModule('process')
+laylyr = lazyPDKModule('layoutLayers')
+pcells = lazyPDKModule('pcells')
+fabproc = lazyPDKModule('process')
 
 def clear_symbol_cache():
     """Clear the symbol JSON loading cache."""
     schematicItems._load_sym_json.cache_clear()
+
+
+def makeSymbolPinLocator(libraryDict):
+    """Return a pinLocator for ``connectivity.checkRecords``.
+
+    The callable maps (libName, cellName, viewName) to
+    ``{pinName: (x, y), "directions": {pinName: dir}}`` with pin positions
+    in symbol coordinates (``loc`` + ``st`` of the pin record), or None when
+    the symbol file cannot be resolved.
+    """
+    def locator(libName: str, cellName: str, viewName: str):
+        libraryPath = libraryDict.get(libName)
+        if libraryPath is None:
+            return None
+        file = libraryPath.joinpath(cellName, f"{viewName}.json")
+        if not file.exists():
+            return None
+        jsonItems = schematicItems._load_sym_json(str(file))
+        if jsonItems is None:
+            return None
+        pinMap = {}
+        directions = {}
+        pinExprs = {}
+        attrs = {}
+        for jsonItem in itertools.islice(jsonItems, 2, None):
+            if not isinstance(jsonItem, dict):
+                continue
+            if jsonItem.get("type") == "pin":
+                pinName = jsonItem.get("nam", "")
+                loc = jsonItem.get("loc", (0, 0))
+                st = jsonItem.get("st", (0, 0))
+                pinMap[pinName] = (loc[0] + st[0], loc[1] + st[1])
+                directions[pinName] = jsonItem.get("pd", "")
+                if jsonItem.get("nx"):
+                    pinExprs[pinName] = jsonItem["nx"]
+            elif jsonItem.get("type") == "attr":
+                attrs[jsonItem.get("nam", "")] = jsonItem.get("def", "")
+        pinMap["directions"] = directions
+        # Typed parameter definitions (CDF-lite); empty list when the
+        # symbol declares none. Diagnostics use it to validate ld values.
+        pinMap["paramDefs"] = prm.paramDefsFromSymattrs(attrs)
+        # Per-pin net expressions (inherited connections); empty when the
+        # symbol declares none.
+        pinMap["pinExprs"] = pinExprs
+        return pinMap
+
+    return locator
 
 
 class symbolItems:
@@ -135,6 +183,7 @@ class symbolItems:
         pin.setPos(QPoint(item["loc"][0], item["loc"][1]))
         pin.angle = item["ang"]
         pin.flipTuple = item.get('fl', (1, 1))
+        pin.netExpr = item.get("nx", "") or ""
         return pin
 
     @staticmethod
@@ -262,6 +311,7 @@ class schematicItems:
         pinItem.setPos(QPoint(item["st"][0], item["st"][1]))
         pinItem.angle = item.get('ang', 0)
         pinItem.flipTuple = item.get('fl', (1, 1))
+        pinItem.netExpr = item.get("nx", "") or ""
         return pinItem
 
     def _createNet(self, item):
@@ -273,6 +323,7 @@ class schematicItems:
         end = self._snapToGrid(end)
         netItem = net.schematicNet(start, end, width)
         netItem.name = item["nam"]
+        netItem.netExpr = item.get("nx", "") or ""
         match item["ns"]:
             case 3:
 
@@ -298,6 +349,8 @@ class schematicItems:
         symbolInstance.counter = item["ic"]
         symbolInstance.instanceName = item["nam"]
         symbolInstance.netlistIgnore = bool(item.get("ign", 0))
+        # Inherited-connection overrides (netSet): {exprName: localNet}.
+        symbolInstance.netSet = item.get("nst", {})
         labelDict = item["ld"]
         symbolInstance.setPos(*item["loc"])
         for labelItem in symbolInstance.labels.values():
@@ -345,6 +398,18 @@ class schematicItems:
                     symbolInstance.symattrs = symbolAttributes
                     for labelItem in symbolInstance.labels.values():
                         labelItem.labelDefs()
+                    # Validate persisted label values against the symbol's
+                    # typed parameter definitions (CDF-lite); invalid values
+                    # are kept but reported. Malformed paramDefs JSON on the
+                    # symbol itself is reported too.
+                    _defs, defErrs = prm.paramDefsFromJson(
+                        symbolAttributes.get(prm.PARAMDEFS_ATTR, ""))
+                    for paramErr in (*defErrs,
+                                     *prm.validateInstanceValues(
+                                         symbolInstance.paramDefs,
+                                         labelDict,
+                                         owner=symbolInstance.instanceName)):
+                        self.scene.logger.warning(paramErr)
                     symbolInstance.angle = item.get("ang", 0)
                     symbolInstance.flipTuple = item.get('fl', (1, 1))
                     return symbolInstance
@@ -427,6 +492,7 @@ class layoutItems:
             "Polygon": self.createPolygonShape,
             "Via": self.createViaArrayShape,
             "Ruler": self.createRulerShape,
+            "Multipart": self.createMultipartShape,
         }
 
     def create(self, item):
@@ -538,18 +604,21 @@ class layoutItems:
             return self._applyRecordTransform(bounds, rec)
         if rtype == "Via":
             viaInfo = rec["via"]
-            # ``st`` anchors the first cut; cuts extend (xn-1)*xs by
-            # (yn-1)*ys in the array's local frame before ang is applied.
+            # ``st`` anchors the first cut; xs/ys are *gaps* between cuts,
+            # so the array spans (n-1)*(gap+cut)+cut in the local frame
+            # before ang is applied.
+            cutW = viaInfo.get("w", 0)
+            cutH = viaInfo.get("h", 0)
             margin = (
-                    max(viaInfo.get("w", 0), viaInfo.get("h", 0))
+                    max(cutW, cutH)
                     + max(viaInfo.get("be") or 0, viaInfo.get("te") or 0)
                     + 2
             )
             start = rec["st"]
             span = QRectF(
                 QPointF(0, 0),
-                QPointF((rec["xn"] - 1) * rec["xs"],
-                        (rec["yn"] - 1) * rec["ys"]),
+                QPointF((rec["xn"] - 1) * (rec["xs"] + cutW) + cutW,
+                        (rec["yn"] - 1) * (rec["ys"] + cutH) + cutH),
             ).normalized()
             bounds = self._applyRecordTransform(
                 span.adjusted(-margin, -margin, margin, margin),
@@ -655,7 +724,14 @@ class layoutItems:
             instance.counter = item["ic"]
             instance.instanceName = item["nam"]
             instance.setPos(QPointF(*item["loc"]))
+            instance.setArray(
+                item.get("rows", 1), item.get("cols", 1),
+                item.get("rpt", 0), item.get("cpt", 0),
+            )
             self._set_common_attrs(instance, item)
+            if "sdl" in item:
+                # Schematic<->layout correspondence (backend/correspondence).
+                instance._sdlSource = item["sdl"]
             return instance
         except Exception as e:
             self.scene.logger.error(f"Error creating PCell instance: {e}")
@@ -715,7 +791,14 @@ class layoutItems:
         instance.instanceName = item.get("nam", "")
         instance.setPos(loc[0], loc[1])  # Cache loc lookup
         instance.viewName = item["view"]
+        instance.setArray(
+            item.get("rows", 1), item.get("cols", 1),
+            item.get("rpt", 0), item.get("cpt", 0),
+        )
         self._set_common_attrs(instance, item)
+        if "sdl" in item:
+            # Schematic<->layout correspondence (backend/correspondence).
+            instance._sdlSource = item["sdl"]
         return instance
 
     def createRectShape(self, item):
@@ -754,11 +837,16 @@ class layoutItems:
 
     def createLabelShape(self, item):
         # Labels set their own rotation/flip from labelOrient in __init__;
-        # generic ang/fl would override that.  Anchor is saved pos-folded.
+        # 'ang' is an *additional* rotation baked in by flattening (the same
+        # convention _labelDictBounds uses), applied on top of the orient.
+        # Anchor is saved pos-folded.
         label = lshp.layoutLabel(
             QPointF(*item["st"]), item["lt"], item["ff"], item["fs"],
             item["fh"], item["la"], item["lo"], self._pdkLayers[item["ln"]]
         )
+        extraAngle = float(item.get("ang") or 0)
+        if abs(extraAngle) > 1e-9:
+            label.addExtraRotation(extraAngle)
         return label
 
     def createPinShape(self, item):
@@ -816,6 +904,17 @@ class layoutItems:
         # item's local origin away from that cut, so correct the parent once.
         via_array.setPos(via_array.pos() + anchor - via_array.mapToScene(QPointF(0, 0)))
         return via_array
+
+    def createMultipartShape(self, item):
+        cls = lshp.MULTIPART_KINDS.get(item.get("kind", ""))
+        if cls is None:
+            self.scene.logger.error(
+                f"Unknown multipart kind: {item.get('kind')!r}")
+            return None
+        shape = cls(item.get("params", {}))
+        shape.setPos(QPointF(*item.get("loc", (0, 0))))
+        self._set_common_attrs(shape, item)
+        return shape
 
     def unknownItem(self, item=None):
         return None

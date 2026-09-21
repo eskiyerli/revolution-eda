@@ -29,6 +29,17 @@
       "minItems": 4,
       "maxItems": 4
     },
+    "sdlSource": {
+      "type": "object",
+      "required": ["lib", "cell", "inst"],
+      "properties": {
+        "lib": { "type": "string" },
+        "cell": { "type": "string" },
+        "view": { "type": "string" },
+        "inst": { "type": "string" },
+        "labels": { "type": "object" }
+      }
+    },
     "viewHeader": {
       "type": "object",
       "required": ["viewType"],
@@ -58,8 +69,22 @@
         { "$ref": "#/$defs/layoutPin" },
         { "$ref": "#/$defs/layoutLabel" },
         { "$ref": "#/$defs/layoutPolygon" },
-        { "$ref": "#/$defs/layoutRuler" }
+        { "$ref": "#/$defs/layoutRuler" },
+        { "$ref": "#/$defs/layoutMultipart" }
       ]
+    },
+    "layoutMultipart": {
+      "type": "object",
+      "required": ["type", "kind", "params", "loc"],
+      "properties": {
+        "type": { "const": "Multipart" },
+        "kind": { "type": "string" },
+        "params": { "type": "object" },
+        "loc": { "$ref": "#/$defs/point" },
+        "top": { "$ref": "#/$defs/point" },
+        "ang": { "type": "number" },
+        "fl": { "$ref": "#/$defs/flipTuple" }
+      }
     },
     "layoutInstance": {
       "type": "object",
@@ -74,6 +99,11 @@
         "loc": { "$ref": "#/$defs/point" },
         "ang": { "type": "number" },
         "fl": { "$ref": "#/$defs/flipTuple" },
+        "rows": { "type": "integer", "minimum": 1 },
+        "cols": { "type": "integer", "minimum": 1 },
+        "rpt": { "type": "number" },
+        "cpt": { "type": "number" },
+        "sdl": { "$ref": "#/$defs/sdlSource" },
         "bbox": {
           "type": "array",
           "items": { "type": "number" },
@@ -95,7 +125,12 @@
         "loc": { "$ref": "#/$defs/point" },
         "ang": { "type": "number" },
         "fl": { "$ref": "#/$defs/flipTuple" },
+        "rows": { "type": "integer", "minimum": 1 },
+        "cols": { "type": "integer", "minimum": 1 },
+        "rpt": { "type": "number" },
+        "cpt": { "type": "number" },
         "params": { "type": "object" },
+        "sdl": { "$ref": "#/$defs/sdlSource" },
         "bbox": {
           "type": "array",
           "items": { "type": "number" },

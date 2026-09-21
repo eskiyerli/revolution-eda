@@ -46,7 +46,7 @@ from PySide6.QtWidgets import (
 )
 
 import revedaEditor.common.net as net
-from revedaEditor.backend.pdkLoader import importPDKModule
+from revedaEditor.backend.pdkLoader import lazyPDKModule
 from revedaEditor.common.labels import symbolLabel
 
 
@@ -56,43 +56,8 @@ def _undoStack():
     return _us
 
 
-def _get_schlyr():
-    """Lazy accessor for schematic layers PDK module (avoids circular import)."""
-    global _schlyr_cache
-    try:
-        return _schlyr_cache
-    except NameError:
-        _schlyr_cache = importPDKModule("schLayers")
-        return _schlyr_cache
-
-
-def _get_symlyr():
-    """Lazy accessor for symbol layers PDK module (avoids circular import)."""
-    global _symlyr_cache
-    try:
-        return _symlyr_cache
-    except NameError:
-        _symlyr_cache = importPDKModule("symLayers")
-        return _symlyr_cache
-
-
-class _LazyModule:
-    """Descriptor that defers PDK module loading until first attribute access."""
-    def __init__(self, getter):
-        object.__setattr__(self, '_getter', getter)
-        object.__setattr__(self, '_module', None)
-
-    def __getattr__(self, name):
-        module = object.__getattribute__(self, '_module')
-        if module is None:
-            getter = object.__getattribute__(self, '_getter')
-            module = getter()
-            object.__setattr__(self, '_module', module)
-        return getattr(module, name)
-
-
-schlyr = _LazyModule(_get_schlyr)
-symlyr = _LazyModule(_get_symlyr)
+schlyr = lazyPDKModule("schLayers")
+symlyr = lazyPDKModule("symLayers")
 
 
 class symbolShape(QGraphicsItem):
@@ -1155,6 +1120,7 @@ class symbolPin(symbolShape):
         self._pinName = pinName
         self._pinDir = pinDir
         self._pinType = pinType
+        self._netExpr = ""  # inherited connection "[@name[:default]]"
         self._connected = False  # True if the pin is connected to a net.
         self._highlighted = False
         self._pinRectItem = QGraphicsRectItem(
@@ -1269,6 +1235,20 @@ class symbolPin(symbolShape):
     def pinType(self, pintype: str):
         if pintype in self.pinTypes:
             self._pinType = pintype
+
+    @property
+    def netExpr(self) -> str:
+        """Net expression ('[@name[:default]]') for inherited connections.
+
+        Empty when unset; evaluated by connectivity.resolve."""
+        return self._netExpr
+
+    @netExpr.setter
+    def netExpr(self, value: str):
+        self._netExpr = value or ""
+        scene = self.scene()
+        if scene and hasattr(scene, "markConnectivityDirty"):
+            scene.markConnectivityDirty()
 
     @property
     def connected(self):
@@ -1529,6 +1509,7 @@ class schematicSymbol(symbolShape):
         self._pinsCache = None  # cached ordered pins dict, invalidated on addShapes
         self._netlistIgnore: bool = False
         self._draft: bool = False
+        self._netSet: dict = {}  # inherited-connection overrides {name: net}
         self._instProps: dict = dict()  # instance-specific properties
         self._pinLocations: dict[
             str, Union[QRect, QRectF]] = dict()  # pinName: pinRect
@@ -1840,7 +1821,7 @@ class schematicSymbol(symbolShape):
             self._pinsCache = self._pins
             return self._pinsCache
         outputDict = OrderedDict()
-        for key in pinOrder.split(", "):
+        for key in pinOrder.split(","):
             key = key.strip()
             if key in self._pins:
                 outputDict[key] = self._pins[key]
@@ -1864,6 +1845,37 @@ class schematicSymbol(symbolShape):
     @symattrs.setter
     def symattrs(self, attrDict: dict):
         self._symattrs = attrDict
+        self._paramDefsCache = None
+
+    @property
+    def paramDefs(self) -> list:
+        """Typed parameter definitions declared on the symbol (CDF-lite).
+
+        Parsed from the reserved ``paramDefs`` symattr; empty when the
+        symbol declares none."""
+        from revedaEditor.common import params as prm
+        cache = getattr(self, "_paramDefsCache", None)
+        if cache is None:
+            cache = prm.paramDefsFromSymattrs(self._symattrs)
+            self._paramDefsCache = cache
+        return cache
+
+    @property
+    def netSet(self) -> dict:
+        """Inherited-connection overrides {exprName: localNetName}.
+
+        Persisted as the ``nst`` field on ``sys`` records; binds net
+        expressions inside this instance's subcircuit during hierarchical
+        netlisting (see connectivity/netexpr.py)."""
+        return self._netSet
+
+    @netSet.setter
+    def netSet(self, value):
+        from revedaEditor.connectivity.netexpr import parseNetSet
+        self._netSet = parseNetSet(value)
+        scene = self.scene()
+        if scene and hasattr(scene, "markConnectivityDirty"):
+            scene.markConnectivityDirty()
 
     @property
     def instProps(self):
@@ -2040,6 +2052,7 @@ class schematicPin(symbolShape):
         self._pinName = pinName
         self._pinDir = pinDir
         self._pinType = pinType
+        self._netExpr = ""  # inherited connection "[@name[:default]]"
         self._pinNetSet: set[net.schematicNet] = set()
         self._snapLines: set[net.guideLine] = set()
         self._removedNets: list = []
@@ -2345,6 +2358,20 @@ class schematicPin(symbolShape):
     def pinType(self, pintype: str):
         if pintype in self.pinTypes:
             self._pinType = pintype
+
+    @property
+    def netExpr(self) -> str:
+        """Net expression ('[@name[:default]]') for inherited connections.
+
+        Empty when unset; evaluated by connectivity.resolve."""
+        return self._netExpr
+
+    @netExpr.setter
+    def netExpr(self, value: str):
+        self._netExpr = value or ""
+        scene = self.scene()
+        if scene and hasattr(scene, "markConnectivityDirty"):
+            scene.markConnectivityDirty()
 
     @property
     def flipTuple(self) -> Tuple[int, int]:

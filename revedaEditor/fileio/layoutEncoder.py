@@ -15,9 +15,9 @@ import json
 from typing import Any, Dict
 
 import revedaEditor.common.layoutShapes as lshp
-from revedaEditor.backend.pdkLoader import importPDKModule
+from revedaEditor.backend.pdkLoader import importPDKModule, lazyPDKModule
 
-laylyr = importPDKModule("layoutLayers")
+laylyr = lazyPDKModule("layoutLayers")
 
 
 @functools.lru_cache(maxsize=128)
@@ -68,13 +68,39 @@ class layoutEncoder(json.JSONEncoder):
             return self._encodePcell(item)
         if isinstance(item, lshp.layoutInstance):
             return self._encodeLayoutInstance(item)
+        if isinstance(item, lshp.layoutMultipart):
+            return self._encodeMultipart(item)
         return super().default(item)
+
+    def _encodeMultipart(self, item: lshp.layoutMultipart) -> Dict[str, Any]:
+        # Children are regenerated from ``params`` on load -- they are not
+        # persisted, so the composite stays a parameterised item rather than
+        # baking into loose geometry.
+        return {
+            "type": "Multipart",
+            "kind": item.kind,
+            "params": item.params,
+            "loc": item.pos().toTuple(),
+            "top": item.transformOriginPoint().toTuple(),
+            "ang": item.angle,
+            "fl": item.flipTuple,
+        }
+
+    @staticmethod
+    def _addArrayFields(record: Dict[str, Any], item: lshp.layoutInstance) -> None:
+        # Mosaic fields are written only for arrayed instances; a plain
+        # 1x1 placement keeps the historical record shape.
+        if item.rows * item.cols > 1:
+            record["rows"] = item.rows
+            record["cols"] = item.cols
+            record["rpt"] = item.rowPitch
+            record["cpt"] = item.colPitch
 
     def _encodeLayoutInstance(self, item: lshp.layoutInstance) -> Dict[str, Any]:
         # ``bbox`` is the children bounds in item-local coordinates; the loader
         # uses it to defer child construction until the instance is viewed.
         bounds = item._childrenBounds()
-        return {
+        record = {
             "type": "Inst",
             "lib": item.libraryName,
             "cell": item.cellName,
@@ -91,6 +117,17 @@ class layoutEncoder(json.JSONEncoder):
             "fl": item.flipTuple,
             "bbox": (bounds.x(), bounds.y(), bounds.width(), bounds.height()),
         }
+        self._addArrayFields(record, item)
+        self._addSdlField(record, item)
+        return record
+
+    @staticmethod
+    def _addSdlField(record: Dict[str, Any], item) -> None:
+        # Correspondence map (schematic<->layout, see backend/correspondence):
+        # written only for instances generated/adopted by SDL sync.
+        sdl = getattr(item, "_sdlSource", None)
+        if sdl:
+            record["sdl"] = sdl
 
     def _encodeLayoutRect(self, item: lshp.layoutRect) -> Dict[str, Any]:
         # Store geometry rotation/flip-neutral: local corners offset by pos()
@@ -240,7 +277,7 @@ class layoutEncoder(json.JSONEncoder):
                 if hasattr(item, name)
             }
         bounds = item._childrenBounds()
-        return {
+        record = {
             "type": "Pcell",
             "lib": item.libraryName,
             "cell": item.cellName,
@@ -258,6 +295,9 @@ class layoutEncoder(json.JSONEncoder):
             "params": argDict,
             "bbox": (bounds.x(), bounds.y(), bounds.width(), bounds.height()),
         }
+        self._addArrayFields(record, item)
+        self._addSdlField(record, item)
+        return record
 
 
 class gdsImportEncoder(layoutEncoder):

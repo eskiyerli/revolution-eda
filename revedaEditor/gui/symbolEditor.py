@@ -150,11 +150,13 @@ class symbolEditor(edw.editorWindow):
 
     def checkSaveCell(self):
         self.centralW.scene.saveSymbolCell(self.file)
+        self._clearAutosave()
         if self.parentEditor:
             self.parentEditor.centralW.scene.reloadScene()
 
     def saveCell(self):
         self.centralW.scene.saveSymbolCell(self.file)
+        self._clearAutosave()
 
     def createRectClick(self, s):
         self.centralW.scene.editModes.setMode("drawRect")
@@ -184,6 +186,7 @@ class symbolEditor(edw.editorWindow):
             self.centralW.scene.pinName = createPinDlg.pinName.text()
             self.centralW.scene.pinType = createPinDlg.pinType.currentText()
             self.centralW.scene.pinDir = createPinDlg.pinDir.currentText()
+            self.centralW.scene.pinExpr = createPinDlg.netExprEdit.text().strip()
             self.centralW.scene.editModes.setMode("drawPin")
             self.messageLine.setText("Place pin on the symbol.")
 
@@ -206,7 +209,7 @@ class symbolEditor(edw.editorWindow):
         """
         try:
             self.logger.info(f'Loading symbol from {self.cellName} - {self.viewName}')
-            self.centralW.scene.loadDesign(self.file)
+            self.centralW.scene.loadDesign(self._resolveLoadPath())
             viewNameTuple = ddef.viewNameTuple(self.libItem.libraryName, self.cellItem.cellName,
                                                self.viewName)
             self.appMainW.openViews[viewNameTuple] = self
@@ -247,7 +250,8 @@ class symbolEditor(edw.editorWindow):
         Closes the application.
         """
         try:
-            self.centralW.scene.saveSymbolCell(self.file)
+            if self._lockHeld:
+                self.centralW.scene.saveSymbolCell(self.file)
             if self.parentEditor is not None:
                 self.parentEditor.centralW.scene.reloadScene()
             cellViewNameTuple = ddef.viewNameTuple(self.libName, self.cellName,

@@ -142,6 +142,16 @@ Similarly to `Align Edges` option, the user can select alignment direction (hori
   - `Select All`: Select everything on the schematic.
   - `Unselect All`: Unselect everything on the schematic.
 - `Edit -> Net Name`: This menu item opens a small dialogue so that the user can enter the net name. Once the dialogue is closed by pressing `OK` button, a net can be chosen to assign name to. Note that nets can also be named using the properties dialogue.
+- `Edit -> Find/Replace...` (`Ctrl+F`): opens a non-modal find/replace panel.
+  Search instances, nets, and pins by name pattern (shell wildcards like `I*`
+  or `net<*>`) with an optional property filter for instances (`name=value`
+  or bare `name`). Selecting a row selects and zooms to the hit; a net hit
+  selects every member wire of that electrical net. Entering replacement text
+  and pressing `Replace` renames the hit.
+- `Edit -> Copy to Clipboard` (`Ctrl+C`): serializes the selected items to the
+  system clipboard as a schematic JSON fragment. `Edit -> Paste` (`Ctrl+V`)
+  instantiates the fragment at the cursor — the same encoding as schematic
+  files, so fragments survive across windows and sessions.
 
 #### Edit Menu (Hierarchy)
 
@@ -153,6 +163,21 @@ Similarly to `Align Edges` option, the user can select alignment direction (hori
   - Spice: Opens the spice editor for the instance.
   Schematic and Symbol editors have additional buttons on their toolbars for moving back up to hierarchy when they are started with hierarchy operation. Verilog-a and Spice editors also offer the import dialogue when the editing is finished and the window is closed.  
 - `Edit -> Hierarchy -> Go Up`: return to the parent schematic. Schematic view is updated if there is a change in the instance symbol.
+- `Edit -> Hierarchy -> Descend Edit-in-Place`: renders the selected
+  instance's child cellview ghosted (dimmed) *inside* the current schematic,
+  underneath the real items — like Virtuoso's edit-in-place. Ghost children
+  are excluded from connectivity, checks, and saving the parent.
+- `Edit -> Hierarchy -> Ascend from Edit-in-Place`: removes the ghosted child
+  rendering without saving.
+- `Edit -> Hierarchy -> Save In-Place Edits`: writes edits made to ghost
+  children back to the child cellview file (coordinates are transformed back
+  through the instance's position/rotation/flip).
+
+Edit-in-place notes:
+
+- Descend resolves the child's `schematic` view first, then the instance's
+  own view as a fallback; a missing view logs a warning instead of failing.
+- Descending the same instance twice reuses the existing ghost group.
 
 
 ### Edit menu actions and shortcuts:
@@ -176,6 +201,9 @@ Similarly to `Align Edges` option, the user can select alignment direction (hori
 | `Edit -> Selection -> Deselect All` | None | Clears the selection without changing geometry. |
 | `Edit -> Properties -> Object Properties` | `Q` | Opens the property dialog for the selected item(s). |
 | `Edit -> Net Name` | `L` | Assigns or edits the name of the selected net. |
+| `Edit -> Find/Replace...` | `Ctrl+F` | Non-modal find/replace over instance, net, and pin names. |
+| `Edit -> Copy to Clipboard` | `Ctrl+C` | Serializes the selection to the system clipboard as JSON. |
+| `Edit -> Paste` | `Ctrl+V` | Instantiates a clipboard fragment at the cursor. |
 
 
 
@@ -207,6 +235,10 @@ Such an instance array will be expanded when netlisting to create a list of inst
   - Snap-to-pin and snap-to-net
   - Collinear merge into a single segment
   - Automatic junction dots on T-connections
+  - **Bus ripper**: starting a plain wire on a bus-named net or pin
+    (`base<lo:hi>`) rips off one member — a dialog asks for the member index
+    (single-member buses rip immediately) and the new wire is auto-named
+    `base<index>`. Drawing a bus trunk with `Create -> Bus` does not rip.
 
 - `Create -> Bus`: enter a bus, i.e. an ordered bundle of wires. Nets and busses are 
   interchangeable. Busses are drawn wider and have normally more than one wire bundled together.
@@ -272,10 +304,16 @@ The Check menu provides rule-based schematic checking, similar to Virtuoso's
   default; tick rules on or off individually, or use the `Select All` /
   `Select None` buttons. The selection is kept for the duration of the
   session.
-- `Check -> View Errors...`: runs the enabled rules over the current schematic.
-  Each violation is marked on the canvas and logged:
+- `Check -> View Errors...`: runs the enabled rules over the current schematic
+  and opens the non-modal **violation browser** — a table listing each
+  violation's rule, severity, and object names. Selecting a row zooms to the
+  violation's marker rectangle(s). Each violation is also marked on the
+  canvas:
   - **Red dash-dot rectangle**: error (must be fixed before netlisting).
   - **Magenta dash-dot rectangle**: warning (review recommended).
+- Check markers are **persistent**: they are stored in the schematic file
+  (`mrk` records), so violations survive save/close/reopen until cleared or
+  re-checked.
 - `Check -> Delete Errors...`: removes all check markers from the canvas.
   Running `View Errors` again also clears the previous markers first.
 
@@ -301,6 +339,18 @@ Available check rules:
 - `Tools -> Highlight Net`: enable when checked is used to toggle hover-based net highlighting. When this menu item is toggled and cursor is hovering over a net, purple flight lines will be drawn to all other nets that is connected to that net by other wires or by name:
 
 <img src="assets/schematicNetHighlighting.png" class="image fit" />
+
+- `Tools -> Probe Net` / `Remove Probe` / `Remove All Probes`: toggle probe
+  mode on/off and clear probe markers placed on nets.
+- `Tools -> Show Resolved Net Names`: when checked, displays the resolved
+  electrical net name next to each net — useful for checking bus-ripper
+  results and name propagation through the connectivity engine.
+- `Tools -> Probe in Layout`: cross-probing between this schematic and the
+  layout editor of the same cell. With a symbol instance selected, the
+  matching layout instance is selected and zoomed to. With net members
+  selected, the corresponding layout net is highlighted. If the layout
+  editor isn't open, a hint appears in the message line. See
+  [Layout Editor](./layoutTutorial.md) for the layout side of the pair.
 
 - `Tools -> Renumber Instances`: This menu starts the process of renumbering of all schematic instances. This might be needed when the instance names could be repeated among different instances, making some operations like netlisting problematic.
 

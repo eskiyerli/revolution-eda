@@ -28,10 +28,10 @@ from PySide6.QtWidgets import (
 from quantiphy.quantiphy import Quantity
 
 import revedaEditor.gui.editFunctions as edf
-from revedaEditor.backend.pdkLoader import importPDKModule
+from revedaEditor.backend.pdkLoader import lazyPDKModule
 from revedaEditor.common.shapes import alignLine
 
-process = importPDKModule("process")
+process = lazyPDKModule("process")
 if TYPE_CHECKING:
     from revedaEditor.gui.editorWindow import editorWindow
 

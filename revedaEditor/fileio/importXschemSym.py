@@ -27,9 +27,9 @@ import revedaEditor.common.labels as lbl
 import revedaEditor.common.shapes as shp
 import revedaEditor.fileio.symbolEncoder as symenc
 import revedaEditor.gui.symbolEditor as symed
-from revedaEditor.backend.pdkLoader import importPDKModule
+from revedaEditor.backend.pdkLoader import lazyPDKModule
 
-cb = importPDKModule("callbacks")
+cb = lazyPDKModule("callbacks")
 
 
 class importXschemSym:
