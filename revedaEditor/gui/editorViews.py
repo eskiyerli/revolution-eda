@@ -252,15 +252,20 @@ class editorView(QGraphicsView):
 
             case Qt.Key.Key_Escape:
                 self.clearStretchItems()
+                # Cancel an armed clipboard copy first — deselectAll() would
+                # otherwise orphan the floating group in the scene.
+                armedScene = editorScene.armedCopyScene()
+                if armedScene is not None:
+                    armedScene.cancelArmedCopy()
+                elif self.viewScene.selectedItemGroup:
+                    self.viewScene.destroyItemGroup(
+                        self.viewScene.selectedItemGroup)
+                    self.viewScene.selectedItemGroup = None
                 self.viewScene.deselectAll()
                 self.viewScene.selectedItemsSet = set()
                 if self.viewScene.selectionRectItem:
                     self.viewScene.removeItem(self.viewScene.selectionRectItem)
                     self.viewScene.selectionRectItem = None
-                if self.viewScene.selectedItemGroup:
-                    self.viewScene.destroyItemGroup(
-                        self.viewScene.selectedItemGroup)
-                    self.viewScene.selectedItemGroup = None
                 self.viewScene.editModes.setMode('selectItem')
                 self.viewScene.messageLine.setText("Select Item")
             case _:

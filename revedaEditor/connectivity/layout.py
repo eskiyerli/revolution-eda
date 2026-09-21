@@ -453,14 +453,20 @@ class LayoutGeometryReader:
                 if shape is not None:
                     shapes.append(shape)
             elif etype == "Rect":
-                shape = self._readRect(elem)
+                shape = self._readBox(elem, "rect")
                 if shape is not None:
                     shapes.append(shape)
             elif etype == "Pin":
                 # A layout pin is metal on its layer (same as the live
                 # layoutPin item in fromLayoutItems); it is also a name
                 # anchor via readAnchors().
-                shape = self._readPin(elem)
+                shape = self._readBox(elem, "pin")
+                if shape is not None:
+                    shapes.append(shape)
+            elif etype == "Polygon":
+                # Live connectivity currently uses polygon bounding boxes;
+                # preserve that same contract for decoded records.
+                shape = self._readPolygon(elem)
                 if shape is not None:
                     shapes.append(shape)
             elif etype == "Via":
@@ -520,40 +526,40 @@ class LayoutGeometryReader:
             width=width,
         )
 
-    def _readRect(self, elem: dict) -> Optional[LayShape]:
+    def _readBox(self, elem: dict, kind: str) -> Optional[LayShape]:
+        """Read Rect and Pin records, which share geometry and layer fields."""
         layer = self._layerByIndex(elem.get("ln", -1))
-        if layer is None:
-            return None
         tl = elem.get("tl")
         br = elem.get("br")
-        if not tl or not br:
+        if layer is None or not tl or not br:
             return None
         x1, y1 = float(tl[0]), float(tl[1])
         x2, y2 = float(br[0]), float(br[1])
-        footprint = LayRect(min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2))
         return LayShape(
-            kind="rect",
+            kind=kind,
             layer_name=layer.name,
             gds_layer=int(getattr(layer, "gdsLayer", 0) or 0),
-            footprint=footprint,
+            footprint=LayRect(min(x1, x2), min(y1, y2),
+                              max(x1, x2), max(y1, y2)),
         )
 
-    def _readPin(self, elem: dict) -> Optional[LayShape]:
+    def _readPolygon(self, elem: dict) -> Optional[LayShape]:
+        """Read a Polygon using the shared bounding-box connectivity model."""
         layer = self._layerByIndex(elem.get("ln", -1))
-        if layer is None:
+        points = elem.get("ps")
+        if layer is None or not isinstance(points, (list, tuple)) \
+                or len(points) < 3:
             return None
-        tl = elem.get("tl")
-        br = elem.get("br")
-        if not tl or not br:
+        try:
+            xs = [float(point[0]) for point in points]
+            ys = [float(point[1]) for point in points]
+        except (IndexError, TypeError, ValueError):
             return None
-        x1, y1 = float(tl[0]), float(tl[1])
-        x2, y2 = float(br[0]), float(br[1])
-        footprint = LayRect(min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2))
         return LayShape(
-            kind="pin",
+            kind="polygon",
             layer_name=layer.name,
             gds_layer=int(getattr(layer, "gdsLayer", 0) or 0),
-            footprint=footprint,
+            footprint=LayRect(min(xs), min(ys), max(xs), max(ys)),
         )
 
     def _readVia(self, elem: dict) -> Optional[LayVia]:

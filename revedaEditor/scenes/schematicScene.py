@@ -87,6 +87,11 @@ class schematicScene(editorScene):
     stretchNet = Signal(snet.schematicNet, str)
     SCHEMATIC_SHAPES = (snet.schematicNet, shp.schematicPin, shp.text,
                         shp.schematicSymbol)
+    # Clipboard contract for editorScene.copySelectionToClipboard et al.
+    _CLIPBOARD_ENCODER = schenc.schematicEncoder
+    _CLIPBOARD_FACTORY = lj.schematicItems
+    _CLIPBOARD_TYPES = frozenset({"sys", "scn", "scp", "txt"})
+    _CLIPBOARD_SHAPES = SCHEMATIC_SHAPES
 
     def __init__(self, parent):
         super().__init__(parent)
@@ -1783,93 +1788,17 @@ class schematicScene(editorScene):
             self.logger.warning(f"instantiation error: {e}")
             return None
 
-    def copySelectedItems(self):
-        selectedItems = [item for item in self.selectedItems() if
-                         item.parentItem() is None]
-        if not selectedItems:
-            return
-        copyShapesList = []
-        if selectedItems:
-            usedNames = {item.instanceName for item in self.items()
-                         if isinstance(item, shp.schematicSymbol)
-                         and not self._isEipGhost(item)}
-            for item in selectedItems:
-                selectedItemJson = json.dumps(item, cls=schenc.schematicEncoder)
-                itemCopyDict = json.loads(selectedItemJson)
-                shape = lj.schematicItems(self).create(itemCopyDict)
-                if shape is not None:
-                    if isinstance(shape, shp.schematicSymbol):
-                        counter, name = self._allocInstanceName(usedNames)
-                        shape.instanceName = name
-                        shape.counter = counter
-                        [label.labelDefs() for label in shape.labels.values()]
-                    copyShapesList.append(shape)
-            self.addListUndoStack(copyShapesList)
-            # Record each copy's pre-group pos()/transform() so the base class
-            # mouseReleaseEvent can restore them after destroyItemGroup().
-            for shape in copyShapesList:
-                shape._groupInitialState = (shape.pos(), shape.transform())
-            self.selectedItemGroup = self.createItemGroup(copyShapesList)
-            self._initialGroupPos = self.selectedItemGroup.pos()
-            self.selectedItemGroup.setSelected(True)
-
-    # ---- clipboard copy/paste -------------------------------------------
-
-    _CLIPBOARD_TYPES = {"sys", "scn", "scp", "txt"}
-
-    def copySelectionToClipboard(self) -> int:
-        """Serialize selected top-level items to the system clipboard as a
-        schematic-encoder JSON fragment. Returns the item count."""
-        from PySide6.QtGui import QGuiApplication
-        selectedItems = [item for item in self.selectedItems()
-                         if item.parentItem() is None
-                         and isinstance(item, self.SCHEMATIC_SHAPES)]
-        if not selectedItems:
-            return 0
-        records = [json.loads(json.dumps(item, cls=schenc.schematicEncoder))
-                   for item in selectedItems]
-        QGuiApplication.clipboard().setText(json.dumps(records))
-        return len(records)
-
-    def pasteClipboard(self, at: Optional[QPoint] = None) -> int:
-        """Instantiate a clipboard fragment at ``at`` (defaults to the last
-        cursor position). The fragment's bounding box top-left lands on the
-        point; fresh instance names are assigned. Returns the item count."""
-        from PySide6.QtGui import QGuiApplication
-        text = QGuiApplication.clipboard().text()
-        try:
-            records = json.loads(text) if text else None
-        except json.JSONDecodeError:
-            return 0
-        if not (isinstance(records, list) and records and all(
-                isinstance(r, dict) and r.get("type") in self._CLIPBOARD_TYPES
-                for r in records)):
-            return 0
-        factory = lj.schematicItems(self)
-        shapes = [factory.create(record) for record in records]
-        shapes = [shape for shape in shapes if shape is not None]
-        if not shapes:
-            return 0
-        if at is None:
-            at = self.mouseMoveLoc or QPoint(0, 0)
-        topLeft = shapes[0].sceneBoundingRect().topLeft()
-        for shape in shapes[1:]:
-            topLeft = QPointF(
-                min(topLeft.x(), shape.sceneBoundingRect().left()),
-                min(topLeft.y(), shape.sceneBoundingRect().top()))
-        delta = self.snapToGrid(at) - self.snapToGrid(topLeft.toPoint())
+    def _fixClipboardShapes(self, shapes: list) -> None:
+        """Allocate fresh instance names for pasted schematic symbols."""
         usedNames = {item.instanceName for item in self.items()
                      if isinstance(item, shp.schematicSymbol)
                      and not self._isEipGhost(item)}
         for shape in shapes:
-            shape.setPos(shape.pos() + delta)
             if isinstance(shape, shp.schematicSymbol):
                 counter, name = self._allocInstanceName(usedNames)
                 shape.instanceName = name
                 shape.counter = counter
                 [label.labelDefs() for label in shape.labels.values()]
-        self.addListUndoStack(shapes)
-        return len(shapes)
 
     def saveSchematic(self, file: pathlib.Path, markClean: bool = True) -> bool:
         """

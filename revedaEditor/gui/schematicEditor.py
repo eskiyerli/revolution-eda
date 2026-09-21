@@ -139,9 +139,6 @@ class schematicEditor(edw.editorWindow):
         self.findAction = QAction("Find/Replace...", self)
         self.findAction.setToolTip(
             "Find and replace instances, nets and pins by name")
-        self.clipboardCopyAction = QAction("Copy to Clipboard", self)
-        self.clipboardCopyAction.setToolTip(
-            "Serialize selected items to the system clipboard")
         self.pasteAction.setToolTip("Paste items from the system clipboard")
         self.checkRulesAction = QAction("Check Rules Setup...", self)
         self.checkRulesAction.setToolTip(
@@ -162,7 +159,6 @@ class schematicEditor(edw.editorWindow):
         # edit menu
         self.menuEdit.addAction(self.findAction)
         self.menuEdit.addAction(self.netNameAction)
-        self.menuEdit.addAction(self.clipboardCopyAction)
         # self.menuEdit.removeAction(self.stretchAction)
 
         self.propertyMenu = self.menuEdit.addMenu("Properties")
@@ -254,8 +250,6 @@ class schematicEditor(edw.editorWindow):
         self.probeLayoutAction.triggered.connect(
             lambda: self.centralW.scene.probeLayout())
         self.findAction.triggered.connect(self.findClick)
-        self.clipboardCopyAction.triggered.connect(self.clipboardCopyClick)
-        self.pasteAction.triggered.connect(self.pasteClick)
 
     def _createToolBars(self):
         super()._createToolBars()
@@ -296,8 +290,6 @@ class schematicEditor(edw.editorWindow):
         self.createPinAction.setShortcut(Qt.Key.Key_P)
         self.goDownAction.setShortcut("Shift+E")
         self.findAction.setShortcut("Ctrl+F")
-        self.clipboardCopyAction.setShortcut("Ctrl+C")
-        self.pasteAction.setShortcut("Ctrl+V")
         # unset stretch shortcut for schematic editor
         # self.stretchAction.setShortcut("")
 
@@ -893,18 +885,6 @@ class schematicEditor(edw.editorWindow):
         dlg.show()
         dlg.raise_()
         dlg.activateWindow()
-
-    def clipboardCopyClick(self):
-        count = self.centralW.scene.copySelectionToClipboard()
-        self.messageLine.setText(
-            f"Copied {count} item(s) to clipboard" if count
-            else "Nothing selected to copy")
-
-    def pasteClick(self):
-        count = self.centralW.scene.pasteClipboard()
-        self.messageLine.setText(
-            f"Pasted {count} item(s)" if count
-            else "Clipboard holds no schematic fragment")
 
     def findClick(self):
         """Open the non-modal find/replace panel (reused if already open)."""

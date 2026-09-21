@@ -107,9 +107,9 @@ The Edit menu provides shape manipulation, transformation, and undo/redo command
 |---|---|---|
 | `Edit -> Undo` | `U` | Reverts the most recent change (up to 99 levels). |
 | `Edit -> Redo` | `Shift+U` | Reapplies the last undone change. |
-| `Edit -> Paste` | None | Pastes copied items at the cursor location. |
+| `Edit -> Paste` | `Ctrl+V` | Places the clipboard fragment at the cursor; click to commit. |
 | `Edit -> Delete` | `Delete` | Removes selected items from the symbol. |
-| `Edit -> Copy` | `C` | Copies the current selection for pasting. |
+| `Edit -> Copy` | `C`, `Ctrl+C` | Copies the selection to the clipboard and arms click-to-place. |
 | `Edit -> Move` | None | Moves selected items interactively on the canvas. |
 | `Edit -> Move By...` | None | Moves the selection by a precise X/Y offset via dialog. |
 | `Edit -> Move Origin` | None | Repositions the scene origin; click to set the new point. |
@@ -554,7 +554,7 @@ operations without navigating the menu bar.
 
 | Action | Shortcut | Notes |
 |---|---|---|
-| Copy | `C` | Copies the selected item; paste with `Edit -> Paste`. |
+| Copy | `C` | Copies the selected item(s) to the clipboard; click to place. |
 | Move | None | Starts interactive move mode for the selected item. |
 | Move By... | None | Opens a dialog for a precise X/Y offset move. |
 | Vertical Flip | None | Mirrors the item across the horizontal axis. |

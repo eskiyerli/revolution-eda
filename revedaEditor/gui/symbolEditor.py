@@ -194,11 +194,6 @@ class symbolEditor(edw.editorWindow):
         self.centralW.scene.editModes.setMode("rotateItem")
         self.messageLine.setText("Click on an item to rotate CW 90 degrees.")
 
-    def copyClick(self, s):
-        self.centralW.scene.editModes.setMode("copyItem")
-        self.centralW.scene.copySelectedItems()
-        self.messageLine.setText("Copying selected items")
-
     def viewPropClick(self, s):
         self.centralW.scene.editModes.setMode("selectItem")
         self.centralW.scene.viewSymbolProperties()

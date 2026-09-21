@@ -60,6 +60,15 @@ class symbolScene(editorScene):
     """
     alignLineFinished = Signal(shp.alignLine)
 
+    # Clipboard contract for editorScene.copySelectionToClipboard et al.
+    _CLIPBOARD_ENCODER = symenc.symbolEncoder
+    _CLIPBOARD_FACTORY = lj.symbolItems
+    _CLIPBOARD_TYPES = frozenset(
+        {"rect", "circle", "arc", "line", "pin", "label", "text", "polygon"})
+    _CLIPBOARD_SHAPES = (shp.symbolRectangle, shp.symbolCircle, shp.symbolArc,
+                         shp.symbolLine, shp.symbolPin, shp.symbolPolygon,
+                         lbl.symbolLabel, shp.text)
+
     def __init__(self, parent):
         super().__init__(parent)
         # drawing modes
@@ -775,28 +784,4 @@ class symbolScene(editorScene):
                         prm.PARAMDEFS_ATTR, prm.paramDefsToJson(paramDefs)))
             self.attributeList = deepcopy(localAttributeList)
 
-    def copySelectedItems(self):
-        # Only consider top-level items (same as schematic/layout editors)
-        selectedItems = [item for item in self.selectedItems() if item.parentItem() is None]
-        if not selectedItems:
-            return
-        copyShapesList = []
-        factory = lj.symbolItems(self)
-        for item in selectedItems:
-            selectedItemJson = json.dumps(item, cls=symenc.symbolEncoder)
-            itemCopyDict = json.loads(selectedItemJson)
-            shape = factory.create(itemCopyDict)
-            if shape is not None:
-                copyShapesList.append(shape)
-        if copyShapesList:
-            # Add to undo stack before grouping (matches schematic/layout pattern)
-            self.addListUndoStack(copyShapesList)
-            # Record each copy's pre-group pos()/transform() so the base class
-            # mouseReleaseEvent can restore them after destroyItemGroup().
-            for shape in copyShapesList:
-                shape._groupInitialState = (shape.pos(), shape.transform())
-            # Use base-class attribute so mouseMoveEvent/mouseReleaseEvent can move
-            # the group as the cursor moves and place it on mouse button release
-            self.selectedItemGroup = self.createItemGroup(copyShapesList)
-            self._initialGroupPos = self.selectedItemGroup.pos()
-            self.selectedItemGroup.setSelected(True)
+

@@ -8,8 +8,11 @@
 # If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #
+import json
 import pathlib
 import time
+
+import shiboken6
 from contextlib import contextmanager
 from itertools import cycle
 from typing import TYPE_CHECKING, Any, List, Optional, Union
@@ -60,7 +63,7 @@ class editorScene(QGraphicsScene):
 
         self.messages = {"selectItem": "Select Item", "deleteItem": "Delete Item",
                          "moveItem": "Move Item", "constrainedMoveItem": "Constrained Move (Shift=Ortho+Diagonal, Ctrl=Ortho)",
-                         "copyItem": "Copy Item",
+                         "copyItem": "Copy: click to place",
                          "rotateItem": "Rotate Item",
                          "changeOrigin": "Change Origin",
                          "panView": "Pan View at Mouse Press Position",
@@ -104,6 +107,11 @@ class editorScene(QGraphicsScene):
         self.installEventFilter(self)
         self.setMinimumRenderSize(0)
         self._initialGroupPos = QPointF(0, 0)
+        # Scene point the floating copy group is anchored to while pasting.
+        self._copyAnchor = QPointF(0, 0)
+        # Undo index of the add-shapes command pushed by beginClipboardPaste;
+        # cancelArmedCopy() undoes it to remove the uncommitted copies.
+        self._armedCopyUndoIndex = -1
         self.itemCycler = None
         self.mousePressLoc = QPoint(0, 0)
         self.mouseMoveLoc = QPoint(0, 0)
@@ -128,6 +136,19 @@ class editorScene(QGraphicsScene):
         modifiers = QGuiApplication.keyboardModifiers()
         if event.button() == Qt.MouseButton.LeftButton:
             self.mousePressLoc = self.snapToGrid(event.scenePos().toPoint())
+            # Fallback: a click in a different scene while a clipboard copy
+            # is armed commits the paste at the click point in this scene.
+            # Normally the armed group already migrated on mouseMoveEvent;
+            # this covers cases where migration was skipped (busy mode).
+            armed = editorScene.armedCopyScene()
+            if (armed is not None and armed is not self
+                    and self.editModes.selectItem):
+                count = self.pasteClipboard(self.mousePressLoc)
+                if count:
+                    armed.cancelArmedCopy()
+                    self.messageLine.setText(f"Pasted {count} item(s)")
+                    event.accept()
+                    return
             if self.editModes.selectItem:
                 clickedItem = self.itemAt(self.mousePressLoc, QTransform())
                 if clickedItem:
@@ -206,6 +227,17 @@ class editorScene(QGraphicsScene):
     def mouseMoveEvent(self, event) -> None:
         self.mouseRawLoc = event.scenePos().toPoint()
         self.mouseMoveLoc = self.snapToGrid(self.mouseRawLoc)
+        armed = editorScene.armedCopyScene()
+        if (armed is not None and armed is not self
+                and self.editModes.selectItem
+                and not (event.buttons() & (Qt.MouseButton.LeftButton
+                                           | Qt.MouseButton.RightButton
+                                           | Qt.MouseButton.MiddleButton))
+                and self._clipboardAcceptable()):
+            # The cursor entered this scene while a clipboard copy is armed
+            # in another — migrate the floating group so it tracks the
+            # cursor here and a click places it in this scene.
+            self.beginClipboardPaste()
         super().mouseMoveEvent(event)
         if self.editModes.selectItem:
             if self.selectionRectItem and self.mousePressLoc:
@@ -223,9 +255,9 @@ class editorScene(QGraphicsScene):
         elif self.editModes.moveItem and self.selectedItemGroup and self.mousePressLoc:
             offset = self.mouseMoveLoc - self.mousePressLoc
             self.selectedItemGroup.setPos(offset)
-        elif self.editModes.copyItem and self.selectedItemGroup and self.mousePressLoc:
-            offset = self.mouseMoveLoc - self.mousePressLoc
-            self.selectedItemGroup.setPos(offset)
+        elif self.editModes.copyItem and self.selectedItemGroup:
+            self.selectedItemGroup.setPos(
+                QPointF(self.mouseMoveLoc) - self._copyAnchor)
 
         if (event.buttons() & Qt.MouseButton.RightButton) and self._rightZoomPressLoc is not None:
             currentPos = event.scenePos().toPoint()
@@ -288,19 +320,7 @@ class editorScene(QGraphicsScene):
             self.setSelectedItems(set())
             self.editModes.setMode("selectItem")
         elif self.editModes.copyItem and self.selectedItemGroup:
-            _groupItems = self.selectedItemGroup.childItems()
-            # Copy groups are created by the scene-specific copySelectedItems()
-            # methods, which also record _groupInitialState.
-            _posDiff = self.selectedItemGroup.pos() - self._initialGroupPos
-            self.destroyItemGroup(self.selectedItemGroup)
-            self.selectedItemGroup = None
-            for item in _groupItems:
-                item.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
-                state = getattr(item, '_groupInitialState', None)
-                if state is not None:
-                    item.setTransform(state[1])
-                    item.setPos(state[0] + _posDiff)
-                    del item._groupInitialState
+            self._commitCopyGroup()
             self.editModes.setMode("selectItem")
         elif self.editModes.selectItem:
             if self.selectionRectItem:
@@ -414,10 +434,188 @@ class editorScene(QGraphicsScene):
 
         return super().eventFilter(source, event)
 
-    def copySelectedItems(self) -> None:
-        """
-        Will be implemented in the subclasses.
-        """
+    # ---- clipboard copy/paste -------------------------------------------
+    # Per-scene contract: the JSON encoder for scene items, the loadJSON
+    # factory class that rebuilds them, the persisted record "type" values
+    # the scene accepts, and the shape classes eligible for copying.
+    _CLIPBOARD_ENCODER: Optional[type] = None
+    _CLIPBOARD_FACTORY: Optional[type] = None
+    _CLIPBOARD_TYPES: frozenset = frozenset()
+    _CLIPBOARD_SHAPES: tuple = ()
+
+    def copySelectionToClipboard(self) -> int:
+        """Serialize selected top-level items to the system clipboard as a
+        JSON fragment. Returns the record count."""
+        if self._CLIPBOARD_ENCODER is None:
+            return 0
+        selectedItems = [item for item in self.selectedItems()
+                         if item.parentItem() is None
+                         and isinstance(item, self._CLIPBOARD_SHAPES)]
+        if not selectedItems:
+            return 0
+        records = [json.loads(json.dumps(item, cls=self._CLIPBOARD_ENCODER))
+                   for item in selectedItems]
+        QGuiApplication.clipboard().setText(json.dumps(records))
+        return len(records)
+
+    def _clipboardRecords(self) -> Optional[list]:
+        """Return the clipboard fragment's records when every record type is
+        acceptable to this scene; None otherwise."""
+        text = QGuiApplication.clipboard().text()
+        try:
+            records = json.loads(text) if text else None
+        except json.JSONDecodeError:
+            return None
+        if not (isinstance(records, list) and records and all(
+                isinstance(r, dict) and r.get("type") in self._CLIPBOARD_TYPES
+                for r in records)):
+            return None
+        return records
+
+    def _clipboardAcceptable(self) -> bool:
+        """True when the clipboard holds a fragment this scene can paste."""
+        return self._CLIPBOARD_FACTORY is not None and \
+            self._clipboardRecords() is not None
+
+    def _clipboardShapes(self) -> list:
+        """Instantiate the clipboard fragment into this scene's items."""
+        records = self._clipboardRecords()
+        if not records or self._CLIPBOARD_FACTORY is None:
+            return []
+        factory = self._CLIPBOARD_FACTORY(self)
+        return [shape for shape in (factory.create(record) for record in records)
+                if isinstance(shape, self._CLIPBOARD_SHAPES)]
+
+    def _fixClipboardShapes(self, shapes: list) -> None:
+        """Subclass hook for post-instantiation fixups such as allocating
+        fresh instance names for a batch of pasted items."""
+
+    @staticmethod
+    def _clipboardTopLeft(shapes: list) -> QPointF:
+        topLeft = shapes[0].sceneBoundingRect().topLeft()
+        for shape in shapes[1:]:
+            topLeft = QPointF(
+                min(topLeft.x(), shape.sceneBoundingRect().left()),
+                min(topLeft.y(), shape.sceneBoundingRect().top()))
+        return topLeft
+
+    def pasteClipboard(self, at: Optional[QPoint] = None) -> int:
+        """Instantiate the clipboard fragment at ``at`` (defaults to the
+        last cursor position) and commit it immediately. The fragment's
+        bounding-box top-left lands on the point. Returns the item count."""
+        if self.readOnly:
+            return 0
+        shapes = self._clipboardShapes()
+        if not shapes:
+            return 0
+        self._fixClipboardShapes(shapes)
+        if at is None:
+            at = self.mouseMoveLoc or QPoint(0, 0)
+        delta = QPointF(self.snapToGrid(at) - self.snapToGrid(
+            self._clipboardTopLeft(shapes).toPoint()))
+        for shape in shapes:
+            shape.setPos(shape.pos() + delta)
+        self.addListUndoStack(shapes)
+        return len(shapes)
+
+    # Scene holding an armed (uncommitted) clipboard copy — set by
+    # beginClipboardPaste so a click in another scene or ESC in any window
+    # can resolve it.
+    _armedCopyScene: Optional["editorScene"] = None
+
+    @classmethod
+    def armedCopyScene(cls) -> Optional["editorScene"]:
+        """Return the scene holding an armed clipboard copy, if any."""
+        scene = cls._armedCopyScene
+        if scene is not None and not shiboken6.isValid(scene):
+            cls._armedCopyScene = None
+            scene = None
+        return scene
+
+    def beginClipboardPaste(self, at: Optional[QPoint] = None) -> int:
+        """Instantiate the clipboard fragment as a floating group that
+        tracks the cursor; the next left-click commits the placement.
+        Returns the item count, 0 when nothing could be pasted."""
+        if self.readOnly:
+            return 0
+        armed = editorScene.armedCopyScene()
+        if armed is not None and armed is not self:
+            armed.cancelArmedCopy()
+        if self.editModes.copyItem and self.selectedItemGroup:
+            self._commitCopyGroup()
+            self.editModes.setMode("selectItem")
+        shapes = self._clipboardShapes()
+        if not shapes:
+            return 0
+        self._fixClipboardShapes(shapes)
+        self.addListUndoStack(shapes)
+        self._armedCopyUndoIndex = self.undoStack.index() - 1
+        for shape in shapes:
+            shape._groupInitialState = (shape.pos(), shape.transform())
+        self.selectedItemGroup = self.createItemGroup(shapes)
+        self._initialGroupPos = self.selectedItemGroup.pos()
+        self._copyAnchor = QPointF(
+            self.snapToGrid(self._clipboardTopLeft(shapes).toPoint()))
+        if at is None:
+            at = self.mouseMoveLoc or QPoint(0, 0)
+        self.selectedItemGroup.setPos(
+            QPointF(self.snapToGrid(at)) - self._copyAnchor)
+        self.selectedItemGroup.setSelected(True)
+        self.editModes.setMode("copyItem")
+        editorScene._armedCopyScene = self
+        return len(shapes)
+
+    def cancelArmedCopy(self) -> bool:
+        """Cancel the armed clipboard paste: dissolve the floating group
+        and remove the uncommitted copies along with their undo entry."""
+        group = self.selectedItemGroup
+        if group is None:
+            if editorScene._armedCopyScene is self:
+                editorScene._armedCopyScene = None
+            return False
+        items = group.childItems()
+        self.destroyItemGroup(group)
+        self.selectedItemGroup = None
+        for item in items:
+            state = getattr(item, '_groupInitialState', None)
+            if state is not None:
+                item.setTransform(state[1])
+                item.setPos(state[0])
+                del item._groupInitialState
+        self.clearSelection()
+        # The copies were pushed as one add-shapes command; if it is still
+        # the top undo entry, undoing it removes them from the scene.
+        if (self._armedCopyUndoIndex >= 0
+                and self.undoStack.index() == self._armedCopyUndoIndex + 1):
+            self.undoStack.removeLastCommand()
+        else:
+            for item in items:
+                self.removeItem(item)
+            self.itemsRefSet -= set(items)
+        self._armedCopyUndoIndex = -1
+        if self.editModes.copyItem:
+            self.editModes.setMode("selectItem")
+        if editorScene._armedCopyScene is self:
+            editorScene._armedCopyScene = None
+        return True
+
+    def _commitCopyGroup(self) -> None:
+        """Dissolve the floating copy group, restoring each item's pre-group
+        pos()/transform() plus the accumulated paste delta."""
+        _groupItems = self.selectedItemGroup.childItems()
+        _posDiff = self.selectedItemGroup.pos() - self._initialGroupPos
+        self.destroyItemGroup(self.selectedItemGroup)
+        self.selectedItemGroup = None
+        for item in _groupItems:
+            item.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
+            state = getattr(item, '_groupInitialState', None)
+            if state is not None:
+                item.setTransform(state[1])
+                item.setPos(state[0] + _posDiff)
+                del item._groupInitialState
+        self._armedCopyUndoIndex = -1
+        if editorScene._armedCopyScene is self:
+            editorScene._armedCopyScene = None
 
     def flipHorizontal(self) -> None:
         for item in self.selectedItems():
@@ -437,6 +635,10 @@ class editorScene(QGraphicsScene):
         """
         Deselect all items in the scene.
         """
+        # Cancel an armed clipboard copy so its floating group isn't
+        # orphaned in the scene.
+        if editorScene.armedCopyScene() is self:
+            self.cancelArmedCopy()
         self.setSelectedItems(set())
         self.itemsAtPressSet.clear()
         self.selectionRectItem = None

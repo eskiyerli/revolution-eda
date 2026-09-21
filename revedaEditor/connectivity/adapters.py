@@ -287,9 +287,9 @@ def fromLayoutItems(items: Iterable,
             if id(item) in seenContainers:
                 return
             seenContainers.add(id(item))
-            children = list(item.shapes)
-            children.extend(getattr(item, "arrayShapes", None) or [])
-            for child in children:
+            for child in item.shapes:
+                process(child, True)
+            for child in getattr(item, "arrayShapes", None) or ():
                 process(child, True)
         elif clsName == "layoutPath":
             ends = item.sceneEndPoints

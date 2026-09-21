@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING, Optional
 
 from PySide6.QtCore import (Qt, QSize, QSizeF, QMarginsF, QRect, QRectF, QBuffer,
                             QIODevice, QTimer)
-from PySide6.QtGui import (QAction, QIcon, QImage, QKeySequence, QPageSize, QPainter, QColor)
+from PySide6.QtGui import (QAction, QCursor, QIcon, QImage, QKeySequence, QPageSize, QPainter, QColor)
 from PySide6.QtPrintSupport import QPrintDialog, QPrinter, QPrintPreviewDialog
 from PySide6.QtSvg import QSvgGenerator
 from PySide6.QtWidgets import (QApplication, QDialog, QFileDialog, QGraphicsScene,
@@ -536,6 +536,7 @@ class editorWindow(QMainWindow):
         self.deselectAllAction.triggered.connect(self.deselectAllClick)
         self.deleteAction.triggered.connect(self.deleteClick)
         self.copyAction.triggered.connect(self.copyClick)
+        self.pasteAction.triggered.connect(self.pasteClick)
         self.undoAction.triggered.connect(self.undoClick)
         self.redoAction.triggered.connect(self.redoClick)
         self.moveAction.triggered.connect(self.moveClick)
@@ -554,7 +555,8 @@ class editorWindow(QMainWindow):
         self.undoAction.setShortcut(Qt.Key.Key_U)
         self.objPropAction.setShortcut(Qt.Key.Key_Q)
         self.constrainedMoveAction.setShortcut("Shift+M")
-        self.copyAction.setShortcut(Qt.Key.Key_C)
+        self.copyAction.setShortcuts([Qt.Key.Key_C, "Ctrl+C"])
+        self.pasteAction.setShortcut("Ctrl+V")
         self.rotateAction.setShortcut(QKeySequence("Ctrl+R"))
         self.createTextAction.setShortcut("Shift+L")
         self.fitAction.setShortcut(Qt.Key.Key_F)
@@ -1238,11 +1240,39 @@ class editorWindow(QMainWindow):
         self.centralW.scene.fitItemsInView()
         self.messageLine.setText("Fitting to window")
 
+    def _sceneUnderMouse(self) -> Optional[editorScene]:
+        """Return the editor scene under the mouse cursor, which may belong
+        to a different editor window; None when the cursor is not over an
+        editor view."""
+        widget = QApplication.widgetAt(QCursor.pos())
+        while widget is not None:
+            if isinstance(widget, editorView):
+                return widget.viewScene
+            widget = widget.parentWidget()
+        return None
+
     def copyClick(self, s):
-        self.centralW.scene.editModes.setMode("copyItem")
-        self.messageLine.setText(self.centralW.scene.messages[
-                                     self.centralW.scene.editModes.mode()])
-        self.centralW.scene.copySelectedItems()
+        """Copy the selection to the clipboard and arm paste placement in
+        the scene under the cursor — the copy follows the mouse until the
+        next left-click commits it."""
+        source = self.centralW.scene
+        count = source.copySelectionToClipboard()
+        if not count:
+            self.messageLine.setText("Nothing selected to copy")
+            return
+        target = self._sceneUnderMouse() or source
+        placed = target.beginClipboardPaste()
+        self.messageLine.setText(
+            f"Copied {count} item(s) to clipboard — click to place"
+            if placed else f"Copied {count} item(s) to clipboard")
+
+    def pasteClick(self, s=None):
+        """Begin a clipboard paste in the scene under the cursor."""
+        target = self._sceneUnderMouse() or self.centralW.scene
+        count = target.beginClipboardPaste()
+        self.messageLine.setText(
+            f"Pasting {count} item(s) — click to place" if count
+            else "Clipboard holds no pasteable items")
 
     def horizontalFlipClick(self):
         self.messageLine.setText('Flipping Selected Items Horizontally')

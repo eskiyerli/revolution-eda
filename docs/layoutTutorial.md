@@ -202,7 +202,8 @@ Edit menu actions and shortcuts:
 | --- | --- | --- |
 | `Edit -> Undo` | `U` | Reverts the most recent layout edit. |
 | `Edit -> Redo` | `Shift+U` | Reapplies the last undone edit. |
-| `Edit -> Copy` | `C` | Duplicates the current selection for interactive placement. |
+| `Edit -> Copy` | `C`, `Ctrl+C` | Copies the selection to the clipboard and arms click-to-place. |
+| `Edit -> Paste` | `Ctrl+V` | Places the clipboard fragment at the cursor; click to commit. |
 | `Edit -> Delete` | `Delete` | Removes selected items. |
 | `Edit -> Move` | `M` | Starts interactive move mode. |
 | `Edit -> Move By ...` | None | Moves selected items by a typed X/Y offset. |
@@ -504,7 +505,7 @@ actions.
 
 | Action | Shortcut | Notes |
 | --- | --- | --- |
-| Copy | `C` | Duplicates the selected item(s) for placement. |
+| Copy | `C` | Copies the selected item(s) to the clipboard; click to place. |
 | Move | `M` | Starts interactive move mode for the selection. |
 | Move By... | None | Opens precise X/Y displacement entry. |
 | Vertical Flip | None | Mirrors selected item(s) vertically. |

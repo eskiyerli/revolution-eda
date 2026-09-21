@@ -148,10 +148,14 @@ Similarly to `Align Edges` option, the user can select alignment direction (hori
   or bare `name`). Selecting a row selects and zooms to the hit; a net hit
   selects every member wire of that electrical net. Entering replacement text
   and pressing `Replace` renames the hit.
-- `Edit -> Copy to Clipboard` (`Ctrl+C`): serializes the selected items to the
-  system clipboard as a schematic JSON fragment. `Edit -> Paste` (`Ctrl+V`)
-  instantiates the fragment at the cursor — the same encoding as schematic
-  files, so fragments survive across windows and sessions.
+- `Edit -> Copy` (`C` or `Ctrl+C`): serializes the selected items to the
+  system clipboard as a schematic JSON fragment and immediately arms paste
+  placement — the copy follows the mouse and the next left-click commits it.
+  `Edit -> Paste` (`Ctrl+V`) arms the same placement from the clipboard; the
+  paste lands in whichever editor scene is under the cursor, so a fragment
+  copied in one window can be dropped in another. The clipboard uses the
+  same encoding as schematic files, so fragments survive across windows and
+  sessions.
 
 #### Edit Menu (Hierarchy)
 
@@ -186,8 +190,8 @@ Edit-in-place notes:
 | --- | --- | --- |
 | `Edit -> Undo` | `U` | Reverts the most recent schematic edit in the undo stack. |
 | `Edit -> Redo` | `Shift+U` | Reapplies the last undone operation. |
-| `Edit -> Paste` | None | Inserts the last copied selection at the cursor location. |
-| `Edit -> Copy` | `C` | Copies the current selection for pasting. |
+| `Edit -> Paste` | `Ctrl+V` | Places the clipboard fragment at the cursor; click to commit. |
+| `Edit -> Copy` | `C`, `Ctrl+C` | Copies the selection to the clipboard and arms click-to-place. |
 | `Edit -> Delete` | `Delete` | Removes selected items from the schematic. |
 | `Edit -> Move` | None | Starts interactive move mode for the selected items. |
 | `Edit -> Move By` | None | Moves the selection by a precise X/Y offset. |
@@ -202,8 +206,7 @@ Edit-in-place notes:
 | `Edit -> Properties -> Object Properties` | `Q` | Opens the property dialog for the selected item(s). |
 | `Edit -> Net Name` | `L` | Assigns or edits the name of the selected net. |
 | `Edit -> Find/Replace...` | `Ctrl+F` | Non-modal find/replace over instance, net, and pin names. |
-| `Edit -> Copy to Clipboard` | `Ctrl+C` | Serializes the selection to the system clipboard as JSON. |
-| `Edit -> Paste` | `Ctrl+V` | Instantiates a clipboard fragment at the cursor. |
+
 
 
 

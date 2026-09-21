@@ -532,6 +532,42 @@ class layoutItems:
     # bounding-rect center, so it never changes the rect. Only ang (rotation
     # about top) and translation move bounds.
     _UNBOUNDABLE = object()
+    _boundsCacheSize = 256
+    _localBoundsCache = {}
+
+    @classmethod
+    def clear_caches(cls):
+        """Clear file and derived-bounds caches after a layout changes."""
+        cls._load_json_file.cache_clear()
+        cls._localBoundsCache.clear()
+
+    def _localBoundsCacheKey(self, filePathKey):
+        """Stable local-bounds cache key, including nested-library context."""
+        libraryContext = tuple(sorted(
+            (name, str(path)) for name, path in self._library_paths.items()
+        ))
+        return filePathKey, self.rulerTickLength, libraryContext
+
+    def _cachedLocalBounds(self, filePathKey, fileContents):
+        """Cached local bounds for a referenced layout cellview.
+
+        Bounds are derived in the cell's own coordinates, before an instance
+        record applies its translation or transform.  Returning a copy keeps
+        callers free to transform the result without mutating the cache.
+        """
+        cacheKey = self._localBoundsCacheKey(filePathKey)
+        if cacheKey not in self._localBoundsCache:
+            try:
+                bounds = self._dictsBounds(fileContents[2:], {filePathKey})
+            except (KeyError, IndexError, TypeError, ValueError):
+                bounds = None
+            if len(self._localBoundsCache) >= self._boundsCacheSize:
+                self._localBoundsCache.pop(next(iter(self._localBoundsCache)))
+            self._localBoundsCache[cacheKey] = (
+                QRectF(bounds) if bounds is not None else None
+            )
+        bounds = self._localBoundsCache[cacheKey]
+        return QRectF(bounds) if bounds is not None else None
 
     def _dictsBounds(self, records, activePaths):
         """Union of a cell's record bounds from the raw dicts, without
@@ -761,10 +797,7 @@ class layoutItems:
         if isinstance(bbox, (list, tuple)) and len(bbox) == 4:
             bounds = QRectF(*bbox)
         else:
-            try:
-                bounds = self._dictsBounds(file_contents[2:], {file_path_key})
-            except (KeyError, IndexError, TypeError, ValueError):
-                bounds = None
+            bounds = self._cachedLocalBounds(file_path_key, file_contents)
         if bounds is not None:
             instance = lshp.layoutInstance([])
             instance.deferShapes(file_contents[2:], bounds, file_path_key)

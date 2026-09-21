@@ -111,7 +111,10 @@ def _resolveGroup(group: NetGroup, segs: dict[int, Seg],
             flag("netNameConflict",
                  f"Conflicting global pins on one node: "
                  f"{', '.join(globalNames)}.",
-                 segIds=[p.id for p in globalPorts],
+                 # segConflicts drives wire highlighting, so it must carry
+                 # actual segment IDs rather than the independently numbered
+                 # global-port IDs.
+                 segIds=members,
                  portIds=[p.id for p in globalPorts])
         for name in setNames:
             if not namesMatch(winner, name):

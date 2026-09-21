@@ -100,11 +100,14 @@ def applyBindkeys(
     """Apply configured shortcuts to a window's QAction attributes.
 
     Applies the ``"*"`` section first, then the ``viewType`` section on top.
-    Returns the number of shortcuts applied. Unknown action names and invalid
-    key sequences are logged and skipped.
+    All sequences mapped to the same action are applied together via
+    ``setShortcuts`` so an action can keep several bindings. Returns the
+    number of shortcuts applied. Unknown action names and invalid key
+    sequences are logged and skipped.
     """
     log = log or logger
     applied = 0
+    bindings: dict = {}
     for section in ("*", viewType):
         for keySeq, actionName in keyMap.get(section, {}).items():
             action = getattr(window, actionName, None)
@@ -121,6 +124,8 @@ def applyBindkeys(
                     "unparsable key sequence"
                 )
                 continue
-            action.setShortcut(sequence)
+            bindings.setdefault(action, []).append(sequence)
             applied += 1
+    for action, sequences in bindings.items():
+        action.setShortcuts(sequences)
     return applied

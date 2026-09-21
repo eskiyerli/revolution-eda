@@ -95,28 +95,43 @@ def buildGroups(segs: list[Seg], endpointTol: float = 1.0,
     uf = _UnionFind(seg.id for seg in segs)
     ordered = sorted(segs, key=lambda s: s.id)
     # Spatial index on segment bounding boxes (inflated by bodyTol) so pair
-    # checks stay near-linear instead of O(n^2) over the whole sheet.
+    # checks stay near-linear instead of O(n^2) over the whole sheet. Huge
+    # boxes stay in a span set rather than expanding across unbounded cells.
     grid: dict[tuple[int, int], list[int]] = {}
     cellSize = max(bodyTol * 4, endpointTol * 4, 40)
+    maxCells = 256
     bounds: dict[int, tuple[float, float, float, float]] = {}
+    cellRanges: dict[int, tuple[int, int, int, int]] = {}
+    spanIds: set[int] = set()
     for seg in ordered:
         x0, x1 = sorted((seg.p1[0], seg.p2[0]))
         y0, y1 = sorted((seg.p1[1], seg.p2[1]))
         bounds[seg.id] = (x0 - bodyTol - endpointTol, y0 - bodyTol - endpointTol,
                           x1 + bodyTol + endpointTol, y1 + bodyTol + endpointTol)
         bx0, by0, bx1, by1 = bounds[seg.id]
-        for gx in range(int(bx0 // cellSize), int(bx1 // cellSize) + 1):
-            for gy in range(int(by0 // cellSize), int(by1 // cellSize) + 1):
+        gx0, gx1 = int(bx0 // cellSize), int(bx1 // cellSize)
+        gy0, gy1 = int(by0 // cellSize), int(by1 // cellSize)
+        cellRanges[seg.id] = (gx0, gx1, gy0, gy1)
+        if (gx1 - gx0 + 1) * (gy1 - gy0 + 1) > maxCells:
+            spanIds.add(seg.id)
+            continue
+        for gx in range(gx0, gx1 + 1):
+            for gy in range(gy0, gy1 + 1):
                 grid.setdefault((gx, gy), []).append(seg.id)
 
     seenPairs: set[frozenset[int]] = set()
     byId = {seg.id: seg for seg in ordered}
     for seg in ordered:
         bx0, by0, bx1, by1 = bounds[seg.id]
-        candidates = set()
-        for gx in range(int(bx0 // cellSize), int(bx1 // cellSize) + 1):
-            for gy in range(int(by0 // cellSize), int(by1 // cellSize) + 1):
-                candidates.update(grid.get((gx, gy), ()))
+        # Every normal segment checks all oversized spans.  A span need not
+        # scan its own cells: every normal/span pair is found from the normal
+        # side, and span/span pairs are already present below.
+        candidates = set(spanIds)
+        if seg.id not in spanIds:
+            gx0, gx1, gy0, gy1 = cellRanges[seg.id]
+            for gx in range(gx0, gx1 + 1):
+                for gy in range(gy0, gy1 + 1):
+                    candidates.update(grid.get((gx, gy), ()))
         for otherId in candidates:
             if otherId == seg.id:
                 continue

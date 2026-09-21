@@ -6,6 +6,8 @@
         "Q": "objPropAction",
         "Shift+M": "constrainedMoveAction",
         "C": "copyAction",
+        "Ctrl+C": "copyAction",
+        "Ctrl+V": "pasteAction",
         "Ctrl+R": "rotateAction",
         "Shift+L": "createTextAction",
         "F": "fitAction",
@@ -18,9 +20,7 @@
         "W": "createNetAction",
         "P": "createPinAction",
         "Shift+E": "goDownAction",
-        "Ctrl+F": "findAction",
-        "Ctrl+C": "clipboardCopyAction",
-        "Ctrl+V": "pasteAction"
+        "Ctrl+F": "findAction"
     },
     "layout": {
         "R": "createRectAction",

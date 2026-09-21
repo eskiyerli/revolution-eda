@@ -11,10 +11,6 @@
 # Development docs
 developmentDocs/
 
-# tests
-tests/
-revedaEditor/tests/
-
 # License module (proprietary, compiled separately)
 revedaLicense/
 

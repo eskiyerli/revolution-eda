@@ -76,6 +76,13 @@ class layoutScene(editorScene):
         lshp.layoutMultipart,
         lshp.layoutRuler,
     )
+    # Clipboard contract for editorScene.copySelectionToClipboard et al.
+    _CLIPBOARD_ENCODER = layenc.layoutEncoder
+    _CLIPBOARD_FACTORY = lj.layoutItems
+    _CLIPBOARD_TYPES = frozenset(
+        {"Inst", "Pcell", "Rect", "Path", "Label", "Pin", "Polygon", "Via",
+         "Ruler", "Multipart"})
+    _CLIPBOARD_SHAPES = LAYOUT_SHAPES
     # Object filter categories shown below the LSW, mapped to the layout
     # shape classes they control. Pin name labels are filtered with pins.
     objectFilterClasses = {
@@ -195,6 +202,11 @@ class layoutScene(editorScene):
         # engine, shared with RCX's record-level path).
         self._connectivityCache = None
         self._connectivityItemGroup = {}
+        # Bulk loading suppresses repeated cache invalidation and flyline
+        # geometry work while a large set of top-level items is inserted.
+        self._bulkLoadDepth = 0
+        self._connectivityDirtyDuringBulkLoad = False
+        self._discardQueuedBulkChange = False
         # member item -> overlay QGraphicsRectItem
         self._netHighlightItems = {}
         # Schematic->layout rat's nest: drawn layoutFlightLine items, their
@@ -1632,7 +1644,7 @@ class layoutScene(editorScene):
             if markClean:
                 self.undoStack.clear()
             lj.PCellCache.clear_caches()
-            lj.layoutItems._load_json_file.cache_clear()
+            lj.layoutItems.clear_caches()
 
         except ValueError as e:
             self.logger.error(f"Invalid layout data: {str(e)}")
@@ -1798,7 +1810,15 @@ class layoutScene(editorScene):
 
         factory_create = lj.layoutItems(self).create
         index_method = self.itemIndexMethod()
+        signalsWereBlocked = self.signalsBlocked()
+        beginBulkLoad = getattr(self, "_beginBulkLoad", None)
+        endBulkLoad = getattr(self, "_endBulkLoad", None)
         self.setItemIndexMethod(QGraphicsScene.ItemIndexMethod.NoIndex)
+        # Qt's changed signal and the layoutScene addItem override both fire
+        # per insertion. Keep them quiet until every record has been added.
+        self.blockSignals(True)
+        if callable(beginBulkLoad):
+            beginBulkLoad()
         # Register items into itemsRefSet incrementally as they are created,
         # avoiding a sorted self.items() scan over the whole scene afterwards.
         refSet = getattr(self, "itemsRefSet", None)
@@ -1823,8 +1843,11 @@ class layoutScene(editorScene):
                             f"Layout record skipped on load: {e}")
         finally:
             self.setItemIndexMethod(index_method)
-        if hasattr(self, "_applyObjectFilters"):
-            self._applyObjectFilters()
+            if hasattr(self, "_applyObjectFilters"):
+                self._applyObjectFilters()
+            if callable(endBulkLoad):
+                endBulkLoad(discardQueuedChanged=not signalsWereBlocked)
+            self.blockSignals(signalsWereBlocked)
 
     def deleteSelectedItems(self):
         for item in self.selectedItems():
@@ -2410,31 +2433,13 @@ class layoutScene(editorScene):
                 )
                 self.editModes.setMode("selectItem")
 
-    def copySelectedItems(self):
-        selectedItems = [
-            item for item in self.selectedItems() if item.parentItem() is None
-        ]
-        copyShapesList = []
-        if selectedItems:
-            for item in selectedItems:
-                selectedItemJson = json.dumps(item, cls=layenc.layoutEncoder)
-                itemCopyDict = json.loads(selectedItemJson)
-                shape = lj.layoutItems(self).create(itemCopyDict)
-                if shape is not None:
-                    if isinstance(shape, (lshp.layoutInstance, lshp.layoutPcell)):
-                        self.itemCounter += 1
-                        shape.instanceName = f"I{self.itemCounter}"
-                        shape.counter = int(self.itemCounter)
-                    copyShapesList.append(shape)
-
-            self.addListUndoStack(copyShapesList)
-            # Record each copy's pre-group pos()/transform() so the base class
-            # mouseReleaseEvent can restore them after destroyItemGroup().
-            for shape in copyShapesList:
-                shape._groupInitialState = (shape.pos(), shape.transform())
-            self.selectedItemGroup = self.createItemGroup(copyShapesList)
-            self._initialGroupPos = self.selectedItemGroup.pos()
-            self.selectedItemGroup.setSelected(True)
+    def _fixClipboardShapes(self, shapes: list) -> None:
+        """Allocate fresh instance names for pasted layout instances."""
+        for shape in shapes:
+            if isinstance(shape, (lshp.layoutInstance, lshp.layoutPcell)):
+                self.itemCounter += 1
+                shape.instanceName = f"I{self.itemCounter}"
+                shape.counter = int(self.itemCounter)
 
     def deleteAllRulers(self):
         # A ruler is added on its first click and finalized on the second. Do
@@ -2469,8 +2474,30 @@ class layoutScene(editorScene):
 
     # --- Layout connectivity (revedaEditor.connectivity.layout engine) ---
 
+    def _beginBulkLoad(self):
+        self._bulkLoadDepth += 1
+
+    def _endBulkLoad(self, discardQueuedChanged: bool = False):
+        self._bulkLoadDepth -= 1
+        if self._bulkLoadDepth:
+            return
+        if self._connectivityDirtyDuringBulkLoad:
+            self._connectivityDirtyDuringBulkLoad = False
+            self._connectivityCache = None
+            self._discardQueuedBulkChange = discardQueuedChanged
+            self._updateFlylineGeometry()
+
     def markConnectivityDirty(self, *args):
-        """Invalidate the cached connectivity result on any scene change."""
+        """Invalidate cached connectivity after a scene change."""
+        if args and self._discardQueuedBulkChange:
+            # QGraphicsScene posts one changed signal after its signals are
+            # unblocked. The bulk completion above already invalidated the
+            # cache and refreshed overlays for that exact batch.
+            self._discardQueuedBulkChange = False
+            return
+        if self._bulkLoadDepth:
+            self._connectivityDirtyDuringBulkLoad = True
+            return
         self._connectivityCache = None
         self._updateFlylineGeometry()
 
@@ -2757,7 +2784,10 @@ class layoutScene(editorScene):
             flyline = lshp.layoutFlightLine(
                 QLineF(anchor, pin.sceneBoundingRect().center()),
                 netName, anchorPin, pin)
-            self.addItem(flyline)
+            # Flylines are visual overlays; bypass the scene override so
+            # rebuilding their topology cannot invalidate the just-built
+            # design connectivity cache.
+            super().addItem(flyline)
             self._flylines.append(flyline)
             drawn += 1
         return drawn

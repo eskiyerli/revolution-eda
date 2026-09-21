@@ -53,6 +53,21 @@ def _adapterDiagnostic(message: str) -> RecordDiagnostic:
     return RecordDiagnostic("unresolvedInstance", "warning", message)
 
 
+def _memoizedPinLocator(pinLocator: Optional[Callable]) -> Optional[Callable]:
+    """Memoize one pure symbol-pin lookup per cell view for a check pass."""
+    if pinLocator is None:
+        return None
+    cache = {}
+
+    def locate(libName, cellName, viewName):
+        key = (libName, cellName, viewName)
+        if key not in cache:
+            cache[key] = pinLocator(libName, cellName, viewName)
+        return cache[key]
+
+    return locate
+
+
 def _manhattan(p, q) -> float:
     return abs(p[0] - q[0]) + abs(p[1] - q[1])
 
@@ -116,7 +131,10 @@ def checkRecords(records: Iterable[dict],
     ``None`` evaluates expressions to their defaults.
     """
     records = list(records)  # materialize: consumed twice (adapter + params)
-    segs, ports, adapterDiags = fromRecords(records, pinLocator=pinLocator)
+    # Both record conversion and parameter validation request symbol metadata.
+    # Cache it for this pass so repeated instances do not repeat lookup work.
+    cachedPinLocator = _memoizedPinLocator(pinLocator)
+    segs, ports, adapterDiags = fromRecords(records, pinLocator=cachedPinLocator)
     result = resolve(segs, ports, endpointTol=endpointTol,
                      bodyTol=bodyTol, portTol=portTol, netSet=netSet)
 
@@ -138,7 +156,7 @@ def checkRecords(records: Iterable[dict],
         and port.id not in result.portExprNet)
     diagnostics.extend(_danglingEnds(segs, ports, endpointTol, bodyTol,
                                      portTol))
-    diagnostics.extend(_paramDiagnostics(records, pinLocator))
+    diagnostics.extend(_paramDiagnostics(records, cachedPinLocator))
     return result, diagnostics
 
 
