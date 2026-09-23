@@ -142,6 +142,13 @@ The Edit menu contains the core geometry editing commands.
   - **Grow / Shrink** — size each selected shape by the entered amount (in um).
   Results are added back as rectangles/polygons through the undo stack, so the whole
   operation is undoable.
+- `Edit -> Group Items` (`Ctrl+G`): groups the selected items into a persistent group.
+  A group selects, moves, copies, and deselects as one unit — clicking any member
+  selects the whole group. Groups nest and survive save/load. Also available in the
+  right-click context menu.
+- `Edit -> Ungroup Items` (`Ctrl+Shift+G`): explodes each selected group back into
+  its member items. Members keep their current positions, so ungrouping a moved or
+  rotated group leaves everything exactly where it was drawn.
 - `Edit -> Selection`: contains `Select All` and `Unselect All`.
 
 Property editing works on these layout object types:
@@ -546,6 +553,8 @@ This quick appendix collects the most frequently used layout shortcuts in one pl
 | `Shift+A` | Align items |
 | `Shift+C` | Cut item |
 | `Ctrl+M` | Merge shapes |
+| `Ctrl+G` | Group selected items |
+| `Ctrl+Shift+G` | Ungroup selected groups |
 | `Ctrl+K` | Delete selected rulers |
 | `U` | Undo |
 | `Shift+U` | Redo |

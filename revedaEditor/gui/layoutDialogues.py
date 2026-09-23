@@ -846,7 +846,9 @@ class createMultipartDialogue(QDialog):
 
     ``selectedSpec`` returns ``(kind, params)`` with dimensions converted to
     scene units (dbu); the geometry anchors are placeholders the draw flow
-    fills in on the second click."""
+    fills in on the second click. ``initialSpec`` lets F3 reopen the form for
+    an active multipart placement without discarding its current settings.
+    """
 
     # kind -> [(paramKey, label, default, kindOfField)]
     # kindOfField: "layer" (combo of PDK layers), "via" (combo of process
@@ -877,8 +879,9 @@ class createMultipartDialogue(QDialog):
         "busRoute": "Bus Route",
     }
 
-    def __init__(self, parent):
+    def __init__(self, parent, initialSpec: tuple[str, dict] | None = None):
         super().__init__(parent)
+        self._initialSpec = initialSpec
         self.setWindowTitle("Create Multipart")
         self.setMinimumWidth(420)
         mainLayout = QVBoxLayout()
@@ -903,7 +906,27 @@ class createMultipartDialogue(QDialog):
         ]
         self.kindCB.currentIndexChanged.connect(self._rebuildFields)
         self._rebuildFields(0)
+        if self._initialSpec is not None:
+            self.setInitialSpec(*self._initialSpec)
         self.show()
+
+    def setInitialSpec(self, kind: str, params: dict) -> None:
+        """Populate this form from an active placement specification."""
+        index = self.kindCB.findData(kind)
+        if index < 0:
+            return
+        self.kindCB.setCurrentIndex(index)
+        dbu = getattr(process, "dbu", 1000)
+        for key, (widget, fieldKind) in self._fieldWidgets.items():
+            if key not in params:
+                continue
+            value = params[key]
+            if fieldKind in ("layer", "via"):
+                widget.setCurrentText(str(value))
+            elif fieldKind == "um":
+                widget.setText(f"{float(value) / dbu:g}")
+            else:
+                widget.setText(str(value))
 
     def _clearFields(self):
         while self.formLayout.rowCount() > 1:

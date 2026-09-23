@@ -435,11 +435,15 @@ class LayoutGeometryReader:
             return self._pdkAllLayers[ln]
         return None
 
-    def read(self, layoutElements: list[dict]) -> tuple[list[LayShape], list[LayVia]]:
+    def read(self, layoutElements: list[dict],
+             _offset: tuple[float, float] = (0.0, 0.0),
+             ) -> tuple[list[LayShape], list[LayVia]]:
         """Return (shapes, vias) parsed from the layout element list.
 
         The first two entries of a ``layout.json`` array are the view header
-        and scene settings; they are skipped.
+        and scene settings; they are skipped. ``_offset`` is the
+        accumulated parent translation for records nested inside ``Group``
+        records (member coordinates are group-local).
         """
         shapes: list[LayShape] = []
         vias: list[LayVia] = []
@@ -451,41 +455,80 @@ class LayoutGeometryReader:
             if etype == "Path":
                 shape = self._readPath(elem)
                 if shape is not None:
-                    shapes.append(shape)
+                    shapes.append(self._offsetShape(shape, _offset))
             elif etype == "Rect":
                 shape = self._readBox(elem, "rect")
                 if shape is not None:
-                    shapes.append(shape)
+                    shapes.append(self._offsetShape(shape, _offset))
             elif etype == "Pin":
                 # A layout pin is metal on its layer (same as the live
                 # layoutPin item in fromLayoutItems); it is also a name
                 # anchor via readAnchors().
                 shape = self._readBox(elem, "pin")
                 if shape is not None:
-                    shapes.append(shape)
+                    shapes.append(self._offsetShape(shape, _offset))
             elif etype == "Polygon":
                 # Live connectivity currently uses polygon bounding boxes;
                 # preserve that same contract for decoded records.
                 shape = self._readPolygon(elem)
                 if shape is not None:
-                    shapes.append(shape)
+                    shapes.append(self._offsetShape(shape, _offset))
             elif etype == "Via":
                 via = self._readVia(elem)
                 if via is not None:
-                    vias.append(via)
+                    vias.append(self._offsetVia(via, _offset))
+            elif etype == "Group":
+                # Group members are stored in group-local coordinates;
+                # ``loc`` re-anchors them. Group rotation/flip are ignored
+                # at record level, matching how ``ang`` is ignored for
+                # every other record type here.
+                loc = elem.get("loc") or (0.0, 0.0)
+                subShapes, subVias = self.read(
+                    elem.get("items", []),
+                    (_offset[0] + float(loc[0]), _offset[1] + float(loc[1])))
+                shapes.extend(subShapes)
+                vias.extend(subVias)
             # Pcell instances are handled by the caller (they need pin
             # footprints, resolved via the layout scene). Labels and text
             # carry no interconnect area.
 
         return shapes, vias
 
-    def readAnchors(self, layoutElements: list[dict]) -> list[tuple[str, float, float]]:
+    @staticmethod
+    def _offsetRect(rect: LayRect, offset) -> LayRect:
+        dx, dy = offset
+        if not (dx or dy):
+            return rect
+        return LayRect(rect.x1 + dx, rect.y1 + dy,
+                       rect.x2 + dx, rect.y2 + dy)
+
+    @classmethod
+    def _offsetShape(cls, shape: LayShape, offset) -> LayShape:
+        if not (offset[0] or offset[1]):
+            return shape
+        shape.footprint = cls._offsetRect(shape.footprint, offset)
+        if shape.centerline is not None:
+            x1, y1, x2, y2 = shape.centerline
+            dx, dy = offset
+            shape.centerline = (x1 + dx, y1 + dy, x2 + dx, y2 + dy)
+        return shape
+
+    @classmethod
+    def _offsetVia(cls, via: LayVia, offset) -> LayVia:
+        via.footprint = cls._offsetRect(via.footprint, offset)
+        return via
+
+    def readAnchors(self, layoutElements: list[dict],
+                    _offset: tuple[float, float] = (0.0, 0.0),
+                    ) -> list[tuple[str, float, float]]:
         """Return (name, x, y) anchors from Pin and Label records.
 
         Pin records anchor at their top-left corner (``tl``); label records
         anchor at ``st`` -- both are pos-folded scene coordinates written by
-        ``layoutEncoder``.
+        ``layoutEncoder``. Anchors inside ``Group`` records are group-local
+        and shifted by the group's ``loc``.
         """
+        dx, dy = _offset
         anchors: list[tuple[str, float, float]] = []
         for elem in layoutElements:
             if not isinstance(elem, dict):
@@ -495,12 +538,19 @@ class LayoutGeometryReader:
                 name = elem.get("pn", "")
                 tl = elem.get("tl")
                 if name and tl:
-                    anchors.append((name, float(tl[0]), float(tl[1])))
+                    anchors.append(
+                        (name, float(tl[0]) + dx, float(tl[1]) + dy))
             elif etype == "Label":
                 name = elem.get("lt", "")
                 st = elem.get("st")
                 if name and st:
-                    anchors.append((name, float(st[0]), float(st[1])))
+                    anchors.append(
+                        (name, float(st[0]) + dx, float(st[1]) + dy))
+            elif etype == "Group":
+                loc = elem.get("loc") or (0.0, 0.0)
+                anchors.extend(self.readAnchors(
+                    elem.get("items", []),
+                    (dx + float(loc[0]), dy + float(loc[1]))))
         return anchors
 
     def _readPath(self, elem: dict) -> Optional[LayShape]:

@@ -25,6 +25,7 @@ from PySide6.QtCore import (
     QRect,
     QRectF,
     QRegularExpression,
+    QTimer,
     Qt,
     Signal,
     Slot,
@@ -86,11 +87,11 @@ class schematicScene(editorScene):
     alignLineFinished = Signal(shp.alignLine)
     stretchNet = Signal(snet.schematicNet, str)
     SCHEMATIC_SHAPES = (snet.schematicNet, shp.schematicPin, shp.text,
-                        shp.schematicSymbol)
+                        shp.schematicSymbol, shp.schematicGroup)
     # Clipboard contract for editorScene.copySelectionToClipboard et al.
     _CLIPBOARD_ENCODER = schenc.schematicEncoder
     _CLIPBOARD_FACTORY = lj.schematicItems
-    _CLIPBOARD_TYPES = frozenset({"sys", "scn", "scp", "txt"})
+    _CLIPBOARD_TYPES = frozenset({"sys", "scn", "scp", "txt", "Group"})
     _CLIPBOARD_SHAPES = SCHEMATIC_SHAPES
 
     def __init__(self, parent):
@@ -159,6 +160,9 @@ class schematicScene(editorScene):
         # Parameter values captured by the place-with-params form
         # (createInstClick); applied to each placed instance's labels.
         self.pendingInstanceParams = None
+        # Rows, columns, X pitch, Y pitch for the next schematic placement;
+        # a mosaic expands to independent ordinary schematic instances.
+        self.pendingInstanceArraySpec = None
         self.newAlignLine = None
         self._snapPointRect = self.defineSnapRect()
         self._moveMacroActive = False
@@ -416,39 +420,118 @@ class schematicScene(editorScene):
         return raw if raw is not None else fallback
 
     def _handleAddInstance(self, eventLoc: QPoint) -> None:
-        """
-        Handle add instance logic.
-
-        :param eventLoc: QPoint instance
-        """
+        """Place one symbol or a schematic placement mosaic at ``eventLoc``."""
         if self._newInstance:
             self._newInstance = None
-        self._newInstance = self.drawInstance(self.newInstanceTuple, eventLoc)
-        if self._newInstance is None:
+        arraySpec = getattr(self, "pendingInstanceArraySpec", None)
+        if arraySpec is None:
+            self._newInstance = self.drawInstance(self.newInstanceTuple, eventLoc)
+            if self._newInstance is None:
+                return
+            self._applyPendingInstanceParams(self._newInstance)
+            self._newInstance.setSelected(True)
             return
-        self._applyPendingInstanceParams(self._newInstance)
-        self._newInstance.setSelected(True)
+
+        rows, columns, xPitch, yPitch = arraySpec
+        instances = []
+        for row in range(max(1, rows)):
+            for column in range(max(1, columns)):
+                position = self.snapToGrid(
+                    eventLoc + QPoint(column * xPitch, row * yPitch))
+                instance = self.instSymbol(self.newInstanceTuple, position)
+                if instance is None:
+                    continue
+                self._applyPendingInstanceParams(instance)
+                instances.append(instance)
+        if not instances:
+            return
+        # A schematic mosaic is a persistent symbols-only group. Every member
+        # remains an independent device with its own labels and callbacks.
+        group = shp.schematicGroup(instances)
+        self.addUndoStack(group)
+        group.setSelected(True)
+        self._newInstance = instances[-1]
+
+    def ungroupSelectedItems(self):
+        """Release selected schematic mosaic groups into their symbols."""
+        groups = [item for item in self.selectedItemsSet
+                  if isinstance(item, shp.schematicGroup)]
+        if not groups:
+            self.messageLine.setText("No grouped schematic items selected")
+            return
+        released = []
+        for group in groups:
+            members = list(group.symbols)
+            self.undoStack.push(us.undoGroupShapes(self, group, members, False))
+            released.extend(members)
+        self.setSelectedItems(set(released))
+        self.messageLine.setText(f"Ungrouped {len(groups)} mosaic group(s)")
 
     def _applyPendingInstanceParams(self, instance) -> None:
-        """Write place-with-form parameter values onto a placed instance.
-
-        Values are keyed by parameter name; they land on the matching
-        ``@name`` label. Labels are re-resolved afterwards so NLP/pyLabel
-        dependents see the new values."""
+        """Write place-with-form label values onto a placed instance."""
         pending = getattr(self, "pendingInstanceParams", None)
         if not pending:
             return
         for name, value in pending.items():
-            label = instance.labels.get(f"@{name}") or instance.labels.get(
-                name)
+            label = instance.labels.get(f"@{name.lstrip('@')}") or instance.labels.get(name)
             if label is not None:
                 label.labelValue = value
+        self._resolveInstanceLabels(instance)
+
+    def _resolveInstanceLabels(self, instance) -> None:
+        """Resolve NLP labels before callback-driven PyLabels."""
         for labelItem in instance.labels.values():
             if labelItem.labelType == lbl.symbolLabel.labelTypes[1]:
                 labelItem.labelDefs()
         for labelItem in instance.labels.values():
             if labelItem.labelType == lbl.symbolLabel.labelTypes[2]:
                 labelItem.labelDefs()
+
+    def instanceLabelRows(self, item: shp.schematicSymbol) -> tuple[list[dict], list[str]]:
+        """Return the persistent label rows for an instance edit form.
+
+        ParamDefs only enrich matching NLP-label carriers: they provide widget
+        typing, validation and declaration order.  Every non-predefined label
+        is still represented, including literal normal labels and computed
+        PyLabels.  The latter two are read-only because their values are
+        defined by the symbol text and callback respectively.
+        """
+        pyLabelType = lbl.symbolLabel.labelTypes[2]
+        nlpLabelType = lbl.symbolLabel.labelTypes[1]
+        normalLabelType = lbl.symbolLabel.labelTypes[0]
+        labels = {
+            name: label for name, label in item.labels.items()
+            if name and label.labelDefinition not in lbl.symbolLabel.predefinedLabels
+        }
+        nlpNames = [name for name, label in labels.items()
+                    if label.labelType == nlpLabelType]
+        bindings, missingCarriers = prm.paramDefLabelBindings(item.paramDefs,
+                                                               nlpNames)
+        rows = []
+        claimed = set()
+        for pdef, name in bindings:
+            label = labels[name]
+            claimed.add(name)
+            rows.append({"labelName": name, "value": str(label.labelValue),
+                         "paramDef": pdef, "isEditable": pdef.display,
+                         "isVisible": pdef.display,
+                         "isPyLabel": False, "section": "Parameters"})
+
+        def addUnbound(labelType, section, editable=False, isPyLabel=False):
+            for name, label in sorted(
+                    ((name, label) for name, label in labels.items()
+                     if name not in claimed and label.labelType == labelType),
+                    key=lambda entry: entry[1].labelName.lower()):
+                rows.append({"labelName": name, "value": str(label.labelValue),
+                             "paramDef": None, "isEditable": editable,
+                             "isPyLabel": isPyLabel, "section": section})
+
+        # The label order is deliberate: ParamDef declaration order first,
+        # then unmatched NLP labels, normal labels, and computed PyLabels.
+        addUnbound(nlpLabelType, "Instance Parameters", editable=True)
+        addUnbound(normalLabelType, "Normal Labels")
+        addUnbound(pyLabelType, "Derived Parameters", isPyLabel=True)
+        return rows, missingCarriers
 
     def _handleDrawPin(self, mouseReleaseLoc: QPoint) -> None:
         """
@@ -1603,7 +1686,8 @@ class schematicScene(editorScene):
 
     def _itemPassesFilter(self, item) -> bool:
         """Check if an item passes the current selection filter."""
-        if self.selectModes.selectDevice and isinstance(item, shp.schematicSymbol):
+        if self.selectModes.selectDevice and isinstance(
+                item, (shp.schematicSymbol, shp.schematicGroup)):
             return True
         if self.selectModes.selectNet and isinstance(item, snet.schematicNet):
             return True
@@ -1723,7 +1807,8 @@ class schematicScene(editorScene):
         used.add(name)
         return self.instanceCounter, name
 
-    def instSymbol(self, instanceTuple: ddef.viewNameTuple, pos: QPoint):
+    def instSymbol(self, instanceTuple: ddef.viewNameTuple, pos: QPoint,
+                   allocateName: bool = True):
         viewItem = libm.findViewItem(self.appMainW.libraryModel,
                                      instanceTuple.libraryName,
                                      instanceTuple.cellName,
@@ -1741,6 +1826,18 @@ class schematicScene(editorScene):
             if items is None:
                 self.logger.error(f"Cannot load symbol file: {viewPath}")
                 return
+            try:
+                items, compatibility = sv.prepare_design_data(
+                    items, "symbol", str(viewPath))
+            except sv.DesignFileValidationError as error:
+                self.logger.error(
+                    f"Incompatible symbol file {viewPath}: "
+                    f"{'; '.join(error.errors or [str(error)])}")
+                return None
+            if compatibility.migrated:
+                self.logger.info(
+                    f"Migrated symbol schema {compatibility.sourceVersion} "
+                    f"to {compatibility.targetVersion}: {viewPath}")
 
             # Use comprehensions for better performance
             itemAttributes = {item["nam"]: item["def"] for item in items[2:] if
@@ -1757,8 +1854,13 @@ class schematicScene(editorScene):
             # later ``item.pos()`` call (e.g. move-group setup in editorScene).
             symbolInstance.setPos(pos)
 
-            # Batch property assignments
-            counter, instanceName = self._allocInstanceName()
+            # A detached preview must not consume an I<n> number.  It still
+            # receives stable identity fields so predefined labels and PDK
+            # callbacks evaluate exactly as they do for a placed instance.
+            if allocateName:
+                counter, instanceName = self._allocInstanceName()
+            else:
+                counter, instanceName = 0, "I0"
             instanceProperties = {"counter": counter,
                                   "instanceName": instanceName,
                                   "libraryName": libItem.libraryName,
@@ -1767,14 +1869,7 @@ class schematicScene(editorScene):
 
             for prop, value in instanceProperties.items():
                 setattr(symbolInstance, prop, value)
-            # as pylabels can depend on NLPLabel results, process first
-            # NLP Labels.
-            for labelItem in symbolInstance.labels.values():
-                if labelItem.labelType == lbl.symbolLabel.labelTypes[1]:
-                    labelItem.labelDefs()
-            for labelItem in symbolInstance.labels.values():
-                if labelItem.labelType == lbl.symbolLabel.labelTypes[2]:
-                    labelItem.labelDefs()
+            self._resolveInstanceLabels(symbolInstance)
 
             return symbolInstance
 
@@ -1789,12 +1884,16 @@ class schematicScene(editorScene):
             return None
 
     def _fixClipboardShapes(self, shapes: list) -> None:
-        """Allocate fresh instance names for pasted schematic symbols."""
+        """Allocate fresh instance names, including grouped mosaic members."""
         usedNames = {item.instanceName for item in self.items()
                      if isinstance(item, shp.schematicSymbol)
                      and not self._isEipGhost(item)}
-        for shape in shapes:
-            if isinstance(shape, shp.schematicSymbol):
+        stack = list(shapes)
+        while stack:
+            shape = stack.pop()
+            if isinstance(shape, shp.schematicGroup):
+                stack.extend(shape.symbols)
+            elif isinstance(shape, shp.schematicSymbol):
                 counter, name = self._allocInstanceName(usedNames)
                 shape.instanceName = name
                 shape.counter = counter
@@ -1827,15 +1926,15 @@ class schematicScene(editorScene):
                     # Start array
                     f.write("[\n")
 
-                    header_items = [{"viewType": "schematic",
-                                     "schemaVersion": "1.0"}, {
+                    header_items = [sv.make_view_header("schematic"), {
                         "snapGrid": (self.majorGrid, self.snapGrid),
                         "snapConnectDistance": self.snapConnectDistance}, ]
                     json.dump(header_items[0], f)
                     f.write(",\n")
                     json.dump(header_items[1], f)
                     topLevelItems = filter(
-                        lambda item: isinstance(item, self.SCHEMATIC_SHAPES)
+                        lambda item: item.parentItem() is None
+                        and isinstance(item, self.SCHEMATIC_SHAPES)
                         and not self._isEipGhost(item),
                         self.items())
                     # Stream items
@@ -1915,17 +2014,19 @@ class schematicScene(editorScene):
         try:
             with filePathObj.open("rb") as file:
                 decodedData = orjson.loads(file.read())
-            # Validate file structure before processing
-            is_valid, errors = sv.validate_design_file(
-                decodedData, "schematic", str(filePathObj)
-            )
-            if not is_valid:
-                for err in errors:
+            try:
+                decodedData, compatibility = sv.prepare_design_data(
+                    decodedData, "schematic", str(filePathObj))
+            except sv.DesignFileValidationError as error:
+                for err in error.errors or [str(error)]:
                     self.logger.error(
-                        f"Schematic validation error in "
-                        f"'{filePathObj.name}': {err}"
-                    )
+                        f"Schematic compatibility error in "
+                        f"'{filePathObj.name}': {err}")
                 return
+            if compatibility.migrated:
+                self.logger.info(
+                    f"Migrated schematic schema {compatibility.sourceVersion} "
+                    f"to {compatibility.targetVersion}")
             with self.measureDuration():
                 viewDict, gridSettings, *itemData = decodedData
 
@@ -2056,6 +2157,8 @@ class schematicScene(editorScene):
         # Build the label rows in a stable, deterministic order and remember
         # the widgets so that Apply/OK can share the same read-back path.
         self._buildInstanceLabelRows(dlg, item)
+        self._connectInstanceLabelPreview(dlg, item)
+        self._applyInstanceProperties(dlg, item)
 
         # now list instance attributes; the reserved paramDefs attr is
         # authored via the Parameters table, not as raw JSON here
@@ -2083,44 +2186,55 @@ class schematicScene(editorScene):
                 self.undoStack.push(
                     us.addDeleteShapeUndo(self, newInstance, item))
 
-    def _buildInstanceLabelRows(self, dlg, item: shp.schematicSymbol):
-        """Populate the instance labels layout in a stable order.
+    def _connectInstanceLabelPreview(self, dlg, item: shp.schematicSymbol):
+        """Refresh callback labels as soon as an editable field changes."""
+        timer = QTimer(dlg)
+        timer.setSingleShot(True)
+        timer.timeout.connect(lambda: self._applyInstanceProperties(dlg, item))
+        dlg._labelPreviewTimer = timer
 
-        Editable labels (Normal/NLPLabel) are listed first, then computed
-        pyLabels, alphabetically within each group. This keeps the row order
-        consistent across invocations of the dialog for the same instance.
-        pyLabel value fields are read-only because their value is computed by
-        the cell callback rather than typed by the user; Apply refreshes them.
-        """
-        pyLabelType = lbl.symbolLabel.labelTypes[2]
+        def schedulePreview(*_args):
+            timer.start(0)
 
-        def sortKey(label):
-            isPyLabel = label.labelType == pyLabelType
-            return (isPyLabel, label.labelName.lower())
-
-        editableLabels = [
-            label for label in item.labels.values()
-            if label.labelDefinition not in lbl.symbolLabel.predefinedLabels]
-        editableLabels.sort(key=sortKey)
-
-        # Typed parameters (symbol paramDefs) get typed widgets; other
-        # editable labels keep the free-text field.
-        paramDefMap = {pdef.name: pdef for pdef in item.paramDefs}
-
-        dlg.labelRows = []
-        dlg.hiddenLabelNames = []
-        for label in editableLabels:
-            isPyLabel = label.labelType == pyLabelType
-            pdef = paramDefMap.get(label.labelName.lstrip("@"))
-            if pdef is not None and not pdef.display:
-                # Hidden parameter: not written back from the dialog; its
-                # value is carried over from the original item instead.
-                dlg.hiddenLabelNames.append(label.labelName)
+        for row in dlg.labelRows:
+            if not row["isEditable"]:
                 continue
-            rowIndex = len(dlg.labelRows)
+            valueEdit = row["valueEdit"]
+            if hasattr(valueEdit, "toggled"):
+                valueEdit.toggled.connect(schedulePreview)
+            elif hasattr(valueEdit, "currentTextChanged"):
+                valueEdit.currentTextChanged.connect(schedulePreview)
+            else:
+                valueEdit.textChanged.connect(schedulePreview)
+
+    def _buildInstanceLabelRows(self, dlg, item: shp.schematicSymbol):
+        """Populate the dialog from every persistent, non-predefined label."""
+        rows, missingCarriers = self.instanceLabelRows(item)
+        if missingCarriers:
+            self.logger.warning(
+                "%s has paramDefs without NLP label carriers: %s",
+                item.instanceName, ", ".join(missingCarriers))
+        dlg.labelRows = []
+        # ParamDef display=False rows stay off the form; apply carries their
+        # values over from the original instance via hiddenLabelNames.
+        dlg.hiddenLabelNames = []
+        rowIndex = 0
+        section = None
+
+        for sourceRow in rows:
+            if not sourceRow.get("isVisible", True):
+                dlg.hiddenLabelNames.append(sourceRow["labelName"])
+                continue
+            if sourceRow["section"] != section:
+                section = sourceRow["section"]
+                dlg.instanceLabelsLayout.addWidget(
+                    edf.boldLabel(section, dlg), rowIndex, 0, 1, 3)
+                rowIndex += 1
+            label = item.labels[sourceRow["labelName"]]
             dlg.instanceLabelsLayout.addWidget(
-                edf.boldLabel(label.labelName[1:], dlg), rowIndex, 0)
-            if pdef is not None and not isPyLabel:
+                edf.boldLabel(label.labelName.lstrip("@"), dlg), rowIndex, 0)
+            pdef = sourceRow["paramDef"]
+            if pdef is not None:
                 valueWidget, getValue, setValue = pdlg.paramValueWidget(
                     pdef, str(label.labelValue), dlg)
             else:
@@ -2128,9 +2242,9 @@ class schematicScene(editorScene):
                 valueWidget.setText(str(label.labelValue))
                 getValue = valueWidget.text
                 setValue = valueWidget.setText
-            if isPyLabel:
+            if not sourceRow["isEditable"]:
                 valueWidget.setReadOnly(True)
-                valueWidget.setToolTip("Computed pyLabel (Read Only)")
+                valueWidget.setToolTip("Computed or literal label (Read Only)")
             dlg.instanceLabelsLayout.addWidget(valueWidget, rowIndex, 1)
             visibleCombo = QComboBox(dlg)
             visibleCombo.setInsertPolicy(QComboBox.NoInsert)
@@ -2138,21 +2252,60 @@ class schematicScene(editorScene):
             visibleCombo.setCurrentIndex(0 if label.labelVisible else 1)
             dlg.instanceLabelsLayout.addWidget(visibleCombo, rowIndex, 2)
             dlg.labelRows.append({
-                "labelName": label.labelName,
-                "isPyLabel": isPyLabel,
-                "paramDef": pdef,
+                **sourceRow,
                 "valueEdit": valueWidget,
                 "getValue": getValue,
                 "setValue": setValue,
-                "visibleCombo": visibleCombo, })
+                "visibleCombo": visibleCombo,
+            })
+            rowIndex += 1
+
+    def _applyDialogLabelValues(self, instance, dlg, item: shp.schematicSymbol,
+                                validate: bool) -> None:
+        """Copy editable dialog rows to ``instance`` then resolve dependents."""
+        siblingValues = {
+            name: str(label.labelValue) for name, label in item.labels.items()
+        }
+        siblingValues.update({
+            row["labelName"]: row["getValue"]() for row in dlg.labelRows
+            if row.get("isEditable", not row.get("isPyLabel", False))
+        })
+        for row in dlg.labelRows:
+            label = instance.labels.get(row["labelName"])
+            if label is None:
+                continue
+            if not row.get("isEditable", not row.get("isPyLabel", False)):
+                # Computed/literal values are immutable here, but visibility
+                # remains an instance-level property for every label type.
+                label.labelVisible = row["visibleCombo"].currentText() == "True"
+                continue
+            newValue = row["getValue"]()
+            pdef = row.get("paramDef")
+            if validate and pdef is not None:
+                errors = prm.validateValue(pdef, newValue, siblingValues)
+                if errors:
+                    self.logger.warning(
+                        f"{instance.instanceName} {row['labelName']}: "
+                        f"{'; '.join(errors)}")
+                    oldLabel = item.labels.get(row["labelName"])
+                    newValue = str(oldLabel.labelValue) if oldLabel else str(label.labelValue)
+                else:
+                    newValue = prm.normalizeValue(pdef, newValue)
+            label.labelValue = newValue
+            label.labelVisible = row["visibleCombo"].currentText() == "True"
+
+        # Old hand-built dialog stubs can still request hidden-label carryover.
+        for name in getattr(dlg, "hiddenLabelNames", ()):
+            oldLabel = item.labels.get(name)
+            newLabel = instance.labels.get(name)
+            if oldLabel is not None and newLabel is not None:
+                newLabel.labelValue = oldLabel.labelValue
+                newLabel.labelVisible = oldLabel.labelVisible
+        self._resolveInstanceLabels(instance)
 
     def _buildInstanceFromDialog(self, dlg, item: shp.schematicSymbol,
                                  location: QPoint):
-        """Create a new instance from the dialog state and apply label edits.
-
-        Reused by both Apply (throwaway preview) and OK (committed instance).
-        Returns the new instance with NLP/pyLabels recomputed, or None.
-        """
+        """Create the committed replacement instance from dialog state."""
         libraryName = dlg.libNameEdit.text().strip()
         cellName = dlg.cellNameEdit.text().strip()
         netlistViewName = dlg.viewNameEdit.currentText().strip()
@@ -2165,75 +2318,35 @@ class schematicScene(editorScene):
         newInstance.angle = float(dlg.angleEdit.text().strip())
         newInstance.counter = item.counter
         newInstance.netSet = dlg.netSetEdit.text().strip()
-
-        # Copy edited values from the dialog into the new instance labels.
-        # Typed parameters are validated against their ParamDef; invalid
-        # values are rejected (the existing value is kept) and reported.
-        siblingValues = {row["labelName"]: row["getValue"]()
-                         for row in dlg.labelRows}
-        for row in dlg.labelRows:
-            if row["isPyLabel"]:
-                # pyLabel values are computed, not taken from the dialog.
-                continue
-            label = newInstance.labels.get(row["labelName"])
-            if label is None:
-                continue
-            newValue = row["getValue"]()
-            pdef = row.get("paramDef")
-            if pdef is not None:
-                errors = prm.validateValue(pdef, newValue, siblingValues)
-                if errors:
-                    self.logger.warning(
-                        f"{newInstance.instanceName} "
-                        f"{row['labelName']}: {'; '.join(errors)}")
-                    # Fall back to the *existing* instance's value, not the
-                    # freshly-built default.
-                    oldLabel = item.labels.get(row["labelName"])
-                    newValue = str(oldLabel.labelValue) if (
-                        oldLabel is not None) else str(label.labelValue)
-                else:
-                    newValue = prm.normalizeValue(pdef, newValue)
-            label.labelValue = newValue
-            label.labelVisible = row["visibleCombo"].currentText() == "True"
-
-        # Hidden parameters never appeared in the dialog; carry their
-        # existing values over so an unrelated edit doesn't reset them to
-        # symbol defaults.  Done before the labelDefs passes so pyLabels and
-        # NLP labels can still reference them.
-        for name in getattr(dlg, "hiddenLabelNames", ()):
-            oldLabel = item.labels.get(name)
-            newLabel = newInstance.labels.get(name)
-            if oldLabel is not None and newLabel is not None:
-                newLabel.labelValue = oldLabel.labelValue
-                newLabel.labelVisible = oldLabel.labelVisible
-
-        # Recompute derived labels: NLPLabels first, then pyLabels which may
-        # depend on them.
-        for label in newInstance.labels.values():
-            if label.labelType == lbl.symbolLabel.labelTypes[1]:
-                label.labelDefs()
-        for label in newInstance.labels.values():
-            if label.labelType == lbl.symbolLabel.labelTypes[2]:
-                label.labelDefs()
+        self._applyDialogLabelValues(newInstance, dlg, item, validate=True)
         return newInstance
 
-    def _applyInstanceProperties(self, dlg, item: shp.schematicSymbol):
-        """Recompute pyLabels from the current dialog values and refresh them.
+    def _previewInstanceFromDialog(self, dlg, item: shp.schematicSymbol,
+                                   location: QPoint):
+        """Build a detached, non-allocating instance for live callbacks."""
+        symbolViewTuple = ddef.viewNameTuple(item.libraryName, item.cellName,
+                                             "symbol")
+        preview = self.instSymbol(symbolViewTuple, location, allocateName=False)
+        if preview is None:
+            return None
+        preview.viewName = dlg.viewNameEdit.currentText().strip()
+        preview.instanceName = dlg.instNameEdit.text().strip()
+        preview.counter = item.counter
+        self._applyDialogLabelValues(preview, dlg, item, validate=False)
+        return preview
 
-        Builds a throwaway instance so nothing is committed to the scene or the
-        undo stack, then writes the recomputed pyLabel values back into their
-        read-only fields for live feedback.
-        """
+    def _applyInstanceProperties(self, dlg, item: shp.schematicSymbol):
+        """Refresh PyLabels immediately without mutating scene or undo state."""
         try:
             location = QPoint(int(float(dlg.xLocationEdit.text().strip())),
-                              int(float(dlg.yLocationEdit.text().strip())), )
+                              int(float(dlg.yLocationEdit.text().strip())))
         except ValueError:
             location = QPoint(0, 0)
-        previewInstance = self._buildInstanceFromDialog(dlg, item, location)
+        previewInstance = self._previewInstanceFromDialog(dlg, item, location)
         if previewInstance is None:
             return
         for row in dlg.labelRows:
-            if not row["isPyLabel"]:
+            if not row.get("isPyLabel", False):
                 continue
             label = previewInstance.labels.get(row["labelName"])
             if label is not None:

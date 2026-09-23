@@ -158,6 +158,19 @@ def fromRecords(records: Iterable[dict],
             elif recType == "sys":
                 _portsFromInstanceRecord(record, ports, pinLocator,
                                          diagnostics)
+            elif recType == "Group":
+                groupLoc = record.get("loc", (0, 0))
+                for child in record.get("items", []):
+                    if not isinstance(child, dict) or child.get("type") != "sys":
+                        continue
+                    localLoc = child.get("loc", (0, 0))
+                    groupedChild = dict(child)
+                    groupedChild["loc"] = (
+                        float(groupLoc[0]) + float(localLoc[0]),
+                        float(groupLoc[1]) + float(localLoc[1]),
+                    )
+                    _portsFromInstanceRecord(groupedChild, ports, pinLocator,
+                                             diagnostics)
         except (KeyError, TypeError, ValueError, IndexError) as e:
             diagnostics.append(f"Malformed {recType} record skipped: {e}")
     return segs, ports, diagnostics
@@ -287,8 +300,13 @@ def fromLayoutItems(items: Iterable,
             if id(item) in seenContainers:
                 return
             seenContainers.add(id(item))
+            # A layoutGroup is a pure selection container: members stay at
+            # the group's own hierarchy level, so pins/labels inside a
+            # top-level group still anchor net names. Semantic containers
+            # (instances, multiparts) demote children to internal.
+            childInternal = internal or clsName != "layoutGroup"
             for child in item.shapes:
-                process(child, True)
+                process(child, childInternal)
             for child in getattr(item, "arrayShapes", None) or ():
                 process(child, True)
         elif clsName == "layoutPath":

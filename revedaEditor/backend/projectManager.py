@@ -143,8 +143,13 @@ class ProjectManager:
         # 6. Load library definitions
         self._main_window.libraryDict = self._load_library_json(project_dir)
 
-        # 7. Load and apply reveda.conf state
+        # 7. Load and apply reveda.conf state. Project loading restores the
+        # saved session synchronously below.
         conf = self._load_reveda_conf(project_dir)
+        # Discard the bootstrap restore queued by MainWindow.loadAppState(); a
+        # layout load may process events before its editor reaches openViews,
+        # otherwise allowing that stale callback to open the same view again.
+        self._main_window._savedSessionItems = []
         self._apply_state(conf)
 
         # 8. Update active project

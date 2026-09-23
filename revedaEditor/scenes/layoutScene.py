@@ -74,6 +74,7 @@ class layoutScene(editorScene):
         lshp.layoutInstance,
         lshp.layoutPcell,
         lshp.layoutMultipart,
+        lshp.layoutGroup,
         lshp.layoutRuler,
     )
     # Clipboard contract for editorScene.copySelectionToClipboard et al.
@@ -81,7 +82,7 @@ class layoutScene(editorScene):
     _CLIPBOARD_FACTORY = lj.layoutItems
     _CLIPBOARD_TYPES = frozenset(
         {"Inst", "Pcell", "Rect", "Path", "Label", "Pin", "Polygon", "Via",
-         "Ruler", "Multipart"})
+         "Ruler", "Multipart", "Group"})
     _CLIPBOARD_SHAPES = LAYOUT_SHAPES
     # Object filter categories shown below the LSW, mapped to the layout
     # shape classes they control. Pin name labels are filtered with pins.
@@ -92,6 +93,7 @@ class layoutScene(editorScene):
         "Labels": (lshp.layoutLabel,),
         "Paths": (lshp.layoutPath,),
         "Shapes": (lshp.layoutRect, lshp.layoutPolygon, lshp.layoutMultipart),
+        "Groups": (lshp.layoutGroup,),
     }
     alignLineFinished = Signal(lshp.alignLine)
 
@@ -152,6 +154,9 @@ class layoutScene(editorScene):
         })
         self.newInstance = None
         self.layoutInstanceTuple = None
+        # F3 placement options: prepared PCell values and/or mosaic geometry
+        # consumed by the next addLayoutInstance() click.
+        self.pendingInstanceOptions = None
         self._scale = fabproc.dbu if fabproc else 1000
         self.itemCounter = 0
         self.newPath = None
@@ -360,8 +365,10 @@ class layoutScene(editorScene):
             else:
                 self._updateLabelPlacementMarker(self.mouseMoveLoc)
         elif self.editModes.addInstance and self.newInstance is not None:
-            self.newInstance.setPos(
-                self.snapToGrid(self.mouseMoveLoc - self.newInstance.start))
+            anchor = (self.newInstance.childrenBoundingRect().bottomLeft().toPoint()
+                      if isinstance(self.newInstance, lshp.layoutGroup)
+                      else self.newInstance.start)
+            self.newInstance.setPos(self.snapToGrid(self.mouseMoveLoc - anchor))
         # Handle drawing polygon mode
         elif self.editModes.drawPolygon and self.newPolygon is not None:
             self.polygonGuideLine.setLine(
@@ -591,6 +598,52 @@ class layoutScene(editorScene):
             f"Merged {len(consumed)} items into {len(produced)} shape(s)"
         )
 
+    def groupSelectedItems(self):
+        """Combine the selected top-level items into a persistent
+        ``layoutGroup`` that selects/moves/copies as one unit."""
+        if self.selectedItemGroup is not None:
+            self.destroyItemGroup(self.selectedItemGroup)
+            self.selectedItemGroup = None
+        members = [
+            item
+            for item in self.selectedItemsSet
+            if item.parentItem() is None
+            and isinstance(item, tuple(self.LAYOUT_SHAPES))
+        ]
+        if len(members) < 2:
+            self.messageLine.setText("Select at least two items to group")
+            return
+        for item in members:
+            item.setSelected(False)
+        group = lshp.layoutGroup()
+        self.undoStack.push(us.undoGroupShapes(self, group, members, True))
+        self._applyObjectFilter(group)
+        self.setSelectedItems({group})
+        self.messageLine.setText(f"Grouped {len(members)} items")
+
+    def ungroupSelectedItems(self):
+        """Explode each selected ``layoutGroup`` back into top-level items."""
+        if self.selectedItemGroup is not None:
+            self.destroyItemGroup(self.selectedItemGroup)
+            self.selectedItemGroup = None
+        groups = [
+            item
+            for item in self.selectedItemsSet
+            if isinstance(item, lshp.layoutGroup)
+        ]
+        if not groups:
+            self.messageLine.setText("No grouped items selected")
+            return
+        released = []
+        for group in groups:
+            members = list(group.shapes)
+            self.undoStack.push(us.undoGroupShapes(self, group, members, False))
+            for item in members:
+                self._applyObjectFilter(item)
+            released.extend(members)
+        self.setSelectedItems(set(released))
+        self.messageLine.setText(f"Ungrouped {len(groups)} group(s)")
+
     def booleanSelectedItems(self, op: str, amount: float = 0.0):
         """Apply a boolean/size layer op to the selection (see
         common/layoutBoolean.py). ``op`` is one of or/and/xor/not/grow/shrink;
@@ -700,7 +753,7 @@ class layoutScene(editorScene):
 
         cellRecords = json.loads(json.dumps(cellShapes, cls=layenc.layoutEncoder))
         cellData = [
-            {"viewType": "layout", "schemaVersion": "1.0"},
+            sv.make_view_header("layout"),
             {"snapGrid": (self.majorGrid / fabproc.dbu,
                           self.snapGrid / fabproc.dbu)},
             *cellRecords,
@@ -904,9 +957,14 @@ class layoutScene(editorScene):
             self.newInstance = None
         if self.layoutInstanceTuple:
             self.newInstance = self.addNewInstance()
+            if self.newInstance is None:
+                return
             self.addUndoStack(self.newInstance)
+            anchor = (self.newInstance.childrenBoundingRect().bottomLeft().toPoint()
+                      if isinstance(self.newInstance, lshp.layoutGroup)
+                      else self.newInstance.start)
             self.newInstance.setPos(
-                self.snapToGrid(self.mouseReleaseLoc - self.newInstance.start))
+                self.snapToGrid(self.mouseReleaseLoc - anchor))
 
     def addLayoutLabel(self):
         if self.newLabel is not None:
@@ -1024,12 +1082,16 @@ class layoutScene(editorScene):
 
     def addNewInstance(self) -> Union[lshp.layoutInstance, lshp.layoutPcell]:
         newInstance = self.instLayout(self.layoutInstanceTuple)
-        if isinstance(newInstance, lshp.layoutPcell):
+        if newInstance is None:
+            return None
+        options = self.pendingInstanceOptions
+        if isinstance(newInstance, lshp.layoutPcell) and options is None:
+            # Preserve the pre-F3 PCell flow: first placement opens the
+            # parameter/mosaic form when no explicit placement options exist.
             dlg = ldlg.layoutInstanceDialogue(self.editorWindow)
             dlg.instanceLibName.setText(newInstance.libraryName)
             dlg.instanceCellName.setText(newInstance.cellName)
             dlg.instanceViewName.setText(newInstance.viewName)
-            # Single-step mosaic placement: array fields on the same form.
             dlg.arrayGroup.show()
             dlg.rowsEdit.setText("1")
             dlg.colsEdit.setText("1")
@@ -1041,20 +1103,55 @@ class layoutScene(editorScene):
                 for key, value in lineEditDict.items():
                     dlg.pcellParamsLayout.addRow(key, value)
             if dlg.exec() == QDialog.DialogCode.Accepted:
-                instanceValuesDict = {}
-                for key, value in lineEditDict.items():
-                    instanceValuesDict[key] = value.text()
+                instanceValuesDict = {
+                    key: value.text() for key, value in lineEditDict.items()}
                 if instanceValuesDict:
                     newInstance(*instanceValuesDict.values())
                 arraySpec = dlg.arraySpec()
                 if arraySpec is not None:
                     rows, cols, rowPitch, colPitch = arraySpec
-                    newInstance.setArray(
-                        rows, cols,
-                        rowPitch * fabproc.dbu, colPitch * fabproc.dbu,
-                    )
-        self.layoutInstanceTuple = None
+                    arraySpec = (rows, cols, rowPitch * fabproc.dbu,
+                                 colPitch * fabproc.dbu)
+                # Retain the accepted options so repeated placements reuse
+                # them through the options branch instead of reopening the
+                # form on every click.
+                self.pendingInstanceOptions = {
+                    "pcellValues": instanceValuesDict,
+                    "arraySpec": arraySpec,
+                }
+                if arraySpec is not None:
+                    return self._makeLayoutMosaicGroup(
+                        newInstance, arraySpec, instanceValuesDict)
+        elif options is not None:
+            pcellValues = options.get("pcellValues")
+            if isinstance(newInstance, lshp.layoutPcell) and pcellValues:
+                newInstance(*pcellValues.values())
+            arraySpec = options.get("arraySpec")
+            if arraySpec is not None:
+                return self._makeLayoutMosaicGroup(newInstance, arraySpec,
+                                                    pcellValues)
+        # Keep the source/options live while addInstance mode remains active:
+        # this enables repeated placement and lets F3 revise the next instance.
+        # Escape clears this state when placement is finished.
         return newInstance
+
+    def _makeLayoutMosaicGroup(self, baseInstance, arraySpec, pcellValues=None):
+        """Create an ungroupable layout mosaic of independent instances."""
+        rows, cols, rowPitch, colPitch = arraySpec
+        members = [baseInstance]
+        baseInstance.setPos(0, 0)
+        for row in range(max(1, int(rows))):
+            for col in range(max(1, int(cols))):
+                if row == 0 and col == 0:
+                    continue
+                member = self.instLayout(self.layoutInstanceTuple)
+                if member is None:
+                    continue
+                if isinstance(member, lshp.layoutPcell) and pcellValues:
+                    member(*pcellValues.values())
+                member.setPos(col * colPitch, row * rowPitch)
+                members.append(member)
+        return lshp.layoutGroup(members)
 
     def instLayout(
             self, layoutInstanceTuple: ddef.viewItemTuple
@@ -1075,6 +1172,30 @@ class layoutScene(editorScene):
                 return instance
 
             viewType = layoutInstanceTuple.viewItem.viewType
+
+            # Gate child files on schema compatibility before any record or
+            # pcell-class processing; unknown future versions must not
+            # partially instantiate.
+            viewPath = str(layoutInstanceTuple.viewItem.viewPath)
+            try:
+                if viewType == "layout":
+                    decodedData, compatibility = sv.prepare_design_data(
+                        decodedData, "layout", viewPath)
+                elif viewType == "pcell":
+                    decodedData, compatibility = sv.prepare_pcell_definition(
+                        decodedData, viewPath)
+                else:
+                    compatibility = None
+            except sv.DesignFileValidationError as error:
+                for err in error.errors or [str(error)]:
+                    self.logger.error(
+                        f"Instance file '{viewPath}': {err}")
+                return None
+            if compatibility is not None and compatibility.migrated:
+                self.logger.info(
+                    f"Migrated {viewType} schema "
+                    f"{compatibility.sourceVersion} to "
+                    f"{compatibility.targetVersion}: {viewPath}")
 
             if (
                     viewType == "layout"
@@ -1615,7 +1736,7 @@ class layoutScene(editorScene):
                    and isinstance(item, tuple(self.LAYOUT_SHAPES))
             ]
             layoutData = [
-                {"viewType": "layout", "schemaVersion": "1.0"},
+                sv.make_view_header("layout"),
                 # Grid values are stored in layout units (e.g. µm); the scene
                 # converts them to dbu-scaled integers on load.
                 {"snapGrid": (self.majorGrid / fabproc.dbu, self.snapGrid / fabproc.dbu),
@@ -1737,17 +1858,19 @@ class layoutScene(editorScene):
         try:
             with filePathObj.open("rb") as file:
                 decodedData = orjson.loads(file.read())
-            # Validate file structure before processing
-            is_valid, errors = sv.validate_design_file(
-                decodedData, "layout", str(filePathObj)
-            )
-            if not is_valid:
-                for err in errors:
+            try:
+                decodedData, compatibility = sv.prepare_design_data(
+                    decodedData, "layout", str(filePathObj))
+            except sv.DesignFileValidationError as error:
+                for err in error.errors or [str(error)]:
                     self.logger.error(
-                        f"Layout validation error in "
-                        f"'{filePathObj.name}': {err}"
-                    )
+                        f"Layout compatibility error in "
+                        f"'{filePathObj.name}': {err}")
                 return False
+            if compatibility.migrated:
+                self.logger.info(
+                    f"Migrated layout schema {compatibility.sourceVersion} "
+                    f"to {compatibility.targetVersion}")
             with self.measureDuration():
                 snapGridTuple = decodedData[1].get(
                     "snapGrid", (self.majorGrid / fabproc.dbu, self.snapGrid / fabproc.dbu)
@@ -2434,9 +2557,14 @@ class layoutScene(editorScene):
                 self.editModes.setMode("selectItem")
 
     def _fixClipboardShapes(self, shapes: list) -> None:
-        """Allocate fresh instance names for pasted layout instances."""
-        for shape in shapes:
-            if isinstance(shape, (lshp.layoutInstance, lshp.layoutPcell)):
+        """Allocate fresh instance names for pasted layout instances,
+        including instances nested inside groups."""
+        stack = list(shapes)
+        while stack:
+            shape = stack.pop()
+            if isinstance(shape, lshp.layoutGroup):
+                stack.extend(shape.shapes)
+            elif isinstance(shape, (lshp.layoutInstance, lshp.layoutPcell)):
                 self.itemCounter += 1
                 shape.instanceName = f"I{self.itemCounter}"
                 shape.counter = int(self.itemCounter)

@@ -74,7 +74,7 @@ class editorWindow(QMainWindow):
         "clearFlylinesAction", "probeSchematicAction", "highlightNetAction",
         "clearNetHighlightsAction", "hilightNetAction", "probeNetAction",
         "removeProbeNetAction", "removeAllProbesAction", "showResolvedNamesAction",
-        "probeLayoutAction", "simulateAction",
+        "probeLayoutAction", "simulateAction", "retryLockAction",
     })
 
     def __init__(self, viewItem: libb.viewItem, libraryDict: dict,
@@ -93,6 +93,7 @@ class editorWindow(QMainWindow):
         self.libraryView = libraryView
         self.parentEditor: Optional[editorWindow] = None
         self.parentObj = None  # type symbol or layoutInstance
+        self._copyOptionsDlg: Optional[pdlg.copyOptionsDialogue] = None
         self._app = QApplication.instance()  # main application pointer
         self.appMainW = self._app.appMainW  # main window pointer
         self.logger = getLogger(self.MAIN_LOGGER)
@@ -154,6 +155,11 @@ class editorWindow(QMainWindow):
         self.readOnlyCellIcon = QIcon(":/icons/lock.png")
         self.readOnlyCellAction = QAction("Read Only", self)
         self.readOnlyCellAction.setCheckable(True)
+        self.retryLockAction = QAction("Retry Edit Access", self)
+        self.retryLockAction.setToolTip(
+            "Retry acquiring edit access after the current lock owner closes "
+            "the cellview")
+        self.retryLockAction.setEnabled(False)
 
         updateCellIcon = QIcon(":/icons/document-xaml.png")
         self.updateCellAction = QAction(updateCellIcon, "Update Design", self)
@@ -245,7 +251,8 @@ class editorWindow(QMainWindow):
 
         copyIcon = QIcon(":/icons/document-copy.png")
         self.copyAction = QAction(copyIcon, "Copy", self)
-        self.copyAction.setToolTip("Copy selected items")
+        self.copyAction.setToolTip(
+            "Copy selected items — F3 while placing for array/offset options")
 
         moveIcon = QIcon(":/icons/arrow-move.png")
         self.moveAction = QAction(moveIcon, "Move", self)
@@ -500,6 +507,7 @@ class editorWindow(QMainWindow):
         self.selectMenu.addAction(self.selectAllAction)
         self.selectMenu.addAction(self.deselectAllAction)
         self.menuTools.addAction(self.readOnlyCellAction)
+        self.menuTools.addAction(self.retryLockAction)
         # self.menuCheck.addAction(self.viewCheckAction)
         self.menuOptions.addAction(self.dispConfigAction)
         self.menuOptions.addAction(self.selectConfigAction)
@@ -518,6 +526,7 @@ class editorWindow(QMainWindow):
         self.checkCellAction.triggered.connect(self.checkSaveCell)
         self.saveCellAction.triggered.connect(self.saveCell)
         self.readOnlyCellAction.triggered.connect(self.readOnlyCellClick)
+        self.retryLockAction.triggered.connect(self.retryCellviewLock)
         self.updateCellAction.triggered.connect(self.updateDesignScene)
         self.printAction.triggered.connect(self.printClick)
         self.printPreviewAction.triggered.connect(self.printPreviewClick)
@@ -593,10 +602,22 @@ class editorWindow(QMainWindow):
             self._applyLockContention(record)
 
     def _setLockReadOnlyActions(self) -> None:
-        """Disable every named editor action except non-mutating view operations."""
+        """Disable mutating actions while retaining their pre-lock state."""
+        savedStates = getattr(self, "_preLockActionEnabled", None)
+        if savedStates is None:
+            savedStates = self._preLockActionEnabled = {}
         for name, action in vars(self).items():
             if isinstance(action, QAction):
+                savedStates.setdefault(name, action.isEnabled())
                 action.setEnabled(name in editorWindow.READ_ONLY_SAFE_ACTIONS)
+
+    def _restoreLockActions(self) -> None:
+        """Restore QAction enablement captured before lock contention."""
+        for name, enabled in getattr(self, "_preLockActionEnabled", {}).items():
+            action = getattr(self, name, None)
+            if isinstance(action, QAction):
+                action.setEnabled(enabled)
+        self._preLockActionEnabled = {}
 
     def _applyLockContention(self, record: dict) -> None:
         """Switch the editor into read-only mode for a foreign live lock."""
@@ -608,16 +629,47 @@ class editorWindow(QMainWindow):
         # acquires the lock, so the sweep above misses them; run it again
         # once construction has finished and the event loop starts.
         QTimer.singleShot(
-            0, lambda: editorWindow._setLockReadOnlyActions(self))
+            0, lambda: (editorWindow._setLockReadOnlyActions(self)
+                        if not getattr(self, "_lockHeld", False) else None))
         self.readOnlyCellAction.setChecked(True)
         self.readOnlyCellAction.setEnabled(False)
+        retryAction = getattr(self, "retryLockAction", None)
+        if isinstance(retryAction, QAction):
+            retryAction.setEnabled(True)
         self.saveCellAction.setEnabled(False)
         self.checkCellAction.setEnabled(False)
         self.messageLine.setText(
-            f"Cellview locked by {owner} — opened read-only")
+            f"Cellview locked by {owner} — opened read-only; "
+            "use Tools → Retry Edit Access after it is released")
         self.logger.warning(
             f"{self.libName}/{self.cellName}/{self.viewName} locked by {owner}; "
             "opened read-only")
+
+    def retryCellviewLock(self) -> bool:
+        """Retry atomic lock acquisition without removing another owner's lock.
+
+        The shared lock service may take over a stale local lock, but will
+        leave live and remote locks untouched. Returns True only after this
+        editor holds the lock and is restored to writable state.
+        """
+        if getattr(self, "_lockHeld", False):
+            return True
+        status, record = cvstate.acquireLock(self._lockPath)
+        if status != "held":
+            self._applyLockContention(record)
+            return False
+        self._lockHeld = True
+        self.centralW.scene.readOnly = False
+        editorWindow._restoreLockActions(self)
+        self.readOnlyCellAction.setChecked(False)
+        self.readOnlyCellAction.setEnabled(True)
+        retryAction = getattr(self, "retryLockAction", None)
+        if isinstance(retryAction, QAction):
+            retryAction.setEnabled(False)
+        self.messageLine.setText("Edit access acquired")
+        self.logger.info(
+            f"{self.libName}/{self.cellName}/{self.viewName} acquired edit access")
+        return True
 
     def autosaveCellview(self) -> None:
         """Timer slot: snapshot a dirty scene to the .autosave file."""
@@ -1273,6 +1325,21 @@ class editorWindow(QMainWindow):
         self.messageLine.setText(
             f"Pasting {count} item(s) — click to place" if count
             else "Clipboard holds no pasteable items")
+
+    def toggleCopyOptionsDialogue(self):
+        """Show/hide the copy-options form (F3 while a copy is armed).
+
+        One form per editor window; it is recreated when the scene
+        changed since the form was built."""
+        dlg = self._copyOptionsDlg
+        if dlg is not None and dlg.isVisible():
+            dlg.hide()
+            return
+        if dlg is None or dlg.scene is not self.centralW.scene:
+            self._copyOptionsDlg = pdlg.copyOptionsDialogue(self)
+        else:
+            dlg.show()
+            dlg.raise_()
 
     def horizontalFlipClick(self):
         self.messageLine.setText('Flipping Selected Items Horizontally')

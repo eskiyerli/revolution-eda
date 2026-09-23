@@ -26,6 +26,7 @@ import revedaEditor.backend.libraryMethods as libm
 import revedaEditor.gui.fileDialogues as fd
 import revedaEditor.gui.layoutDialogues as ldlg
 import revedaEditor.gui.textEditor as ted
+import revedaEditor.fileio.schemaValidation as sv
 from revedaEditor.gui.configEditor import configEditor
 
 
@@ -238,14 +239,20 @@ class BaseDesignLibrariesView(QWidget):
             self.logger.error(f"Error reading pcell file {filePath}: {e}")
             return
 
-        if not pcellData or pcellData[0].get("cellView") != "pcell":
-            self.logger.error(f"Invalid pcell file format: {filePath}")
+        try:
+            pcellData, compatibility = sv.prepare_pcell_definition(
+                pcellData, str(filePath))
+        except sv.DesignFileValidationError as error:
+            self.logger.error(
+                f"Invalid pcell file format {filePath}: "
+                f"{'; '.join(error.errors or [str(error)])}")
             return
+        if compatibility.migrated:
+            self.logger.info(
+                f"Migrated PCell schema {compatibility.sourceVersion} "
+                f"to {compatibility.targetVersion}: {filePath}")
 
-        pcellRef = pcellData[1].get("reference") if len(pcellData) > 1 else None
-        if not pcellRef:
-            self.logger.error(f"No pcell reference found in {filePath}")
-            return
+        pcellRef = pcellData[1]["reference"]
 
         # Look up the pcell class from the PDK
         pcellsModule = importPDKModule("pcells")

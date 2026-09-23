@@ -158,6 +158,34 @@ def paramDefsFromSymattrs(symattrs: Optional[Mapping]) -> list[ParamDef]:
     return defs
 
 
+def paramDefLabelBindings(paramDefs: list[ParamDef], labelNames) -> tuple[
+        list[tuple[ParamDef, str]], list[str]]:
+    """Match typed parameter definitions to persistent label carriers.
+
+    Parameter values persist in schematic ``sys.ld`` under existing symbol
+    label names, not in a separate parameter dictionary. A definition is
+    therefore usable by editable-instance UIs only when the symbol exposes
+    an NLP label named ``@<name>`` (preferred) or the legacy bare ``<name>``
+    form. Returns bindings in ParamDef declaration order plus definition
+    names with no carrier.
+    """
+    names = set(labelNames.keys() if isinstance(labelNames, Mapping)
+                else labelNames)
+    bindings = []
+    missing = []
+    for pdef in paramDefs:
+        labelName = next(
+            (candidate for candidate in (f"@{pdef.name}", pdef.name)
+             if candidate in names),
+            None,
+        )
+        if labelName is None:
+            missing.append(pdef.name)
+        else:
+            bindings.append((pdef, labelName))
+    return bindings, missing
+
+
 def validateParamDefs(paramDefs: list[ParamDef]) -> list[str]:
     """Structural checks on a paramDefs list (duplicates, range sanity)."""
     errors: list[str] = []
@@ -339,15 +367,28 @@ def applyDefaults(paramDefs: list[ParamDef],
     """Fill empty parameter values with resolved defaults.
 
     ``labelValues`` maps label names (``@name`` or bare ``name``) to raw
-    value strings. Returns a new dict ``{@name: value}`` covering only
-    parameters that gained a non-empty effective value; values already
-    present are passed through (with pPar refs resolved)."""
+    value strings. Definitions are resolved iteratively so a visible default
+    may reference a hidden or later sibling through ``pPar("name")``. Returns
+    ``{@name: value}`` covering only parameters that gained a non-empty
+    effective value; values already present are passed through with references
+    resolved.
+    """
     result: dict = {}
-    for pdef in paramDefs:
-        raw = _siblingLookup(labelValues, pdef.name) or ""
-        value = effectiveValue(pdef, raw, labelValues)
-        if value != "":
-            result[f"@{pdef.name}"] = value
+    workingValues = dict(labelValues or {})
+    for _ in range(_PPAR_MAX_DEPTH):
+        changed = False
+        for pdef in paramDefs:
+            raw = _siblingLookup(workingValues, pdef.name) or ""
+            value = effectiveValue(pdef, raw, workingValues)
+            if value == "":
+                continue
+            key = f"@{pdef.name}"
+            if workingValues.get(key) != value:
+                workingValues[key] = value
+                changed = True
+            result[key] = value
+        if not changed:
+            break
     return result
 
 

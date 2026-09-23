@@ -45,6 +45,7 @@ class layoutEncoder(json.JSONEncoder):
             lshp.layoutLabel: self._encodeLayoutLabel,
             lshp.layoutPolygon: self._encodeLayoutPolygon,
             lshp.layoutRuler: self._encodeLayoutRuler,
+            lshp.layoutGroup: self._encodeLayoutGroup,
         }
         # Resolve the layer list at encode time and key it by
         # (name, purpose) rather than object id: after a runtime PDK switch
@@ -262,6 +263,19 @@ class layoutEncoder(json.JSONEncoder):
             "md": item.mode,
             "ang": item.angle,
             "fl": item.flipTuple,
+        }
+
+    def _encodeLayoutGroup(self, item: "lshp.layoutGroup") -> Dict[str, Any]:
+        # Members persist as nested records in group-local coordinates; the
+        # group's own loc/top/ang/fl carries whatever transform the group
+        # accumulated while grouped (same convention as instances).
+        return {
+            "type": "Group",
+            "loc": item.pos().toTuple(),
+            "top": item.transformOriginPoint().toTuple(),
+            "ang": item.angle,
+            "fl": item.flipTuple,
+            "items": [self.default(shape) for shape in item.shapes],
         }
 
     def _encodePcell(self, item) -> Dict[str, Any]:

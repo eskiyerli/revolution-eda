@@ -634,16 +634,18 @@ class symbolScene(editorScene):
         try:
             with filePathObj.open("rb") as file:
                 decodedData = orjson.loads(file.read())
-            # Validate file structure before processing
-            is_valid, errors = sv.validate_design_file(
-                decodedData, "symbol", str(filePathObj)
-            )
-            if not is_valid:
-                for err in errors:
+            try:
+                decodedData, compatibility = sv.prepare_design_data(
+                    decodedData, "symbol", str(filePathObj))
+            except sv.DesignFileValidationError as error:
+                for err in error.errors or [str(error)]:
                     self.logger.error(
-                        f"Symbol validation error in '{filePathObj.name}': {err}"
-                    )
+                        f"Symbol compatibility error in '{filePathObj.name}': {err}")
                 return
+            if compatibility.migrated:
+                self.logger.info(
+                    f"Migrated symbol schema {compatibility.sourceVersion} "
+                    f"to {compatibility.targetVersion}")
             self.blockSignals(True)
             with self.measureDuration():
                 viewDict, gridSettings, *itemData = decodedData
@@ -721,7 +723,7 @@ class symbolScene(editorScene):
                                                                       symbolClasses)]
             # Build save data
             save_data = [
-                {"viewType": "symbol", "schemaVersion": "1.0"},
+                sv.make_view_header("symbol"),
                 {"snapGrid": (self.majorGrid, self.snapGrid),
                  "snapConnectDistance": self.snapConnectDistance},
                 *sceneItems,

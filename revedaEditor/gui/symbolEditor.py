@@ -178,17 +178,38 @@ class symbolEditor(edw.editorWindow):
         self.centralW.scene.editModes.setMode("drawCircle")
         self.messageLine.setText("Press left mouse button for the centre point.")
 
+    def editActivePlacementOptions(self) -> bool:
+        """Open the F3 form for the active symbol placement command."""
+        scene = self.centralW.scene
+        if scene.editModes.drawPin:
+            self._configureSymbolPin(activate=False)
+        elif scene.editModes.addLabel:
+            self._configureSymbolLabel(activate=False)
+        else:
+            return False
+        return True
+
     def createPinClick(self, s):
-        createPinDlg = pdlg.createPinDialog(self)
-        if createPinDlg.exec() == QDialog.DialogCode.Accepted:
-            modeList = [False for _ in range(8)]
-            modeList[0] = True
-            self.centralW.scene.pinName = createPinDlg.pinName.text()
-            self.centralW.scene.pinType = createPinDlg.pinType.currentText()
-            self.centralW.scene.pinDir = createPinDlg.pinDir.currentText()
-            self.centralW.scene.pinExpr = createPinDlg.netExprEdit.text().strip()
-            self.centralW.scene.editModes.setMode("drawPin")
+        self._configureSymbolPin(activate=True)
+
+    def _configureSymbolPin(self, activate: bool = False) -> bool:
+        """Edit pending symbol-pin values without leaving draw mode."""
+        scene = self.centralW.scene
+        dlg = pdlg.createPinDialog(self)
+        dlg.pinName.setText(scene.pinName or "")
+        dlg.pinType.setCurrentText(scene.pinType or "")
+        dlg.pinDir.setCurrentText(scene.pinDir or "")
+        dlg.netExprEdit.setText(scene.pinExpr or "")
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return False
+        scene.pinName = dlg.pinName.text()
+        scene.pinType = dlg.pinType.currentText()
+        scene.pinDir = dlg.pinDir.currentText()
+        scene.pinExpr = dlg.netExprEdit.text().strip()
+        if activate:
+            scene.editModes.setMode("drawPin")
             self.messageLine.setText("Place pin on the symbol.")
+        return True
 
     def rotateItemClick(self, s):
         self.centralW.scene.editModes.setMode("rotateItem")
@@ -212,33 +233,39 @@ class symbolEditor(edw.editorWindow):
             self.logger.error(f"Error during loading symbol for {self.cellName}: {e}")
 
     def createLabelClick(self):
-        createLabelDlg = pdlg.createSymbolLabelDialog(self)
-        self.messageLine.setText("Place a label")
-        createLabelDlg.labelHeightEdit.setText("12")
-        if createLabelDlg.exec() == QDialog.DialogCode.Accepted:
-            self.centralW.scene.editModes.setMode("addLabel")
-            # directly setting scene class attributes here to pass the information.
-            self.centralW.scene.labelDefinition = createLabelDlg.labelDefinition.text()
-            self.centralW.scene.labelHeight = (
-                createLabelDlg.labelHeightEdit.text().strip()
-            )
-            self.centralW.scene.labelAlignment = (
-                createLabelDlg.labelAlignCombo.currentText()
-            )
-            self.centralW.scene.labelOrient = (
-                createLabelDlg.labelOrientCombo.currentText()
-            )
-            self.centralW.scene.labelUse = createLabelDlg.labelUseCombo.currentText()
-            self.centralW.scene.labelOpaque = (
-                    createLabelDlg.labelVisiCombo.currentText() == "Yes"
-            )
-            self.centralW.scene.labelType = "Normal"  # default button
-            if createLabelDlg.normalType.isChecked():
-                self.centralW.scene.labelType = "Normal"
-            elif createLabelDlg.NLPType.isChecked():
-                self.centralW.scene.labelType = "NLPLabel"
-            elif createLabelDlg.pyLType.isChecked():
-                self.centralW.scene.labelType = "PyLabel"
+        self._configureSymbolLabel(activate=True)
+
+    def _configureSymbolLabel(self, activate: bool = False) -> bool:
+        """Edit pending symbol-label values without leaving draw mode."""
+        scene = self.centralW.scene
+        dlg = pdlg.createSymbolLabelDialog(self)
+        dlg.labelDefinition.setText(scene.labelDefinition or "")
+        dlg.labelHeightEdit.setText(str(scene.labelHeight or "12"))
+        dlg.labelAlignCombo.setCurrentText(scene.labelAlignment or "")
+        dlg.labelOrientCombo.setCurrentText(scene.labelOrient or "")
+        dlg.labelUseCombo.setCurrentText(scene.labelUse or "")
+        dlg.labelVisiCombo.setCurrentText("Yes" if scene.labelOpaque else "No")
+        if scene.labelType == "NLPLabel":
+            dlg.NLPType.setChecked(True)
+        elif scene.labelType == "PyLabel":
+            dlg.pyLType.setChecked(True)
+        else:
+            dlg.normalType.setChecked(True)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return False
+        scene.labelDefinition = dlg.labelDefinition.text()
+        scene.labelHeight = dlg.labelHeightEdit.text().strip()
+        scene.labelAlignment = dlg.labelAlignCombo.currentText()
+        scene.labelOrient = dlg.labelOrientCombo.currentText()
+        scene.labelUse = dlg.labelUseCombo.currentText()
+        scene.labelOpaque = dlg.labelVisiCombo.currentText() == "Yes"
+        scene.labelType = (
+            "NLPLabel" if dlg.NLPType.isChecked() else
+            "PyLabel" if dlg.pyLType.isChecked() else "Normal")
+        if activate:
+            scene.editModes.setMode("addLabel")
+            self.messageLine.setText("Place a label")
+        return True
 
     def closeEvent(self, event):
         """

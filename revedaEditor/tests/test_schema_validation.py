@@ -24,14 +24,24 @@
 
 """Tests for revedaEditor.fileio.schemaValidation module."""
 
+import copy
+import types
+
+import orjson
 import pytest
 
 from revedaEditor.fileio.schemaValidation import (
+    CURRENT_SCHEMA_VERSIONS,
     SCHEMA_VERSION,
     DesignFileValidationError,
     get_schema_version,
+    make_view_header,
+    prepare_design_data,
+    prepare_pcell_definition,
+    register_schema_migration,
     validate_design_data,
     validate_design_file,
+    validate_pcell_definition,
 )
 
 # ---------------------------------------------------------------------------
@@ -139,11 +149,11 @@ class TestValidateDesignData:
         assert not is_valid
         assert "snapGrid" in errors[0]
 
-    def test_null_grid_settings_is_valid(self):
+    def test_null_grid_settings_is_invalid(self):
         data = [{"viewType": "symbol"}, None]
         is_valid, errors = validate_design_data(data)
-        assert is_valid
-        assert errors == []
+        assert not is_valid
+        assert "grid settings" in errors[0]
 
     def test_item_missing_type_field(self):
         # Non-strict validation is header-only for speed; items without a
@@ -355,3 +365,180 @@ class TestDesignFileValidationError:
 def test_schema_version_is_string():
     assert isinstance(SCHEMA_VERSION, str)
     assert SCHEMA_VERSION == "1.0"
+
+
+# ---------------------------------------------------------------------------
+# Tests: schema compatibility and migration contract
+# ---------------------------------------------------------------------------
+
+
+class TestSchemaCompatibility:
+    def test_headers_are_canonical_for_ordinary_views(self):
+        for viewType in ("symbol", "schematic", "layout"):
+            assert make_view_header(viewType) == {
+                "viewType": viewType,
+                "schemaVersion": CURRENT_SCHEMA_VERSIONS[viewType],
+            }
+
+    def test_legacy_unversioned_data_is_accepted_without_mutation(self):
+        data = [{"viewType": "symbol"}, {"snapGrid": [10, 5]}]
+        prepared, compatibility = prepare_design_data(data, "symbol")
+        assert prepared is data
+        assert compatibility.sourceVersion is None
+        assert compatibility.targetVersion == SCHEMA_VERSION
+        assert not compatibility.migrated
+        assert "schemaVersion" not in data[0]
+
+    def test_current_version_is_accepted_without_migration(self):
+        data = [{"viewType": "layout", "schemaVersion": "1.0"}, {}]
+        prepared, compatibility = prepare_design_data(data, "layout")
+        assert prepared is data
+        assert compatibility.sourceVersion == "1.0"
+        assert not compatibility.migrated
+
+    @pytest.mark.parametrize("version", ("2.0", "unknown"))
+    def test_unsupported_labelled_version_is_rejected(self, version):
+        data = [{"viewType": "schematic", "schemaVersion": version}, {}]
+        with pytest.raises(DesignFileValidationError):
+            prepare_design_data(data, "schematic")
+
+    def test_malformed_version_is_rejected(self):
+        data = [{"viewType": "symbol", "schemaVersion": 1}, {}]
+        with pytest.raises(DesignFileValidationError):
+            prepare_design_data(data, "symbol")
+
+    def test_registered_migration_is_pure_and_runs_once(self):
+        source = [
+            {"viewType": "symbol", "schemaVersion": "test-legacy"},
+            {"snapGrid": [10, 5]},
+            {"type": "unknown", "extra": {"preserve": True}},
+        ]
+        original = copy.deepcopy(source)
+
+        def migration(data):
+            data[1]["migrated"] = True
+            return data
+
+        register_schema_migration("symbol", "test-legacy", "1.0", migration)
+        prepared, compatibility = prepare_design_data(source, "symbol")
+        assert source == original
+        assert prepared[0]["schemaVersion"] == "1.0"
+        assert prepared[1]["migrated"] is True
+        assert prepared[2] == original[2]
+        assert compatibility.migrated
+
+
+class TestPCellDefinitionValidation:
+    def test_legacy_pcell_definition_is_accepted(self):
+        data = [{"cellView": "pcell"}, {"reference": "nmos"}]
+        prepared, compatibility = prepare_pcell_definition(data)
+        assert prepared is data
+        assert compatibility.sourceVersion is None
+        assert not compatibility.migrated
+
+    @pytest.mark.parametrize(
+        "data",
+        (
+            [],
+            [{"cellView": "pcell"}],
+            [{"cellView": "layout"}, {"reference": "nmos"}],
+            [{"cellView": "pcell"}, {"reference": ""}],
+            [{"cellView": "pcell"}, {"reference": 42}],
+        ),
+    )
+    def test_invalid_pcell_definition_is_rejected(self, data):
+        is_valid, errors = validate_pcell_definition(data)
+        assert not is_valid
+        assert errors
+        with pytest.raises(DesignFileValidationError):
+            prepare_pcell_definition(data)
+
+
+# ---------------------------------------------------------------------------
+# Tests: hierarchical child-file schema enforcement
+# ---------------------------------------------------------------------------
+
+
+def _writeLibraryCell(tmp_path, viewName, records):
+    """Minimal on-disk library: mylib/sub/<viewName>.json."""
+    libDir = tmp_path / "mylib"
+    cellDir = libDir / "sub"
+    cellDir.mkdir(parents=True)
+    (cellDir / f"{viewName}.json").write_bytes(orjson.dumps(records))
+    return libDir
+
+
+class TestHierarchicalSchemaEnforcement:
+    """Child cellviews with an unsupported future schemaVersion must be
+    rejected by every hierarchical load path, not just top-level opens."""
+
+    def test_inst_symbol_rejects_future_symbol_version(
+            self, qapp, tmp_path, monkeypatch):
+        from PySide6.QtCore import QPoint
+        import revedaEditor.backend.dataDefinitions as ddef
+        import revedaEditor.backend.libraryMethods as libm
+        from revedaEditor.tests.sceneTestUtils import makeSchematicScene
+
+        libDir = _writeLibraryCell(tmp_path, "symbol", [
+            {"viewType": "symbol", "schemaVersion": "99.0"},
+            {"snapGrid": [10, 5]},
+        ])
+        scene = makeSchematicScene()
+        libItem = types.SimpleNamespace(libraryName="mylib")
+        cellItem = types.SimpleNamespace(
+            cellName="sub", parent=lambda: libItem)
+        viewItem = types.SimpleNamespace(
+            viewName="symbol", viewPath=libDir / "sub" / "symbol.json",
+            parent=lambda: cellItem)
+        scene.appMainW.libraryModel = None
+        monkeypatch.setattr(libm, "findViewItem", lambda *a: viewItem)
+        result = scene.instSymbol(
+            ddef.viewNameTuple("mylib", "sub", "symbol"), QPoint(0, 0))
+        assert result is None
+
+    def test_inst_layout_rejects_future_layout_version(
+            self, qapp, tmp_path):
+        import revedaEditor.backend.dataDefinitions as ddef
+        import revedaEditor.backend.libBackEnd as libb
+        from revedaEditor.tests.sceneTestUtils import makeLayoutScene
+
+        libDir = _writeLibraryCell(tmp_path, "layout", [
+            {"viewType": "layout", "schemaVersion": "99.0"},
+            {"snapGrid": [10, 10]},
+        ])
+        scene = makeLayoutScene()
+        layoutTuple = ddef.viewItemTuple(
+            libb.libraryItem(libDir), libb.cellItem(libDir / "sub"),
+            libb.viewItem(libDir / "sub" / "layout.json"))
+        assert scene.instLayout(layoutTuple) is None
+
+    def test_symbol_factory_rejects_future_version(self, qapp, tmp_path):
+        import revedaEditor.fileio.loadJSON as lj
+        from revedaEditor.tests.sceneTestUtils import makeSchematicScene
+
+        libDir = _writeLibraryCell(tmp_path, "symbol", [
+            {"viewType": "symbol", "schemaVersion": "99.0"},
+            {"snapGrid": [10, 5]},
+        ])
+        scene = makeSchematicScene()
+        scene.libraryDict = {"mylib": libDir}
+        factory = lj.schematicItems(scene)
+        record = {"type": "sys", "lib": "mylib", "cell": "sub",
+                  "view": "symbol", "ic": 1, "nam": "I1", "ld": {},
+                  "loc": [0, 0]}
+        assert factory._createSymbolShape(record) is None
+
+    def test_layout_factory_rejects_future_version(self, qapp, tmp_path):
+        import revedaEditor.fileio.loadJSON as lj
+        from revedaEditor.tests.sceneTestUtils import makeLayoutScene
+
+        libDir = _writeLibraryCell(tmp_path, "layout", [
+            {"viewType": "layout", "schemaVersion": "99.0"},
+            {"snapGrid": [10, 10]},
+        ])
+        scene = makeLayoutScene()
+        scene.libraryDict = {"mylib": libDir}
+        factory = lj.layoutItems(scene)
+        record = {"type": "Inst", "lib": "mylib", "cell": "sub",
+                  "view": "layout", "loc": [0, 0], "ic": 1, "nam": "I1"}
+        assert factory.createLayoutInstance(record) is None

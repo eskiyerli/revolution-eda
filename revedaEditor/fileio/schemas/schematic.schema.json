@@ -54,6 +54,7 @@
         { "$ref": "#/$defs/schematicNet" },
         { "$ref": "#/$defs/schematicPin" },
         { "$ref": "#/$defs/schematicText" },
+        { "$ref": "#/$defs/schematicGroup" },
         { "$ref": "#/$defs/checkMarker" }
       ]
     },
@@ -120,6 +121,20 @@
         "ang": { "type": "number" },
         "fl": { "$ref": "#/$defs/flipTuple" }
       }
+    },
+    "schematicGroup": {
+      "type": "object",
+      "required": ["type", "loc", "items"],
+      "properties": {
+        "type": { "const": "Group" },
+        "loc": { "$ref": "#/$defs/point" },
+        "items": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/schematicSymbol" }
+        }
+      },
+      "description": "Persistent schematic mosaic containing independent symbols in group-local coordinates"
     },
     "schematicText": {
       "type": "object",

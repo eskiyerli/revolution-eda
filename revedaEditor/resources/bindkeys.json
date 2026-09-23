@@ -35,7 +35,9 @@
         "Ctrl+K": "delSelectedRulerAction",
         "Shift+K": "delRulerAction",
         "Shift+C": "cutAction",
-        "Ctrl+M": "mergeAction"
+        "Ctrl+M": "mergeAction",
+        "Ctrl+G": "groupItemsAction",
+        "Ctrl+Shift+G": "ungroupItemsAction"
     },
     "symbol": {
         "S": "stretchAction",

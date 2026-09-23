@@ -1,0 +1,307 @@
+# `revedaEditor/common/shapes.py`
+
+**Module:** `revedaEditor.common.shapes`
+
+## Purpose
+
+Schematic/symbol graphics items: base `symbolShape` classes, pins, rectangles, lines, arcs, circles, polygons, text, and the `schematicSymbol` instance item.
+
+## Classes
+
+- `_LazyModule` — Descriptor that defers PDK module loading until first attribute access.
+  - internals: `__getattr__()`
+- `symbolShape(QGraphicsItem)`
+  - `pen()`
+  - `brush()`
+  - `brush()`
+  - `angle()`
+  - `angle()`
+  - `stretch()`
+  - `stretch()`
+  - `captureGeometry()`
+  - `restoreGeometry()`
+  - `draft()`
+  - `draft()`
+  - `mousePressEvent()`
+  - `sceneEvent()`
+  - `itemChange()`
+  - `mouseMoveEvent()`
+  - `mouseReleaseEvent()`
+  - `hoverEnterEvent()`
+  - `hoverLeaveEvent()`
+  - `contextMenuEvent()`
+  - `flipTuple()`
+  - `flipTuple()`
+  - internals: `__repr__()`
+- `symbolRectangle(symbolShape)` —     rect: QRect defined by top left corner and bottom right corner. QRect(Point1,Point2)
+  - `boundingRect()`
+  - `paint()`
+  - `rect()`
+  - `rect()`
+  - `start()`
+  - `start()`
+  - `end()`
+  - `end()`
+  - `centre()`
+  - `height()`
+  - `height()`
+  - `width()`
+  - `width()`
+  - `left()`
+  - `left()`
+  - `right()`
+  - `right()`
+  - `top()`
+  - `top()`
+  - `bottom()`
+  - `bottom()`
+  - `origin()`
+  - `stretchSide()`
+  - `stretchSide()`
+  - `captureGeometry()`
+  - `restoreGeometry()`
+  - `mousePressEvent()`
+  - `mouseMoveEvent()`
+  - `mouseReleaseEvent()`
+  - internals: `__repr__()`
+- `symbolCircle(symbolShape)`
+  - `paint()`
+  - `radius()`
+  - `radius()`
+  - `centre()`
+  - `centre()`
+  - `end()`
+  - `end()`
+  - `rightBottom()`
+  - `rightBottom()`
+  - `topLeft()`
+  - `topLeft()`
+  - `boundingRect()`
+  - `captureGeometry()`
+  - `restoreGeometry()`
+  - `mousePressEvent()`
+  - `mouseMoveEvent()`
+  - `mouseReleaseEvent()`
+  - `calculateRadius()`
+  - internals: `__repr__()`
+- `symbolArc(symbolShape)` — Class to draw arc shapes. Can have four directions.
+  - `arcType()`
+  - `arcType()`
+  - `paint()`
+  - `arcDraw()`
+  - `boundingRect()`
+  - `bRect()`
+  - `adjustment()`
+  - `rect()`
+  - `rect()`
+  - `start()`
+  - `start()`
+  - `end()`
+  - `end()`
+  - `width()`
+  - `width()`
+  - `height()`
+  - `height()`
+  - `captureGeometry()`
+  - `restoreGeometry()`
+  - `mousePressEvent()`
+  - `mouseMoveEvent()`
+  - `mouseReleaseEvent()`
+  - internals: `_findAngle()`, `__repr__()`
+- `symbolLine(symbolShape)`
+  - `boundingRect()`
+  - `shape()`
+  - `paint()`
+  - `start()`
+  - `start()`
+  - `end()`
+  - `end()`
+  - `length()`
+  - `captureGeometry()`
+  - `restoreGeometry()`
+  - `mousePressEvent()`
+  - `mouseMoveEvent()`
+  - `mouseReleaseEvent()`
+  - internals: `__repr__()`, `_updateGeometry()`
+- `symbolPolygon(symbolShape)`
+  - `paint()`
+  - `boundingRect()`
+  - `polygon()`
+  - `points()`
+  - `points()`
+  - `addPoint()`
+  - `tempLastPoint()`
+  - `tempLastPoint()`
+  - `mousePressEvent()`
+  - `mouseMoveEvent()`
+  - `mouseReleaseEvent()`
+  - internals: `__repr__()`, `_updatePolygon()`, `_findNearestPoint()`, `_resetStretchState()`
+- `symbolPin(symbolShape)` — symbol pin class definition for symbol drawing.
+  - `boundingRect()`
+  - `paint()`
+  - `sceneEvent()`
+  - `itemChange()`
+  - `shape()`
+  - `start()`
+  - `start()`
+  - `pinName()`
+  - `pinName()`
+  - `pinNameItem()`
+  - `pinDir()`
+  - `pinDir()`
+  - `pinType()`
+  - `pinType()`
+  - `netExpr()`
+  - `netExpr()`
+  - `connected()`
+  - `connected()`
+  - `highlighted()`
+  - `highlighted()`
+  - `toSchematicPin()`
+  - `flipTuple()`
+  - `flipTuple()`
+  - internals: `__str__()`, `__repr__()`
+- `text(symbolShape)` — This class is for text annotations on symbol or schematics.
+  - `sceneEvent()`
+  - `setOrient()`
+  - `flip()`
+  - `boundingRect()`
+  - `paint()`
+  - `start()`
+  - `start()`
+  - `textContent()`
+  - `textContent()`
+  - `fontFamily()`
+  - `fontFamily()`
+  - `fontStyle()`
+  - `fontStyle()`
+  - `textHeight()`
+  - `textHeight()`
+  - `textFont()`
+  - `textFont()`
+  - `textAlignment()`
+  - `textAlignment()`
+  - `textOrient()`
+  - `textOrient()`
+  - internals: `__repr__()`, `_invalidateBoundingRect()`
+- `schematicSymbol(symbolShape)`
+  - `sceneEvent()`
+  - `addShapes()`
+  - `shape()`
+  - `itemChange()`
+  - `generatePinNetDict()`
+  - `initializeSnapLines()`
+  - `updateSnapLines()`
+  - `paint()`
+  - `boundingRect()`
+  - `mousePressEvent()`
+  - `libraryName()`
+  - `libraryName()`
+  - `cellName()`
+  - `cellName()`
+  - `viewName()`
+  - `viewName()`
+  - `instanceName()`
+  - `instanceName()`
+  - `counter()`
+  - `counter()`
+  - `angle()`
+  - `angle()`
+  - `labels()`
+  - `pins()`
+  - `shapes()`
+  - `shapes()`
+  - `symattrs()`
+  - `symattrs()`
+  - `paramDefs()`
+  - `netSet()`
+  - `netSet()`
+  - `instProps()`
+  - `netlistIgnore()`
+  - `netlistIgnore()`
+  - `flipTuple()`
+  - `flipTuple()`
+  - `reload()`
+  - `start()`
+  - internals: `_setup_graphics()`, `__repr__()`, `_finishSnapLines()`
+- `schematicPinPolygon(QGraphicsPolygonItem)`
+  - `paint()`
+- `schematicPin(symbolShape)` — schematic pin class.
+  - `setFont()`
+  - `sceneEvent()`
+  - `paint()`
+  - `pinPolygon()`
+  - `itemChange()`
+  - `boundingRect()`
+  - `shape()`
+  - `generatePinNetDict()`
+  - `initializeSnapLines()`
+  - `updateSnapLines()`
+  - `mousePressEvent()`
+  - `mouseReleaseEvent()`
+  - `mouseMoveEvent()`
+  - `toSymbolPin()`
+  - `start()`
+  - `start()`
+  - `pinName()`
+  - `pinName()`
+  - `pinDir()`
+  - `pinDir()`
+  - `pinType()`
+  - `pinType()`
+  - `netExpr()`
+  - `netExpr()`
+  - `flipTuple()`
+  - `flipTuple()`
+  - internals: `_updateTextMetrics()`, `__repr__()`, `_finishSnapLines()`
+- `alignLine(symbolShape)`
+  - `boundingRect()`
+  - `paint()`
+  - `draftLine()`
+  - `draftLine()`
+  - `angle()`
+  - `width()`
+  - `width()`
+  - `mode()`
+  - `mode()`
+  - `sceneEndPoints()`
+  - internals: `__repr__()`, `_determineAngle()`, `_createHorizontalLine()`, `_createVerticalLine()`
+- `pinNetIndexTuple(NamedTuple)`
+
+## Functions
+
+- `_undoStack()` — Lazy import to avoid circular dependency (undoStack references shapes).
+- `_get_schlyr()` — Lazy accessor for schematic layers PDK module (avoids circular import).
+- `_get_symlyr()` — Lazy accessor for symbol layers PDK module (avoids circular import).
+
+## Depends on
+
+- [[revedaEditor/backend/pdkLoader|revedaEditor.backend.pdkLoader]]
+- [[revedaEditor/common/labels|revedaEditor.common.labels]]
+- [[revedaEditor/common/net|revedaEditor.common.net]]
+
+## Used by
+
+- [[revedaEditor/backend/undoStack|revedaEditor.backend.undoStack]]
+- [[revedaEditor/checks/schematic|revedaEditor.checks.schematic]]
+- [[revedaEditor/fileio/createSymbols|revedaEditor.fileio.createSymbols]]
+- [[revedaEditor/fileio/extractedSchematic|revedaEditor.fileio.extractedSchematic]]
+- [[revedaEditor/fileio/importXschemSym|revedaEditor.fileio.importXschemSym]]
+- [[revedaEditor/fileio/loadJSON|revedaEditor.fileio.loadJSON]]
+- [[revedaEditor/fileio/schematicEncoder|revedaEditor.fileio.schematicEncoder]]
+- [[revedaEditor/fileio/symbolEncoder|revedaEditor.fileio.symbolEncoder]]
+- [[revedaEditor/gui/alignItems|revedaEditor.gui.alignItems]]
+- [[revedaEditor/gui/lvsResults|revedaEditor.gui.lvsResults]]
+- [[revedaEditor/gui/propertyDialogues|revedaEditor.gui.propertyDialogues]]
+- [[revedaEditor/gui/schematicEditor|revedaEditor.gui.schematicEditor]]
+- [[revedaEditor/netlisting/spectreNetlist|revedaEditor.netlisting.spectreNetlist]]
+- [[revedaEditor/netlisting/vacaskNetlist|revedaEditor.netlisting.vacaskNetlist]]
+- [[revedaEditor/netlisting/xyceNetlist|revedaEditor.netlisting.xyceNetlist]]
+- [[revedaEditor/scenes/schematicScene|revedaEditor.scenes.schematicScene]]
+- [[revedaEditor/scenes/symbolScene|revedaEditor.scenes.symbolScene]]
+- [[revedaEditor/tests/test_connectivity|revedaEditor.tests.test_connectivity]]
+- [[revedaEditor/tests/test_netexpr|revedaEditor.tests.test_netexpr]]
+- [[revedaEditor/tests/test_netlisting|revedaEditor.tests.test_netlisting]]
+- [[revedaEditor/tests/test_schematic_checks|revedaEditor.tests.test_schematic_checks]]
+- [[revedaEditor/tests/test_schematic_ux|revedaEditor.tests.test_schematic_ux]]
+- [[revedaEditor/tests/test_symbol_pins|revedaEditor.tests.test_symbol_pins]]

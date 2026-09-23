@@ -3238,6 +3238,146 @@ MULTIPART_KINDS = {
 }
 
 
+def _applySceneTransform(item: "layoutShape", target: QTransform) -> None:
+    """Re-express ``target`` (a captured item->scene matrix) as the item's
+    own pos/angle/flip while the item is top-level.
+
+    Keeps the item encoder-representable: every persisted transform is a
+    translation, an axis flip about the bounding-box centre and a rotation
+    about the transform origin point.  The composition is exact for the
+    90-degree rotations and axis flips the editor produces; once the linear
+    part matches, ``pos`` absorbs the residual translation so the mapped
+    origins coincide.
+    """
+    t = target.map(QPointF(0, 0))
+    det = target.m11() * target.m22() - target.m12() * target.m21()
+    if det < 0:
+        # Reflection: factor it out as an x-flip; R(180) folds into angle.
+        item.flipTuple = (-1, 1)
+        linear = target * QTransform(-1, 0, 0, 1, 0, 0)
+    else:
+        item.flipTuple = (1, 1)
+        linear = target
+    angle = math.degrees(math.atan2(linear.m12(), linear.m11()))
+    if type(item) in (layoutPath, layoutRuler):
+        # Their persisted ``ang`` is a direction angle the setter applies as
+        # setRotation(-_angle) about draftLine.p1().
+        item.angle = -angle
+    elif isinstance(item, layoutLabel):
+        # ``ang`` persists an *extra* rotation layered on top of the
+        # labelOrient rotation (see loadJSON.createLabelShape).
+        orientRotation = item.rotation() - getattr(item, "_angle", 0.0)
+        item._angle = angle - orientRotation
+        item.setRotation(angle)
+    else:
+        item.angle = angle
+    origin = item.sceneTransform().map(QPointF(0, 0))
+    item.setPos(item.pos() + t - origin)
+
+
+class layoutGroup(layoutShape):
+    """Persistent item group: a top-level container whose children are
+    ordinary layout shapes parented to it.
+
+    Members keep their scene coordinates as group-local coordinates (the
+    group is created at the scene origin with an identity transform), so it
+    acts purely as a selection/move/copy unit: hit tests on members reach
+    the group, and the group's own pos/rotation/flip transform all members
+    without rewriting their geometry.  It persists as a ``Group`` record
+    with the same ``loc``/``top``/``ang``/``fl`` fields as instances plus an
+    ``items`` list of member records in group-local coordinates.
+    """
+
+    # Members carry only ItemStacksBehindParent while grouped: they render
+    # themselves but hit tests and input belong to the group item, so the
+    # group is selected/moved/copied/deleted as one unit.
+    _MEMBER_FLAGS = QGraphicsItem.GraphicsItemFlag.ItemStacksBehindParent
+    _DEFAULT_MEMBER_FLAGS = (
+            QGraphicsItem.GraphicsItemFlag.ItemIsSelectable
+            | QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges
+            | QGraphicsItem.GraphicsItemFlag.ItemIsFocusable
+            | QGraphicsItem.GraphicsItemFlag.ItemUsesExtendedStyleOption
+    )
+
+    def __init__(self, shapes: Optional[list] = None) -> None:
+        super().__init__()
+        self._shapes: list[layoutShape] = []
+        # member id -> flag set captured on adopt, restored on release
+        self._memberFlags: dict = {}
+        self._selectedPen = QPen(self._get_cached_color("yellow"), 4, Qt.DashLine)
+        self._selectedPen.setCosmetic(True)
+        self.setFiltersChildEvents(True)
+        self.setHandlesChildEvents(True)
+        self.setFlag(QGraphicsItem.ItemContainsChildrenInShape, True)
+        if shapes:
+            self.adoptShapes(shapes)
+
+    def __repr__(self) -> str:
+        return f"layoutGroup({len(self._shapes)} items)"
+
+    @property
+    def shapes(self):
+        return self._shapes
+
+    def adoptShapes(self, shapes: list) -> None:
+        """Reparent ``shapes`` under this group without moving them.
+
+        When the group already carries a transform (e.g. undo of ungroup on
+        a moved group), each member's scene transform is first re-expressed
+        in the group's local frame so adoption never shifts geometry."""
+        inv, invertible = self.sceneTransform().inverted()
+        recompose = invertible and not inv.isIdentity()
+        self.prepareGeometryChange()
+        for item in shapes:
+            self._memberFlags[id(item)] = item.flags()
+            if recompose:
+                _applySceneTransform(item, inv * item.sceneTransform())
+            item.setFlags(self._MEMBER_FLAGS)
+            item.setParentItem(self)
+            item.setSelected(False)
+        self._shapes = list(shapes)
+        self.update()
+
+    def releaseShapes(self) -> list:
+        """Detach members back to top level, preserving scene appearance.
+
+        The group's accumulated transform is folded into each member's own
+        pos/angle/flip via :func:`_applySceneTransform`, so released items
+        encode exactly like freely drawn ones."""
+        members = list(self._shapes)
+        self.prepareGeometryChange()
+        self._shapes = []
+        for item in members:
+            self._releaseToTopLevel(item)
+        self.update()
+        return members
+
+    def _releaseToTopLevel(self, item) -> None:
+        target = item.sceneTransform()  # capture before detach
+        flags = self._memberFlags.pop(id(item), self._DEFAULT_MEMBER_FLAGS)
+        item.setParentItem(None)
+        item.setFlags(flags)
+        if item.sceneTransform() != target:
+            _applySceneTransform(item, target)
+
+    def boundingRect(self) -> QRectF:
+        return self.childrenBoundingRect().adjusted(-2, -2, 2, 2)
+
+    def paint(self, painter, option, widget) -> None:
+        # Children render themselves; the item only shows a selection frame.
+        if option.state & QStyle.State_Selected:
+            painter.setPen(self._selectedPen)
+            painter.drawRect(self.childrenBoundingRect())
+
+    def sceneEvent(self, event):
+        scene = self.scene()
+        if scene is None:
+            return False
+        if not (scene.selectModes.selectAll):
+            return False
+        return super().sceneEvent(event)
+
+
 class alignLine(layoutShape):
     def __init__(
             self,

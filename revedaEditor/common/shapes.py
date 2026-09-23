@@ -2512,3 +2512,87 @@ class pinNetIndexTuple(NamedTuple):
     pin: Union[symbolPin, schematicPin]
     net: net.schematicNet
     netEndIndex: int
+
+
+class schematicGroup(symbolShape):
+    """Persistent selection container for independent schematic symbols.
+
+    Placement mosaics use this container so their members retain individual
+    instance identities while selecting, moving, saving, and ungrouping as a
+    single object.  It intentionally contains symbols only; nets and sheet
+    pins remain top-level connectivity carriers.
+    """
+
+    _MEMBER_FLAGS = QGraphicsItem.ItemStacksBehindParent
+
+    def __init__(self, symbols: Optional[list[schematicSymbol]] = None) -> None:
+        super().__init__()
+        self._symbols: list[schematicSymbol] = []
+        self._memberFlags: dict[int, object] = {}
+        self._selectedPen = QPen(QColor("yellow"), 2, Qt.DashLine)
+        self._selectedPen.setCosmetic(True)
+        self.setFiltersChildEvents(True)
+        self.setHandlesChildEvents(True)
+        self.setFlag(QGraphicsItem.ItemContainsChildrenInShape, True)
+        if symbols:
+            self.adoptSymbols(symbols)
+
+    def __repr__(self) -> str:
+        return f"schematicGroup({len(self._symbols)} symbols)"
+
+    @property
+    def symbols(self) -> list[schematicSymbol]:
+        return self._symbols
+
+    @property
+    def shapes(self) -> list[schematicSymbol]:
+        """Container compatibility for generic scene traversals."""
+        return self._symbols
+
+    def adoptSymbols(self, symbols: list[schematicSymbol]) -> None:
+        """Reparent symbols without changing their scene positions."""
+        self.prepareGeometryChange()
+        for symbol in symbols:
+            scenePos = symbol.scenePos()
+            self._memberFlags[id(symbol)] = symbol.flags()
+            symbol.setParentItem(self)
+            symbol.setPos(self.mapFromScene(scenePos))
+            symbol.setFlags(self._MEMBER_FLAGS)
+            symbol.setSelected(False)
+        self._symbols = list(symbols)
+        self.update()
+
+    def releaseSymbols(self) -> list[schematicSymbol]:
+        """Detach symbols while preserving their scene positions."""
+        symbols = list(self._symbols)
+        self.prepareGeometryChange()
+        self._symbols = []
+        for symbol in symbols:
+            scenePos = symbol.scenePos()
+            flags = self._memberFlags.pop(id(symbol),
+                                          QGraphicsItem.ItemIsSelectable)
+            symbol.setParentItem(None)
+            symbol.setPos(scenePos)
+            symbol.setFlags(flags)
+        self.update()
+        return symbols
+
+    # The generic layout-compatible undo command calls releaseShapes().
+    releaseShapes = releaseSymbols
+    adoptShapes = adoptSymbols
+
+    def boundingRect(self) -> QRectF:
+        return self.childrenBoundingRect().adjusted(-2, -2, 2, 2)
+
+    def paint(self, painter, option, widget=None) -> None:
+        if option.state & QStyle.State_Selected:
+            painter.setPen(self._selectedPen)
+            painter.drawRect(self.childrenBoundingRect())
+
+    def sceneEvent(self, event) -> bool:
+        scene = self.scene()
+        if scene is None:
+            return False
+        if not (scene.selectModes.selectDevice or scene.selectModes.selectAll):
+            return False
+        return QGraphicsItem.sceneEvent(self, event)

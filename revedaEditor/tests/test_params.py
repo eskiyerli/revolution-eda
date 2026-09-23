@@ -378,6 +378,28 @@ class TestDialogs:
         assert [p.name for p, _ in dlg.paramRows] == ["r"]
         assert dlg.paramValues() == {"r": "1k"}
 
+    def test_place_dialog_hidden_sibling_ppar_paramdef_ctor(
+            self, qapp, monkeypatch):
+        """Legacy ParamDef-only constructor resolves a visible pPar default
+        against a display=False sibling without rendering it."""
+        from PySide6.QtWidgets import QDialog, QMessageBox
+        from revedaEditor.gui.propertyDialogues import placeInstanceDialog
+        defs = [
+            prm.ParamDef("w", "float", default="2u", display=False),
+            prm.ParamDef("l", "float", default='pPar("w")'),
+        ]
+        dlg = placeInstanceDialog(None, defs)
+        assert [p.name for p, _ in dlg.paramRows] == ["l"]
+        assert {row["labelName"] for row in dlg.labelRows} == {"@l"}
+        assert dlg.paramValues() == {"l": "2u"}
+        assert dlg._validationContext["@w"] == "2u"
+        warnings = []
+        monkeypatch.setattr(QMessageBox, "warning",
+                            lambda *a, **k: warnings.append(a))
+        dlg._validateAndAccept()
+        assert warnings == []
+        assert dlg.result() == QDialog.DialogCode.Accepted
+
     def test_place_dialog_rejects_invalid(self, qapp):
         from revedaEditor.gui.propertyDialogues import placeInstanceDialog
         defs = [prm.ParamDef("r", "float", default="1k")]
@@ -391,8 +413,7 @@ class TestDialogs:
         assert prm.validateValue(defs[0], getValue()) != []
 
     def test_instance_dialog_typed_rows(self, qapp):
-        """_buildInstanceLabelRows emits typed widgets per paramDef and
-        hides display=False params."""
+        """Rows remain label-driven while ParamDefs select typed widgets."""
         from PySide6.QtWidgets import QCheckBox, QComboBox, QLineEdit
         from revedaEditor.gui.propertyDialogues import instanceProperties
         from revedaEditor.tests.sceneTestUtils import makeSchematicScene
@@ -412,8 +433,11 @@ class TestDialogs:
         dlg = instanceProperties(None)
         scene._buildInstanceLabelRows(dlg, inst)
         rowsByName = {row["labelName"]: row for row in dlg.labelRows}
-        # @secret hidden; @note untyped stays a plain edit.
+        # display=False ParamDef rows stay off the rendered form; apply
+        # carries their values over from the original instance.
         assert "@secret" not in rowsByName
+        assert "@secret" in dlg.hiddenLabelNames
+        assert "@note" in rowsByName
         assert isinstance(rowsByName["@r"]["valueEdit"], QLineEdit)
         assert isinstance(rowsByName["@flag"]["valueEdit"], QCheckBox)
         assert isinstance(rowsByName["@mode"]["valueEdit"], QComboBox)
@@ -421,6 +445,78 @@ class TestDialogs:
         assert rowsByName["@note"]["paramDef"] is None
         # Boolean read-back normalizes through getValue.
         assert rowsByName["@flag"]["getValue"]() == "true"
+
+    def test_place_dialog_hidden_sibling_context(self, qapp, monkeypatch):
+        """A visible pPar value resolves against a hidden bound row that is
+        never rendered on the placement form."""
+        from PySide6.QtWidgets import QDialog, QMessageBox
+        from revedaEditor.gui.propertyDialogues import placeInstanceDialog
+        lDef = prm.ParamDef("l", "float")
+        wDef = prm.ParamDef("w", "float", display=False)
+        rows = [
+            {"labelName": "@l", "value": 'pPar("w")', "paramDef": lDef,
+             "isEditable": True, "isVisible": True},
+            {"labelName": "@w", "value": "2u", "paramDef": wDef,
+             "isEditable": False, "isVisible": False},
+        ]
+        dlg = placeInstanceDialog(None, rows)
+        rendered = {row["labelName"] for row in dlg.labelRows}
+        assert "@w" not in rendered and "@l" in rendered
+        assert dlg._validationContext["@w"] == "2u"
+        assert dlg.paramValues() == {"@l": 'pPar("w")'}
+        warnings = []
+        monkeypatch.setattr(QMessageBox, "warning",
+                            lambda *a, **k: warnings.append(a))
+        dlg._validateAndAccept()
+        assert warnings == []
+        assert dlg.result() == QDialog.DialogCode.Accepted
+
+    def test_configure_schematic_instance_params(self, qapp, monkeypatch):
+        """_configureSchematicInstanceParams wires refreshPreview and stores
+        the accepted values as pending placement params."""
+        from PySide6.QtWidgets import QDialog
+        import revedaEditor.backend.dataDefinitions as ddef
+        import revedaEditor.gui.propertyDialogues as pdlg
+        import revedaEditor.gui.schematicEditor as sched
+        from revedaEditor.tests.sceneTestUtils import makeSchematicScene
+
+        scene = makeSchematicScene()
+        scene.newInstanceTuple = ddef.viewNameTuple("lib", "cell", "symbol")
+        scene.pendingInstanceParams = None
+        scene.pendingInstanceArraySpec = None
+        monkeypatch.setattr(
+            scene, "instSymbol",
+            lambda _tuple, _pos, allocateName=True: _makeInstance(
+                qapp,
+                symattrs={prm.PARAMDEFS_ATTR: defsJson(
+                    {"name": "r", "type": "float", "default": "1k"})},
+                labelDefs=("[@instName]", "[@r:r=%:1k]")))
+
+        class _FakeDialog:
+            def __init__(self, *args, **kwargs):
+                self.labelRows = []
+                self._onValuesChanged = kwargs.get("onValuesChanged")
+
+            def refreshPreview(self):
+                if self._onValuesChanged is not None:
+                    self._onValuesChanged(self.paramValues())
+
+            def paramValues(self):
+                return {"r": "7.5k"}
+
+            def arraySpec(self):
+                return None
+
+            def exec(self):
+                return QDialog.DialogCode.Accepted
+
+        monkeypatch.setattr(pdlg, "placeInstanceDialog", _FakeDialog)
+        editor = types.SimpleNamespace(
+            centralW=types.SimpleNamespace(scene=scene),
+            messageLine=types.SimpleNamespace(setText=lambda *a: None),
+            logger=scene.logger)
+        assert sched.schematicEditor._configureSchematicInstanceParams(editor)
+        assert scene.pendingInstanceParams == {"r": "7.5k"}
 
     def test_symbol_labels_dialogue_params_table(self, qapp):
         from revedaEditor.fileio.symbolEncoder import symbolAttribute

@@ -9,7 +9,7 @@
 *.jks
 
 # Development docs
-developmentDocs/
+# developmentDocs/
 
 # License module (proprietary, compiled separately)
 revedaLicense/

@@ -15,10 +15,13 @@ import pathlib
 
 from PySide6.QtCore import (
     Qt,
+    QTimer,
 )
 from PySide6.QtGui import (
     QFontDatabase,
+    QIntValidator,
 )
+from quantiphy import Quantity
 from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
@@ -46,6 +49,9 @@ import revedaEditor.common.net as net
 import revedaEditor.common.params as prm
 import revedaEditor.common.shapes as shp
 import revedaEditor.gui.editFunctions as edf
+from revedaEditor.backend.pdkLoader import lazyPDKModule
+
+fabproc = lazyPDKModule("process")
 
 
 def paramValueWidget(pdef: prm.ParamDef, value: str, parent=None):
@@ -87,32 +93,140 @@ def paramValueWidget(pdef: prm.ParamDef, value: str, parent=None):
 
 
 class placeInstanceDialog(QDialog):
-    """Compact parameter form shown while placing an instance.
+    """Label-driven schematic placement options form.
 
-    Lists the symbol's display-able typed parameters (``paramDefs``) with
-    their resolved defaults so the user can set values before placement.
-    Validation runs on accept; invalid values are rejected with a warning
-    and the dialog stays open.
+    The optional source summary and mosaic controls mirror layout placement
+    options. Label rows remain the single source of schematic parameter
+    values: a matching ``paramDef`` only enriches an editable NLP label with
+    typing and validation.
     """
 
-    def __init__(self, parent, paramDefs: list):
+    def __init__(self, parent, labelRows: list,
+                 initialValues: dict | None = None,
+                 onValuesChanged=None, sourceTuple=None,
+                 arraySpec: tuple[int, int, int, int] | None = None):
         super().__init__(parent)
         self.parent = parent
-        self.setWindowTitle("Instance Parameters")
-        self.setMinimumWidth(320)
+        self.setWindowTitle("Schematic Instance Options")
+        self.setMinimumWidth(400)
+        self.labelRows = []
+        self.paramRows = []  # Legacy/test-facing ``[(ParamDef, getValue)]``.
+        self._onValuesChanged = onValuesChanged
+        self._refreshTimer = QTimer(self)
+        self._refreshTimer.setSingleShot(True)
+        self._refreshTimer.timeout.connect(self._emitValuesChanged)
+
+        # Compatibility for the original ParamDef-only public constructor.
+        if all(isinstance(row, prm.ParamDef) for row in labelRows):
+            supplied = {
+                f"@{name.lstrip('@')}": value
+                for name, value in (initialValues or {}).items()
+            }
+            defaults = prm.applyDefaults(labelRows, supplied)
+            labelRows = [{
+                "labelName": f"@{pdef.name}",
+                "valueKey": pdef.name,
+                "value": defaults.get(f"@{pdef.name}", pdef.default),
+                "paramDef": pdef,
+                "isEditable": pdef.display,
+                "isVisible": pdef.display,
+                "isPyLabel": False,
+            } for pdef in labelRows]
+
         mainLayout = QVBoxLayout()
+        if sourceTuple is not None:
+            sourceGroup = QGroupBox("Instance Parameters")
+            sourceLayout = QFormLayout()
+            sourceGroup.setLayout(sourceLayout)
+            for title, value in (
+                    ("Library:", sourceTuple.libraryName),
+                    ("Cell:", sourceTuple.cellName),
+                    ("View:", sourceTuple.viewName)):
+                field = edf.longLineEdit()
+                field.setText(str(value))
+                field.setReadOnly(True)
+                sourceLayout.addRow(title, field)
+            mainLayout.addWidget(sourceGroup)
+
+        supplied = initialValues or {}
+        self._validationContext = {
+            row["labelName"]: next(
+                (supplied[key] for key in (row["labelName"], row["labelName"].lstrip("@"))
+                 if key in supplied),
+                row.get("value", ""),
+            )
+            for row in labelRows
+            if not row.get("isVisible", True)
+        }
         formLayout = QFormLayout()
-        self.paramRows = []  # [(ParamDef, getValue)]
-        siblings = prm.applyDefaults(paramDefs, {})
-        for pdef in paramDefs:
-            if not pdef.display:
+        section = None
+        for sourceRow in labelRows:
+            row = dict(sourceRow)
+            if not row.get("isVisible", True):
                 continue
-            value = siblings.get(f"@{pdef.name}", pdef.default)
-            widget, getValue, _setValue = paramValueWidget(
-                pdef, value, self)
-            formLayout.addRow(edf.boldLabel(pdef.name, self), widget)
-            self.paramRows.append((pdef, getValue))
-        mainLayout.addLayout(formLayout)
+            rowSection = row.get("section")
+            if rowSection and rowSection != section:
+                formLayout.addRow(edf.boldLabel(rowSection, self))
+                section = rowSection
+            labelName = row["labelName"]
+            pdef = row.get("paramDef")
+            isEditable = row.get("isEditable", not row.get("isPyLabel", False))
+            value = next((supplied[key] for key in (labelName,
+                                                     labelName.lstrip("@"))
+                          if key in supplied), row.get("value", ""))
+            if pdef is not None:
+                widget, getValue, setValue = paramValueWidget(pdef, value, self)
+            else:
+                widget = edf.longLineEdit()
+                widget.setText(str(value))
+                getValue = widget.text
+                setValue = widget.setText
+            if not isEditable:
+                if hasattr(widget, "setReadOnly"):
+                    widget.setReadOnly(True)
+                else:
+                    widget.setEnabled(False)
+                widget.setToolTip("Computed or literal label (Read Only)")
+            formLayout.addRow(edf.boldLabel(labelName.lstrip("@"), self), widget)
+            row.update({
+                "isEditable": isEditable,
+                "valueEdit": widget,
+                "getValue": getValue,
+                "setValue": setValue,
+                "valueKey": row.get("valueKey", labelName),
+            })
+            self.labelRows.append(row)
+            if pdef is not None and isEditable:
+                self.paramRows.append((pdef, getValue))
+            if isEditable:
+                self._connectValueChanged(widget)
+        if self.labelRows:
+            mainLayout.addLayout(formLayout)
+
+        self.arrayGroup = QGroupBox("Instance Array (Mosaic)")
+        arrayLayout = QFormLayout()
+        self.arrayGroup.setLayout(arrayLayout)
+        self.rowsEdit = edf.shortLineEdit()
+        self.rowsEdit.setValidator(QIntValidator(1, 100000, self))
+        arrayLayout.addRow(edf.boldLabel("Rows:"), self.rowsEdit)
+        self.columnsEdit = edf.shortLineEdit()
+        self.columnsEdit.setValidator(QIntValidator(1, 100000, self))
+        arrayLayout.addRow(edf.boldLabel("Columns:"), self.columnsEdit)
+        self.xPitchEdit = edf.shortLineEdit()
+        self.xPitchEdit.setValidator(QIntValidator(0, 1000000000, self))
+        arrayLayout.addRow(edf.boldLabel("X Pitch:"), self.xPitchEdit)
+        self.yPitchEdit = edf.shortLineEdit()
+        self.yPitchEdit.setValidator(QIntValidator(0, 1000000000, self))
+        arrayLayout.addRow(edf.boldLabel("Y Pitch:"), self.yPitchEdit)
+        rows, columns, xPitch, yPitch = arraySpec or (1, 1, 0, 0)
+        self.rowsEdit.setText(str(rows))
+        self.columnsEdit.setText(str(columns))
+        self.xPitchEdit.setText(str(xPitch))
+        self.yPitchEdit.setText(str(yPitch))
+        # Legacy generic ParamDef callers do not represent a placement source.
+        self.arrayGroup.setVisible(sourceTuple is not None)
+        mainLayout.addWidget(self.arrayGroup)
+
         buttonBox = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok
             | QDialogButtonBox.StandardButton.Cancel)
@@ -121,13 +235,48 @@ class placeInstanceDialog(QDialog):
         buttonBox.accepted.connect(self._validateAndAccept)
         buttonBox.rejected.connect(self.reject)
 
+    def _connectValueChanged(self, widget):
+        if isinstance(widget, QCheckBox):
+            widget.toggled.connect(self._scheduleValuesChanged)
+        elif isinstance(widget, QComboBox):
+            widget.currentTextChanged.connect(self._scheduleValuesChanged)
+        else:
+            widget.textChanged.connect(self._scheduleValuesChanged)
+
+    def _scheduleValuesChanged(self, *_args):
+        self._refreshTimer.start(0)
+
+    def _emitValuesChanged(self):
+        if self._onValuesChanged is not None:
+            self._onValuesChanged(self.paramValues())
+
+    def refreshPreview(self):
+        """Synchronously refresh read-only callback values in this form."""
+        self._emitValuesChanged()
+
+    def arraySpec(self) -> tuple[int, int, int, int] | None:
+        """Return rows, columns, X pitch, Y pitch or ``None`` for 1×1."""
+        try:
+            rows = max(1, int(self.rowsEdit.text() or "1"))
+            columns = max(1, int(self.columnsEdit.text() or "1"))
+            xPitch = int(self.xPitchEdit.text() or "0")
+            yPitch = int(self.yPitchEdit.text() or "0")
+        except ValueError:
+            return None
+        if rows * columns <= 1:
+            return None
+        return rows, columns, max(0, xPitch), max(0, yPitch)
+
     def _validateAndAccept(self):
         errors = []
-        for pdef, getValue in self.paramRows:
+        values = {**self._validationContext, **self.paramValues()}
+        for row in self.labelRows:
+            pdef = row.get("paramDef")
+            if not row["isEditable"] or pdef is None:
+                continue
             errors.extend(
-                f"{pdef.name}: {e}"
-                for e in prm.validateValue(pdef, getValue(),
-                                           self.paramValues()))
+                f"{pdef.name}: {error}"
+                for error in prm.validateValue(pdef, row["getValue"](), values))
         if errors:
             from PySide6.QtWidgets import QMessageBox
             QMessageBox.warning(self, "Invalid parameters", "\n".join(errors))
@@ -135,8 +284,9 @@ class placeInstanceDialog(QDialog):
         self.accept()
 
     def paramValues(self) -> dict:
-        """Current form values as ``{paramName: value}``."""
-        return {pdef.name: getValue() for pdef, getValue in self.paramRows}
+        """Current editable label values, keyed by their persistent names."""
+        return {row["valueKey"]: row["getValue"]()
+                for row in self.labelRows if row["isEditable"]}
 
 
 class rectPropertyDialog(QDialog):
@@ -1198,3 +1348,88 @@ class moveByDialogue(QDialog):
         self.mainLayout.addWidget(coordsGroup)
         self.mainLayout.addWidget(self.buttonBox)
         self.setLayout(self.mainLayout)
+
+
+class copyOptionsDialogue(QDialog):
+    """Modeless copy-options form (Virtuoso F3 convention): place the
+    armed copy as a rows×columns array with Delta X/Y pitch.
+
+    Apply/Ok write the values into ``scene.copyOptions`` and call
+    ``scene.rearmClipboardPaste()`` so the floating ghost rebuilds live.
+    Delta fields accept quantiphy suffixes ("2u", "0.5"); layout values
+    are entered in user units (um) and converted through ``fabproc.dbu``.
+    An empty/zero delta means "use the copied fragment's bbox size".
+    """
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.editor = parent
+        self.scene = parent.centralW.scene
+        self.setWindowTitle("Copy Options")
+        self.setMinimumWidth(280)
+        mainLayout = QVBoxLayout()
+        arrayGroup = QGroupBox("Copy Array")
+        formLayout = QFormLayout(arrayGroup)
+        opts = self.scene.copyOptions
+        self.rowsEdit = edf.shortLineEdit(str(opts.rows))
+        self.rowsEdit.setValidator(QIntValidator(1, 1000, self))
+        formLayout.addRow(edf.boldLabel("Rows:"), self.rowsEdit)
+        self.colsEdit = edf.shortLineEdit(str(opts.columns))
+        self.colsEdit.setValidator(QIntValidator(1, 1000, self))
+        formLayout.addRow(edf.boldLabel("Columns:"), self.colsEdit)
+        pitchX, pitchY = self._displayPitch(opts.xOffset, opts.yOffset)
+        self.deltaXEdit = edf.shortLineEdit(pitchX)
+        self.deltaXEdit.setToolTip(
+            "Column pitch; empty or 0 uses the copied selection's width")
+        formLayout.addRow(edf.boldLabel("Delta X:"), self.deltaXEdit)
+        self.deltaYEdit = edf.shortLineEdit(pitchY)
+        self.deltaYEdit.setToolTip(
+            "Row pitch; empty or 0 uses the copied selection's height")
+        formLayout.addRow(edf.boldLabel("Delta Y:"), self.deltaYEdit)
+        mainLayout.addWidget(arrayGroup)
+        QBtn = (QDialogButtonBox.StandardButton.Apply
+                | QDialogButtonBox.StandardButton.Ok
+                | QDialogButtonBox.StandardButton.Cancel)
+        self.buttonBox = QDialogButtonBox(QBtn)
+        self.buttonBox.rejected.connect(self.reject)
+        self.buttonBox.button(
+            QDialogButtonBox.StandardButton.Apply).clicked.connect(
+            lambda: self._applyOptions(False))
+        self.buttonBox.button(
+            QDialogButtonBox.StandardButton.Ok).clicked.connect(
+            lambda: self._applyOptions(True))
+        mainLayout.addWidget(self.buttonBox)
+        self.setLayout(mainLayout)
+        self.show()
+
+    def _unitScale(self) -> float:
+        """Display-units-per-scene-unit for the pitch fields: layout
+        edits in user units (um), schematic/symbol in scene units."""
+        if self.editor.__class__.__name__ == "layoutEditor" and fabproc:
+            return fabproc.dbu
+        return 1.0
+
+    def _displayPitch(self, xOffset: float, yOffset: float) -> tuple:
+        scale = self._unitScale()
+        return f"{xOffset / scale:g}", f"{yOffset / scale:g}"
+
+    def _applyOptions(self, closeDialog: bool):
+        from PySide6.QtWidgets import QMessageBox
+        try:
+            rows = max(1, int(self.rowsEdit.text() or "1"))
+            cols = max(1, int(self.colsEdit.text() or "1"))
+            scale = self._unitScale()
+            dx = float(Quantity(self.deltaXEdit.text() or "0").real) * scale
+            dy = float(Quantity(self.deltaYEdit.text() or "0").real) * scale
+        except Exception as error:
+            QMessageBox.warning(
+                self, "Invalid copy options",
+                f"Rows/Columns must be positive integers and the deltas "
+                f"numeric values.\n{error}")
+            return
+        opts = self.scene.copyOptions
+        opts.rows, opts.columns = rows, cols
+        opts.xOffset, opts.yOffset = dx, dy
+        self.scene.rearmClipboardPaste()
+        if closeDialog:
+            self.accept()

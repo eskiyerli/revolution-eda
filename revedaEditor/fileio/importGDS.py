@@ -12,6 +12,7 @@ import revedaEditor.backend.libBackEnd as libb
 import revedaEditor.backend.libraryMethods as libm
 import revedaEditor.common.layoutShapes as lshp
 import revedaEditor.fileio.layoutEncoder as layenc
+import revedaEditor.fileio.schemaValidation as sv
 from revedaEditor.backend.pdkLoader import lazyPDKModule
 
 fabproc = lazyPDKModule("process")
@@ -124,7 +125,7 @@ class gdsImporter:
             # Write as floats: loadDesign treats float snapGrid values as
             # layout units and ints as legacy scene-unit values.
             headerRecords = (
-                {"viewType": "layout"},
+                sv.make_view_header("layout"),
                 {"snapGrid": [float(fabproc.majorGrid), float(fabproc.snapGrid)]},
             )
             # Track if we need to write comma between items

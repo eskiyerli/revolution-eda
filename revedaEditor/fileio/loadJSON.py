@@ -31,6 +31,7 @@ import revedaEditor.common.net as net
 import revedaEditor.common.params as prm
 import revedaEditor.common.shapes as shp
 import revedaEditor.fileio.symbolEncoder as se
+import revedaEditor.fileio.schemaValidation as sv
 from revedaEditor.backend.pdkLoader import lazyPDKModule
 
 laylyr = lazyPDKModule('layoutLayers')
@@ -261,6 +262,7 @@ class schematicItems:
             "scn": self._createNet,
             "scp": self._createPin,
             "txt": self._createText,
+            "Group": self._createGroup,
         }
 
     @staticmethod
@@ -279,6 +281,19 @@ class schematicItems:
             if creator is not None:
                 return creator(item)
         return None
+
+    def _createGroup(self, item):
+        """Rebuild a persisted symbols-only schematic mosaic."""
+        members = []
+        for record in item.get("items", []):
+            if not isinstance(record, dict) or record.get("type") != "sys":
+                continue
+            symbol = self._createSymbolShape(record)
+            if symbol is not None:
+                members.append(symbol)
+        group = shp.schematicGroup(members)
+        group.setPos(QPoint(*item.get("loc", (0, 0))))
+        return group
 
     def _createText(self, item):
         start = QPoint(0, 0)
@@ -376,6 +391,19 @@ class schematicItems:
                 if jsonItems is None:
                     self.scene.logger.error("Error: Invalid or missing Symbol file")
                     return None
+                try:
+                    jsonItems, compatibility = sv.prepare_design_data(
+                        jsonItems, "symbol", file_path_str)
+                except sv.DesignFileValidationError as error:
+                    self.scene.logger.error(
+                        f"Invalid symbol file {file_path_str}: "
+                        f"{'; '.join(error.errors or [str(error)])}")
+                    return None
+                if compatibility.migrated:
+                    self.scene.logger.info(
+                        f"Migrated symbol schema "
+                        f"{compatibility.sourceVersion} to "
+                        f"{compatibility.targetVersion}: {file_path_str}")
                 try:
                     symbolShape = self._symbolItems
                     for jsonItem in itertools.islice(jsonItems, 2, None):
@@ -493,6 +521,7 @@ class layoutItems:
             "Via": self.createViaArrayShape,
             "Ruler": self.createRulerShape,
             "Multipart": self.createMultipartShape,
+            "Group": self.createGroupShape,
         }
 
     def create(self, item):
@@ -695,6 +724,20 @@ class layoutItems:
                     QRectF(*bbox), rec, translate=rec["loc"]
                 )
             return self._UNBOUNDABLE
+        if rtype == "Group":
+            bounds = None
+            for child in rec.get("items", []):
+                r = self._recordBounds(child, activePaths)
+                if r is self._UNBOUNDABLE:
+                    return self._UNBOUNDABLE
+                if r is None:
+                    continue
+                bounds = r if bounds is None else bounds.united(r)
+            if bounds is None:
+                return None
+            return self._applyRecordTransform(
+                bounds.adjusted(-2, -2, 2, 2), rec, translate=rec.get("loc")
+            )
         # Unknown or unboundable record type: force eager loading.
         return self._UNBOUNDABLE
 
@@ -731,11 +774,20 @@ class layoutItems:
 
         file_path = library_path / item["cell"] / f"{item['view']}.json"
         pcell_def = PCellCache.getPCellDef(str(file_path))
-        if not pcell_def or pcell_def[0].get("cellView") != "pcell":
-            self.scene.logger.error("Not a PCell cell")
+        try:
+            pcell_def, compatibility = sv.prepare_pcell_definition(
+                pcell_def, str(file_path))
+        except sv.DesignFileValidationError as error:
+            self.scene.logger.error(
+                f"Invalid PCell definition {file_path}: "
+                f"{'; '.join(error.errors or [str(error)])}")
             return None
+        if compatibility.migrated:
+            self.scene.logger.info(
+                f"Migrated PCell schema {compatibility.sourceVersion} "
+                f"to {compatibility.targetVersion}: {file_path}")
 
-        pcell_class = PCellCache.getPCellClass(pcell_def[1].get("reference"))
+        pcell_class = PCellCache.getPCellClass(pcell_def[1]["reference"])
         if not pcell_class:
             self.scene.logger.error(
                 f"Unknown PCell class: {pcell_def[1].get('reference')}")
@@ -782,6 +834,19 @@ class layoutItems:
         file_contents = self._load_json_file(str(file_path))
         if not file_contents:
             return None
+
+        try:
+            file_contents, compatibility = sv.prepare_design_data(
+                file_contents, "layout", str(file_path))
+        except sv.DesignFileValidationError as error:
+            self.scene.logger.error(
+                f"Invalid layout file {file_path}: "
+                f"{'; '.join(error.errors or [str(error)])}")
+            return None
+        if compatibility.migrated:
+            self.scene.logger.info(
+                f"Migrated layout schema {compatibility.sourceVersion} "
+                f"to {compatibility.targetVersion}: {file_path}")
 
         file_path_key = str(file_path)
         if file_path_key in self._active_layout_paths:
@@ -948,6 +1013,22 @@ class layoutItems:
         shape.setPos(QPointF(*item.get("loc", (0, 0))))
         self._set_common_attrs(shape, item)
         return shape
+
+    def createGroupShape(self, item):
+        # Member records are stored in group-local coordinates; the group's
+        # loc/top/ang/fl carries whatever transform it accumulated while
+        # grouped (same convention as instances).
+        members = []
+        for record in item.get("items", []):
+            if not isinstance(record, dict):
+                continue
+            shape = self.create(record)
+            if shape is not None:
+                members.append(shape)
+        group = lshp.layoutGroup(members)
+        group.setPos(QPointF(*item.get("loc", (0, 0))))
+        self._set_common_attrs(group, item)
+        return group
 
     def unknownItem(self, item=None):
         return None

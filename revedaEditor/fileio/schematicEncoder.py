@@ -20,6 +20,8 @@ import revedaEditor.common.shapes as shp
 
 class schematicEncoder(json.JSONEncoder):
     def default(self, item: Any) -> Dict[str, Any]:
+        if isinstance(item, shp.schematicGroup):
+            return self._encodeSchematicGroup(item)
         if isinstance(item, shp.schematicSymbol):
             return self._encodeSchematicSymbol(item)
         elif isinstance(item, net.schematicNet):
@@ -30,13 +32,14 @@ class schematicEncoder(json.JSONEncoder):
             return self._encodeText(item)
         return super().default(item)
 
-    def _encodeSchematicSymbol(self, item: shp.schematicSymbol) -> Dict[str, Any]:
+    def _encodeSchematicSymbol(self, item: shp.schematicSymbol,
+                               scene_origin: QPointF | None = None) -> Dict[str, Any]:
         item_label_dict = (
             item.labelDict if item.draft
             else {label.labelName: [label.labelValue, label.labelVisible]
                   for label in item.labels.values()}
         )
-        scene_origin = item.scene().origin
+        scene_origin = scene_origin if scene_origin is not None else item.scene().origin
         record = {
             "type": "sys",
             "lib": item.libraryName,
@@ -54,6 +57,16 @@ class schematicEncoder(json.JSONEncoder):
         if item.netSet:
             record["nst"] = dict(item.netSet)
         return record
+
+    def _encodeSchematicGroup(self, item: shp.schematicGroup) -> Dict[str, Any]:
+        """Persist a symbols-only mosaic in the group's local frame."""
+        groupOrigin = item.scenePos()
+        return {
+            "type": "Group",
+            "loc": self._subtract_point(groupOrigin, item.scene().origin),
+            "items": [self._encodeSchematicSymbol(symbol, groupOrigin)
+                      for symbol in item.symbols],
+        }
 
     def _encodeSchematicNet(self, item: net.schematicNet) -> Dict[str, Any]:
         scene_origin = item.scene().origin

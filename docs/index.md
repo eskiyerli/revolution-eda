@@ -72,6 +72,20 @@ and Python labels (dynamic calculation based on other parameters).
 
 ------
 
+### [Symbol Labels and Parameters](./parameters.md)
+
+Explains the difference between visible symbol labels and typed CDF-lite instance
+parameters (`paramDefs`), including how to make values available in the F3 placement form.
+
+------
+
+### [Cellview Schema Migration](./schemaMigration.md)
+
+Defines the JSON header, compatibility, migration, and persistence checklist used to keep
+schematic, symbol, layout, and PCell records safely readable across format changes.
+
+------
+
 ### [Layout Editor](./layoutTutorial.md)
 
 The layout editor is a full-featured tool for physical layout design of custom integrated

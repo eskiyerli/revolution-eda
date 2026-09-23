@@ -19,6 +19,8 @@ from PySide6.QtCore import (Qt, )
 from PySide6.QtGui import (QStandardItem, )
 from PySide6.QtWidgets import QMessageBox, QWidget
 
+import revedaEditor.fileio.schemaValidation as sv
+
 # File-backed text view types and the suffix of the netlist/model file each
 # view refers to.
 TEXT_VIEW_SUFFIXES = {
@@ -300,11 +302,11 @@ def createCellviewItem(viewName, viewPath)->viewItem:
     viewPath.touch()  # create empty cell view path
     items = list()
     if "schematic" in viewName:
-        items.insert(0, {"viewType": "schematic"})
+        items = [sv.make_view_header("schematic"), {}]
     elif "symbol" in viewName:
-        items.insert(0, {"viewType": "symbol"})
+        items = [sv.make_view_header("symbol"), {}]
     elif "layout" in viewName:
-        items.insert(0, {"viewType": "layout"})
+        items = [sv.make_view_header("layout"), {}]
     elif "pcell" in viewName:
         items.insert(0, {"viewType": "pcell"})
     elif "spice" in viewName:

@@ -41,6 +41,7 @@ import revedaEditor.gui.editorWindow as edw
 import revedaEditor.gui.fileDialogues as fd
 import revedaEditor.gui.layoutDialogues as ldlg
 import revedaEditor.gui.lsw as lsw
+import revedaEditor.common.layoutShapes as lshp
 from revedaEditor.backend.pdkLoader import lazyPDKModule
 from revedaEditor.scenes.layoutScene import layoutScene
 
@@ -133,6 +134,12 @@ class layoutEditor(edw.editorWindow):
         self.makeCellAction = QAction("Make Cell From Selection...", self)
         self.makeCellAction.setToolTip(
             "Write selected items to a new cell and replace with an instance")
+        self.groupItemsAction = QAction("Group Items", self)
+        self.groupItemsAction.setToolTip(
+            "Group selected items so they select/move/copy as one unit")
+        self.ungroupItemsAction = QAction("Ungroup Items", self)
+        self.ungroupItemsAction.setToolTip(
+            "Explode selected groups back into their items")
 
     def _addActions(self):
         super()._addActions()
@@ -146,6 +153,9 @@ class layoutEditor(edw.editorWindow):
         self.menuEdit.addAction(self.cutAction)
         self.menuEdit.addAction(self.mergeAction)
         self.menuEdit.addAction(self.layerOpsAction)
+        self.menuEdit.addSeparator()
+        self.menuEdit.addAction(self.groupItemsAction)
+        self.menuEdit.addAction(self.ungroupItemsAction)
         self.menuCreate.addAction(self.createInstAction)
         self.menuCreate.addAction(self.createRectAction)
         self.menuCreate.addAction(self.createPathAction)
@@ -191,6 +201,8 @@ class layoutEditor(edw.editorWindow):
         super()._editorContextMenu()
         self.centralW.scene.itemContextMenu.addAction(self.goDownAction)
         self.centralW.scene.itemContextMenu.addAction(self.mergeAction)
+        self.centralW.scene.itemContextMenu.addAction(self.groupItemsAction)
+        self.centralW.scene.itemContextMenu.addAction(self.ungroupItemsAction)
 
     def _createToolBars(self):
         super()._createToolBars()
@@ -236,6 +248,10 @@ class layoutEditor(edw.editorWindow):
         self.goDownAction.triggered.connect(self.goDownClick)
         self.flattenAction.triggered.connect(self.flattenClick)
         self.makeCellAction.triggered.connect(self.makeCellClick)
+        self.groupItemsAction.triggered.connect(
+            lambda: self.centralW.scene.groupSelectedItems())
+        self.ungroupItemsAction.triggered.connect(
+            lambda: self.centralW.scene.ungroupSelectedItems())
         self.renumberInstanceAction.triggered.connect(self.renumberInstanceClick)
         self.sdlLoadAction.triggered.connect(self.sdlLoadClick)
         self.flylinesAction.triggered.connect(
@@ -263,6 +279,8 @@ class layoutEditor(edw.editorWindow):
         self.delRulerAction.setShortcut("Shift+K")
         self.cutAction.setShortcut("Shift+C")
         self.mergeAction.setShortcut("Ctrl+M")
+        self.groupItemsAction.setShortcut("Ctrl+G")
+        self.ungroupItemsAction.setShortcut("Ctrl+Shift+G")
 
     def highlightNetClick(self, s):
         self.centralW.scene.editModes.setMode("highlightNet")
@@ -395,169 +413,254 @@ class layoutEditor(edw.editorWindow):
                 pathName, pathLayer, pathMode, pathWidth, startExtend, endExtend
             )
 
-    def createPinClick(self):
-        dlg = ldlg.createLayoutPinDialog(self)
-        pinLayersNames = [f"{item.name} [{item.purpose}]" for item in laylyr.pdkPinLayers]
-        labelLayers = getattr(laylyr, "pdkLabelLayers", laylyr.pdkTextLayers)
-        labelLayersNames = [f"{item.name} [{item.purpose}]" for item in labelLayers]
-        dlg.pinLayerCB.addItems(pinLayersNames)
-        dlg.labelLayerCB.addItems(labelLayersNames)
+    def editActivePlacementOptions(self) -> bool:
+        """Open the F3 form for the current non-path layout placement mode."""
+        scene = self.centralW.scene
+        if scene.editModes.addVia:
+            self._configureViaPlacement()
+        elif scene.editModes.addInstance:
+            self._configureLayoutInstanceOptions()
+        elif scene.editModes.drawMultipart:
+            self._configureMultipartPlacement()
+        elif scene.editModes.drawPin:
+            self._configureLayoutPinPlacement()
+        elif scene.editModes.addLabel:
+            self._configureLayoutLabelPlacement()
+        else:
+            return False
+        return True
 
-        if self.centralW.scene.newPinTuple is not None:
+    def _configureLayoutInstanceOptions(self) -> bool:
+        """Prepare PCell values and mosaic geometry for the next placement."""
+        scene = self.centralW.scene
+        if scene.layoutInstanceTuple is None:
+            self.messageLine.setText("Choose an instance before opening options")
+            return False
+        preview = scene.instLayout(scene.layoutInstanceTuple)
+        if preview is None:
+            return False
+        # instLayout allocates an instance counter even for this options-only
+        # preview; return it so F3 does not create a numbering gap.
+        scene.itemCounter -= 1
+        dlg = ldlg.layoutInstanceDialogue(self)
+        dlg.instanceLibName.setText(preview.libraryName)
+        dlg.instanceCellName.setText(preview.cellName)
+        dlg.instanceViewName.setText(preview.viewName)
+        dlg.arrayGroup.show()
+        dlg.rowsEdit.setText("1")
+        dlg.colsEdit.setText("1")
+        dlg.rowPitchEdit.setText("0")
+        dlg.colPitchEdit.setText("0")
+        previous = scene.pendingInstanceOptions or {}
+        previousArray = previous.get("arraySpec")
+        if previousArray is not None:
+            rows, cols, rowPitch, colPitch = previousArray
+            dlg.rowsEdit.setText(str(rows))
+            dlg.colsEdit.setText(str(cols))
+            dlg.rowPitchEdit.setText(f"{rowPitch / fabproc.dbu:g}")
+            dlg.colPitchEdit.setText(f"{colPitch / fabproc.dbu:g}")
+        pcellValues = None
+        if isinstance(preview, lshp.layoutPcell):
+            lineEditDict = scene.extractPcellInstanceParameters(preview)
+            if lineEditDict:
+                dlg.pcellParamsGroup.show()
+                pcellValues = previous.get("pcellValues", {})
+                for key, field in lineEditDict.items():
+                    field.setText(str(pcellValues.get(key, field.text())))
+                    dlg.pcellParamsLayout.addRow(key, field)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return False
+        arraySpec = dlg.arraySpec()
+        if arraySpec is not None:
+            rows, cols, rowPitch, colPitch = arraySpec
+            arraySpec = (rows, cols, rowPitch * fabproc.dbu, colPitch * fabproc.dbu)
+        scene.pendingInstanceOptions = {
+            "pcellValues": (
+                {key: field.text() for key, field in lineEditDict.items()}
+                if isinstance(preview, lshp.layoutPcell) else None),
+            "arraySpec": arraySpec,
+        }
+        return True
+
+    def createPinClick(self):
+        self._configureLayoutPinPlacement(activate=True)
+
+    def _configureLayoutPinPlacement(self, activate: bool = False) -> bool:
+        """Edit the pending layout pin and its associated label settings."""
+        scene = self.centralW.scene
+        dlg = ldlg.createLayoutPinDialog(self)
+        pinLayers = list(laylyr.pdkPinLayers)
+        labelLayers = list(getattr(laylyr, "pdkLabelLayers", laylyr.pdkTextLayers))
+        dlg.pinLayerCB.addItems(
+            [f"{item.name} [{item.purpose}]" for item in pinLayers])
+        dlg.labelLayerCB.addItems(
+            [f"{item.name} [{item.purpose}]" for item in labelLayers])
+        if scene.newPinTuple is not None:
+            pin = scene.newPinTuple
+            dlg.pinName.setText(pin.pinName)
+            dlg.pinDir.setCurrentText(pin.pinDir)
+            dlg.pinType.setCurrentText(pin.pinType)
             dlg.pinLayerCB.setCurrentText(
-                f"{self.centralW.scene.newPinTuple.pinLayer.name} "
-                f"[{self.centralW.scene.newPinTuple.pinLayer.purpose}]"
-            )
-        if self.centralW.scene.newLabelTuple is not None:
+                f"{pin.pinLayer.name} [{pin.pinLayer.purpose}]")
+        if scene.newLabelTuple is not None:
+            label = scene.newLabelTuple
             dlg.labelLayerCB.setCurrentText(
-                f"{self.centralW.scene.newLabelTuple.labelLayer.name} ["
-                f"{self.centralW.scene.newLabelTuple.labelLayer.purpose}]"
-            )
-            dlg.familyCB.setCurrentText(self.centralW.scene.newLabelTuple.fontFamily)
-            dlg.fontStyleCB.setCurrentText(self.centralW.scene.newLabelTuple.fontStyle)
-            dlg.labelHeightCB.setCurrentText(
-                str(self.centralW.scene.newLabelTuple.fontHeight)
-            )
-            dlg.labelAlignCB.setCurrentText(self.centralW.scene.newLabelTuple.labelAlign)
-            dlg.labelOrientCB.setCurrentText(self.centralW.scene.newLabelTuple.labelOrient)
-        if dlg.exec() == QDialog.DialogCode.Accepted:
-            self.centralW.scene.editModes.setMode("drawPin")
-            pinName = dlg.pinName.text()
-            pinDir = dlg.pinDir.currentText()
-            pinType = dlg.pinType.currentText()
-            pinLayerName = dlg.pinLayerCB.currentText().split()[0]
-            pinLayer = [item for item in laylyr.pdkPinLayers if item.name == pinLayerName][
-                0
-            ]
-            labelLayerName = dlg.labelLayerCB.currentText().split()[0]
-            labelLayerPurpose = dlg.labelLayerCB.currentText().split()[1].strip("[]")
-            labelLayer = [
-                item for item in labelLayers
-                if item.name == labelLayerName and item.purpose == labelLayerPurpose
-            ][0]
-            fontFamily = dlg.familyCB.currentText()
-            fontStyle = dlg.fontStyleCB.currentText()
-            labelHeight = float(dlg.labelHeightCB.currentText())
-            labelAlign = dlg.labelAlignCB.currentText()
-            labelOrient = dlg.labelOrientCB.currentText()
-            self.centralW.scene.newPinTuple = ddef.layoutPinTuple(
-                pinName, pinDir, pinType, pinLayer
-            )
-            self.centralW.scene.newLabelTuple = ddef.layoutLabelTuple(
-                pinName,
-                fontFamily,
-                fontStyle,
-                labelHeight,
-                labelAlign,
-                labelOrient,
-                labelLayer,
-            )
+                f"{label.labelLayer.name} [{label.labelLayer.purpose}]")
+            dlg.familyCB.setCurrentText(label.fontFamily)
+            dlg.fontStyleCB.setCurrentText(label.fontStyle)
+            dlg.labelHeightCB.setCurrentText(str(label.fontHeight))
+            dlg.labelAlignCB.setCurrentText(label.labelAlign)
+            dlg.labelOrientCB.setCurrentText(label.labelOrient)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return False
+        pinLayerName, pinLayerPurpose = dlg.pinLayerCB.currentText().split()
+        labelLayerName, labelLayerPurpose = dlg.labelLayerCB.currentText().split()
+        pinLayer = next(
+            item for item in pinLayers
+            if item.name == pinLayerName and item.purpose == pinLayerPurpose.strip("[]"))
+        labelLayer = next(
+            item for item in labelLayers
+            if item.name == labelLayerName
+            and item.purpose == labelLayerPurpose.strip("[]"))
+        scene.newPinTuple = ddef.layoutPinTuple(
+            dlg.pinName.text(), dlg.pinDir.currentText(), dlg.pinType.currentText(),
+            pinLayer)
+        scene.newLabelTuple = ddef.layoutLabelTuple(
+            dlg.pinName.text(), dlg.familyCB.currentText(),
+            dlg.fontStyleCB.currentText(), float(dlg.labelHeightCB.currentText()),
+            dlg.labelAlignCB.currentText(), dlg.labelOrientCB.currentText(), labelLayer)
+        if activate:
+            scene.editModes.setMode("drawPin")
+        return True
 
     def createLabelClick(self):
+        self._configureLayoutLabelPlacement(activate=True)
+
+    def _configureLayoutLabelPlacement(self, activate: bool = False) -> bool:
+        """Edit the pending layout label settings without cancelling placement."""
+        scene = self.centralW.scene
         dlg = ldlg.createLayoutLabelDialog(self)
-        labelLayers = getattr(laylyr, "pdkLabelLayers", laylyr.pdkTextLayers)
-        labelLayersNames = [f"{item.name} [{item.purpose}]" for item in labelLayers]
-        dlg.labelLayerCB.addItems(labelLayersNames)
-        if dlg.exec() == QDialog.DialogCode.Accepted:
-            self.centralW.scene.editModes.setMode("addLabel")
-            labelName = dlg.labelName.text()
-            labelLayerName = dlg.labelLayerCB.currentText().split()[0]
-            labelLayerPurpose = dlg.labelLayerCB.currentText().split()[1].strip("[]")
-            labelLayer = [
-                item for item in labelLayers
-                if item.name == labelLayerName and item.purpose == labelLayerPurpose
-            ][0]
-            fontFamily = dlg.familyCB.currentText()
-            fontStyle = dlg.fontStyleCB.currentText()
-            fontHeight = dlg.labelHeightCB.currentText()
-            labelAlign = dlg.labelAlignCB.currentText()
-            labelOrient = dlg.labelOrientCB.currentText()
-            self.centralW.scene.newLabelTuple = ddef.layoutLabelTuple(
-                labelName,
-                fontFamily,
-                fontStyle,
-                fontHeight,
-                labelAlign,
-                labelOrient,
-                labelLayer,
-            )
+        labelLayers = list(getattr(laylyr, "pdkLabelLayers", laylyr.pdkTextLayers))
+        dlg.labelLayerCB.addItems(
+            [f"{item.name} [{item.purpose}]" for item in labelLayers])
+        if scene.newLabelTuple is not None:
+            label = scene.newLabelTuple
+            dlg.labelName.setText(label.labelText)
+            dlg.labelLayerCB.setCurrentText(
+                f"{label.labelLayer.name} [{label.labelLayer.purpose}]")
+            dlg.familyCB.setCurrentText(label.fontFamily)
+            dlg.fontStyleCB.setCurrentText(label.fontStyle)
+            dlg.labelHeightCB.setCurrentText(str(label.fontHeight))
+            dlg.labelAlignCB.setCurrentText(label.labelAlign)
+            dlg.labelOrientCB.setCurrentText(label.labelOrient)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return False
+        layerName, layerPurpose = dlg.labelLayerCB.currentText().split()
+        labelLayer = next(
+            item for item in labelLayers
+            if item.name == layerName and item.purpose == layerPurpose.strip("[]"))
+        scene.newLabelTuple = ddef.layoutLabelTuple(
+            dlg.labelName.text(), dlg.familyCB.currentText(),
+            dlg.fontStyleCB.currentText(), dlg.labelHeightCB.currentText(),
+            dlg.labelAlignCB.currentText(), dlg.labelOrientCB.currentText(), labelLayer)
+        if activate:
+            scene.editModes.setMode("addLabel")
+        return True
 
     def createViaClick(self):
+        self._configureViaPlacement(activate=True)
+
+    def _configureViaPlacement(self, activate: bool = False) -> bool:
+        """Edit the pending single/array via specification used by placement."""
+        scene = self.centralW.scene
         dlg = ldlg.createLayoutViaDialog(self)
-        viaLayerNames = [item.name for item in fabproc.processVias]
-        dlg.singleViaNamesCB.addItems(viaLayerNames)
-        dlg.arrayViaNamesCB.addItems(viaLayerNames)
-        dlg.singleViaWidthEdit.setText(str(fabproc.processVias[0].minWidth))
-        dlg.singleViaHeightEdit.setText(str(fabproc.processVias[0].minHeight))
-        dlg.arrayViaWidthEdit.setText(str(fabproc.processVias[0].minWidth))
-        dlg.arrayViaHeightEdit.setText(str(fabproc.processVias[0].minHeight))
-        dlg.arrayXspacingEdit.setText(str(fabproc.processVias[0].minSpacing))
-        dlg.arrayYspacingEdit.setText(str(fabproc.processVias[0].minSpacing))
-        dlg.singleBottomEncEdit.setText(
-            str(getattr(fabproc.processVias[0], "bottomEnclosure", 0.0))
-        )
-        dlg.singleTopEncEdit.setText(
-            str(getattr(fabproc.processVias[0], "topEnclosure", 0.0))
-        )
-        dlg.arrayBottomEncEdit.setText(
-            str(getattr(fabproc.processVias[0], "bottomEnclosure", 0.0))
-        )
-        dlg.arrayTopEncEdit.setText(
-            str(getattr(fabproc.processVias[0], "topEnclosure", 0.0))
-        )
-        if dlg.exec() == QDialog.DialogCode.Accepted:
-            self.centralW.scene.editModes.setMode("addVia")
-            self.centralW.scene.addVia = True
-            if dlg.singleViaRB.isChecked():
-                selViaDefTuple = fabproc.processVias[
-                    fabproc.processViaNames.index(dlg.singleViaNamesCB.currentText())
-                ]
-
-                singleViaTuple = ddef.singleViaTuple(
-                    selViaDefTuple,
-                    fabproc.dbu * float(dlg.singleViaWidthEdit.text().strip()),
-                    fabproc.dbu * float(dlg.singleViaHeightEdit.text().strip()),
-                    float(dlg.singleBottomEncEdit.text().strip()),
-                    float(dlg.singleTopEncEdit.text().strip()),
-                )
-                self.centralW.scene.arrayViaTuple = ddef.arrayViaTuple(
-                    singleViaTuple,
-                    fabproc.dbu * selViaDefTuple.minSpacing,
-                    fabproc.dbu * selViaDefTuple.minSpacing,
-                    1,
-                    1,
-                )
-            else:
-                selViaDefTuple = [
-                    viaDefTuple
-                    for viaDefTuple in fabproc.processVias
-                    if viaDefTuple.name == dlg.arrayViaNamesCB.currentText()
-                ][0]
-
-                singleViaTuple = ddef.singleViaTuple(
-                    selViaDefTuple,
-                    fabproc.dbu * float(dlg.arrayViaWidthEdit.text().strip()),
-                    fabproc.dbu * float(dlg.arrayViaHeightEdit.text().strip()),
-                    float(dlg.arrayBottomEncEdit.text().strip()),
-                    float(dlg.arrayTopEncEdit.text().strip()),
-                )
-                self.centralW.scene.arrayViaTuple = ddef.arrayViaTuple(
-                    singleViaTuple,
-                    fabproc.dbu * float(dlg.arrayXspacingEdit.text().strip()),
-                    fabproc.dbu * float(dlg.arrayYspacingEdit.text().strip()),
-                    int(float(dlg.arrayXNumEdit.text().strip())),
-                    int(float(dlg.arrayYNumEdit.text().strip())),
-                )
+        viaNames = [item.name for item in fabproc.processVias]
+        dlg.singleViaNamesCB.addItems(viaNames)
+        dlg.arrayViaNamesCB.addItems(viaNames)
+        current = scene.arrayViaTuple
+        if current is None:
+            selected = fabproc.processVias[0]
+            dlg.singleViaWidthEdit.setText(str(selected.minWidth))
+            dlg.singleViaHeightEdit.setText(str(selected.minHeight))
+            dlg.arrayViaWidthEdit.setText(str(selected.minWidth))
+            dlg.arrayViaHeightEdit.setText(str(selected.minHeight))
+            dlg.arrayXspacingEdit.setText(str(selected.minSpacing))
+            dlg.arrayYspacingEdit.setText(str(selected.minSpacing))
+            dlg.singleBottomEncEdit.setText(str(getattr(selected, "bottomEnclosure", 0.0)))
+            dlg.singleTopEncEdit.setText(str(getattr(selected, "topEnclosure", 0.0)))
+            dlg.arrayBottomEncEdit.setText(str(getattr(selected, "bottomEnclosure", 0.0)))
+            dlg.arrayTopEncEdit.setText(str(getattr(selected, "topEnclosure", 0.0)))
         else:
-            self.centralW.scene.editModes.setMode("selectItem")
+            via = current.singleViaTuple
+            isArray = current.xnum > 1 or current.ynum > 1
+            if isArray:
+                dlg.arrayViaRB.click()
+            else:
+                dlg.singleViaRB.click()
+            for combo in (dlg.singleViaNamesCB, dlg.arrayViaNamesCB):
+                combo.setCurrentText(via.viaDefTuple.name)
+            width = f"{via.width / fabproc.dbu:g}"
+            height = f"{via.height / fabproc.dbu:g}"
+            dlg.singleViaWidthEdit.setText(width)
+            dlg.singleViaHeightEdit.setText(height)
+            dlg.arrayViaWidthEdit.setText(width)
+            dlg.arrayViaHeightEdit.setText(height)
+            bottomEnc = (via.bottomEnclosure if via.bottomEnclosure is not None
+                         else getattr(via.viaDefTuple, "bottomEnclosure", 0.0))
+            topEnc = (via.topEnclosure if via.topEnclosure is not None
+                      else getattr(via.viaDefTuple, "topEnclosure", 0.0))
+            dlg.singleBottomEncEdit.setText(str(bottomEnc))
+            dlg.singleTopEncEdit.setText(str(topEnc))
+            dlg.arrayBottomEncEdit.setText(str(bottomEnc))
+            dlg.arrayTopEncEdit.setText(str(topEnc))
+            dlg.arrayXspacingEdit.setText(f"{current.xs / fabproc.dbu:g}")
+            dlg.arrayYspacingEdit.setText(f"{current.ys / fabproc.dbu:g}")
+            dlg.arrayXNumEdit.setText(str(current.xnum))
+            dlg.arrayYNumEdit.setText(str(current.ynum))
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return False
+        if dlg.singleViaRB.isChecked():
+            viaDef = next(item for item in fabproc.processVias
+                          if item.name == dlg.singleViaNamesCB.currentText())
+            singleVia = ddef.singleViaTuple(
+                viaDef, fabproc.dbu * float(dlg.singleViaWidthEdit.text()),
+                fabproc.dbu * float(dlg.singleViaHeightEdit.text()),
+                float(dlg.singleBottomEncEdit.text()),
+                float(dlg.singleTopEncEdit.text()))
+            scene.arrayViaTuple = ddef.arrayViaTuple(
+                singleVia, fabproc.dbu * viaDef.minSpacing,
+                fabproc.dbu * viaDef.minSpacing, 1, 1)
+        else:
+            viaDef = next(item for item in fabproc.processVias
+                          if item.name == dlg.arrayViaNamesCB.currentText())
+            singleVia = ddef.singleViaTuple(
+                viaDef, fabproc.dbu * float(dlg.arrayViaWidthEdit.text()),
+                fabproc.dbu * float(dlg.arrayViaHeightEdit.text()),
+                float(dlg.arrayBottomEncEdit.text()),
+                float(dlg.arrayTopEncEdit.text()))
+            scene.arrayViaTuple = ddef.arrayViaTuple(
+                singleVia, fabproc.dbu * float(dlg.arrayXspacingEdit.text()),
+                fabproc.dbu * float(dlg.arrayYspacingEdit.text()),
+                int(float(dlg.arrayXNumEdit.text())),
+                int(float(dlg.arrayYNumEdit.text())))
+        if activate:
+            scene.editModes.setMode("addVia")
+        return True
 
     def createMultipartClick(self, s):
-        dlg = ldlg.createMultipartDialogue(self)
-        if dlg.exec_() == QDialog.DialogCode.Accepted:
-            self.centralW.scene.newMultipartSpec = dlg.selectedSpec()
-            self.centralW.scene.editModes.setMode("drawMultipart")
-            self.messageLine.setText(
-                "Click the start point, then click again to finish.")
+        self._configureMultipartPlacement(activate=True)
+
+    def _configureMultipartPlacement(self, activate: bool = False) -> bool:
+        """Edit the pending multipart specification used by the two-click draw."""
+        scene = self.centralW.scene
+        dlg = ldlg.createMultipartDialogue(self, scene.newMultipartSpec)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return False
+        scene.newMultipartSpec = dlg.selectedSpec()
+        if activate:
+            scene.editModes.setMode("drawMultipart")
+            self.messageLine.setText("Click the start point, then click again to finish.")
+        return True
 
     def createPolygonClick(self):
         self.centralW.scene.editModes.setMode("drawPolygon")
@@ -600,20 +703,24 @@ class layoutEditor(edw.editorWindow):
             QApplication.restoreOverrideCursor()
 
     def createInstClick(self, s):
-        # create a designLibrariesView
+        self._selectLayoutInstance(activate=True)
+
+    def _selectLayoutInstance(self, activate: bool = False) -> bool:
+        """Select the source cellview for the next layout instance placement."""
         libraryModel = lmview.layoutViewsModel(self.libraryDict, self.layoutViews)
-        self.layoutChooser = fd.selectCellViewDialog(self, libraryModel)
-        if self.layoutChooser.exec() == QDialog.DialogCode.Accepted:
+        chooser = fd.selectCellViewDialog(self, libraryModel)
+        if chooser.exec() != QDialog.DialogCode.Accepted:
+            return False
+        libItem = libm.getLibItem(libraryModel, chooser.libNamesCB.currentText())
+        cellItem = libm.getCellItem(libItem, chooser.cellCB.currentText())
+        viewItem = libm.getViewItem(cellItem, chooser.viewCB.currentText())
+        self.layoutChooser = chooser
+        self.centralW.scene.layoutInstanceTuple = ddef.viewItemTuple(
+            libItem, cellItem, viewItem)
+        self.centralW.scene.pendingInstanceOptions = None
+        if activate:
             self.centralW.scene.editModes.setMode("addInstance")
-            libItem = libm.getLibItem(
-                libraryModel, self.layoutChooser.libNamesCB.currentText()
-            )
-            cellItem = libm.getCellItem(libItem, self.layoutChooser.cellCB.currentText())
-            viewItem = libm.getViewItem(cellItem, self.layoutChooser.viewCB.currentText())
-            # libm.findViewItem(libraryModel, self.layoutChooser.libNamesCB.currentText())
-            self.centralW.scene.layoutInstanceTuple = ddef.viewItemTuple(
-                libItem, cellItem, viewItem
-            )
+        return True
 
     def _exportLayoutCell(self, export_format="GDS"):
         """Export layout cell in the specified format (GDS or OAS)."""

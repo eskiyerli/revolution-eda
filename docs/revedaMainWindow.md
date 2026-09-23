@@ -504,12 +504,18 @@ per view type, in JSON:
 ```
 
 - `"*"` applies to every editor window; view-type sections (`schematic`,
-  `layout`, `symbol`) override it per editor.
+  `layout`, `symbol`) override it per editor — so the same key can do different
+  things in different editors (`W` draws a wire in schematic, a path in layout).
+- Several key sequences can map to the same action — the shipped defaults bind
+  both `C` and `Ctrl+C` to `copyAction`. Just repeat the action name on each
+  key.
 - Values are the action's attribute name on the editor window (visible in
   developmentDocs under `revedaEditor/gui/`).
 - Defaults ship in `revedaEditor/resources/bindkeys.json`. To customize, create
   `bindkeys.json` in the project directory — project entries merge over (and
-  win against) the defaults, so you only list what you change.
+  win against) the defaults per key, so you only list what you change.
+- Unknown action names or unparsable key sequences are logged and skipped — a
+  bad entry never breaks the editor.
 - Bindkeys apply when an editor opens; existing windows need to be reopened for
   changes to take effect.
 

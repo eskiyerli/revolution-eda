@@ -1,0 +1,342 @@
+# `revedaEditor/common/layoutShapes.py`
+
+**Module:** `revedaEditor.common.layoutShapes`
+
+## Purpose
+
+All layout graphics items — `layoutRect/Path/Via/Pin/Label/Polygon`, `layoutInstance`/`layoutPcell` (incl. mosaics), `layoutRuler`, `layoutFlightLine`, the `layoutMultipart` family (guard ring, shielded path, bus route), and `layoutGroup` (persistent user item groups).
+
+## Classes
+
+- `textureCache`
+  - `readFileContent()`
+  - `createImage()`
+  - `getCachedPixmap()`
+  - `clearCaches()`
+- `layoutShape(QGraphicsItem)`
+  - `itemChange()`
+  - `cancelStretch()`
+  - `pen()`
+  - `pen()`
+  - `brush()`
+  - `brush()`
+  - `angle()`
+  - `angle()`
+  - `stretch()`
+  - `stretch()`
+  - `view()`
+  - `offset()`
+  - `offset()`
+  - `mousePressEvent()`
+  - `sceneEvent()`
+  - `mouseMoveEvent()`
+  - `mouseReleaseEvent()`
+  - `hoverEnterEvent()`
+  - `hoverLeaveEvent()`
+  - `contextMenuEvent()`
+  - `flipTuple()`
+  - `flipTuple()`
+  - `layer()`
+  - `layer()`
+  - internals: `_get_cached_color()`, `__repr__()`, `_definePensBrushes()`, `_updateTransformedBrush()`, `_snappedEventPos()`, `_stretchActive()`, `_pushStretchUndo()`
+- `layoutRect(layoutShape)`
+  - `paint()`
+  - `boundingRect()`
+  - `rect()`
+  - `rect()`
+  - `start()`
+  - `start()`
+  - `end()`
+  - `end()`
+  - `centre()`
+  - `height()`
+  - `height()`
+  - `width()`
+  - `width()`
+  - `left()`
+  - `left()`
+  - `right()`
+  - `right()`
+  - `top()`
+  - `top()`
+  - `bottom()`
+  - `bottom()`
+  - `origin()`
+  - `stretchSide()`
+  - `stretchSide()`
+  - `layer()`
+  - `layer()`
+  - `captureGeometry()`
+  - `restoreGeometry()`
+  - `mousePressEvent()`
+  - `mouseMoveEvent()`
+  - `mouseReleaseEvent()`
+  - internals: `__repr__()`
+- `_DeferredLoader(NamedTuple)` — Pending child realisation for a lazily loaded layoutInstance.
+- `layoutInstance(layoutShape)`
+  - `deferShapes()`
+  - `deferParams()`
+  - `deferredParams()`
+  - `setArray()`
+  - `setShapes()`
+  - `removeShapes()`
+  - `boundingRect()`
+  - `paint()`
+  - `sceneEvent()`
+  - `libraryName()`
+  - `libraryName()`
+  - `cellName()`
+  - `cellName()`
+  - `viewName()`
+  - `viewName()`
+  - `instanceName()`
+  - `instanceName()`
+  - `shapes()`
+  - `shapes()`
+  - `start()`
+  - `counter()`
+  - `counter()`
+  - `rows()`
+  - `cols()`
+  - `rowPitch()`
+  - `colPitch()`
+  - `arrayShapes()`
+  - `addShape()`
+  - internals: `_ensureShapes()`, `_ensureArray()`, `_clearArrayShapes()`, `__repr__()`, `_childrenBounds()`
+- `layoutPcell(layoutInstance)`
+  - internals: `__repr__()`
+- `layoutLine(layoutShape)`
+  - `boundingRect()`
+  - `paint()`
+  - `draftLine()`
+  - `draftLine()`
+  - `angle()`
+  - `width()`
+  - `width()`
+  - `mode()`
+  - `mode()`
+  - `sceneEndPoints()`
+  - internals: `__repr__()`, `_determineAngle()`, `_createManhattanLine()`, `_createDiagonalLine()`, `_createAnyAngleLine()`
+- `layoutPath(layoutShape)`
+  - `paint()`
+  - `boundingRect()`
+  - `draftLine()`
+  - `draftLine()`
+  - `width()`
+  - `width()`
+  - `mode()`
+  - `mode()`
+  - `stretchSide()`
+  - `stretchSide()`
+  - `name()`
+  - `name()`
+  - `startExtend()`
+  - `startExtend()`
+  - `endExtend()`
+  - `endExtend()`
+  - `angle()`
+  - `angle()`
+  - `layer()`
+  - `layer()`
+  - `sceneEndPoints()`
+  - `captureGeometry()`
+  - `restoreGeometry()`
+  - `mousePressEvent()`
+  - `mouseMoveEvent()`
+  - `mouseReleaseEvent()`
+  - internals: `__repr__()`, `_rectCorners()`, `_snapEndPoint()`, `_createManhattanPath()`, `_createDiagonalPath()`, `_createAnyAnglePath()`, `_createHorizontalPath()`, `_createVerticalPath()`, `_extractRect()`, `_nearestStretchEnd()`, `_stretchToScenePoint()`, `_restoreStretchOrientation()`
+- `layoutRuler(layoutShape)`
+  - `snapPointToClosestEdge()`
+  - `boundingRect()`
+  - `shape()`
+  - `paint()`
+  - `draftLine()`
+  - `draftLine()`
+  - `angle()`
+  - `angle()`
+  - `width()`
+  - `width()`
+  - `mode()`
+  - `mode()`
+  - `tickFont()`
+  - `tickGap()`
+  - internals: `__repr__()`, `_determineAngle()`, `_createManhattanRuler()`, `_createDiagonalRuler()`, `_createAnyAngleRuler()`, `_closestPointOnSegment()`, `_extractItemEdges()`, `_getNiceStep()`, `_lengthToLayoutUnits()`, `_createRulerTicks()`, `_labelRotation()`
+- `layoutLabel(layoutShape)`
+  - `setOrient()`
+  - `boundingRect()`
+  - `shape()`
+  - `paint()`
+  - `setPlacementMarkerVisible()`
+  - `mousePressEvent()`
+  - `start()`
+  - `start()`
+  - `labelText()`
+  - `labelText()`
+  - `labelFont()`
+  - `fontFamily()`
+  - `fontFamily()`
+  - `fontStyle()`
+  - `fontStyle()`
+  - `fontHeight()`
+  - `fontHeight()`
+  - `labelAlign()`
+  - `labelAlign()`
+  - `labelOrient()`
+  - `labelOrient()`
+  - internals: `_fontEntry()`, `__repr__()`
+- `layoutPin(layoutShape)`
+  - `paint()`
+  - `boundingRect()`
+  - `pinName()`
+  - `pinName()`
+  - `pinDir()`
+  - `pinDir()`
+  - `pinType()`
+  - `pinType()`
+  - `start()`
+  - `start()`
+  - `end()`
+  - `end()`
+  - `label()`
+  - `label()`
+  - `rect()`
+  - `rect()`
+  - `stretchSide()`
+  - `stretchSide()`
+  - `captureGeometry()`
+  - `restoreGeometry()`
+  - `mousePressEvent()`
+  - `mouseMoveEvent()`
+  - `mouseReleaseEvent()`
+  - internals: `__repr__()`
+- `layoutVia(layoutShape)`
+  - `usesLayer()`
+  - `enclosureRect()`
+  - `paintEnclosure()`
+  - `paint()`
+  - `mousePressEvent()`
+  - `boundingRect()`
+  - `shape()`
+  - `rect()`
+  - `rect()`
+  - `start()`
+  - `start()`
+  - `width()`
+  - `width()`
+  - `height()`
+  - `height()`
+  - `viaDefTuple()`
+  - `type()`
+  - `bottomEnclosure()`
+  - `bottomEnclosure()`
+  - `topEnclosure()`
+  - `topEnclosure()`
+  - internals: `__repr__()`, `_buildEnclosureLayers()`, `_enclosureTexturePath()`, `_scaledBrush()`
+- `layoutViaArray(layoutShape)`
+  - `paintEnclosure()`
+  - `usesLayer()`
+  - `boundingRect()`
+  - `shape()`
+  - `paint()`
+  - `via_array()`
+  - `ynum()`
+  - `xnum()`
+  - `start()`
+  - `xs()`
+  - `ys()`
+  - `via()`
+  - `height()`
+  - `width()`
+  - internals: `__repr__()`, `_create_array()`, `_create_via()`, `_cutsSceneRect()`, `_enclosureBoundingRect()`
+- `layoutPolygon(layoutShape)`
+  - `paint()`
+  - `boundingRect()`
+  - `polygon()`
+  - `layer()`
+  - `layer()`
+  - `points()`
+  - `points()`
+  - `addPoint()`
+  - `tempLastPoint()`
+  - `tempLastPoint()`
+  - `captureGeometry()`
+  - `restoreGeometry()`
+  - `mousePressEvent()`
+  - `mouseMoveEvent()`
+  - `mouseReleaseEvent()`
+  - internals: `__repr__()`
+- `layoutMultipart(layoutShape)` — Editable composite shape: one selectable item backed by several
+  - `setParams()`
+  - `params()`
+  - `kind()`
+  - `shapes()`
+  - `updateDraftGeometry()`
+  - `boundingRect()`
+  - `paint()`
+  - `sceneEvent()`
+  - internals: `__repr__()`, `_layerByName()`, `_build()`, `_adoptShapes()`, `_clearShapes()`
+- `layoutGuardRing(layoutMultipart)` — Rectangular ring on a metal layer with an optional process-via
+  - `updateDraftGeometry()`
+  - internals: `_build()`
+- `layoutShieldedPath(layoutMultipart)` — Signal path flanked by two shield paths on another layer.
+  - `updateDraftGeometry()`
+  - internals: `_build()`
+- `layoutBusRoute(layoutMultipart)` — `count` parallel paths fanned out symmetrically about the centreline.
+  - `updateDraftGeometry()`
+  - internals: `_build()`
+- `layoutGroup(layoutShape)` — Persistent item group: a top-level container whose children are
+  ordinary layout shapes parented to it (members keep scene coords as group-local coords).
+  - `adoptShapes()` — Reparent `shapes` under this group without moving them.
+  - `releaseShapes()` — Detach members back to top level, preserving scene appearance.
+  - `shapes()`
+  - `boundingRect()`
+  - `paint()`
+  - `sceneEvent()`
+  - internals: `__repr__()`, `_releaseToTopLevel()`
+- `alignLine(layoutShape)`
+  - `boundingRect()`
+  - `paint()`
+  - `draftLine()`
+  - `draftLine()`
+  - `angle()`
+  - `width()`
+  - `width()`
+  - `mode()`
+  - `mode()`
+  - `sceneEndPoints()`
+  - internals: `__repr__()`, `_determineAngle()`, `_createHorizontalLine()`, `_createVerticalLine()`
+- `layoutFlightLine(QGraphicsLineItem)` — Ephemeral unrouted-connection guide (schematic->layout rat's nest).
+  - `netName()`
+  - `pinA()`
+  - `pinB()`
+  - `syncLine()`
+  - internals: `__repr__()`
+
+## Functions
+
+- `getProcessDBU()` — Return the active PDK's database units, caching after first resolution.
+- `_undoStack()` — Lazy import to avoid circular dependency (undoStack imports this module).
+- `_multipartOffset()` — Unit perpendicular to p1->p2 scaled by `distance`.
+- `_applySceneTransform()` — Re-express a captured item->scene matrix as the item's own pos/angle/flip while the item is top-level.
+
+## Depends on
+
+- [[revedaEditor/backend/dataDefinitions|revedaEditor.backend.dataDefinitions]]
+- [[revedaEditor/backend/pdkLoader|revedaEditor.backend.pdkLoader]]
+
+## Used by
+
+- [[defaultPDK/pcells|defaultPDK.pcells]]
+- [[revedaEditor/backend/undoStack|revedaEditor.backend.undoStack]]
+- [[revedaEditor/common/layoutBoolean|revedaEditor.common.layoutBoolean]]
+- [[revedaEditor/common/layoutFlatten|revedaEditor.common.layoutFlatten]]
+- [[revedaEditor/common/layoutMerge|revedaEditor.common.layoutMerge]]
+- [[revedaEditor/fileio/exportGDS|revedaEditor.fileio.exportGDS]]
+- [[revedaEditor/fileio/importGDS|revedaEditor.fileio.importGDS]]
+- [[revedaEditor/fileio/layoutEncoder|revedaEditor.fileio.layoutEncoder]]
+- [[revedaEditor/fileio/loadJSON|revedaEditor.fileio.loadJSON]]
+- [[revedaEditor/gui/layoutDialogues|revedaEditor.gui.layoutDialogues]]
+- [[revedaEditor/gui/lvsResults|revedaEditor.gui.lvsResults]]
+- [[revedaEditor/scenes/layoutScene|revedaEditor.scenes.layoutScene]]
+- [[revedaEditor/tests/test_layout_groups|revedaEditor.tests.test_layout_groups]]
+- [[revedaEditor/tests/test_layout_productivity|revedaEditor.tests.test_layout_productivity]]

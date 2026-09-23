@@ -70,8 +70,21 @@
         { "$ref": "#/$defs/layoutLabel" },
         { "$ref": "#/$defs/layoutPolygon" },
         { "$ref": "#/$defs/layoutRuler" },
-        { "$ref": "#/$defs/layoutMultipart" }
+        { "$ref": "#/$defs/layoutMultipart" },
+        { "$ref": "#/$defs/layoutGroup" }
       ]
+    },
+    "layoutGroup": {
+      "type": "object",
+      "required": ["type", "items", "loc"],
+      "properties": {
+        "type": { "const": "Group" },
+        "items": { "type": "array", "items": { "$ref": "#/$defs/layoutItem" } },
+        "loc": { "$ref": "#/$defs/point" },
+        "top": { "$ref": "#/$defs/point" },
+        "ang": { "type": "number" },
+        "fl": { "$ref": "#/$defs/flipTuple" }
+      }
     },
     "layoutMultipart": {
       "type": "object",

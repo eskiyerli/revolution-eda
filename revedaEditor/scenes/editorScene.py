@@ -109,6 +109,9 @@ class editorScene(QGraphicsScene):
         self._initialGroupPos = QPointF(0, 0)
         # Scene point the floating copy group is anchored to while pasting.
         self._copyAnchor = QPointF(0, 0)
+        # Virtuoso-style copy options (array rows/columns + X/Y pitch),
+        # edited via the F3 options form while a copy is armed.
+        self.copyOptions = ddef.copyOptions()
         # Undo index of the add-shapes command pushed by beginClipboardPaste;
         # cancelArmedCopy() undoes it to remove the uncommitted copies.
         self._armedCopyUndoIndex = -1
@@ -486,6 +489,43 @@ class editorScene(QGraphicsScene):
         return [shape for shape in (factory.create(record) for record in records)
                 if isinstance(shape, self._CLIPBOARD_SHAPES)]
 
+    def _clipboardShapesArray(self) -> list:
+        """Instantiate the clipboard fragment as a ``rows``×``columns``
+        array of copies per ``copyOptions``. Element (r, c) is offset by
+        ``(c * xOffset, r * yOffset)`` scene units — the Virtuoso Delta
+        X/Y pitch convention. A zero pitch falls back to the fragment's
+        bounding-box size so arrayed copies abut instead of stacking."""
+        opts = self.copyOptions
+        rows = max(1, int(opts.rows))
+        cols = max(1, int(opts.columns))
+        dx = self.snapToBase(opts.xOffset, self.snapTuple[0])
+        dy = self.snapToBase(opts.yOffset, self.snapTuple[1])
+        allShapes = []
+        for r in range(rows):
+            for c in range(cols):
+                batch = self._clipboardShapes()
+                if not batch:
+                    return allShapes
+                if r == 0 and c == 0 and (dx == 0 or dy == 0):
+                    # Default pitch: the fragment's own bbox size.
+                    rect = batch[0].sceneBoundingRect()
+                    for shape in batch[1:]:
+                        rect = rect.united(shape.sceneBoundingRect())
+                    if dx == 0:
+                        dx = self.snapToBase(
+                            rect.width(), self.snapTuple[0]) \
+                            or self.snapTuple[0]
+                    if dy == 0:
+                        dy = self.snapToBase(
+                            rect.height(), self.snapTuple[1]) \
+                            or self.snapTuple[1]
+                offset = QPointF(c * dx, r * dy)
+                if not offset.isNull():
+                    for shape in batch:
+                        shape.setPos(shape.pos() + offset)
+                allShapes.extend(batch)
+        return allShapes
+
     def _fixClipboardShapes(self, shapes: list) -> None:
         """Subclass hook for post-instantiation fixups such as allocating
         fresh instance names for a batch of pasted items."""
@@ -505,7 +545,7 @@ class editorScene(QGraphicsScene):
         bounding-box top-left lands on the point. Returns the item count."""
         if self.readOnly:
             return 0
-        shapes = self._clipboardShapes()
+        shapes = self._clipboardShapesArray()
         if not shapes:
             return 0
         self._fixClipboardShapes(shapes)
@@ -544,7 +584,7 @@ class editorScene(QGraphicsScene):
         if self.editModes.copyItem and self.selectedItemGroup:
             self._commitCopyGroup()
             self.editModes.setMode("selectItem")
-        shapes = self._clipboardShapes()
+        shapes = self._clipboardShapesArray()
         if not shapes:
             return 0
         self._fixClipboardShapes(shapes)
@@ -616,6 +656,17 @@ class editorScene(QGraphicsScene):
         self._armedCopyUndoIndex = -1
         if editorScene._armedCopyScene is self:
             editorScene._armedCopyScene = None
+
+    def rearmClipboardPaste(self) -> int:
+        """Rebuild the armed floating copy with the current
+        ``copyOptions`` — called by the options form so edits to
+        rows/columns/pitch update the ghost live. Returns the item
+        count, 0 when no copy is armed."""
+        if not (self.editModes.copyItem and self.selectedItemGroup):
+            return 0
+        at = self.mouseMoveLoc or QPoint(0, 0)
+        self.cancelArmedCopy()
+        return self.beginClipboardPaste(at)
 
     def flipHorizontal(self) -> None:
         for item in self.selectedItems():

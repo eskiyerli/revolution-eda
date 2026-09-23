@@ -162,6 +162,12 @@ class gdsExporter:
             self._processViaArray(library, item, parentCell, offset, frameItem)
         elif isinstance(item, lshp.layoutMultipart):
             self._processMultipart(library, item, parentCell, offset)
+        elif item_type == lshp.layoutGroup:
+            # A group is pure selection structure, not a cell: its members
+            # export into the parent cell through the ancestor frame, so the
+            # group's transform folds into their geometry via mapToItem.
+            for shape in item.shapes:
+                self.createCells(library, shape, parentCell, offset, frameItem)
         elif item_type == lshp.layoutRuler:
             return
         else:

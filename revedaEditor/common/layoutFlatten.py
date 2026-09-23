@@ -143,6 +143,11 @@ def _flattenItem(item, out, logger) -> None:
         for child in item.shapes:
             _flattenItem(child, out, logger)
         return
+    if isinstance(item, lshp.layoutGroup):
+        # Groups are transparent selection structure; flatten through them.
+        for child in item.shapes:
+            _flattenItem(child, out, logger)
+        return
     if isinstance(item, lshp.layoutRect):
         rect = item.rect
         mapped = [

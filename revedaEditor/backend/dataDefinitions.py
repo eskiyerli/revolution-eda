@@ -156,6 +156,20 @@ class symbolSelectModes(selectModes):
     selectText: bool
 
 
+@dataclass
+class copyOptions:
+    """Session-scoped options for clipboard copy/paste (F3 options form).
+
+    ``xOffset``/``yOffset`` are the column/row pitch in scene units
+    (origin-to-origin displacement between successive copies); a zero
+    pitch falls back to the copied fragment's bounding-box size.
+    """
+    rows: int = 1
+    columns: int = 1
+    xOffset: float = 0.0
+    yOffset: float = 0.0
+
+
 # library editor related named tuples
 class viewNameTuple(NamedTuple):
     libraryName: str

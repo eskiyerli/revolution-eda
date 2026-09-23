@@ -274,6 +274,55 @@ class undoMoveByCommand(QUndoCommand):
             item.setPos(oldPos)
 
 
+class undoGroupShapes(QUndoCommand):
+    """Attach/detach members of a persistent ``layoutGroup``.
+
+    ``attach=True`` is the group direction (redo groups, undo releases);
+    ``attach=False`` is ungroup. Members stay in the scene throughout —
+    only their parent item changes — and ``layoutGroup`` re-expresses
+    member transforms so no geometry moves across the reparenting.
+    """
+
+    def __init__(self, scene: QGraphicsScene, group, members: list,
+                 attach: bool = True):
+        super().__init__("Group Items" if attach else "Ungroup Items")
+        self._scene = scene
+        self._group = group
+        self._members = list(members)
+        self._attach = attach
+
+    def redo(self):
+        if self._attach:
+            self._doAttach()
+        else:
+            self._doDetach()
+
+    def undo(self):
+        if self._attach:
+            self._doDetach()
+        else:
+            self._doAttach()
+
+    def _doAttach(self):
+        if self._group.scene() is not self._scene:
+            self._scene.addItem(self._group)
+        self._group.adoptShapes(self._members)
+        self._scene.itemsRefSet.add(self._group)
+        applyFilter = getattr(self._scene, "_applyObjectFilter", None)
+        if applyFilter is not None:
+            applyFilter(self._group)
+
+    def _doDetach(self):
+        released = self._group.releaseShapes()
+        if self._group.scene() is self._scene:
+            self._scene.removeItem(self._group)
+        self._scene.itemsRefSet.discard(self._group)
+        applyFilter = getattr(self._scene, "_applyObjectFilter", None)
+        if applyFilter is not None:
+            for member in released:
+                applyFilter(member)
+
+
 class undoStretchShape(QUndoCommand):
     """Undo command for stretching a shape in-place.
 

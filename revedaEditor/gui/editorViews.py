@@ -268,6 +268,18 @@ class editorView(QGraphicsView):
                     self.viewScene.selectionRectItem = None
                 self.viewScene.editModes.setMode('selectItem')
                 self.viewScene.messageLine.setText("Select Item")
+            case Qt.Key.Key_F3:
+                # Virtuoso convention: F3 opens the active command's options
+                # form. Draw modes that use F3 for angle cycling consume it in
+                # their subclass keyPressEvent before reaching this branch.
+                if self.viewScene.editModes.copyItem:
+                    self.editorWindow.toggleCopyOptionsDialogue()
+                    return
+                placementOptions = getattr(
+                    self.editorWindow, "editActivePlacementOptions", None)
+                if placementOptions is not None and placementOptions():
+                    return
+                super().keyPressEvent(event)
             case _:
                 super().keyPressEvent(event)
 
@@ -653,6 +665,7 @@ class layoutView(editorView):
             elif self.viewScene.editModes.addInstance:
                 self.viewScene.newInstance = None
                 self.viewScene.layoutInstanceTuple = None
+                self.viewScene.pendingInstanceOptions = None
                 self.viewScene.editModes.setMode("selectItem")
             elif self.viewScene.editModes.addLabel:
                 if self.viewScene.newLabel is not None:

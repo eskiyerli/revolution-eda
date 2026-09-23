@@ -17,6 +17,7 @@ from typing import Any, Optional
 from PySide6.QtCore import QPoint
 
 from revedaEditor.fileio import spiceNetlist
+from revedaEditor.fileio import schemaValidation as sv
 
 
 
@@ -308,7 +309,7 @@ class klayoutSchematicGenerator:
     def _initializeTempSchematicFile(self, filePath):
         """Initialize temp view file with an empty valid schematic payload."""
         emptySchematic = [
-            {"viewType": "schematic"},
+            sv.make_view_header("schematic"),
             {"snapGrid": (20, 10)},
         ]
         with filePath.open("w", encoding="utf-8") as f:

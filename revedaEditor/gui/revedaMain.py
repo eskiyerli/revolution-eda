@@ -771,9 +771,10 @@ class MainWindow(QMainWindow):
                     f"Cannot restore session cellview {entry}: {e}")
 
     def _restorePendingSession(self) -> None:
-        """Deferred entry point: restore the session saved in reveda.conf."""
-        self._restoreSessionViews(getattr(self, "_savedSessionItems", []))
+        """Atomically drain and restore the deferred bootstrap session."""
+        entries = getattr(self, "_savedSessionItems", [])
         self._savedSessionItems = []
+        self._restoreSessionViews(entries)
 
     def closeEvent(self, event):
         # Skip confirmation dialog when restarting for a project switch

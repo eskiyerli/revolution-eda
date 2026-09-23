@@ -25,13 +25,16 @@ from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QPoint, Qt
 from PySide6.QtGui import QAction, QIcon
-from PySide6.QtWidgets import QApplication, QDialog, QGridLayout, QMenu, QToolBar
+from PySide6.QtWidgets import (
+    QApplication, QDialog, QGridLayout, QMenu, QMessageBox, QToolBar,
+)
 
 import revedaEditor.backend.dataDefinitions as ddef
 import revedaEditor.checks.schematic as schk
 import revedaEditor.backend.libBackEnd as libb
 import revedaEditor.backend.libraryMethods as libm
 import revedaEditor.backend.libraryModelView as lmview
+import revedaEditor.common.labels as lbl
 import revedaEditor.common.params as prm
 import revedaEditor.common.shapes as shp
 import revedaEditor.fileio.loadJSON as lj
@@ -124,6 +127,9 @@ class schematicEditor(edw.editorWindow):
         self.showResolvedNamesAction.setCheckable(True)
         self.renumberInstanceAction = QAction("Renumber Instances", self)
         self.renumberInstanceAction.setToolTip("Renumber Instances")
+        self.ungroupItemsAction = QAction("Ungroup Items", self)
+        self.ungroupItemsAction.setToolTip(
+            "Release the selected schematic mosaic into independent instances")
         simulationIcon = QIcon("icons/application-run.png")
         self.simulateAction = QAction(simulationIcon, "Revolution EDA SAE...", self)
         self.descendInPlaceAction = QAction("Descend Edit-in-Place", self)
@@ -159,6 +165,7 @@ class schematicEditor(edw.editorWindow):
         # edit menu
         self.menuEdit.addAction(self.findAction)
         self.menuEdit.addAction(self.netNameAction)
+        self.menuEdit.addAction(self.ungroupItemsAction)
         # self.menuEdit.removeAction(self.stretchAction)
 
         self.propertyMenu = self.menuEdit.addMenu("Properties")
@@ -244,6 +251,8 @@ class schematicEditor(edw.editorWindow):
         self.selectTextAction.triggered.connect(self.selectTextClick)
         self.removeSelectFilterAction.triggered.connect(self.removeSelectFilterClick)
         self.renumberInstanceAction.triggered.connect(self.renumberInstanceClick)
+        self.ungroupItemsAction.triggered.connect(
+            lambda: self.centralW.scene.ungroupSelectedItems())
         self.showResolvedNamesAction.triggered.connect(
             self.showResolvedNamesClick)
         self.findRelatedEditors.triggered.connect(self.findRelatedEditorsClick)
@@ -303,55 +312,141 @@ class schematicEditor(edw.editorWindow):
         # create a designLibrariesView
         libraryModel = lmview.symbolViewsModel(self.libraryDict, self.symbolViews)
         self.symbolChooser = fd.selectCellViewDialog(self, libraryModel)
-        if self.symbolChooser.exec() == QDialog.DialogCode.Accepted:
-            instanceTuple = ddef.viewNameTuple(self.symbolChooser.libNamesCB.currentText(),
-                                               self.symbolChooser.cellCB.currentText(),
-                                               self.symbolChooser.viewCB.currentText(), )
+        if self.symbolChooser.exec() != QDialog.DialogCode.Accepted:
+            return
+        instanceTuple = ddef.viewNameTuple(
+            self.symbolChooser.libNamesCB.currentText(),
+            self.symbolChooser.cellCB.currentText(),
+            self.symbolChooser.viewCB.currentText())
+        self.centralW.scene.newInstanceTuple = instanceTuple
+        # Parameter values belong to one selected symbol; never carry values
+        # from a previous placement choice into another symbol.
+        self.centralW.scene.pendingInstanceParams = None
+        self.centralW.scene.pendingInstanceArraySpec = None
+        if not self._configureSchematicInstanceParams():
+            self.centralW.scene.newInstanceTuple = None
+            return
+        self.centralW.scene.editModes.setMode("addInstance")
 
-            # Place-with-form: when the symbol declares typed parameters,
-            # offer a compact form first; cancelling aborts placement.
-            paramDefs = self._symbolParamDefs(instanceTuple)
-            if paramDefs:
-                paramsDlg = pdlg.placeInstanceDialog(self, paramDefs)
-                if paramsDlg.exec() != QDialog.DialogCode.Accepted:
-                    return
-                self.centralW.scene.pendingInstanceParams = (
-                    paramsDlg.paramValues())
-            else:
-                self.centralW.scene.pendingInstanceParams = None
+    def editActivePlacementOptions(self) -> bool:
+        """Open the F3 form for the active schematic placement command."""
+        scene = self.centralW.scene
+        if scene.editModes.addInstance:
+            self._configureSchematicInstanceParams()
+        elif scene.editModes.drawPin:
+            self._configureSchematicPin(activate=False)
+        else:
+            return False
+        return True
 
-            self.centralW.scene.newInstanceTuple = instanceTuple
+    def _configureSchematicInstanceParams(self) -> bool:
+        """Edit persistent symbol labels for the instance being placed."""
+        scene = self.centralW.scene
+        if scene.newInstanceTuple is None:
+            self.messageLine.setText("Choose an instance before opening options")
+            return False
+        preview = scene.instSymbol(scene.newInstanceTuple, QPoint(0, 0),
+                                   allocateName=False)
+        if preview is None:
+            self.messageLine.setText("Unable to load the selected symbol")
+            return False
+        if scene.pendingInstanceParams:
+            scene._applyPendingInstanceParams(preview)
+        labelRows, missingCarriers = scene.instanceLabelRows(preview)
+        if missingCarriers:
+            message = ("paramDefs without matching NLP labels: "
+                       + ", ".join(missingCarriers))
+            self.logger.warning(message)
+            self.messageLine.setText(message)
+        def refreshPreview(values):
+            callbackPreview = scene.instSymbol(
+                scene.newInstanceTuple, QPoint(0, 0), allocateName=False)
+            if callbackPreview is None:
+                return {}
+            for name, value in values.items():
+                label = (callbackPreview.labels.get(f"@{name.lstrip('@')}")
+                         or callbackPreview.labels.get(name))
+                if label is not None:
+                    label.labelValue = value
+            scene._resolveInstanceLabels(callbackPreview)
+            pyLabelType = lbl.symbolLabel.labelTypes[2]
+            return {
+                name: str(label.labelValue)
+                for name, label in callbackPreview.labels.items()
+                if label.labelType == pyLabelType
+            }
 
-            self.centralW.scene.editModes.setMode("addInstance")
+        paramsDlg = pdlg.placeInstanceDialog(
+            self, labelRows, initialValues=scene.pendingInstanceParams,
+            onValuesChanged=refreshPreview, sourceTuple=scene.newInstanceTuple,
+            arraySpec=getattr(scene, "pendingInstanceArraySpec", None))
 
-    def _symbolParamDefs(self, instanceTuple) -> list:
-        """ParamDefs declared by the selected symbol's attributes."""
+        def updateComputedRows(values):
+            for row in paramsDlg.labelRows:
+                if row.get("isPyLabel") and row["labelName"] in values:
+                    row["setValue"](values[row["labelName"]])
+
+        # Keep callbacks in sync while values are being entered, not only at
+        # placement time.  The preview remains detached from the scene.
+        paramsDlg._onValuesChanged = lambda values: updateComputedRows(
+            refreshPreview(values))
+        paramsDlg.refreshPreview()
+        if paramsDlg.exec() != QDialog.DialogCode.Accepted:
+            return False
+        scene.pendingInstanceParams = paramsDlg.paramValues()
+        scene.pendingInstanceArraySpec = paramsDlg.arraySpec()
+        return True
+
+    def _symbolParamDefs(self, instanceTuple) -> tuple[list, list[str]]:
+        """Return editable definitions and definitions lacking label carriers."""
         try:
             libraryPath = self.libraryDict.get(instanceTuple.libraryName)
             if libraryPath is None:
-                return []
+                return [], []
             file = libraryPath.joinpath(
                 instanceTuple.cellName, f"{instanceTuple.viewName}.json")
             if not file.exists():
-                return []
+                return [], []
             items = lj.schematicItems._load_sym_json(str(file))
             if items is None:
-                return []
-            attrs = {item["nam"]: item["def"] for item in items[2:]
-                     if isinstance(item, dict) and item.get("type") == "attr"}
-            return prm.paramDefsFromSymattrs(attrs)
-        except Exception as e:
-            self.logger.error(f"paramDefs lookup failed: {e}")
-            return []
+                return [], []
+            attrs = {
+                item["nam"]: item["def"] for item in items[2:]
+                if isinstance(item, dict) and item.get("type") == "attr"
+            }
+            labelNames = [
+                item.get("nam", "") for item in items[2:]
+                if isinstance(item, dict)
+                and item.get("type") == "label"
+                and item.get("lt") == "NLPLabel"
+            ]
+            bindings, missing = prm.paramDefLabelBindings(
+                prm.paramDefsFromSymattrs(attrs), labelNames)
+            return [pdef for pdef, _labelName in bindings], missing
+        except Exception as error:
+            self.logger.error(f"paramDefs lookup failed: {error}")
+            return [], []
 
     def createPinClick(self, s):
-        createPinDlg = pdlg.createSchematicPinDialog(self)
-        if createPinDlg.exec() == QDialog.DialogCode.Accepted:
-            self.centralW.scene.pinName = createPinDlg.pinName.text()
-            self.centralW.scene.pinType = createPinDlg.pinType.currentText()
-            self.centralW.scene.pinDir = createPinDlg.pinDir.currentText()
-            self.centralW.scene.pinExpr = createPinDlg.netExprEdit.text().strip()
-            self.centralW.scene.editModes.setMode("drawPin")
+        self._configureSchematicPin(activate=True)
+
+    def _configureSchematicPin(self, activate: bool = False) -> bool:
+        """Edit pending schematic pin values without abandoning draw mode."""
+        scene = self.centralW.scene
+        dlg = pdlg.createSchematicPinDialog(self)
+        dlg.pinName.setText(scene.pinName or "")
+        dlg.pinType.setCurrentText(scene.pinType or "")
+        dlg.pinDir.setCurrentText(scene.pinDir or "")
+        dlg.netExprEdit.setText(scene.pinExpr or "")
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return False
+        scene.pinName = dlg.pinName.text()
+        scene.pinType = dlg.pinType.currentText()
+        scene.pinDir = dlg.pinDir.currentText()
+        scene.pinExpr = dlg.netExprEdit.text().strip()
+        if activate:
+            scene.editModes.setMode("drawPin")
+        return True
 
     def createNoteClick(self, s):
         textDlg = pdlg.noteTextEdit(self)
