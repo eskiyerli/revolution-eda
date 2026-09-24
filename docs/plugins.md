@@ -7,7 +7,7 @@ This guide explains what plugins are in Revolution EDA, how users install and us
 - Plugins extend Revolution EDA without changing the core application.
 - End users typically encounter plugins as extra menu items, new editor actions, or support for
   additional view flows.
-- Most users install plugins through `Tools -> Plugins -> Setup Plugins...`.
+- Most users install plugins through `Plugins -> Browse Plugins...`.
 - Developers package plugins as Python packages with a `config.json` file and callable
   callback functions.
 
@@ -33,7 +33,7 @@ At startup, Revolution EDA loads plugins from the directory configured by `REVED
 
 Important:
 - If `REVEDA_PLUGIN_PATH` is not set, plugins are not loaded by `reveda.py`.
-- Use `Tools -> Plugins -> Setup Plugins...` and application setup paths to configure plugin location.
+- Use `Plugins -> Browse Plugins...` and application setup paths to configure plugin location.
 
 ## Plugin Folder Structure
 
@@ -56,20 +56,24 @@ Minimum required files:
 
 Most users only need three steps:
 
-1. Open the plugin registry UI from `Tools -> Plugins -> Setup Plugins...`.
+1. Open the plugin registry UI from `Plugins -> Browse Plugins...`.
 2. Install the plugin you want.
 3. Restart Revolution EDA.
 
 ### Install from Plugin Registry UI
 
-1. Open Plugins Registry Dialogue: `Tools -> Plugins -> Setup Plugins...`.
+1. Open Plugins Registry Dialogue: `Plugins -> Browse Plugins...`.
 2. The Plugin Registry window downloads plugin metadata from:
-   `https://raw.githubusercontent.com/eskiyerli/revolutionEDA_plugins/main/plugins.json`
+   `https://plugins.reveda.eu/plugins.json`
 
 <img src="assets/pluginsRegistry.png" alt="Plugins registry window" class="image fit" /> 
 
 2. Select a plugin and click `Download / Install`.
-3. Restart Revolution EDA after installation.
+3. After a successful installation, choose `Restart Now` to activate it immediately or `Later` to keep working.
+
+Commercial plugins install the required `revedaLicense` module first when it is
+not already present. The selected plugin download resumes automatically after
+the license module has been installed.
 
 Notes:
 - `source` plugins use a single `url` field in the registry.
@@ -77,7 +81,7 @@ Notes:
 
 ### Uninstall
 
-1. Open `Tools -> Plugins -> Setup Plugins...`.
+1. Open `Plugins -> Browse Plugins...`.
 2. Select an installed plugin.
 3. Click `Uninstall`.
 4. Restart Revolution EDA.
@@ -94,10 +98,12 @@ The plugin loader reads each plugin's `config.json` and uses `menu_items` to inj
 
 ### What `config.json` Actually Does At Runtime
 
-In the current implementation, `config.json` is used for menu/action registration, not for plugin import.
+Plugin discovery is done by folder/package name via `pkgutil.iter_modules()`.
+Before importing a package, the loader reads `<plugin>/config.json` and rejects
+incompatible plugins. After a compatible plugin is imported, the same config is
+used for menu/action registration.
 
-- Plugin import/discovery is done by folder/package name via `pkgutil.iter_modules()`.
-- After import, the loader reads `<plugin>/config.json`.
+- The loader checks version and capability constraints before executing plugin code.
 - The loader iterates `menu_items` and creates UI actions.
 - For each action, it resolves `callback` with `getattr(plugin_module, callback_name)` and connects it.
 - If callback is missing, that menu item is skipped.
@@ -107,7 +113,45 @@ What is effectively required in `config.json` for behavior:
 - For each item: `location`, `menu`, `action`, `callback`
 
 What is metadata only (useful to users/maintainers, but not used by menu wiring logic):
-- `plugin_name`, `plugin_version`, `description`, `license`, `author`, `copyright`
+- `plugin_name`, `description`, `license`, `author`, `copyright`
+
+Version/negotiation fields (all optional; see the next section):
+- `plugin_version`, `plugin_api`, `min_app_version`, `max_app_version`,
+  `provides`, `requires_core`
+
+### Version and capability negotiation
+
+Before importing a plugin, `pluginsLoader` reads its `config.json` and checks
+declared constraints against the running app (`revedaEditor/backend/pluginApi.py`).
+A plugin whose constraints cannot be honored is **skipped entirely — its code is
+never imported** — and the reasons are logged to `reveda.log` and recorded in
+`pluginsObj.incompatible`. Plugins that declare nothing load under the implicit
+`plugin_api` 1 contract, exactly as before.
+
+| Field | Meaning |
+|---|---|
+| `plugin_api` | Plugin-contract version (integer). Current core implements `2`; anything higher is skipped. |
+| `min_app_version` / `max_app_version` | reveda version range the plugin supports (e.g. `"0.9.0"`). |
+| `provides` | List of capabilities the plugin owns (e.g. `["sdl"]`). Core can query `pluginsObj.provides("sdl")` to suppress native features the plugin replaces. |
+| `requires_core` | List of core capabilities the plugin cannot run without (`menuItems`, `viewTypes`, ...). Unknown entries block the import. |
+| `plugin_version` | Installed version string, compared against the registry `version` for update notices. |
+
+### Discovery and update checks
+
+Plugins have a top-level application menu. `Plugins -> Browse Plugins...` opens
+the registry, while `Plugins -> Updates (N)` displays the number of known updates.
+A non-modal discovery banner is shown to new users and after an application
+release change; `Not now` dismisses it for 90 days. Its state is stored in
+`~/.reveda/reveda_settings.ini`.
+
+Once per day at startup (throttled via the same settings file), the app fetches
+the plugin registry in a background thread and compares each installed plugin's
+`plugin_version` against the registry `version`. Registry results are cached so
+the menu count is available on later starts without waiting for another fetch.
+Newer versions are logged to `reveda.log`; there is no update popup. The Plugin
+Registry window also shows installed versions and highlights rows where an update
+is available. Set `REVEDA_DISABLE_UPDATE_CHECK` to disable the background fetch;
+the registry window always fetches live when opened.
 
 Example:
 
@@ -233,7 +277,7 @@ Current workflow is repository-based (not an in-app upload button):
 9. Include a short description in the pull request description.
 10. Include source/binary ZIP URLs in the pull request description.
 11. Include tested platforms in the pull request description.
-12. After merge, users can install from `Tools -> Plugins -> Setup Plugins...`.
+12. After merge, users can install from `Plugins -> Browse Plugins...`.
 
 Recommended release checklist:
 - Bump plugin version in your plugin and registry entry

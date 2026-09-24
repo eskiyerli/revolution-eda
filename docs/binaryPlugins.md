@@ -132,7 +132,7 @@ When binary compatibility changes across Python/runtime versions, bump at least 
 - Binary dependencies are present beside modules or correctly resolved at runtime.
 - Each `binary_urls` key matches an actual published ZIP.
 - Fallback `url` is valid.
-- Fresh install test passes via `Tools -> Plugins -> Setup Plugins...`.
+- Fresh install test passes via `Plugins -> Browse Plugins...`.
 - Plugin loads without errors in `reveda.log`.
 
 ## Common Binary Plugin Failures

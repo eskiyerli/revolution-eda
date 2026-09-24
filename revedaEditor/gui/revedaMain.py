@@ -10,13 +10,14 @@
 
 import json
 import logging
+from datetime import date, timedelta
 from functools import partial
 from pathlib import Path
 import shutil
 from typing import List, Dict
 
-from PySide6.QtCore import (QThreadPool, QThread, Slot, Signal, QTimer, QObject,
-                            QSize, QRectF, Qt)
+from PySide6.QtCore import (QSettings, QThreadPool, QThread, Slot, Signal, QTimer,
+                            QObject, QSize, QRectF, Qt)
 from PySide6.QtGui import (
     QAction,
     QIcon,
@@ -25,14 +26,18 @@ from PySide6.QtWidgets import (
     QApplication,
 )
 from PySide6.QtWidgets import (
-    QGraphicsScene,
     QDialog,
+    QFileDialog,
+    QFrame,
+    QGraphicsScene,
+    QHBoxLayout,
+    QLabel,
     QMainWindow,
     QMenu,
     QMessageBox,
+    QPushButton,
     QVBoxLayout,
     QWidget,
-    QFileDialog,
 )
 from dotenv import load_dotenv
 
@@ -68,6 +73,29 @@ class EventLoopMonitor(QObject):
         print("Event loop is responsive")
 
 
+class pluginDiscoveryBanner(QFrame):
+    browseRequested = Signal()
+    dismissed = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("pluginDiscoveryBanner")
+        self.setFrameShape(QFrame.Shape.StyledPanel)
+        layout = QHBoxLayout(self)
+        text = QLabel(
+            "Extend Revolution EDA with simulation, AI-assisted design, "
+            "verification, and productivity plugins."
+        )
+        text.setWordWrap(True)
+        self.browseButton = QPushButton("Browse Plugins")
+        self.dismissButton = QPushButton("Not now")
+        layout.addWidget(text, 1)
+        layout.addWidget(self.browseButton)
+        layout.addWidget(self.dismissButton)
+        self.browseButton.clicked.connect(self.browseRequested)
+        self.dismissButton.clicked.connect(self.dismissed)
+
+
 class mainwContainer(QWidget):
     """
     Definition for the main app window layout.
@@ -90,6 +118,13 @@ class mainwContainer(QWidget):
         # layout statements, using a grid layout
         gLayout = QVBoxLayout()
         gLayout.setSpacing(10)
+        self.pluginBanner = pluginDiscoveryBanner(self)
+        self.pluginBanner.setVisible(False)
+        self.pluginBanner.browseRequested.connect(
+            self.parent.browsePluginsFromBanner)
+        self.pluginBanner.dismissed.connect(
+            self.parent.dismissPluginDiscovery)
+        gLayout.addWidget(self.pluginBanner)
         gLayout.addWidget(self.console)
         self.setLayout(gLayout)
 
@@ -157,6 +192,8 @@ class MainWindow(QMainWindow):
         self.autosaveIntervalSec: int = 300
         self._savedSessionItems: list = []
         self.bindkeyMap: dict = {}
+        self._pluginRegistryWindow = None
+        self._pluginDiscoverySettings = None
 
     def _initPaths(self) -> None:
         """Initialize application paths."""
@@ -203,8 +240,18 @@ class MainWindow(QMainWindow):
             # Thread pool setup
             self._setupThreadPool()
 
+            # Quiet background check for plugin updates: results go to the
+            # log; the registry window highlights outdated installs.
+            pluginsObj = getattr(self.app, "pluginsObj", None)
+            if pluginsObj is not None:
+                pluginsObj.updatesChanged.connect(
+                    self._updatePluginUpdatesAction)
+                self._updatePluginUpdatesAction(pluginsObj.availableUpdates)
+                pluginsObj.checkForUpdates()
+
             # Final initialization
             self.loadAppState()
+            self._configurePluginDiscovery()
             self.bindkeyMap = bkeys.loadBindkeyMap(
                 userPath=self.runPath / "bindkeys.json")
 
@@ -238,6 +285,7 @@ class MainWindow(QMainWindow):
         # Returns QMenu object.
         self.menuFile = self.mainW_menubar.addMenu("&File")
         self.menuTools = self.mainW_menubar.addMenu("&Tools")
+        self.pluginsMenu = self.mainW_menubar.addMenu("&Plugins")
         self.menuOptions = self.mainW_menubar.addMenu("&Options")
         self.menuHelp = self.mainW_menubar.addMenu("&Help")
         self.menuFile.addAction(self.openProjectAction)
@@ -246,7 +294,6 @@ class MainWindow(QMainWindow):
         self.menuFile.addAction(self.exitAction)
         self.menuTools.addAction(self.libraryBrowserAction)
         self.importTools = self.menuTools.addMenu("&Import")
-        self.pluginsMenu = self.menuTools.addMenu("Plugins")
         self.librariesMenu = self.menuTools.addMenu("Libraries")
         self.pdksMenu = self.menuTools.addMenu("PDKs")
         self.menuTools.addAction(self.createStippleAction)
@@ -258,6 +305,7 @@ class MainWindow(QMainWindow):
         self.importTools.addAction((self.importXschSymAction))
         self.importTools.addAction(self.importGDSAction)
         self.pluginsMenu.addAction(self.setupPluginsAction)
+        self.pluginsMenu.addAction(self.pluginUpdatesAction)
         self.pdksMenu.addAction(self.setupPDKsAction)
         self.librariesMenu.addAction(self.setupLibrariesAction)
         self.menuOptions.addAction(self.optionsAction)
@@ -298,7 +346,8 @@ class MainWindow(QMainWindow):
         optionsIcon = QIcon(":/icons/resource-monitor.png")
         self.optionsAction = QAction(optionsIcon, "Options...", self)
         self.createStippleAction = QAction("Create Stipple...", self)
-        self.setupPluginsAction = QAction("Setup Plugins...", self)
+        self.setupPluginsAction = QAction("Browse Plugins...", self)
+        self.pluginUpdatesAction = QAction("Updates", self)
         self.setupPDKsAction = QAction("Setup PDK...", self)
         self.setupLibrariesAction = QAction("Setup Libraries", self)
         helpIcon = QIcon(":/icons/document-arrow.png")
@@ -321,6 +370,7 @@ class MainWindow(QMainWindow):
         self.importGDSAction.triggered.connect(self.importGDSClick)
         self.createStippleAction.triggered.connect(self.createStippleClick)
         self.setupPluginsAction.triggered.connect(self.setupPluginsClick)
+        self.pluginUpdatesAction.triggered.connect(self.setupPluginsClick)
         self.setupPDKsAction.triggered.connect(self.setupPDKsClick)
         self.setupLibrariesAction.triggered.connect(self.setupLibrariesClick)
         self.openProjectAction.triggered.connect(self.openProjectClick)
@@ -597,11 +647,72 @@ class MainWindow(QMainWindow):
         stippleWindow = stip.stippleEditor(self)
         stippleWindow.show()
 
+    def _updatePluginUpdatesAction(self, updates: dict) -> None:
+        count = len(updates or {})
+        self.pluginUpdatesAction.setText(
+            f"Updates ({count})" if count else "Updates"
+        )
+
+    def _pluginDiscoveryRelease(self) -> str:
+        parts = revinit.__version__.split(".")
+        return ".".join(parts[:2])
+
+    def _configurePluginDiscovery(self) -> None:
+        settingsPath = Path.home() / ".reveda" / "reveda_settings.ini"
+        settingsPath.parent.mkdir(parents=True, exist_ok=True)
+        self._pluginDiscoverySettings = QSettings(
+            str(settingsPath), QSettings.IniFormat
+        )
+        dismissedRelease = self._pluginDiscoverySettings.value(
+            "pluginDiscovery/release", ""
+        )
+        nextShowRaw = self._pluginDiscoverySettings.value(
+            "pluginDiscovery/nextShow", ""
+        )
+        try:
+            nextShow = date.fromisoformat(nextShowRaw)
+        except (TypeError, ValueError):
+            nextShow = date.min
+        show = (
+            dismissedRelease != self._pluginDiscoveryRelease()
+            or nextShow <= date.today()
+        )
+        self.centralW.pluginBanner.setVisible(show)
+
+    def dismissPluginDiscovery(self) -> None:
+        if self._pluginDiscoverySettings is None:
+            self._configurePluginDiscovery()
+        self._pluginDiscoverySettings.setValue(
+            "pluginDiscovery/release", self._pluginDiscoveryRelease()
+        )
+        self._pluginDiscoverySettings.setValue(
+            "pluginDiscovery/nextShow",
+            (date.today() + timedelta(days=90)).isoformat(),
+        )
+        self._pluginDiscoverySettings.sync()
+        self.centralW.pluginBanner.hide()
+
+    def browsePluginsFromBanner(self) -> None:
+        self.dismissPluginDiscovery()
+        self.setupPluginsClick()
+
     def setupPluginsClick(self):
         from revedaEditor.gui.pluginsRegistry import PluginRegistryWindow
 
-        pluginRegistry = PluginRegistryWindow(self)
-        pluginRegistry.show()
+        if self._pluginRegistryWindow is not None:
+            self._pluginRegistryWindow.show()
+            self._pluginRegistryWindow.raise_()
+            self._pluginRegistryWindow.activateWindow()
+            return
+        self._pluginRegistryWindow = PluginRegistryWindow(self)
+        self._pluginRegistryWindow.setAttribute(
+            Qt.WidgetAttribute.WA_DeleteOnClose)
+        self._pluginRegistryWindow.destroyed.connect(
+            lambda: setattr(self, "_pluginRegistryWindow", None))
+        self._pluginRegistryWindow.show()
+
+    def restartApplication(self) -> None:
+        self.projectManager.restart_application()
 
     def setupPDKsClick(self):
         from revedaEditor.gui.pdkRegistry import PDKRegistryWindow

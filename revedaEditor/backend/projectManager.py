@@ -197,6 +197,15 @@ class ProjectManager:
         app = QApplication.instance()
         app.exit(app.RESTART_EXIT_CODE)
 
+    def restart_application(self) -> None:
+        """Save the active project and restart the current application."""
+        project_dir = self._active_project or Path(self._main_window.runPath)
+        self.save_current_state()
+        os.environ["REVEDA_RESTART_PROJECT"] = str(project_dir.resolve())
+        self._main_window._restartingForProjectSwitch = True
+        app = QApplication.instance()
+        app.exit(app.RESTART_EXIT_CODE)
+
     def save_current_state(self) -> bool:
         """Save application state to reveda.conf in the active project directory.
 

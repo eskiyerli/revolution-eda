@@ -288,7 +288,7 @@ Practical notes:
 
 #### Plugins Submenu
 
-`Tools -> Plugins -> Setup Plugins...` opens plugin management for installed or available
+`Plugins -> Browse Plugins...` opens plugin management for installed or available
 plugins.
 
 The plugin registry window shows available plugins, whether each one is already installed,

@@ -23,7 +23,7 @@ import zipfile
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QUrl, QThread, Signal
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtGui import QBrush, QColor, QDesktopServices
 from PySide6.QtWidgets import (
     QApplication,
     QHBoxLayout,
@@ -39,6 +39,7 @@ from PySide6.QtWidgets import (
     QWidget,
     QHeaderView,
 )
+from revedaEditor.backend import pluginApi
 from revedaEditor.backend.fileUtils import safeExtractZip
 
 
@@ -80,7 +81,7 @@ class DownloadThread(QThread):
 
 
 class PluginRegistryWindow(QMainWindow):
-    DEFAULT_REGISTRY = "https://plugins.reveda.eu/plugins.json"
+    DEFAULT_REGISTRY = pluginApi.DEFAULT_REGISTRY_URL
 
     def __init__(
         self,
@@ -103,6 +104,8 @@ class PluginRegistryWindow(QMainWindow):
             self.pluginsDir = Path.home() / ".reveda" / "plugins"
         self.pluginsDir = self.pluginsDir.resolve()
 
+        self._pendingInstallEntry = None
+        self._license_download_success = False
         self._initUI()
         self._registry = []
         self.fetch_registry()
@@ -116,9 +119,9 @@ class PluginRegistryWindow(QMainWindow):
         left_l = QVBoxLayout(left_w)
         left_l.setContentsMargins(0, 0, 0, 0)
         self.tableWidget = QTableWidget()
-        self.tableWidget.setColumnCount(5)
+        self.tableWidget.setColumnCount(6)
         self.tableWidget.setHorizontalHeaderLabels(
-            ["Installed", "Plugin", "Type", "Version", "License"]
+            ["Installed", "Plugin", "Type", "Latest", "Installed Ver.", "License"]
         )
         self.tableWidget.horizontalHeader().setSectionResizeMode(
             QHeaderView.ResizeMode.Stretch
@@ -174,6 +177,8 @@ class PluginRegistryWindow(QMainWindow):
         for row, entry in enumerate(self._registry):
             name = entry.get("name", "unknown")
             plugin_dir = self.pluginsDir / re.sub(r"[^A-Za-z0-9_.-]", "_", name)
+            installed_ver = self._installedVersion(plugin_dir)
+            latest = entry.get("version", "0.0.0")
 
             checkbox_item = QTableWidgetItem()
             checkbox_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
@@ -189,12 +194,25 @@ class PluginRegistryWindow(QMainWindow):
             self.tableWidget.setItem(
                 row, 2, QTableWidgetItem(entry.get("type", "source").title())
             )
+            latest_item = QTableWidgetItem(latest)
+            if installed_ver and pluginApi.versionNewer(latest, installed_ver):
+                font = latest_item.font()
+                font.setBold(True)
+                latest_item.setFont(font)
+                latest_item.setForeground(QBrush(QColor("#1a7a1a")))
+                latest_item.setToolTip(
+                    f"Update available: {installed_ver} -> {latest}"
+                )
+            self.tableWidget.setItem(row, 3, latest_item)
+            self.tableWidget.setItem(row, 4, QTableWidgetItem(installed_ver))
             self.tableWidget.setItem(
-                row, 3, QTableWidgetItem(entry.get("version", "0.0.0"))
+                row, 5, QTableWidgetItem(entry.get("license", "Unknown"))
             )
-            self.tableWidget.setItem(
-                row, 4, QTableWidgetItem(entry.get("license", "Unknown"))
-            )
+
+    def _installedVersion(self, plugin_dir: Path) -> str:
+        """Installed plugin's ``plugin_version`` from its config.json."""
+        config = pluginApi.readPluginConfig(plugin_dir)
+        return str(config.get("plugin_version") or config.get("version") or "")
 
     def _onSelect(self):
         self.desc.clear()
@@ -213,7 +231,10 @@ class PluginRegistryWindow(QMainWindow):
         payment_url = entry.get('payment_url', '')
         if payment_url:
             url_text += f"\nCheckout: {payment_url}"
-        text = f"{entry.get('description', '')}\n\nType: {entry.get('type', 'source').title()}\nVersion: {entry.get('version', 'N/A')}\nLicense: {entry.get('license', 'Unknown')}\n{url_text}"
+        plugin_dir = self.pluginsDir / re.sub(
+            r"[^A-Za-z0-9_.-]", "_", entry.get("name", ""))
+        installed_ver = self._installedVersion(plugin_dir) or "not installed"
+        text = f"{entry.get('description', '')}\n\nType: {entry.get('type', 'source').title()}\nVersion: {entry.get('version', 'N/A')}\nInstalled: {installed_ver}\nLicense: {entry.get('license', 'Unknown')}\n{url_text}"
         self.desc.setPlainText(text)
 
     def _on_item_activated(self, item: QTableWidgetItem):
@@ -250,10 +271,25 @@ class PluginRegistryWindow(QMainWindow):
 
 
     def _install_entry(self, entry: dict):
-        # Commercial plugins need the compiled revedaLicense module
-        if self._plugin_requires_license(entry):
-            if not self._ensure_revedaLicense():
+        # Commercial plugins need the compiled revedaLicense module. When it
+        # is missing, its download runs asynchronously and this install
+        # resumes in _on_license_download_complete — blocking the GUI thread
+        # on thread.wait() here would deadlock the queued finished() signal.
+        if (self._plugin_requires_license(entry)
+                and not self._revedaLicenseInstalled()):
+            ret = QMessageBox.question(
+                self,
+                "License Module Required",
+                "The revedaLicense module is required for commercial plugins but is not "
+                "installed in ~/.reveda/.\n\n"
+                "Would you like to download and install it now?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if ret != QMessageBox.StandardButton.Yes:
                 return
+            self._pendingInstallEntry = entry
+            self._download_revedaLicense()
+            return
 
         name = re.sub(r"[^A-Za-z0-9_.-]", "_", entry.get("name", "plugin"))
         url = (
@@ -286,12 +322,19 @@ class PluginRegistryWindow(QMainWindow):
         # Create download thread
         self.download_thread = DownloadThread(url)
         self.download_thread.progress.connect(self.progress.setValue)
-        self.download_thread.finished.connect(lambda content: self._on_download_complete(content, url, target_subdir))
+        self.download_thread.finished.connect(
+            lambda content: self._on_download_complete(
+                content, url, target_subdir, entry
+            )
+        )
         self.download_thread.error.connect(self._on_download_error)
         self.download_thread.start()
     
-    def _on_download_complete(self, content: bytes, url: str, target_subdir: Path):
+    def _on_download_complete(
+        self, content: bytes, url: str, target_subdir: Path, entry: dict
+    ):
         """Handle successful download completion."""
+        installed = False
         try:
             tmp_fd, tmp_path = tempfile.mkstemp()
             os.close(tmp_fd)
@@ -311,23 +354,46 @@ class PluginRegistryWindow(QMainWindow):
             os.remove(tmp_path)
             self.progress.setValue(100)
             self.fetch_registry()
-            # Track successful download
-            entry = self._get_current_entry()
-            if entry:
-                self._track_download(entry, url)
+            self._track_download(entry, url)
+            installed = True
         except Exception as e:
             QMessageBox.critical(self, "Error", str(e))
         finally:
             self.download_btn.setEnabled(True)
             # Hide progress bar after a delay
             QApplication.instance().processEvents()
+        if installed:
+            self._showInstallSuccess(entry)
             
     def _on_download_error(self, error_msg: str):
         """Handle download error."""
         QMessageBox.critical(self, "Download Error", f"Failed to download: {error_msg}")
         self.download_btn.setEnabled(True)
         self.progress.setValue(0)
-    
+
+    def _askRestartAfterInstall(self, name: str) -> bool:
+        dialog = QMessageBox(self)
+        dialog.setIcon(QMessageBox.Icon.Information)
+        dialog.setWindowTitle("Plugin Installed")
+        dialog.setText(f"{name} was installed successfully.")
+        dialog.setInformativeText(
+            "Restart Revolution EDA to activate the plugin."
+        )
+        restartButton = dialog.addButton(
+            "Restart Now", QMessageBox.ButtonRole.AcceptRole
+        )
+        dialog.addButton("Later", QMessageBox.ButtonRole.RejectRole)
+        dialog.exec()
+        return dialog.clickedButton() is restartButton
+
+    def _showInstallSuccess(self, entry: dict) -> None:
+        name = entry.get("name", "Plugin")
+        if not self._askRestartAfterInstall(name):
+            return
+        restart = getattr(self.parent(), "restartApplication", None)
+        if callable(restart):
+            restart()
+
     def _get_current_entry(self) -> dict | None:
         """Get the currently selected registry entry."""
         current_row = self.tableWidget.currentRow()
@@ -429,10 +495,31 @@ class PluginRegistryWindow(QMainWindow):
             return f"{base}/revedaLicense.cpython-{major}{minor}-darwin.so"
         return None
 
-    def _download_revedaLicense(self) -> bool:
+    def _revedaLicenseInstalled(self) -> bool:
+        """True when the compiled revedaLicense module is on disk.
+
+        The shim in revedaEditor.backend.licenseManager is always present,
+        so check for the actual platform-tagged .pyd/.so in ~/.reveda/.
+        """
+        central_dir = Path.home() / ".reveda"
+        url = self._revedaLicense_url()
+        if url:
+            compiled_file = central_dir / Path(url).name
+        elif platform.system() == "Windows":
+            compiled_file = central_dir / "revedaLicense.pyd"
+        else:
+            compiled_file = central_dir / "revedaLicense.so"
+
+        if compiled_file.exists():
+            importlib.invalidate_caches()
+            return True
+        return False
+
+    def _download_revedaLicense(self) -> None:
         """Download and install the compiled revedaLicense extension.
 
-        Returns True on success, False otherwise.
+        Runs asynchronously; on success ``_on_license_download_complete``
+        resumes the plugin install stashed in ``_pendingInstallEntry``.
         """
         url = self._revedaLicense_url()
         if not url:
@@ -442,23 +529,21 @@ class PluginRegistryWindow(QMainWindow):
                 "Automatic download of the license module is not available for your platform.\n"
                 "Please install the revedaLicense module manually.",
             )
-            return False
+            self._pendingInstallEntry = None
+            return
 
+        self._license_download_success = False
         # Reset and show progress bar
         self.progress.setValue(0)
         self.progress.setVisible(True)
         self.download_btn.setEnabled(False)
-        
+
         # Create download thread
         self.license_download_thread = DownloadThread(url)
         self.license_download_thread.progress.connect(self.progress.setValue)
         self.license_download_thread.finished.connect(self._on_license_download_complete)
         self.license_download_thread.error.connect(self._on_license_download_error)
         self.license_download_thread.start()
-        
-        # Wait for completion (blocking since we need to return result)
-        self.license_download_thread.wait()
-        return hasattr(self, '_license_download_success') and self._license_download_success
     
     def _on_license_download_complete(self, content: bytes):
         """Handle successful license download completion."""
@@ -508,6 +593,12 @@ class PluginRegistryWindow(QMainWindow):
             self._license_download_success = False
         finally:
             self.download_btn.setEnabled(True)
+        # Resume the plugin install that was waiting on the license module.
+        if self._license_download_success:
+            pending = self._pendingInstallEntry
+            self._pendingInstallEntry = None
+            if pending is not None:
+                self._install_entry(pending)
     
     def _on_license_download_error(self, error_msg: str):
         """Handle license download error."""
@@ -525,44 +616,9 @@ class PluginRegistryWindow(QMainWindow):
                 self, "Download Error", f"Failed to download revedaLicense: {error_msg}"
             )
         self._license_download_success = False
+        self._pendingInstallEntry = None
         self.download_btn.setEnabled(True)
         self.progress.setValue(0)
-
-    def _ensure_revedaLicense(self) -> bool:
-        """Ensure the compiled revedaLicense module is available.
-
-        Returns True if already present or successfully downloaded.
-        """
-        # Check if the real compiled module is installed in ~/.reveda/
-        # The shim in revedaEditor.backend.licenseManager is always present,
-        # so we need to check for the actual compiled .pyd/.so file.
-        # The file keeps its platform-tagged name (e.g. revedaLicense.cp313-win_amd64.pyd).
-        central_dir = Path.home() / ".reveda"
-        url = self._revedaLicense_url()
-        if url:
-            compiled_file = central_dir / Path(url).name
-        elif platform.system() == "Windows":
-            compiled_file = central_dir / "revedaLicense.pyd"
-        else:
-            compiled_file = central_dir / "revedaLicense.so"
-
-        if compiled_file.exists():
-            # Real module is installed, invalidate caches and return True
-            importlib.invalidate_caches()
-            return True
-
-        ret = QMessageBox.question(
-            self,
-            "License Module Required",
-            "The revedaLicense module is required for commercial plugins but is not "
-            "installed in ~/.reveda/.\n\n"
-            "Would you like to download and install it now?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if ret != QMessageBox.StandardButton.Yes:
-            return False
-
-        return self._download_revedaLicense()
 
     def _on_uninstall(self):
         current_row = self.tableWidget.currentRow()

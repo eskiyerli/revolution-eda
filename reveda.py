@@ -640,6 +640,7 @@ class revedaApp(QApplication):
             # Update sys.path
             if str(self.revedaPluginPathObj) not in sys.path:
                 sys.path.append(str(self.revedaPluginPathObj))
+            self.pluginsObj.checkForUpdates(force=True)
 
             # Persist to .env file
             self.update_env_file("REVEDA_PLUGIN_PATH", str(self.revedaPluginPathObj))
