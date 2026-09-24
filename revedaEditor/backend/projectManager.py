@@ -276,11 +276,20 @@ class ProjectManager:
 
         library_dict = {}
         if data.get("libdefs") is not None:
-            library_dict = {key: Path(value) for key, value in data["libdefs"].items()}
+            library_dict = {
+                key: self._resolve_project_path(value, lib_file.parent)
+                for key, value in data["libdefs"].items()
+            }
         elif data.get("include") is not None:
             for item in data["include"]:
-                library_dict.update(self._read_lib_def_file(Path(item)))
+                include_path = self._resolve_project_path(item, lib_file.parent)
+                library_dict.update(self._read_lib_def_file(include_path))
         return library_dict
+
+    @staticmethod
+    def _resolve_project_path(value: str | os.PathLike, base_dir: Path) -> Path:
+        path = Path(value).expanduser()
+        return path if path.is_absolute() else base_dir / path
 
     def _load_reveda_conf(self, project_dir: Path) -> dict:
         """Load reveda.conf, return settings dict. Returns {} on failure."""

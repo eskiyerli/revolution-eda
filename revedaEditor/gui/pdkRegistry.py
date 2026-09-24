@@ -21,6 +21,7 @@ import zipfile
 import logging
 from pathlib import Path
 import revedaEditor.backend.editFunctions as edf
+from revedaEditor.backend.fileUtils import safeExtractZip
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -401,7 +402,7 @@ class PDKRegistryWindow(QMainWindow):
             self.pdksDir.mkdir(parents=True, exist_ok=True)
             if url.lower().endswith(".zip"):
                 with zipfile.ZipFile(tmp_path, "r") as zf:
-                    zf.extractall(path=self.pdksDir)
+                    safeExtractZip(zf, self.pdksDir)
             else:
                 target_subdir.mkdir(parents=True, exist_ok=True)
                 (target_subdir / Path(url).name).write_bytes(

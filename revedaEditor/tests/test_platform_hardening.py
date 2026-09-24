@@ -226,6 +226,12 @@ def test_save_cellview_to_dispatches_scene_method(tmp_path: Path):
         stub._autosavePath, markClean=False)
 
 
+def test_save_cellview_to_reports_false_save_result(tmp_path: Path):
+    stub = _editor_stub(tmp_path)
+    stub.centralW.scene.saveSchematic = Mock(return_value=False)
+    assert not editorWindow._saveCellviewTo(stub, stub._autosavePath)
+
+
 def test_resolve_load_path_prompts_and_restores(tmp_path: Path, monkeypatch):
     stub = _editor_stub(tmp_path)
     stub._autosavePath.write_text('[{"viewType": "schematic"}]')

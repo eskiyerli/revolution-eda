@@ -39,6 +39,7 @@ from PySide6.QtWidgets import (
     QWidget,
     QHeaderView,
 )
+from revedaEditor.backend.fileUtils import safeExtractZip
 
 
 class DownloadThread(QThread):
@@ -300,7 +301,7 @@ class PluginRegistryWindow(QMainWindow):
             self.pluginsDir.mkdir(parents=True, exist_ok=True)
             if url.lower().endswith(".zip"):
                 with zipfile.ZipFile(tmp_path, "r") as zf:
-                    zf.extractall(path=self.pluginsDir)
+                    safeExtractZip(zf, self.pluginsDir)
             else:
                 target_subdir.mkdir(parents=True, exist_ok=True)
                 (target_subdir / Path(url).name).write_bytes(

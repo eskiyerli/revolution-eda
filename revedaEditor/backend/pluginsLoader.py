@@ -39,8 +39,8 @@ class pluginsLoader:
                         sys.path.append(plugin_dir)
                 module = importlib.import_module(name)
                 self.plugins[f"{name}"] = module
-            except ImportError as e:
-                self._app.logger.error(f"Failed to load plugin {name}: {e}")
+            except Exception as e:  # Optional plugins must not block startup.
+                self._app.logger.exception(f"Failed to load plugin {name}: {e}")
         self._app.logger.info(f"Loaded plugins: {list(self.plugins.keys())}")
         self._loadPluginMenus()
 

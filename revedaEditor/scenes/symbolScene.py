@@ -45,6 +45,7 @@ import revedaEditor.connectivity as conn
 import revedaEditor.fileio.loadJSON as lj
 import revedaEditor.fileio.schemaValidation as sv
 import revedaEditor.fileio.symbolEncoder as symenc
+from revedaEditor.backend.fileUtils import atomicWriteText
 import revedaEditor.gui.alignItems as alg
 import revedaEditor.gui.propertyDialogues as pdlg
 from revedaEditor.backend.pdkLoader import lazyPDKModule
@@ -730,9 +731,11 @@ class symbolScene(editorScene):
                 *getattr(self, "attributeList", [])
             ]
 
-            # Write to file
-            with fileName.open("w") as f:
-                json.dump(save_data, f, cls=symenc.symbolEncoder, indent=4)
+            atomicWriteText(
+                fileName,
+                lambda output: json.dump(
+                    save_data, output, cls=symenc.symbolEncoder, indent=4),
+            )
 
             if markClean:
                 self.undoStack.clear()

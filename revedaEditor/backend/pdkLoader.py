@@ -74,8 +74,12 @@ def importPDKModule(moduleName: str) -> ModuleType | None:
         _module_cache[cache_key] = module
         logger.debug(f"Loaded PDK module: {fullModuleName}")
         return module
-    except ModuleNotFoundError:
-        logger.warning(f"PDK module not found: {fullModuleName}")
+    except ModuleNotFoundError as e:
+        if e.name == fullModuleName:
+            logger.warning(f"PDK module not found: {fullModuleName}")
+        else:
+            logger.error(
+                f"PDK module {fullModuleName} is missing dependency {e.name}: {e}")
         return None
     except Exception as e:
         logger.error(f"Failed to import PDK module {fullModuleName}: {e}")
@@ -170,7 +174,7 @@ def clearPDKModuleCache() -> None:
 
 class pdkConfig:
     def __init__(self, pdkPathObj):
-        self_app = QApplication.instance()
+        self._app = QApplication.instance()
         self.pdkPathObj = pdkPathObj
         self.pdkConfig = self._loadPDKConfig()
 
@@ -185,8 +189,11 @@ class pdkConfig:
                 config = json.load(f)
                 return config
         except Exception as e:
-            self._app.logger.warning(
-                f"Failed to load plugin config for {item.name}: {e}")
+            message = f"Failed to load PDK config for {self.pdkPathObj}: {e}"
+            if self._app is not None and hasattr(self._app, "logger"):
+                self._app.logger.warning(message)
+            else:
+                logger.warning(message)
             return {}
 
     def applyPDKMenus(self, editorWindow):

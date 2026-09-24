@@ -695,8 +695,8 @@ class editorWindow(QMainWindow):
             saveMethod = getattr(scene, methodName, None)
             if callable(saveMethod):
                 try:
-                    saveMethod(path, markClean=False)
-                    return True
+                    result = saveMethod(path, markClean=False)
+                    return result is not False
                 except Exception as e:  # noqa: BLE001 - autosave must never
                     # crash the editor; any failure is logged and retried.
                     self.logger.error(

@@ -164,7 +164,14 @@ class BaseDesignLibrariesView(QWidget):
         filePath = None
         with open(viewItemT.viewItem.viewPath) as f:
             try:
-                filePath = pathlib.Path(viewItemT.cellItem.cellPath.joinpath(json.load(f)[1].get("filePath")))
+                relativePath = json.load(f)[1].get("filePath")
+                cellPath = viewItemT.cellItem.cellPath.resolve()
+                candidate = (cellPath / relativePath).resolve()
+                candidate.relative_to(cellPath)
+                filePath = candidate
+            except (TypeError, ValueError) as error:
+                self.logger.warning(
+                    f"Ignoring text view path outside cell directory: {error}")
             except IndexError:
                 if viewItemT.viewItem.viewType == 'spice':
                     filePath = pathlib.Path(viewItemT.cellItem.cellPath.joinpath(
