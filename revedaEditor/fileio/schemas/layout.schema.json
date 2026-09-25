@@ -31,7 +31,7 @@
     },
     "sdlSource": {
       "type": "object",
-      "required": ["lib", "cell", "inst"],
+      "required": ["lib", "cell", "view", "inst", "labels"],
       "properties": {
         "lib": { "type": "string" },
         "cell": { "type": "string" },

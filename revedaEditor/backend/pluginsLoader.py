@@ -47,6 +47,7 @@ class pluginsLoader(QObject):
         self.incompatible: dict = {}      # plugin name -> [issue, ...]
         self.capabilities: dict = {}      # capability -> owning plugin name
         self.pluginInfo: dict = {}        # plugin dir name -> metadata
+        self.pluginConfigs: dict = {}     # plugin dir name -> negotiated config
         self.availableUpdates: dict = {}  # name -> (installed, latest)
         self.registryUrl = pluginApi.DEFAULT_REGISTRY_URL
         self._updateWorker = None
@@ -97,24 +98,39 @@ class pluginsLoader(QObject):
                 )
             else:
                 self.capabilities[cap] = name
+        self.pluginConfigs[name] = dict(config)
         self.pluginInfo[name] = {
             "version": str(config.get("plugin_version", "")),
             "configName": str(config.get("plugin_name", "")),
             "provides": sorted(caps),
         }
 
-    def provides(self, capability: str) -> bool:
-        """True when a loaded plugin declared ``capability`` in ``provides``.
+    def _plugin_is_active(self, plugin_name: str) -> bool:
+        """Whether an imported plugin may currently provide its features."""
+        config = getattr(self, "pluginConfigs", {}).get(plugin_name, {})
+        if not self._plugin_requires_license(plugin_name, config):
+            return True
+        try:
+            return bool(licenseManager.has_valid_license(plugin_name))
+        except Exception:
+            return False
 
-        Lets core suppress native actions a plugin replaces (e.g. an SDL
-        plugin claiming the ``"sdl"`` capability silences the built-in
-        Update-from-Schematic actions).
+    def provides(self, capability: str) -> bool:
+        """True when an active plugin provides ``capability``.
+
+        Capability owners are registered only after a compatible plugin has
+        imported. A commercial owner must also have a valid license so an
+        expired or unactivated plugin cannot suppress the native fallback.
         """
-        return capability in self.capabilities
+        provider = self.capabilities.get(capability)
+        return provider is not None and self._plugin_is_active(provider)
 
     def capabilityProvider(self, capability: str) -> str | None:
-        """Name of the plugin owning ``capability``, or None."""
-        return self.capabilities.get(capability)
+        """Name of the active plugin owning ``capability``, or None."""
+        provider = self.capabilities.get(capability)
+        if provider is not None and self._plugin_is_active(provider):
+            return provider
+        return None
 
     def pluginVersion(self, name: str) -> str | None:
         """Installed ``plugin_version`` of a loaded plugin, or None."""
@@ -260,6 +276,9 @@ class pluginsLoader(QObject):
             module = self.plugins.get(plugin_name)
             if not module:
                 continue
+            if (pluginApi.pluginCapabilities(plugin_config)
+                    and not self._plugin_is_active(plugin_name)):
+                continue
 
             for menuItem in plugin_config.get("menu_items", []):
                 # Check applicability
@@ -314,6 +333,15 @@ class pluginsLoader(QObject):
                             if "checked" in menuItem:
                                 new_action.setCheckable(True)
                                 new_action.setChecked(menuItem["checked"])
+                            new_action.setProperty(
+                                "readOnlySafe",
+                                bool(menuItem.get("read_only_safe", False)),
+                            )
+                            pluginActions = getattr(
+                                editorWindow, "_pluginActions", None)
+                            if pluginActions is None:
+                                pluginActions = editorWindow._pluginActions = []
+                            pluginActions.append(new_action)
                             new_action.triggered.connect(
                                 lambda c=False, cb=callback: cb(editorWindow)
                             )

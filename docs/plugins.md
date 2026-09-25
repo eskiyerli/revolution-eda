@@ -112,8 +112,9 @@ What is effectively required in `config.json` for behavior:
 - `menu_items` list
 - For each item: `location`, `menu`, `action`, `callback`
 
-What is metadata only (useful to users/maintainers, but not used by menu wiring logic):
-- `plugin_name`, `description`, `license`, `author`, `copyright`
+Metadata fields include `plugin_name`, `description`, `author`, and
+`copyright`. `license` and `license_required` also control callback licensing
+when they identify a commercial plugin.
 
 Version/negotiation fields (all optional; see the next section):
 - `plugin_version`, `plugin_api`, `min_app_version`, `max_app_version`,
@@ -133,8 +134,13 @@ never imported** — and the reasons are logged to `reveda.log` and recorded in
 | `plugin_api` | Plugin-contract version (integer). Current core implements `2`; anything higher is skipped. |
 | `min_app_version` / `max_app_version` | reveda version range the plugin supports (e.g. `"0.9.0"`). |
 | `provides` | List of capabilities the plugin owns (e.g. `["sdl"]`). Core can query `pluginsObj.provides("sdl")` to suppress native features the plugin replaces. |
-| `requires_core` | List of core capabilities the plugin cannot run without (`menuItems`, `viewTypes`, ...). Unknown entries block the import. |
+| `requires_core` | List of core capabilities the plugin cannot run without (`menuItems`, `viewTypes`, `sdlAdapterV1`, ...). Unknown entries block the import. |
 | `plugin_version` | Installed version string, compared against the registry `version` for update notices. |
+
+`provides()` reports an active provider: the plugin must have passed
+negotiation and imported successfully, and a commercial capability provider
+must currently have a valid license. Inactive capability providers do not
+inject their declared menu items, so core/native fallbacks remain available.
 
 ### Discovery and update checks
 
@@ -181,7 +187,9 @@ Key fields in `menu_items`:
 - `menu`: existing menu name where action is added (for example `Tools`, `Simulation`, `Results`)
 - `callback`: function name in plugin module (`__init__.py` imported symbols)
 - `apply`: list of window class names where action is visible
-- Optional: `text`, `icon`, `shortcut`, `checked`
+- Optional: `text`, `icon`, `shortcut`, `checked`, `read_only_safe`
+- `read_only_safe: true` keeps a non-mutating plugin action enabled when a
+  cellview is lock-contended; actions default to disabled in read-only editors.
 
 ### Real Examples
 

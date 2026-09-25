@@ -149,9 +149,6 @@ class schematicEditor(edw.editorWindow):
         self.checkRulesAction = QAction("Check Rules Setup...", self)
         self.checkRulesAction.setToolTip(
             "Select which schematic check rules are applied")
-        self.probeLayoutAction = QAction("Probe in Layout", self)
-        self.probeLayoutAction.setToolTip(
-            "Cross-probe selected symbols/nets into the layout editor")
         # Repurpose the base-class check action for schematic rule checking.
         self.viewCheckAction.setText("Check Schematic")
         self.viewCheckAction.setToolTip(
@@ -200,7 +197,6 @@ class schematicEditor(edw.editorWindow):
         self.menuTools.addAction(self.removeAllProbesAction)
         self.menuTools.addAction(self.renumberInstanceAction)
         self.menuTools.addAction(self.showResolvedNamesAction)
-        self.menuTools.addAction(self.probeLayoutAction)
         self.menuTools.addAction(self.findRelatedEditors)
         # utilities Menu
         self.selectMenu = self.menuUtilities.addMenu("Selection")
@@ -256,8 +252,6 @@ class schematicEditor(edw.editorWindow):
         self.showResolvedNamesAction.triggered.connect(
             self.showResolvedNamesClick)
         self.findRelatedEditors.triggered.connect(self.findRelatedEditorsClick)
-        self.probeLayoutAction.triggered.connect(
-            lambda: self.centralW.scene.probeLayout())
         self.findAction.triggered.connect(self.findClick)
 
     def _createToolBars(self):

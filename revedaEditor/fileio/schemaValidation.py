@@ -294,6 +294,16 @@ def get_schema_version(data: Any) -> Optional[str]:
     return None
 
 
+def is_canonical_sdl_source(value: Any) -> bool:
+    """Return whether value is safe canonical SDL correspondence metadata."""
+    return (
+        isinstance(value, dict)
+        and all(isinstance(value.get(key), str)
+                for key in ("lib", "cell", "view", "inst"))
+        and isinstance(value.get("labels"), dict)
+    )
+
+
 def make_view_header(viewType: str) -> dict:
     """Return the canonical header for a newly saved ordinary cellview."""
     version = CURRENT_SCHEMA_VERSIONS.get(viewType)

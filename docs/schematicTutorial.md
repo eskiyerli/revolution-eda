@@ -348,13 +348,9 @@ Available check rules:
 - `Tools -> Show Resolved Net Names`: when checked, displays the resolved
   electrical net name next to each net — useful for checking bus-ripper
   results and name propagation through the connectivity engine.
-- `Tools -> Probe in Layout`: cross-probing between this schematic and the
-  layout editor of the same cell. With a symbol instance selected, the
-  matching layout instance is selected and zoomed to. With net members
-  selected, the corresponding layout net is highlighted. If the layout
-  editor isn't open, a hint appears in the message line. See
-  [Layout Editor](./layoutTutorial.md) for the layout side of the pair.
-
+- With the commercial SDL Pro plugin installed, `Tools -> Probe in Layout`
+  selects matching source-owned instances or highlights the corresponding
+  layout connectivity group in the open sibling layout editor.
 - `Tools -> Renumber Instances`: This menu starts the process of renumbering of all schematic instances. This might be needed when the instance names could be repeated among different instances, making some operations like netlisting problematic.
 
 - `Tools -> Find related editors`: When the user goes down a symbol to open related schematic, there might be more than a few schematic editor open depending on the hierarchy depth. Moreover, there could be schematic editors open that are not related to that design. This menu item opens a dialogue that allows the user to choose and highlight any schematic editor that was opened as a part of hierarchical editing.

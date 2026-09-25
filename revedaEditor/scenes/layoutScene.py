@@ -96,6 +96,8 @@ class layoutScene(editorScene):
         "Groups": (lshp.layoutGroup,),
     }
     alignLineFinished = Signal(lshp.alignLine)
+    connectivityInvalidated = Signal()
+    connectivityRebuilt = Signal()
 
     def __init__(self, parent):
         super().__init__(parent)
@@ -195,6 +197,9 @@ class layoutScene(editorScene):
         self.rulerTickGap = fabproc.dbu
         self.rulerTickLength = 10
         self.rulerWidth = 2
+        # Ruler options (F3 while drawing): angle constraint and edge snap.
+        self.rulerMode = 0
+        self.rulerSnapToEdge = True
         self.setItemIndexMethod(QGraphicsScene.ItemIndexMethod.BspTreeIndex)
         self._draftPen = QPen(Qt.PenStyle.DashLine)
         self._draftPen.setColor(QColor(0, 150, 0))
@@ -510,12 +515,25 @@ class layoutScene(editorScene):
                     closestPoint = ptOnEdge
         return closestPoint
 
+    _RULER_MODE_NAMES: ClassVar = {0: "Manhattan", 1: "Diagonal",
+                                   2: "Any Angle"}
+
+    def applyRulerMode(self, mode: int) -> None:
+        """Set the ruler angle constraint (F3 options) for the in-progress
+        ruler — re-snapped to the current mouse position — and future ones."""
+        self.rulerMode = mode
+        if self._newRuler is not None:
+            # The mode setter re-snaps the draft; its end-point already
+            # tracks the last mouse position (mouseMoveEvent keeps it in
+            # sync while drawRuler is active).
+            self._newRuler.mode = mode
+
     def drawLayoutRuler(self):
         if self._newRuler:
             # Snap the endpoint before finalizing
-            endPt = self.snapToClosestEdge(
-                self.mouseReleaseLoc, ruler=self._newRuler
-            )
+            endPt = (self.snapToClosestEdge(
+                self.mouseReleaseLoc, ruler=self._newRuler)
+                if self.rulerSnapToEdge else self.mouseReleaseLoc)
             self._newRuler.draftLine = QLineF(
                 self._newRuler.draftLine.p1(), endPt
             )
@@ -523,13 +541,15 @@ class layoutScene(editorScene):
                 self.undoStack.removeLastCommand()
             self._newRuler = None
         else:
-            startPt = self.snapToClosestEdge(self.mouseReleaseLoc)
+            startPt = (self.snapToClosestEdge(self.mouseReleaseLoc)
+                       if self.rulerSnapToEdge else self.mouseReleaseLoc)
             self._newRuler = lshp.layoutRuler(
                 QLineF(startPt, startPt),
                 width=self.rulerWidth,
                 tickGap=self.rulerTickGap,
                 tickLength=self.rulerTickLength,
                 tickFont=self.rulerFont,
+                mode=self.rulerMode,
             )
             self.addUndoStack(self._newRuler)
 
@@ -1391,14 +1411,56 @@ class layoutScene(editorScene):
             self._applyObjectFilter(item)
 
     def loadSchematicInstances(self, schematicTuple: ddef.viewItemTuple) -> None:
-        """Back-compat entry point — now performs an incremental sync.
+        """Replace layout instances from a selected schematic cellview."""
+        from PySide6.QtWidgets import QMessageBox
 
-        Kept for aiTerminal/older callers; forwards to
-        :meth:`updateFromSchematic`, which adds missing instances, removes
-        SDL-owned instances whose schematic source disappeared, and
-        re-applies drifted parameters instead of wiping the layout.
-        """
-        self.updateFromSchematic(schematicTuple)
+        if not self.sdlMutationAllowed():
+            return
+        existingInstances = self.findScenelayoutCellSet()
+        if existingInstances:
+            reply = QMessageBox.question(
+                self.editorWindow,
+                "Existing Layout Instances",
+                f"There are {len(existingInstances)} layout instances on the scene.\n\n"
+                "Continuing will remove all existing instances and place new ones "
+                "from the schematic.\n\nDo you want to proceed?",
+                QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
+                QMessageBox.StandardButton.Cancel,
+            )
+            if reply != QMessageBox.StandardButton.Ok:
+                self.logger.info("Schematic-driven layout cancelled by user")
+                return
+            self.deleteListUndoStack(list(existingInstances))
+
+        try:
+            with schematicTuple.viewItem.viewPath.open("rb") as schematicFile:
+                data = orjson.loads(schematicFile.read())
+        except (OSError, orjson.JSONDecodeError) as error:
+            self.logger.error(f"Failed to load schematic: {error}")
+            return
+
+        records = [
+            item for item in (data[2:] if len(data) > 2 else [])
+            if isinstance(item, dict) and item.get("type") == "sys"
+        ]
+        if not records:
+            self.logger.info("No schematic instances found to place")
+            return
+
+        createdCount = 0
+        for record in records:
+            layoutTuple = self._resolveLayoutView(
+                record.get("lib", ""), record.get("cell", ""))
+            if layoutTuple:
+                if self._createLayoutInstanceFromSch(
+                        layoutTuple, record, None):
+                    createdCount += 1
+            else:
+                self.logger.warning(
+                    f"No layout/pcell view for "
+                    f"{record.get('lib')}/{record.get('cell')}")
+        self.logger.info(
+            f"Created {createdCount} layout instances from schematic")
 
     def updateFromSchematic(self, schematicTuple: ddef.viewItemTuple) -> dict:
         """Incrementally sync layout instances against a schematic cellview.
@@ -1418,6 +1480,9 @@ class layoutScene(editorScene):
 
         Returns a stats dict: ``added/removed/updated/adopted/skipped``.
         """
+        if not self.sdlMutationAllowed():
+            return {"added": 0, "removed": 0, "updated": 0, "adopted": 0,
+                    "skipped": 0}
         sourceKey = (
             schematicTuple.libraryItem.libraryName,
             schematicTuple.cellItem.cellName,
@@ -1489,64 +1554,77 @@ class layoutScene(editorScene):
             f"skipped {stats['skipped']}")
         return stats
 
-    def _sdlDescriptors(self) -> list:
-        """Top-level instance descriptors for the correspondence diff."""
-        descriptors = []
-        for item in self.items():
-            if item.parentItem() is not None:
-                continue
-            if not isinstance(item, lshp.layoutInstance):
-                continue
-            descriptors.append({
+    def sdlMutationAllowed(self) -> bool:
+        """Return whether an SDL adapter operation may mutate this scene."""
+        if not self.readOnly:
+            return True
+        self.logger.warning("SDL mutation refused for read-only layout")
+        self.messageLine.setText("Layout is read-only — SDL update was not applied")
+        return False
+
+    def layoutInstanceDescriptors(self) -> list:
+        """Return opaque top-level instance descriptors for SDL adapters."""
+        return [
+            {
                 "item": item,
                 "name": item.instanceName,
                 "cell": item.cellName,
                 "sdl": getattr(item, "_sdlSource", None),
-            })
-        return descriptors
+            }
+            for item in self.topLevelLayoutInstances()
+        ]
 
-    def _syncInstanceParams(self, item, record: dict) -> bool:
-        """Re-apply a schematic record's labels to a matched instance.
+    def _sdlDescriptors(self) -> list:
+        return self.layoutInstanceDescriptors()
 
-        PCells get mapped parameters recomputed and re-evaluated; plain
-        layout instances just need the stored ``sdl`` refreshed (done by
-        the caller). Returns True on success.
-        """
+    def applySchematicParameters(self, item, record: dict) -> bool:
+        """Apply mapped schematic parameters through the core PCell path."""
+        if not self.sdlMutationAllowed():
+            return False
         if isinstance(item, lshp.layoutPcell):
             return self._applyPcellParams(
                 item, record.get("cell", ""), record.get("ld", {}))
         return True
 
-    def _resolveLayoutView(self, lib_name: str, cell_name: str) -> Union[ddef.viewItemTuple, None]:
-        """Find layout or pcell view for a given schematic cell.
+    def _syncInstanceParams(self, item, record: dict) -> bool:
+        return self.applySchematicParameters(item, record)
 
-        Args:
-            lib_name: Library name
-            cell_name: Cell name
-
-        Returns:
-            viewItemTuple if found, None otherwise
-        """
+    def resolveLayoutView(self, libName: str, cellName: str):
+        """Resolve a cell's layout or PCell view for an SDL adapter."""
         import revedaEditor.backend.libBackEnd as libb
 
-        lib_path = self.libraryDict.get(lib_name)
-        if not lib_path:
+        libPath = self.libraryDict.get(libName)
+        if not libPath:
             return None
-
-        cell_path = lib_path / cell_name
-        if not cell_path.exists():
+        cellPath = libPath / cellName
+        if not cellPath.exists():
             return None
-
-        # Try layout view first, then pcell
-        for view_name in ["layout", "pcell"]:
-            view_path = cell_path / f"{view_name}.json"
-            if view_path.exists():
-                lib_item = libb.libraryItem(lib_path)
-                cell_item = libb.cellItem(cell_path)
-                view_item = libb.viewItem(view_path)
-                return ddef.viewItemTuple(lib_item, cell_item, view_item)
-
+        for viewName in ("layout", "pcell"):
+            viewPath = cellPath / f"{viewName}.json"
+            if viewPath.exists():
+                return ddef.viewItemTuple(
+                    libb.libraryItem(libPath), libb.cellItem(cellPath),
+                    libb.viewItem(viewPath))
         return None
+
+    def _resolveLayoutView(self, lib_name: str, cell_name: str):
+        return self.resolveLayoutView(lib_name, cell_name)
+
+    def stampSdlSource(self, item, source: dict) -> bool:
+        """Apply validated canonical correspondence metadata to an item."""
+        if not self.sdlMutationAllowed() or not sv.is_canonical_sdl_source(source):
+            return False
+        item._sdlSource = dict(source)
+        return True
+
+    def removeLayoutItemsUndo(self, items) -> bool:
+        """Remove items through one core undo command when writable."""
+        if not self.sdlMutationAllowed():
+            return False
+        itemList = list(items)
+        if itemList:
+            self.deleteListUndoStack(itemList)
+        return True
 
     def _loadPcellParameterMap(self) -> dict:
         """Raw ``pcellParameterMap.json`` contents (``mappings``,
@@ -1628,61 +1706,58 @@ class layoutScene(editorScene):
         inst(**params)
         return True
 
-    def _createLayoutInstanceFromSch(
+    def createLayoutInstanceFromRecord(
             self, viewTuple: ddef.viewItemTuple, record: dict,
-            schematicTuple: ddef.viewItemTuple) -> bool:
-        """Create a layout instance from a schematic ``sys`` record.
-
-        Args:
-            viewTuple: Library/cell/view tuple for layout/pcell
-            record: Decoded schematic ``sys`` record (nam/cell/lib/ld/loc...)
-            schematicTuple: Source schematic cellview — stamped into ``sdl``
-
-        Returns:
-            True if instance created successfully, False otherwise
-        """
+            sdlSource: dict | None = None):
+        """Create one undoable layout instance through the SDL adapter."""
+        if not self.sdlMutationAllowed():
+            return None
         # Store current tuple and set the new one
         oldTuple = self.layoutInstanceTuple
         self.layoutInstanceTuple = viewTuple
-
         try:
-            new_inst = self.instLayout(viewTuple)
-            if new_inst is None:
-                return False
-
-            if not self._applyPcellParams(
-                    new_inst, record.get("cell", ""),
-                    record.get("ld", {})):
-                return False
-
+            newInst = self.instLayout(viewTuple)
+            if newInst is None:
+                return None
+            if not self.applySchematicParameters(newInst, record):
+                return None
             # Inherit properties from schematic
-            new_inst.instanceName = record.get("nam", "")
-            new_inst.counter = record.get("ic", 0)
-            new_inst.angle = record.get("ang", 0)
-            new_inst.flipTuple = tuple(record.get("fl", (1, 1)))
-
+            newInst.instanceName = record.get("nam", "")
+            newInst.counter = record.get("ic", 0)
+            newInst.angle = record.get("ang", 0)
+            newInst.flipTuple = tuple(record.get("fl", (1, 1)))
             # Convert the schematic grid location to layout scene coordinates.
             loc = record.get("loc", (0, 0))
             if isinstance(loc, (list, tuple)) and len(loc) >= 2:
-                new_inst.setPos(loc[0] * 10, loc[1] * 10)
-
+                newInst.setPos(loc[0] * 10, loc[1] * 10)
             # Persisted correspondence stamp (see backend/correspondence).
-            new_inst._sdlSource = corr.makeSdlSource(
+            if sdlSource is not None and not self.stampSdlSource(
+                    newInst, sdlSource):
+                return None
+            # Add to scene via undo stack
+            self.addUndoStack(newInst)
+            return newInst
+        except Exception as error:
+            self.logger.error(
+                f"Error creating layout instance from schematic: {error}")
+            return None
+        finally:
+            # Restore original tuple
+            self.layoutInstanceTuple = oldTuple
+
+    def _createLayoutInstanceFromSch(
+            self, viewTuple: ddef.viewItemTuple, record: dict,
+            schematicTuple: ddef.viewItemTuple | None) -> bool:
+        """Compatibility wrapper around the versioned SDL adapter."""
+        source = None
+        if schematicTuple is not None:
+            source = corr.makeSdlSource(
                 schematicTuple.libraryItem.libraryName,
                 schematicTuple.cellItem.cellName,
                 schematicTuple.viewItem.viewName,
                 record.get("nam", ""), record.get("ld", {}))
-
-            # Add to scene via undo stack
-            self.addUndoStack(new_inst)
-            return True
-
-        except Exception as e:
-            self.logger.error(f"Error creating layout instance from schematic: {e}")
-            return False
-        finally:
-            # Restore original tuple
-            self.layoutInstanceTuple = oldTuple
+        return self.createLayoutInstanceFromRecord(
+            viewTuple, record, source) is not None
 
     def saveLayoutCell(self, filePathObj: pathlib.Path,
                        markClean: bool = True) -> None:
@@ -2600,6 +2675,62 @@ class layoutScene(editorScene):
         self.deleteListUndoStack(selectedRulers)
         return True
 
+    def topLevelLayoutInstances(self) -> list:
+        """Return top-level layout/PCell instances for plugin adapters."""
+        return [item for item in self.items()
+                if item.parentItem() is None
+                and isinstance(item, lshp.layoutInstance)]
+
+    def topLevelLayoutPins(self) -> list:
+        """Return top-level layout pins for plugin adapters."""
+        return [item for item in self.items()
+                if item.parentItem() is None
+                and isinstance(item, lshp.layoutPin)]
+
+    def descendantLayoutPins(self, container) -> list:
+        """Return nested and array-aware pins below a layout container."""
+        return self._childLayoutPins(container)
+
+    def pcellPinMap(self, cellName: str) -> dict:
+        """Return the PDK schematic-pin to layout-pin mapping for a cell."""
+        return self._getPcellPinMap(cellName)
+
+    def layoutPinInInstance(self, instance, pinName: str, pinMap=None):
+        """Resolve a schematic pin name to a descendant layout pin."""
+        return self._layoutPinInInstance(instance, pinName, pinMap)
+
+    def connectivityGroupForItem(self, item):
+        """Return the current connectivity group containing an item."""
+        _ = self.connectivity
+        return self._connectivityItemGroup.get(item)
+
+    def _fitBoundsRect(self) -> QRectF:
+        """Fit bounds that exclude rulers' zoom-dependent label margin.
+
+        layoutRuler.boundingRect() pads itself by a margin proportional
+        to 1/view-zoom (its tick labels render at a fixed screen size),
+        so feeding itemsBoundingRect() into fitInView() would zoom out
+        further on every press. Rulers contribute their stable shape()
+        bound instead.
+        """
+        fitRect = QRectF()
+        for item in self.items():
+            if isinstance(item, lshp.layoutRuler):
+                fitRect = fitRect.united(
+                    item.mapToScene(item.shape().boundingRect()).boundingRect())
+            else:
+                fitRect = fitRect.united(item.sceneBoundingRect())
+        return fitRect
+
+    def addOverlayItem(self, item) -> None:
+        """Add a visual overlay without invalidating design connectivity."""
+        super().addItem(item)
+
+    def removeOverlayItem(self, item) -> None:
+        """Remove a visual overlay without invalidating design connectivity."""
+        if shiboken6.isValid(item) and item.scene() is self:
+            super().removeItem(item)
+
     # --- Layout connectivity (revedaEditor.connectivity.layout engine) ---
 
     def _beginBulkLoad(self):
@@ -2614,6 +2745,7 @@ class layoutScene(editorScene):
             self._connectivityCache = None
             self._discardQueuedBulkChange = discardQueuedChanged
             self._updateFlylineGeometry()
+            self.connectivityInvalidated.emit()
 
     def markConnectivityDirty(self, *args):
         """Invalidate cached connectivity after a scene change."""
@@ -2628,6 +2760,7 @@ class layoutScene(editorScene):
             return
         self._connectivityCache = None
         self._updateFlylineGeometry()
+        self.connectivityInvalidated.emit()
 
     def addItem(self, item):
         super().addItem(item)
@@ -2681,6 +2814,7 @@ class layoutScene(editorScene):
         # Islands may have merged/split — re-evaluate flyline topology
         # against the fresh map.
         self._syncFlylines()
+        self.connectivityRebuilt.emit()
         return groups
 
     @property
@@ -2747,14 +2881,14 @@ class layoutScene(editorScene):
         highlight.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
         highlight.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable,
                           False)
-        self.addItem(highlight)
+        self.addOverlayItem(highlight)
         self._netHighlightItems[item] = highlight
 
     def clearNetHighlights(self) -> None:
         """Remove all net-highlight overlay rectangles."""
         for highlight in self._netHighlightItems.values():
             if shiboken6.isValid(highlight) and highlight.scene() is self:
-                self.removeItem(highlight)
+                self.removeOverlayItem(highlight)
         self._netHighlightItems = {}
 
     def _clearFlylineItems(self) -> None:
@@ -2763,7 +2897,7 @@ class layoutScene(editorScene):
             if shiboken6.isValid(flyline) and flyline.scene() is self:
                 # Bypass the overridden removeItem — flylines are pure
                 # overlay and must not dirty connectivity.
-                super().removeItem(flyline)
+                self.removeOverlayItem(flyline)
         self._flylines = []
 
     def clearFlylines(self) -> None:
@@ -2915,7 +3049,7 @@ class layoutScene(editorScene):
             # Flylines are visual overlays; bypass the scene override so
             # rebuilding their topology cannot invalidate the just-built
             # design connectivity cache.
-            super().addItem(flyline)
+            self.addOverlayItem(flyline)
             self._flylines.append(flyline)
             drawn += 1
         return drawn
@@ -2941,7 +3075,7 @@ class layoutScene(editorScene):
                 if not shiboken6.isValid(flyline):
                     continue
                 if flyline.scene() is not self or not flyline.syncLine():
-                    super().removeItem(flyline)
+                    self.removeOverlayItem(flyline)
                     continue
                 alive.append(flyline)
             self._flylines = alive
@@ -3034,8 +3168,8 @@ class layoutScene(editorScene):
                      self._schematicPinName(ancestor, item.pinName)))
         return endpoints
 
-    def _probeTargets(self):
-        """(instanceNames, netEndpoints) for the current selection."""
+    def probeTargets(self):
+        """Return selected instance names and layout net endpoints."""
         _ = self.connectivity  # ensure the item->group map is fresh
         instances, netEndpoints = [], []
         for item in self.selectedItems():
@@ -3049,6 +3183,9 @@ class layoutScene(editorScene):
             if group is not None:
                 netEndpoints.extend(self._endpointsForGroup(group))
         return instances, netEndpoints
+
+    def _probeTargets(self):
+        return self.probeTargets()
 
     def probeSchematic(self) -> None:
         """Cross-probe selected instances/nets into the source schematic."""
@@ -3064,7 +3201,7 @@ class layoutScene(editorScene):
             self.messageLine.setText(
                 f"Open {key[0]}/{key[1]}/{key[2]} to probe")
             return
-        instances, netEndpoints = self._probeTargets()
+        instances, netEndpoints = self.probeTargets()
         if not instances and not netEndpoints:
             self.messageLine.setText(
                 "Select instances or net members to probe")

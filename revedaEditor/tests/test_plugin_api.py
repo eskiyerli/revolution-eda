@@ -10,8 +10,9 @@ import logging
 from pathlib import Path
 
 import pytest
+from PySide6.QtWidgets import QMainWindow
 
-from revedaEditor.backend import pluginApi
+from revedaEditor.backend import licenseManager, pluginApi
 from revedaEditor.backend.pluginsLoader import pluginsLoader
 
 APP_VERSION = "0.9.0"
@@ -186,6 +187,76 @@ def test_loader_gates_and_capabilities(qapp, app_logger, tmp_path,
     for name in ("zttonew", "ztminapp", "ztbadcore"):
         assert name not in loader.plugins
         assert loader.incompatible[name], name
+
+
+def test_incompatible_or_failed_sdl_plugin_is_not_provider(
+        qapp, app_logger, tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(tmp_path))
+    _make_plugin(tmp_path, "ztbadsdl", {
+        "plugin_api": 999,
+        "provides": ["sdl"],
+    })
+    failed = _make_plugin(tmp_path, "ztfailsdl", {
+        "plugin_api": 2,
+        "provides": ["sdl"],
+    })
+    (failed / "__init__.py").write_text("raise RuntimeError('boom')\n")
+
+    loader = pluginsLoader(tmp_path)
+
+    assert "ztbadsdl" in loader.incompatible
+    assert "ztfailsdl" not in loader.plugins
+    assert not loader.provides("sdl")
+    assert loader.capabilityProvider("sdl") is None
+
+
+def test_licensed_capability_provider_controls_menu_injection(
+        qapp, app_logger, tmp_path, monkeypatch):
+    monkeypatch.syspath_prepend(str(tmp_path))
+    plugin_dir = _make_plugin(tmp_path, "ztsdl", {
+        "plugin_api": 2,
+        "plugin_name": "ztsdl",
+        "plugin_version": "1.0",
+        "license_required": True,
+        "provides": ["sdl"],
+        "menu_items": [{
+            "location": "menuBar",
+            "menu": "Tools",
+            "action": "UpdateFromSchematic",
+            "text": "Update from Schematic...",
+            "callback": "run",
+            "apply": ["QMainWindow"],
+        }],
+    })
+    (plugin_dir / "__init__.py").write_text(
+        "def run(editorWindow):\n    return None\n")
+    licenses = {"ztsdl": False}
+    monkeypatch.setattr(
+        licenseManager, "has_valid_license", licenses.get)
+
+    loader = pluginsLoader(tmp_path)
+    unlicensedWindow = QMainWindow()
+    unlicensedWindow.menuBar().addMenu("Tools")
+    try:
+        assert not loader.provides("sdl")
+        assert loader.capabilityProvider("sdl") is None
+        loader.applyPluginMenus(unlicensedWindow)
+        assert unlicensedWindow.menuBar().actions()[0].menu().actions() == []
+
+        licenses["ztsdl"] = True
+        licensedWindow = QMainWindow()
+        licensedWindow.menuBar().addMenu("Tools")
+        try:
+            assert loader.provides("sdl")
+            assert loader.capabilityProvider("sdl") == "ztsdl"
+            loader.applyPluginMenus(licensedWindow)
+            actions = licensedWindow.menuBar().actions()[0].menu().actions()
+            assert [action.text() for action in actions] == [
+                "Update from Schematic..."]
+        finally:
+            licensedWindow.deleteLater()
+    finally:
+        unlicensedWindow.deleteLater()
 
 
 def test_loader_pluginless_config_still_imports(qapp, app_logger, tmp_path,

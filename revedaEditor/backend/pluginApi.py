@@ -49,8 +49,8 @@ PLUGIN_API_VERSION = 2
 DEFAULT_REGISTRY_URL = "https://plugins.reveda.eu/plugins.json"
 
 # Named core services a plugin may hard-require via ``requires_core``.
-# Extend as core exposes new plugin-facing services (e.g. "sdlSync").
-CORE_CAPABILITIES = frozenset({"menuItems", "viewTypes"})
+# Extend as core exposes new plugin-facing services (e.g. "sdlAdapterV1").
+CORE_CAPABILITIES = frozenset({"menuItems", "viewTypes", "sdlAdapterV1"})
 
 _VERSION_RE = re.compile(r"\d+(?:\.\d+)*")
 

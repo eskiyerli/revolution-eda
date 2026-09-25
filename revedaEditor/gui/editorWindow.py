@@ -70,11 +70,10 @@ class editorWindow(QMainWindow):
         "selectDeviceAction", "selectNetAction", "selectWireAction",
         "selectPinAction", "removeSelectFilterAction", "selectShapeAction",
         "selectLabelAction", "selectTextAction", "helpAction", "aboutAction",
-        "exportGDSAction", "exportOASAction", "flylinesAction",
-        "clearFlylinesAction", "probeSchematicAction", "highlightNetAction",
+        "exportGDSAction", "exportOASAction", "highlightNetAction",
         "clearNetHighlightsAction", "hilightNetAction", "probeNetAction",
         "removeProbeNetAction", "removeAllProbesAction", "showResolvedNamesAction",
-        "probeLayoutAction", "simulateAction", "retryLockAction",
+        "simulateAction", "retryLockAction",
     })
 
     def __init__(self, viewItem: libb.viewItem, libraryDict: dict,
@@ -94,6 +93,7 @@ class editorWindow(QMainWindow):
         self.parentEditor: Optional[editorWindow] = None
         self.parentObj = None  # type symbol or layoutInstance
         self._copyOptionsDlg: Optional[pdlg.copyOptionsDialogue] = None
+        self._pluginActions: list[QAction] = []
         self._app = QApplication.instance()  # main application pointer
         self.appMainW = self._app.appMainW  # main window pointer
         self.logger = getLogger(self.MAIN_LOGGER)
@@ -610,6 +610,12 @@ class editorWindow(QMainWindow):
             if isinstance(action, QAction):
                 savedStates.setdefault(name, action.isEnabled())
                 action.setEnabled(name in editorWindow.READ_ONLY_SAFE_ACTIONS)
+        pluginStates = getattr(self, "_preLockPluginActionEnabled", None)
+        if pluginStates is None:
+            pluginStates = self._preLockPluginActionEnabled = {}
+        for action in getattr(self, "_pluginActions", ()):
+            pluginStates.setdefault(action, action.isEnabled())
+            action.setEnabled(bool(action.property("readOnlySafe")))
 
     def _restoreLockActions(self) -> None:
         """Restore QAction enablement captured before lock contention."""
@@ -618,6 +624,10 @@ class editorWindow(QMainWindow):
             if isinstance(action, QAction):
                 action.setEnabled(enabled)
         self._preLockActionEnabled = {}
+        for action, enabled in getattr(
+                self, "_preLockPluginActionEnabled", {}).items():
+            action.setEnabled(enabled)
+        self._preLockPluginActionEnabled = {}
 
     def _applyLockContention(self, record: dict) -> None:
         """Switch the editor into read-only mode for a foreign live lock."""
@@ -902,7 +912,7 @@ class editorWindow(QMainWindow):
         if exportScope == "scene":
             items_rect = self.centralW.view.sceneRect()
         else:  # items (default)
-            items_rect = self.centralW.view.scene().itemsBoundingRect()
+            items_rect = self.centralW.scene._fitBoundsRect()
             if items_rect.isEmpty():
                 items_rect = self.centralW.view.sceneRect()
         

@@ -105,17 +105,8 @@ class layoutEditor(edw.editorWindow):
         self.exportGDSAction.setToolTip("Export GDS from Layout")
         self.exportOASAction = QAction("Export OAS", self)
         self.exportGDSAction.setToolTip("Export OAS from Layout")
-        self.sdlLoadAction = QAction("Update from Schematic...", self)
-        self.sdlLoadAction.setToolTip(
-            "Incrementally sync layout instances from schematic")
-        self.flylinesAction = QAction("Show Flylines", self)
-        self.flylinesAction.setToolTip(
-            "Redraw the schematic->layout rat's nest")
-        self.clearFlylinesAction = QAction("Clear Flylines", self)
-        self.clearFlylinesAction.setToolTip("Remove all flylines")
-        self.probeSchematicAction = QAction("Probe in Schematic", self)
-        self.probeSchematicAction.setToolTip(
-            "Cross-probe selected instances/nets into the schematic")
+        self.sdlLoadAction = QAction("Load from Schematic...", self)
+        self.sdlLoadAction.setToolTip("Create layout instances from schematic")
         self.highlightNetAction = QAction("Highlight Net", self)
         self.highlightNetAction.setToolTip(
             "Click a shape, pin, or label to highlight its whole net")
@@ -172,10 +163,9 @@ class layoutEditor(edw.editorWindow):
         self.menuTools.addAction(self.exportGDSAction)
         self.menuTools.addAction(self.exportOASAction)
         self.menuTools.addSeparator()
-        self.menuTools.addAction(self.sdlLoadAction)
-        self.menuTools.addAction(self.flylinesAction)
-        self.menuTools.addAction(self.clearFlylinesAction)
-        self.menuTools.addAction(self.probeSchematicAction)
+        pluginsObj = getattr(self._app, "pluginsObj", None)
+        if not (pluginsObj and pluginsObj.provides("sdl")):
+            self.menuTools.addAction(self.sdlLoadAction)
         self.menuTools.addSeparator()
         self.menuTools.addAction(self.highlightNetAction)
         self.menuTools.addAction(self.clearNetHighlightsAction)
@@ -254,12 +244,6 @@ class layoutEditor(edw.editorWindow):
             lambda: self.centralW.scene.ungroupSelectedItems())
         self.renumberInstanceAction.triggered.connect(self.renumberInstanceClick)
         self.sdlLoadAction.triggered.connect(self.sdlLoadClick)
-        self.flylinesAction.triggered.connect(
-            lambda: self.centralW.scene.rebuildFlylines())
-        self.clearFlylinesAction.triggered.connect(
-            lambda: self.centralW.scene.clearFlylines())
-        self.probeSchematicAction.triggered.connect(
-            lambda: self.centralW.scene.probeSchematic())
         self.highlightNetAction.triggered.connect(self.highlightNetClick)
         self.clearNetHighlightsAction.triggered.connect(
             self.clearNetHighlightsClick)
@@ -426,8 +410,30 @@ class layoutEditor(edw.editorWindow):
             self._configureLayoutPinPlacement()
         elif scene.editModes.addLabel:
             self._configureLayoutLabelPlacement()
+        elif scene.editModes.drawRuler:
+            self._configureRulerOptions()
         else:
             return False
+        return True
+
+    def _configureRulerOptions(self) -> bool:
+        """Edit ruler angle mode and edge snap (F3 during drawRuler)."""
+        scene = self.centralW.scene
+        dlg = ldlg.rulerOptionsDialogue(self)
+        modeButtons = (dlg.manhattanButton, dlg.diagonalButton,
+                       dlg.anyButton)
+        if 0 <= scene.rulerMode < len(modeButtons):
+            modeButtons[scene.rulerMode].setChecked(True)
+        dlg.snapToEdgeCheck.setChecked(scene.rulerSnapToEdge)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return False
+        mode = next((i for i, button in enumerate(modeButtons)
+                     if button.isChecked()), 0)
+        scene.applyRulerMode(mode)
+        scene.rulerSnapToEdge = dlg.snapToEdgeCheck.isChecked()
+        self.messageLine.setText(
+            f"Ruler: {scene._RULER_MODE_NAMES[mode]}, "
+            f"snap {'on' if scene.rulerSnapToEdge else 'off'}")
         return True
 
     def _configureLayoutInstanceOptions(self) -> bool:
@@ -838,12 +844,7 @@ class layoutEditor(edw.editorWindow):
         self.centralW.scene.renumberInstances()
 
     def sdlLoadClick(self):
-        """Open dialog to select a schematic and sync layout instances from it.
-
-        Sync is incremental (``updateFromSchematic``): existing user geometry
-        is preserved, SDL-owned instances are added/removed/re-parameterized
-        to match the schematic, and matching unsourced instances are adopted.
-        """
+        """Open a schematic and replace the current layout from its instances."""
         libraryModel = lmview.schematicViewsModel(self.libraryDict)
         dialog = fd.selectCellViewDialog(self, libraryModel)
         dialog.libNamesCB.setCurrentText(self.libName)
@@ -854,7 +855,26 @@ class layoutEditor(edw.editorWindow):
             libItem = libm.getLibItem(libraryModel, dialog.libNamesCB.currentText())
             cellItem = libm.getCellItem(libItem, dialog.cellCB.currentText())
             viewItem = libm.getViewItem(cellItem, dialog.viewCB.currentText())
-            self.centralW.scene.updateFromSchematic(
+            scene = self.centralW.scene
+            if scene.items():
+                reply = QMessageBox.question(
+                    self,
+                    "Replace Layout",
+                    "Loading from a schematic removes ALL existing layout "
+                    "items — not just instances — and cannot be undone.\n\n"
+                    "Save the layout first if you may need its current "
+                    "geometry.\n\nDo you want to proceed?",
+                    QMessageBox.StandardButton.Ok
+                    | QMessageBox.StandardButton.Cancel,
+                    QMessageBox.StandardButton.Cancel,
+                )
+                if reply != QMessageBox.StandardButton.Ok:
+                    return
+            scene.clear()
+            scene.itemsRefSet.clear()
+            # Stale undo commands hold references to the cleared items.
+            scene.undoStack.clear()
+            scene.loadSchematicInstances(
                 ddef.viewItemTuple(libItem, cellItem, viewItem)
             )
 

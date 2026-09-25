@@ -15,6 +15,7 @@ import json
 from typing import Any, Dict
 
 import revedaEditor.common.layoutShapes as lshp
+import revedaEditor.fileio.schemaValidation as sv
 from revedaEditor.backend.pdkLoader import importPDKModule, lazyPDKModule
 
 laylyr = lazyPDKModule("layoutLayers")
@@ -127,7 +128,7 @@ class layoutEncoder(json.JSONEncoder):
         # Correspondence map (schematic<->layout, see backend/correspondence):
         # written only for instances generated/adopted by SDL sync.
         sdl = getattr(item, "_sdlSource", None)
-        if sdl:
+        if sv.is_canonical_sdl_source(sdl):
             record["sdl"] = sdl
 
     def _encodeLayoutRect(self, item: lshp.layoutRect) -> Dict[str, Any]:

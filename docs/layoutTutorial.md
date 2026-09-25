@@ -475,25 +475,19 @@ Treat these as optional, PDK-provided features rather than core layout-editor fu
 
 ![layoutEditorGDSExport.png](assets/layoutEditorGDSExport.png)
 
-- `Tools -> Update from Schematic...`: incremental schematic-driven layout
-  sync (Virtuoso XL-lite style). Layout instances carry a link to their
-  source schematic instance; this command diffs the current layout against
-  the schematic in one undoable step — adding instances whose symbols were
-  newly placed, removing layout instances whose source disappeared, and
-  re-applying pcell parameters that drifted (via the PDK's
-  `pcellParameterMap.json` label→parameter mapping). Layout instances with no
-  schematic link, or pointing at a different schematic, are never touched.
-- `Tools -> Show Flylines` / `Clear Flylines`: toggles unrouted-connection
-  guides between instance pins. Flylines are dashed overlays — not layout
-  shapes, never saved — drawn between pin pairs that share a schematic net
-  but aren't yet connected in the layout. They follow pins live as instances
-  move, and a line disappears automatically once its endpoints merge into
-  one layout net.
-- `Tools -> Probe in Schematic`: cross-probing into the schematic editor of
-  the same cell — the counterpart of `Tools -> Probe in Layout` there. A
-  selected layout instance selects and zooms to its source schematic
-  instance; a selected layout shape highlights every layout member of the
-  corresponding net in both directions.
+- `Tools -> Load from Schematic...`: replaces the current layout with
+  instances created from a selected schematic. Matching layout or PCell views
+  are resolved by library and cell name; PCell values use the active PDK's
+  `pcellParameterMap.json` label-to-parameter mapping. Save the current layout
+  first if you may need its existing geometry.
+- When the commercial SDL Pro plugin is installed and licensed, it replaces
+  `Load from Schematic...` with `Update from Schematic...` and adds
+  `Show Flylines`, `Clear Flylines`, and `Probe in Schematic`. Update preserves
+  user geometry while adding, removing, adopting, and re-parameterizing
+  source-owned instances in one undoable operation. Flylines are
+  non-persistent overlays between schematic-connected pins that remain in
+  separate layout connectivity groups. Without an active SDL Pro license, the
+  free Load command remains available.
 - `Tools -> Highlight Net` / `Clear Net Highlights`: enables net
   highlighting in the layout canvas. Highlighting is hierarchy-aware —
   clicking metal inside an instance (e.g. the metal1 inside a psub tap)

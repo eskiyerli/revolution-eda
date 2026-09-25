@@ -517,9 +517,8 @@ def test_ruler_delta_label(scene):
     scene.addItem(ruler)
     ruler._createRulerTicks()
     last = ruler._tickTuples[-1].text
-    # 3000 scene units / dbu=1000 -> "3 (3,0)"
-    assert last.startswith("3 ")
-    assert "(3,0)" in last
+    # 3000 scene units / dbu=1000 -> "3"
+    assert last == "3"
 
 
 def test_ruler_delta_label_diagonal(scene):
@@ -531,8 +530,35 @@ def test_ruler_delta_label_diagonal(scene):
     scene.addItem(ruler)
     ruler._createRulerTicks()
     last = ruler._tickTuples[-1].text
-    assert "(3,4)" in last
-    assert last.startswith("5 ")
+    # hypot(3000, 4000) / dbu=1000 -> "5"
+    assert last == "5"
+
+
+def test_ruler_mode_option_applies_to_draft(scene):
+    """F3 ruler options: scene.rulerMode seeds new rulers and
+    applyRulerMode re-snaps the in-progress draft live."""
+    scene.rulerMode = 2  # any angle
+    scene.mouseReleaseLoc = QPoint(0, 0)
+    scene.drawLayoutRuler()
+    assert scene._newRuler.mode == 2
+    # Simulate the F3 form choosing Manhattan mid-draw: the draft
+    # end-point already tracks the cursor, and the mode setter
+    # re-snaps it under the new constraint.
+    scene._newRuler.draftLine = QLineF(QPointF(0, 0), QPointF(300, 400))
+    scene.applyRulerMode(0)
+    assert scene.rulerMode == 0
+    assert scene._newRuler.mode == 0
+    p1 = scene._newRuler.mapToScene(scene._newRuler.draftLine.p1())
+    p2 = scene._newRuler.mapToScene(scene._newRuler.draftLine.p2())
+    assert (abs(p1.x() - p2.x()) < 1e-6 or abs(p1.y() - p2.y()) < 1e-6)
+
+
+def test_ruler_snap_toggle(scene):
+    """rulerSnapToEdge=False leaves the ruler start at the raw click."""
+    scene.rulerSnapToEdge = False
+    scene.mouseReleaseLoc = QPoint(57, 43)
+    scene.drawLayoutRuler()
+    assert scene._newRuler.draftLine.p1() == QPointF(57, 43)
 
 
 def test_delete_selected_rulers(scene):

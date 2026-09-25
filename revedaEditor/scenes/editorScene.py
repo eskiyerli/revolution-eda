@@ -740,7 +740,7 @@ class editorScene(QGraphicsScene):
             # Concrete scenes return True only after successful reconstruction.
             loaded = bool(self.loadDesign(file))
             if loaded and self.items():
-                self.setSceneRect(self.itemsBoundingRect())
+                self.setSceneRect(self._fitBoundsRect())
         except Exception as error:
             self.logger.error("Error reloading design scene: %s", error)
             loaded = False
@@ -760,8 +760,13 @@ class editorScene(QGraphicsScene):
         """
         raise NotImplementedError("Subclasses must implement loadDesign")
 
+    def _fitBoundsRect(self) -> QRectF:
+        """Bounds used by fitItemsInView. Subclasses may substitute a
+        stable rect for items whose boundingRect is view-dependent."""
+        return self.itemsBoundingRect()
+
     def fitItemsInView(self) -> None:
-        self.setSceneRect(self.itemsBoundingRect().adjusted(-40, -40, 40, 40))
+        self.setSceneRect(self._fitBoundsRect().adjusted(-40, -40, 40, 40))
         self.views()[0].fitInView(self.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
         self.views()[0].viewport().update()
 

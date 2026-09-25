@@ -227,6 +227,40 @@ class createPathDialogue(QDialog):
         self.show()
 
 
+class rulerOptionsDialogue(QDialog):
+    """F3 options form for ruler draw mode (K): angle constraint and
+    edge snap."""
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.setWindowTitle("Ruler Options")
+        mainLayout = QVBoxLayout()
+        modeBox = QGroupBox("Angle Mode")
+        modeLayout = QHBoxLayout(modeBox)
+        modeGroup = QButtonGroup(self)
+        self.manhattanButton = QRadioButton("Manhattan")
+        self.diagonalButton = QRadioButton("Diagonal")
+        self.anyButton = QRadioButton("Any Angle")
+        for button in (self.manhattanButton, self.diagonalButton,
+                       self.anyButton):
+            modeGroup.addButton(button)
+            modeLayout.addWidget(button)
+        self.manhattanButton.setChecked(True)
+        modeGroup.setExclusive(True)
+        mainLayout.addWidget(modeBox)
+
+        self.snapToEdgeCheck = QCheckBox("Snap endpoints to nearest edge")
+        self.snapToEdgeCheck.setChecked(True)
+        mainLayout.addWidget(self.snapToEdgeCheck)
+
+        QBtn = (QDialogButtonBox.StandardButton.Ok
+                | QDialogButtonBox.StandardButton.Cancel)
+        self.buttonBox = QDialogButtonBox(QBtn)
+        self.buttonBox.accepted.connect(self.accept)
+        self.buttonBox.rejected.connect(self.reject)
+        mainLayout.addWidget(self.buttonBox)
+        self.setLayout(mainLayout)
+
+
 class layoutPathPropertiesDialog(createPathDialogue):
     def __init__(self, parent) -> None:
         super().__init__(parent)

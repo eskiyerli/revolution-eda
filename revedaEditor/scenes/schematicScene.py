@@ -3363,6 +3363,18 @@ class schematicScene(editorScene):
                 rect.adjusted(-100, -100, 100, 100), Qt.KeepAspectRatio)
         return len(items)
 
+    def probeTargets(self):
+        """Return selected symbol names and schematic net endpoints."""
+        instances, netEndpoints = [], []
+        for item in self.selectedItems():
+            if isinstance(item, shp.schematicSymbol):
+                instances.append(item.instanceName)
+            elif isinstance(item, snet.schematicNet):
+                netEndpoints.extend(self.netEndpointsForItem(item))
+            elif isinstance(item, shp.schematicPin):
+                netEndpoints.append(("", item.pinName))
+        return instances, netEndpoints
+
     def probeLayout(self) -> None:
         """Cross-probe selected symbols/nets into the sibling layout editor."""
         appMainW = getattr(self.editorWindow, "appMainW", None)
@@ -3374,14 +3386,7 @@ class schematicScene(editorScene):
             self.messageLine.setText(
                 f"Open {key.libraryName}/{key.cellName}/layout to probe")
             return
-        instances, netEndpoints = [], []
-        for item in self.selectedItems():
-            if isinstance(item, shp.schematicSymbol):
-                instances.append(item.instanceName)
-            elif isinstance(item, snet.schematicNet):
-                netEndpoints.extend(self.netEndpointsForItem(item))
-            elif isinstance(item, shp.schematicPin):
-                netEndpoints.append(("", item.pinName))
+        instances, netEndpoints = self.probeTargets()
         if not instances and not netEndpoints:
             self.messageLine.setText("Select symbols or nets to probe")
             return

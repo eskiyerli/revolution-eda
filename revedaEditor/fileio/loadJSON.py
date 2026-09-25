@@ -541,6 +541,16 @@ class layoutItems:
         except (orjson.JSONDecodeError, FileNotFoundError, OSError):
             return None
 
+    def _restoreSdlSource(self, obj, item):
+        """Restore only canonical persisted SDL correspondence metadata."""
+        if "sdl" not in item:
+            return
+        if sv.is_canonical_sdl_source(item["sdl"]):
+            obj._sdlSource = item["sdl"]
+        else:
+            self.scene.logger.warning(
+                "Ignoring noncanonical sdl metadata on layout instance")
+
     @staticmethod
     def _set_common_attrs(obj, item):
         # flipTuple replaces the item's custom transform. Set it before the
@@ -817,9 +827,8 @@ class layoutItems:
                 item.get("rpt", 0), item.get("cpt", 0),
             )
             self._set_common_attrs(instance, item)
-            if "sdl" in item:
-                # Schematic<->layout correspondence (backend/correspondence).
-                instance._sdlSource = item["sdl"]
+            # Schematic<->layout correspondence (backend/correspondence).
+            self._restoreSdlSource(instance, item)
             return instance
         except Exception as e:
             self.scene.logger.error(f"Error creating PCell instance: {e}")
@@ -894,9 +903,8 @@ class layoutItems:
             item.get("rpt", 0), item.get("cpt", 0),
         )
         self._set_common_attrs(instance, item)
-        if "sdl" in item:
-            # Schematic<->layout correspondence (backend/correspondence).
-            instance._sdlSource = item["sdl"]
+        # Schematic<->layout correspondence (backend/correspondence).
+        self._restoreSdlSource(instance, item)
         return instance
 
     def createRectShape(self, item):

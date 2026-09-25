@@ -1635,11 +1635,17 @@ class layoutRuler(layoutShape):
         self._selectedPen.setCosmetic(True)
         # self._pen.setCosmetic(True)
         self._tickTuples = list()
+        self._tickLines = []
+        self._labelTicks = []
         self._tickFont = tickFont
         self._determineAngle(self._draftLine.angle())
         self._fm = QFontMetrics(self._tickFont)
         self._fontHeight = self._fm.boundingRect("0").height()
         self._fontWidth = self._fm.boundingRect("0.000").width()
+        # The bounding rect's label margin tracks the last painted view
+        # scale; paint() recomputes it when the zoom drifts >10%.
+        self._lastBoundingScale = 1.0
+        self._boundingRect = QRectF()
         # Enable child event filtering for filters and handles
         self.setFiltersChildEvents(True)
         self.setHandlesChildEvents(True)
@@ -1649,7 +1655,6 @@ class layoutRuler(layoutShape):
         # self.setCacheMode(QGraphicsItem.DeviceCoordinateCache)
         # self.update(self.boundingRect())
         self.setZValue(999)
-        self._lastBoundingScale = 1.0
 
     def __repr__(self) -> str:
         return (
@@ -1851,16 +1856,7 @@ class layoutRuler(layoutShape):
                 )
 
             finalLine = QLineF(p2, p2 + perpTickMajor)
-            # The ruler's mode rotation is applied to the item, not the local
-            # draftLine, so the measured end-to-end delta lives in scene
-            # coordinates; mapToScene folds in the item transform.
-            sceneDelta = self.mapToScene(p2) - self.mapToScene(p1)
-            dX = self._lengthToLayoutUnits(sceneDelta.x())
-            dY = self._lengthToLayoutUnits(sceneDelta.y())
-            lengthStr = (
-                f"{round(self._lengthToLayoutUnits(lineLength), 3):g} "
-                f"({round(dX, 3):g},{round(dY, 3):g})"
-            )
+            lengthStr = f"{round(self._lengthToLayoutUnits(lineLength), 3):g}"
             self._tickTuples.append(
                 ddef.rulerTuple(
                     p2 + direction * 2,
@@ -1886,27 +1882,30 @@ class layoutRuler(layoutShape):
         self._shapePath.addRect(
             path.boundingRect().adjusted(-margin, -margin, margin, margin)
         )
+        self._tickLines = [QLineF(*tickTuple.line)
+                           for tickTuple in self._tickTuples]
+        self._labelTicks = [t for t in self._tickTuples if t.text]
+        self._updateBoundingRect()
 
-    def boundingRect(self) -> QRectF:
-        # The tick labels are drawn at a fixed screen size (inverse-scaled),
-        # so their footprint in scene coordinates grows as the view zooms out.
-        # We need a scale-aware margin to prevent Qt from clipping the text.
-        scale = 1.0
-        scene = self.scene()
-        if scene is not None:
-            views = scene.views()
-            if views:
-                vt = views[0].transform()
-                scale = math.hypot(vt.m11(), vt.m12())
-                if scale <= 0:
-                    scale = 1.0
+    def _updateBoundingRect(self) -> None:
+        """Refresh the cached bounding rect for the last painted view scale.
+
+        The tick labels render at a fixed screen size (inverse-scaled), so
+        their scene-space footprint grows as the view zooms out. Recomputing
+        that margin on every boundingRect() call showed up in profiles and —
+        worse — made itemsBoundingRect() zoom-dependent. Instead the margin
+        is cached and refreshed from paint() whenever the scale drifts >10%.
+        """
+        scale = self._lastBoundingScale if self._lastBoundingScale > 0 else 1.0
         sceneMargin = max(self._fontWidth, self._fontHeight, self._tickLength) / scale
         # Add a fixed scene-unit margin for the tick lines themselves
-        baseMargin = self._tickLength * 2
-        margin = max(sceneMargin * 1.5, baseMargin)
-        return (
+        margin = max(sceneMargin * 1.5, self._tickLength * 2)
+        self._boundingRect = (
             QRectF(self._rect).normalized().adjusted(-margin, -margin, margin, margin)
         )
+
+    def boundingRect(self) -> QRectF:
+        return self._boundingRect
 
     def shape(self) -> QPainterPath:
         # The default QGraphicsItem shape is the full boundingRect, which grows
@@ -1938,6 +1937,7 @@ class layoutRuler(layoutShape):
         if abs(scale - self._lastBoundingScale) / max(scale, self._lastBoundingScale) > 0.1:
             self.prepareGeometryChange()
             self._lastBoundingScale = scale
+            self._updateBoundingRect()
 
         p1Scene = self.mapToScene(self._draftLine.p1())
         p2Scene = self.mapToScene(self._draftLine.p2())
@@ -1964,34 +1964,37 @@ class layoutRuler(layoutShape):
         if 90 < abs(screenAngle) <= 180:
             textOffsetX = -self._fontWidth - 3.0
 
-        lastLabelPos = None
-        lastTickIndex = len(self._tickTuples) - 1
-        for idx, tickTuple in enumerate(self._tickTuples):
-            painter.drawLine(tickTuple.line[0], tickTuple.line[1])
-            if tickTuple.text:
-                tickPos = tickTuple.point
-                # Always draw the first (0) and last (total length) labels;
-                # skip intermediate labels that are too close at current zoom.
-                isEndLabel = (idx == 0 or idx == lastTickIndex)
-                if not isEndLabel and lastLabelPos is not None:
-                    dist = QLineF(lastLabelPos, tickPos).length()
-                    if dist < minLabelSceneDist:
-                        continue
-                lastLabelPos = tickPos
+        # Draw ticks individually — batched painter.drawLines() misrenders
+        # under the OpenGL viewport used by the layout view.
+        for tickLine in self._tickLines:
+            painter.drawLine(tickLine)
 
-                painter.save()
-                painter.translate(tickPos)
-                # Clamp the inverse scale: text stays constant size down to
-                # scale=1, then shrinks proportionally (square-root) below that
-                # so it doesn't dominate the ruler at very low zoom levels.
-                if scale >= 1.0:
-                    invScale = 1.0 / scale
-                else:
-                    invScale = math.sqrt(1.0 / scale)
-                painter.scale(invScale, invScale)
-                painter.rotate(textAngle)
-                painter.drawText(QPointF(textOffsetX, textOffsetY), tickTuple.text)
-                painter.restore()
+        lastLabelPos = None
+        lastLabelIndex = len(self._labelTicks) - 1
+        for idx, tickTuple in enumerate(self._labelTicks):
+            tickPos = tickTuple.point
+            # Always draw the first (0) and last (total length) labels;
+            # skip intermediate labels that are too close at current zoom.
+            isEndLabel = (idx == 0 or idx == lastLabelIndex)
+            if not isEndLabel and lastLabelPos is not None:
+                dist = QLineF(lastLabelPos, tickPos).length()
+                if dist < minLabelSceneDist:
+                    continue
+            lastLabelPos = tickPos
+
+            painter.save()
+            painter.translate(tickPos)
+            # Clamp the inverse scale: text stays constant size down to
+            # scale=1, then shrinks proportionally (square-root) below that
+            # so it doesn't dominate the ruler at very low zoom levels.
+            if scale >= 1.0:
+                invScale = 1.0 / scale
+            else:
+                invScale = math.sqrt(1.0 / scale)
+            painter.scale(invScale, invScale)
+            painter.rotate(textAngle)
+            painter.drawText(QPointF(textOffsetX, textOffsetY), tickTuple.text)
+            painter.restore()
 
     @property
     def draftLine(self):
@@ -2031,6 +2034,10 @@ class layoutRuler(layoutShape):
     @mode.setter
     def mode(self, value: int):
         self._mode = value
+        # Re-apply the angle constraint to the current draft end-point —
+        # it already tracks the last mouse position during a draw.
+        if getattr(self, "_draftLine", None) is not None:
+            self.draftLine = self._draftLine
 
     @property
     def tickFont(self):

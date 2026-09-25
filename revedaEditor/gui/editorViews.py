@@ -376,7 +376,7 @@ class editorView(QGraphicsView):
         try:
             targetRect = painter.viewport()
             if sourceRect is None:
-                items_rect = self.scene().itemsBoundingRect()
+                items_rect = self.scene()._fitBoundsRect()
                 if not items_rect.isEmpty():
                     margin = max(20.0,
                                  min(items_rect.width(),
