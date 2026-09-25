@@ -489,14 +489,15 @@ Treat these as optional, PDK-provided features rather than core layout-editor fu
   are resolved by library and cell name; PCell values use the active PDK's
   `pcellParameterMap.json` label-to-parameter mapping. Save the current layout
   first if you may need its existing geometry.
-- When the commercial SDL Pro plugin is installed and licensed, it replaces
+- When the commercial SDL Pro plugin is installed and compatible, it replaces
   `Load from Schematic...` with `Update from Schematic...` and adds
-  `Show Flylines`, `Clear Flylines`, and `Probe in Schematic`. Update preserves
-  user geometry while adding, removing, adopting, and re-parameterizing
-  source-owned instances in one undoable operation. Flylines are
-  non-persistent overlays between schematic-connected pins that remain in
-  separate layout connectivity groups. Without an active SDL Pro license, the
-  free Load command remains available.
+  `Show Flylines`, `Clear Flylines`, and `Probe in Schematic`. These actions
+  remain visible without a license; selecting one opens the license dialog for
+  activation or purchase. After activation, Update preserves user geometry
+  while adding, removing, adopting, and re-parameterizing source-owned
+  instances in one undoable operation. Flylines are non-persistent overlays
+  between schematic-connected pins that remain in separate layout connectivity
+  groups. Without the plugin, the free Load command remains available.
 - `Tools -> Highlight Net` / `Clear Net Highlights`: enables net
   highlighting in the layout canvas. Highlighting is hierarchy-aware —
   clicking metal inside an instance (e.g. the metal1 inside a psub tap)

@@ -199,14 +199,14 @@ def test_plugin_loader_registers_action_safety(qapp):
 
 
 class _SdlPlugins:
-    def __init__(self, active: bool):
-        self.active = active
+    def __init__(self, installed: bool):
+        self.installed = installed
 
     def provides(self, capability: str) -> bool:
-        return self.active and capability == "sdl"
+        return self.installed and capability == "sdl"
 
     def applyPluginMenus(self, window):
-        if not self.active:
+        if not self.installed:
             return
         action = QAction("Update from Schematic...", window)
         action.setProperty("readOnlySafe", False)
@@ -241,7 +241,7 @@ def _layoutEditorForPluginMenu(pluginsObj):
     return editor
 
 
-def test_active_sdl_capability_replaces_free_load_action(qapp, monkeypatch):
+def test_installed_sdl_capability_replaces_free_load_action(qapp, monkeypatch):
     monkeypatch.setattr(edw.editorWindow, "_addActions", lambda self: None)
     editor = _layoutEditorForPluginMenu(_SdlPlugins(True))
     try:
@@ -253,7 +253,7 @@ def test_active_sdl_capability_replaces_free_load_action(qapp, monkeypatch):
         editor.deleteLater()
 
 
-def test_inactive_sdl_capability_keeps_free_load_action(qapp, monkeypatch):
+def test_absent_sdl_capability_keeps_free_load_action(qapp, monkeypatch):
     monkeypatch.setattr(edw.editorWindow, "_addActions", lambda self: None)
     plugins = _SdlPlugins(False)
     editor = _layoutEditorForPluginMenu(plugins)

@@ -137,10 +137,12 @@ never imported** — and the reasons are logged to `reveda.log` and recorded in
 | `requires_core` | List of core capabilities the plugin cannot run without (`menuItems`, `viewTypes`, `sdlAdapterV1`, ...). Unknown entries block the import. |
 | `plugin_version` | Installed version string, compared against the registry `version` for update notices. |
 
-`provides()` reports an active provider: the plugin must have passed
-negotiation and imported successfully, and a commercial capability provider
-must currently have a valid license. Inactive capability providers do not
-inject their declared menu items, so core/native fallbacks remain available.
+`provides()` reports an installed provider: the plugin must have passed
+negotiation and imported successfully. License state does not affect
+capability ownership or menu visibility. For commercial plugins, the loader
+wraps each menu callback with `check_and_prompt_license()` so an installed
+capability provider still replaces the native fallback while protected actions
+prompt for activation when selected.
 
 ### Discovery and update checks
 
@@ -190,6 +192,22 @@ Key fields in `menu_items`:
 - Optional: `text`, `icon`, `shortcut`, `checked`, `read_only_safe`
 - `read_only_safe: true` keeps a non-mutating plugin action enabled when a
   cellview is lock-contended; actions default to disabled in read-only editors.
+
+### Commercial menu licensing
+
+A plugin with `license` set to `Commercial`, `Proprietary`, or `Paid` — or with
+`license_required: true` — still installs its declared menu actions when it is
+compatible and imported. The loader wraps each callback with
+`check_and_prompt_license()`: a valid stored license runs the callback
+immediately; otherwise the license dialog opens first and the callback runs only
+after successful activation. The dialog accepts a license key and provides the
+purchase/checkout flow supplied by `revedaLicense` and the license server.
+`payment_url` may be supplied as plugin metadata for checkout flows that use a
+fixed URL.
+
+This means license state controls execution, not menu discovery. Capability
+providers such as SDL Pro can therefore replace a native action as soon as they
+are installed while still gating the protected callback itself.
 
 ### Real Examples
 

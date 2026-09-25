@@ -210,7 +210,7 @@ def test_incompatible_or_failed_sdl_plugin_is_not_provider(
     assert loader.capabilityProvider("sdl") is None
 
 
-def test_licensed_capability_provider_controls_menu_injection(
+def test_capability_provider_injects_license_gated_menu_item(
         qapp, app_logger, tmp_path, monkeypatch):
     monkeypatch.syspath_prepend(str(tmp_path))
     plugin_dir = _make_plugin(tmp_path, "ztsdl", {
@@ -219,6 +219,7 @@ def test_licensed_capability_provider_controls_menu_injection(
         "plugin_version": "1.0",
         "license_required": True,
         "provides": ["sdl"],
+        "payment_url": "https://plugins.example/checkout",
         "menu_items": [{
             "location": "menuBar",
             "menu": "Tools",
@@ -229,34 +230,40 @@ def test_licensed_capability_provider_controls_menu_injection(
         }],
     })
     (plugin_dir / "__init__.py").write_text(
-        "def run(editorWindow):\n    return None\n")
-    licenses = {"ztsdl": False}
+        "def run(editorWindow):\n    editorWindow.calls.append('run')\n")
+    licensed = {"value": False}
+    prompts = []
+
+    def prompt(plugin_name, payment_url, parent):
+        prompts.append((plugin_name, payment_url, parent))
+        return licensed["value"]
+
     monkeypatch.setattr(
-        licenseManager, "has_valid_license", licenses.get)
+        licenseManager, "check_and_prompt_license", prompt)
 
     loader = pluginsLoader(tmp_path)
-    unlicensedWindow = QMainWindow()
-    unlicensedWindow.menuBar().addMenu("Tools")
+    window = QMainWindow()
+    window.calls = []
+    window.menuBar().addMenu("Tools")
     try:
-        assert not loader.provides("sdl")
-        assert loader.capabilityProvider("sdl") is None
-        loader.applyPluginMenus(unlicensedWindow)
-        assert unlicensedWindow.menuBar().actions()[0].menu().actions() == []
+        assert loader.provides("sdl")
+        assert loader.capabilityProvider("sdl") == "ztsdl"
+        loader.applyPluginMenus(window)
+        actions = window.menuBar().actions()[0].menu().actions()
+        assert [action.text() for action in actions] == [
+            "Update from Schematic..."]
 
-        licenses["ztsdl"] = True
-        licensedWindow = QMainWindow()
-        licensedWindow.menuBar().addMenu("Tools")
-        try:
-            assert loader.provides("sdl")
-            assert loader.capabilityProvider("sdl") == "ztsdl"
-            loader.applyPluginMenus(licensedWindow)
-            actions = licensedWindow.menuBar().actions()[0].menu().actions()
-            assert [action.text() for action in actions] == [
-                "Update from Schematic..."]
-        finally:
-            licensedWindow.deleteLater()
+        actions[0].trigger()
+        assert prompts == [(
+            "ztsdl", "https://plugins.example/checkout", window)]
+        assert window.calls == []
+
+        licensed["value"] = True
+        actions[0].trigger()
+        assert len(prompts) == 2
+        assert window.calls == ["run"]
     finally:
-        unlicensedWindow.deleteLater()
+        window.deleteLater()
 
 
 def test_loader_pluginless_config_still_imports(qapp, app_logger, tmp_path,
