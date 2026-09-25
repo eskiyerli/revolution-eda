@@ -27,6 +27,9 @@ Module in `revedaEditor\scenes`.
   - `ungroupSelectedItems()`
   - `booleanSelectedItems()`
   - `flattenSelection()`
+  - `collapseSelectedInstances()`
+  - `expandSelectedInstances()`
+  - `expandAllInstances()`
   - `makeCellFromSelection()`
   - `startCutLine()`
   - `drawLayoutPolygon()`

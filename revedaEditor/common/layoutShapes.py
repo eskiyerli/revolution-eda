@@ -30,6 +30,7 @@ from PySide6.QtGui import (
     QFont,
     QFontDatabase,
     QFontMetrics,
+    QFontMetricsF,
     QImage,
     QPainter,
     QPainterPath,
@@ -674,8 +675,17 @@ class _DeferredLoader(NamedTuple):
     pathKey: str | None
 
 
+# Scenes without a displayLevel attribute behave as "show all levels".
+_DEFAULT_DISPLAY_LEVEL = 20
+
+
 class layoutInstance(layoutShape):
     _lodThreshold = 0.002
+    # Font/metrics for the collapsed-instance bbox label are created lazily:
+    # QFont needs a running QApplication.
+    _labelFont = None
+    _labelFontMetrics = None
+
     def __init__(self, shapes: list[layoutShape]):
         super().__init__()
 
@@ -701,6 +711,9 @@ class layoutInstance(layoutShape):
         self._shapes_set = False
         self._childBoundsCache = None
         self._deferredLoader: _DeferredLoader | None = None
+        self._childrenHidden = False
+        # Session-only per-instance collapse override (context menu).
+        self._userCollapsed = False
 
         # Instance-array (mosaic) state: rows/cols copies of the same cell,
         # spaced by rowPitch/colPitch in scene units (dbu) along the
@@ -942,14 +955,75 @@ class layoutInstance(layoutShape):
     def boundingRect(self) -> QRectF:
         return self._childrenBounds().adjusted(-2, -2, 2, 2)
 
+    def hierDepth(self) -> int:
+        """Hierarchy depth: a top-level instance is 1; each layoutInstance
+        ancestor (layoutPcell included) adds one. Other parent kinds such as
+        layoutGroup do not count."""
+        depth = 1
+        parent = self.parentItem()
+        while parent is not None:
+            if isinstance(parent, layoutInstance):
+                depth += 1
+            parent = parent.parentItem()
+        return depth
+
+    @classmethod
+    def _collapsedLabelFont(cls):
+        if cls._labelFont is None:
+            cls._labelFont = QFont()
+            cls._labelFontMetrics = QFontMetricsF(cls._labelFont)
+        return cls._labelFont, cls._labelFontMetrics
+
+    def _paintCollapsedLabel(self, painter, rect: QRectF) -> None:
+        """Draw 'instName cellName' centred inside the collapsed bbox, scaled
+        to fit and skipped when the on-screen glyphs would be unreadable."""
+        text = f"{self._instanceName} {self._cellName}"
+        font, metrics = self._collapsedLabelFont()
+        textWidth = metrics.horizontalAdvance(text)
+        textHeight = metrics.height()
+        if textWidth <= 0 or textHeight <= 0 or rect.isEmpty():
+            return
+        scale = min(rect.width() / (textWidth + 8.0),
+                    rect.height() * 0.6 / textHeight)
+        viewScale = painter.worldTransform().m11()
+        if scale <= 0 or scale * textHeight * viewScale < 6:
+            return
+        painter.save()
+        painter.setFont(font)
+        painter.setPen(QColor(200, 200, 200))
+        painter.translate(rect.center())
+        # Cancel the instance flip so the label stays readable: a mirror
+        # about the same centre composed with itself is the identity.
+        flipX, flipY = self._flipTuple
+        if flipX != 1 or flipY != 1:
+            painter.scale(flipX, flipY)
+        painter.scale(scale, scale)
+        painter.drawText(
+            QRectF(-textWidth / 2, -textHeight / 2, textWidth, textHeight),
+            Qt.AlignmentFlag.AlignCenter, text)
+        painter.restore()
+
     def paint(self, painter, option, widget) -> None:
         lod = QStyleOptionGraphicsItem.levelOfDetailFromTransform(
             painter.worldTransform()
         )
+        scene = self.scene()
+        displayLevel = (
+            getattr(scene, "displayLevel", _DEFAULT_DISPLAY_LEVEL)
+            if scene is not None
+            else _DEFAULT_DISPLAY_LEVEL
+        )
+        collapsed = (
+            lod < layoutInstance._lodThreshold
+            or self._userCollapsed
+            or self.hierDepth() > displayLevel
+        )
 
-        if lod < layoutInstance._lodThreshold:
-            # --- Low-detail mode: hide children, draw a filled rect with outline ---
-            if not getattr(self, "_childrenHidden", False):
+        if collapsed:
+            # --- Collapsed: hide children, draw a labelled bounding rect ---
+            # _ensureShapes() is deliberately not called, so deferred
+            # (bbox-only) instances are never realised.
+            if not self._childrenHidden:
                 for child in self.childItems():
                     child.setVisible(False)
                 self._childrenHidden = True
@@ -958,6 +1032,7 @@ class layoutInstance(layoutShape):
             painter.setPen(QPen(QColor(150, 150, 150), 0))
             painter.setBrush(QColor(100, 100, 100, 60))
             painter.drawRect(rect)
+            self._paintCollapsedLabel(painter, rect)
 
             if option.state & QStyle.State_Selected:
                 painter.setPen(self._selectedPen)
@@ -966,7 +1041,7 @@ class layoutInstance(layoutShape):
         else:
             # --- Full-detail mode: realise deferred children, ensure visible ---
             self._ensureShapes()
-            if getattr(self, "_childrenHidden", False):
+            if self._childrenHidden:
                 for child in self.childItems():
                     if hasattr(child, "layer") and hasattr(child.layer, "visible"):
                         child.setVisible(child.layer.visible)
@@ -1054,6 +1129,16 @@ class layoutInstance(layoutShape):
     def counter(self, value: int):
         if isinstance(value, int):
             self._counter = value
+
+    @property
+    def userCollapsed(self) -> bool:
+        """Session-only override: draw this instance as a labelled bbox."""
+        return self._userCollapsed
+
+    @userCollapsed.setter
+    def userCollapsed(self, value: bool):
+        self._userCollapsed = bool(value)
+        self.update()
 
     @property
     def rows(self) -> int:

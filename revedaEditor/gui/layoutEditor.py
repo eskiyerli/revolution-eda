@@ -23,12 +23,15 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
+    QLabel,
     QMessageBox,
+    QSpinBox,
     QSplitter,
     QToolBar,
     QVBoxLayout,
     QWidget,
     QGraphicsRectItem,
+    QMenu,
 )
 from quantiphy import Quantity
 
@@ -84,6 +87,10 @@ class layoutEditor(edw.editorWindow):
         # create container to position all widgets
         self.centralW = layoutContainer(self)
         self.setCentralWidget(self.centralW)
+        # Reflect the scene's default display level in the toolbar spinbox.
+        self.hierLevelSpin.blockSignals(True)
+        self.hierLevelSpin.setValue(self.centralW.scene.displayLevel)
+        self.hierLevelSpin.blockSignals(False)
 
     def _createMenuBar(self):
         super()._createMenuBar()
@@ -131,6 +138,15 @@ class layoutEditor(edw.editorWindow):
         self.ungroupItemsAction = QAction("Ungroup Items", self)
         self.ungroupItemsAction.setToolTip(
             "Explode selected groups back into their items")
+        self.collapseInstAction = QAction("Collapse Instance", self)
+        self.collapseInstAction.setToolTip(
+            "Draw selected instances as labelled bounding boxes")
+        self.expandInstAction = QAction("Expand Instance", self)
+        self.expandInstAction.setToolTip(
+            "Draw selected instances' contents again")
+        self.expandAllInstAction = QAction("Expand All Instances", self)
+        self.expandAllInstAction.setToolTip(
+            "Clear per-instance collapse on every instance")
 
     def _addActions(self):
         super()._addActions()
@@ -159,14 +175,22 @@ class layoutEditor(edw.editorWindow):
         self.menuCreate.addAction(self.rulerAction)
         self.menuCreate.addAction(self.delSelectedRulerAction)
         self.menuCreate.addAction(self.delRulerAction)
-        self.menuTools.addAction(self.renumberInstanceAction)
-        self.menuTools.addAction(self.exportGDSAction)
-        self.menuTools.addAction(self.exportOASAction)
-        self.menuTools.addSeparator()
+        self.instanceUtilitiesMenu = QMenu("Instances", self.menuUtilities)
+        self.instanceUtilitiesMenu.addAction(self.renumberInstanceAction)
+        self.menuUtilities.insertMenu(
+            self.cellAccessMenu.menuAction(), self.instanceUtilitiesMenu
+        )
+        self.exportUtilitiesMenu = QMenu("Export", self.menuUtilities)
+        self.exportUtilitiesMenu.addAction(self.exportGDSAction)
+        self.exportUtilitiesMenu.addAction(self.exportOASAction)
+        self.menuUtilities.insertMenu(
+            self.cellAccessMenu.menuAction(), self.exportUtilitiesMenu
+        )
+
         pluginsObj = getattr(self._app, "pluginsObj", None)
         if not (pluginsObj and pluginsObj.provides("sdl")):
             self.menuTools.addAction(self.sdlLoadAction)
-        self.menuTools.addSeparator()
+            self.menuTools.addSeparator()
         self.menuTools.addAction(self.highlightNetAction)
         self.menuTools.addAction(self.clearNetHighlightsAction)
 
@@ -193,6 +217,10 @@ class layoutEditor(edw.editorWindow):
         self.centralW.scene.itemContextMenu.addAction(self.mergeAction)
         self.centralW.scene.itemContextMenu.addAction(self.groupItemsAction)
         self.centralW.scene.itemContextMenu.addAction(self.ungroupItemsAction)
+        self.centralW.scene.itemContextMenu.addSeparator()
+        self.centralW.scene.itemContextMenu.addAction(self.collapseInstAction)
+        self.centralW.scene.itemContextMenu.addAction(self.expandInstAction)
+        self.centralW.scene.itemContextMenu.addAction(self.expandAllInstAction)
 
     def _createToolBars(self):
         super()._createToolBars()
@@ -214,6 +242,16 @@ class layoutEditor(edw.editorWindow):
         self.layoutToolbar.addAction(self.removeSelectFilterAction)
         self.layoutToolbar.addAction(self.selectWireAction)
         self.layoutToolbar.addAction(self.selectDeviceAction)
+        self.layoutToolbar.addSeparator()
+        self.layoutToolbar.addWidget(QLabel("Level: "))
+        self.hierLevelSpin = QSpinBox(self)
+        self.hierLevelSpin.setRange(0, 20)
+        self.hierLevelSpin.setToolTip(
+            "Hierarchy display level (0 = top-level instances as boxes; "
+            "20 = all levels)")
+        # The toolbar exists before centralW; setDisplayLevel tolerates that.
+        self.hierLevelSpin.valueChanged.connect(self.setDisplayLevel)
+        self.layoutToolbar.addWidget(self.hierLevelSpin)
 
     def _createTriggers(self):
         super()._createTriggers()
@@ -242,6 +280,12 @@ class layoutEditor(edw.editorWindow):
             lambda: self.centralW.scene.groupSelectedItems())
         self.ungroupItemsAction.triggered.connect(
             lambda: self.centralW.scene.ungroupSelectedItems())
+        self.collapseInstAction.triggered.connect(
+            lambda: self.centralW.scene.collapseSelectedInstances())
+        self.expandInstAction.triggered.connect(
+            lambda: self.centralW.scene.expandSelectedInstances())
+        self.expandAllInstAction.triggered.connect(
+            lambda: self.centralW.scene.expandAllInstances())
         self.renumberInstanceAction.triggered.connect(self.renumberInstanceClick)
         self.sdlLoadAction.triggered.connect(self.sdlLoadClick)
         self.highlightNetAction.triggered.connect(self.highlightNetClick)
@@ -878,6 +922,20 @@ class layoutEditor(edw.editorWindow):
                 ddef.viewItemTuple(libItem, cellItem, viewItem)
             )
 
+    def setDisplayLevel(self, level: int) -> None:
+        """Apply the hierarchy display level to the scene (session-only)."""
+        central = getattr(self, "centralW", None)
+        if central is None:
+            return
+        scene = central.scene
+        # The property setter repaints every instance and the scene.
+        scene.displayLevel = int(level)
+        if (hasattr(self, "hierLevelSpin")
+                and self.hierLevelSpin.value() != int(level)):
+            self.hierLevelSpin.blockSignals(True)
+            self.hierLevelSpin.setValue(int(level))
+            self.hierLevelSpin.blockSignals(False)
+
     def dispConfigEdit(self):
         import revedaEditor.gui.propertyDialogues as pdlg
 
@@ -888,6 +946,7 @@ class layoutEditor(edw.editorWindow):
         dcd.snapGridEdit.setText(str(self.snapGrid / self.dbu))
         dcd.snapConnectEdit.setText(str(self.snapConnectDistance / self.dbu))
         dcd.lodThresholdEdit.setText(str(self.lodThreshold))
+        dcd.hierLevelSpin.setValue(self.centralW.scene.displayLevel)
         if dcd.exec() == QDialog.DialogCode.Accepted:
             self.configureGridSettings(
                 (
@@ -919,6 +978,7 @@ class layoutEditor(edw.editorWindow):
                     self.centralW.scene.update()
             except ValueError:
                 pass
+            self.setDisplayLevel(dcd.hierLevelSpin.value())
 
     def closeEvent(self, event):
         try:

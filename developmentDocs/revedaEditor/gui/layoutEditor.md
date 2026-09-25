@@ -41,6 +41,7 @@ Module in `revedaEditor\gui`.
   - `handleLVSRectSelection()`
   - `renumberInstanceClick()`
   - `sdlLoadClick()`
+  - `setDisplayLevel()`
   - `dispConfigEdit()`
   - `closeEvent()`
   - `lvsRectangles()`

@@ -238,6 +238,12 @@ def _layoutEditorForPluginMenu(pluginsObj):
     editor.menuEdit = editor.menuBar().addMenu("Edit")
     editor.menuCreate = editor.menuBar().addMenu("Create")
     editor.menuTools = editor.menuBar().addMenu("Tools")
+    editor.menuUtilities = editor.menuBar().addMenu("Utilities")
+    editor.cellAccessMenu = editor.menuUtilities.addMenu("Cell Access")
+    editor.readOnlyCellAction = QAction("Read Only", editor)
+    editor.retryLockAction = QAction("Retry Edit Access", editor)
+    editor.cellAccessMenu.addAction(editor.readOnlyCellAction)
+    editor.cellAccessMenu.addAction(editor.retryLockAction)
     return editor
 
 
@@ -249,6 +255,9 @@ def test_installed_sdl_capability_replaces_free_load_action(qapp, monkeypatch):
         texts = [action.text() for action in editor.menuTools.actions()]
         assert "Load from Schematic..." not in texts
         assert texts.count("Update from Schematic...") == 1
+        # no leading separator before Highlight Net when SDL is suppressed
+        first = editor.menuTools.actions()[0]
+        assert not first.isSeparator()
     finally:
         editor.deleteLater()
 
@@ -262,5 +271,37 @@ def test_absent_sdl_capability_keeps_free_load_action(qapp, monkeypatch):
         texts = [action.text() for action in editor.menuTools.actions()]
         assert "Load from Schematic..." in texts
         assert "Update from Schematic..." not in texts
+        separators = [
+            i for i, a in enumerate(editor.menuTools.actions())
+            if a.isSeparator()
+        ]
+        assert separators == [1]
+    finally:
+        editor.deleteLater()
+
+
+def test_utilities_submenus_order_and_tools_layout(qapp, monkeypatch):
+    monkeypatch.setattr(edw.editorWindow, "_addActions", lambda self: None)
+    editor = _layoutEditorForPluginMenu(_SdlPlugins(False))
+    try:
+        led.layoutEditor._addActions(editor)
+        utilityTitles = [
+            a.text() for a in editor.menuUtilities.actions()
+        ]
+        assert utilityTitles == ["Instances", "Export", "Cell Access"]
+        assert editor.instanceUtilitiesMenu.actions() == [
+            editor.renumberInstanceAction
+        ]
+        assert editor.exportUtilitiesMenu.actions() == [
+            editor.exportGDSAction, editor.exportOASAction
+        ]
+        toolsActions = [
+            a for a in editor.menuTools.actions()
+            if not a.isSeparator()
+        ]
+        assert toolsActions == [
+            editor.sdlLoadAction, editor.highlightNetAction,
+            editor.clearNetHighlightsAction,
+        ]
     finally:
         editor.deleteLater()

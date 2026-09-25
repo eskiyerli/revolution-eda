@@ -36,6 +36,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QRadioButton,
+    QSpinBox,
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
@@ -1288,8 +1289,19 @@ class layoutDisplayConfigDialog(QDialog):
         gridTypeLayout.addWidget(self.noType)
         gridTypeGroup.setLayout(gridTypeLayout)
 
+        hierGroup = QGroupBox("Hierarchy")
+        formLayout = QFormLayout(hierGroup)
+        self.hierLevelSpin = QSpinBox()
+        self.hierLevelSpin.setRange(0, 20)
+        self.hierLevelSpin.setToolTip(
+            "Instances deeper than this level are drawn as labelled "
+            "bounding boxes. 0 = top-level instances only; 20 = all levels."
+        )
+        formLayout.addRow("Display Level:", self.hierLevelSpin)
+
         self.vLayout.addWidget(gridValueGroup)
         self.vLayout.addWidget(gridTypeGroup)
+        self.vLayout.addWidget(hierGroup)
         self.vLayout.addStretch(1)
 
         self.vLayout.addWidget(self.buttonBox)

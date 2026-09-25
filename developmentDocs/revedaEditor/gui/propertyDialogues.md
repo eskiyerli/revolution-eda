@@ -51,7 +51,7 @@ Module in `revedaEditor\gui`.
   - `familyFontStyles()`
   - `styleFontSizes()`
 - `displayConfigDialog(QDialog)`
-- `layoutDisplayConfigDialog(QDialog)`
+- `layoutDisplayConfigDialog(QDialog)` — Layout display options; the Hierarchy group's `hierLevelSpin` sets `scene.displayLevel` (0 = top-level instances as boxes; 20 = show all).
 - `selectConfigDialogue(QDialog)`
 - `moveByDialogue(QDialog)`
 - `copyOptionsDialogue(QDialog)` — Modeless copy-options form (Virtuoso F3 convention): place the

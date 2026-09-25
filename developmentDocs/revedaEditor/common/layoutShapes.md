@@ -81,6 +81,7 @@ Module in `revedaEditor\common`.
   - `setShapes()`
   - `removeShapes()`
   - `boundingRect()`
+  - `hierDepth()`
   - `paint()`
   - `sceneEvent()`
   - `libraryName()`
@@ -96,13 +97,15 @@ Module in `revedaEditor\common`.
   - `start()`
   - `counter()`
   - `counter()`
+  - `userCollapsed()`
+  - `userCollapsed()`
   - `rows()`
   - `cols()`
   - `rowPitch()`
   - `colPitch()`
   - `arrayShapes()`
   - `addShape()`
-  - internals: `_ensureShapes()`, `_ensureArray()`, `_clearArrayShapes()`, `__repr__()`, `_childrenBounds()`
+  - internals: `_ensureShapes()`, `_ensureArray()`, `_clearArrayShapes()`, `__repr__()`, `_childrenBounds()`, `_collapsedLabelFont()`, `_paintCollapsedLabel()`
 - `layoutPcell(layoutInstance)`
   - internals: `__repr__()`
 - `layoutLine(layoutShape)`

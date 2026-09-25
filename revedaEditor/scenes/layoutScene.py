@@ -161,6 +161,10 @@ class layoutScene(editorScene):
         self.pendingInstanceOptions = None
         self._scale = fabproc.dbu if fabproc else 1000
         self.itemCounter = 0
+        # Instances at depth > displayLevel render as labelled boxes:
+        # 0 = top-level instances only, 20 = show all levels.
+        # Session-only, per window. Property setter below forces a redraw.
+        self._displayLevel = 20
         self.newPath = None
         defaultPathDefTuple = fabproc.processPaths[0] if fabproc else None
         self.newPathTuple = ddef.layoutPathTuple(
@@ -229,6 +233,21 @@ class layoutScene(editorScene):
         # Undo/redo moves don't emit changed() reliably — refresh flyline
         # topology (island merge/split) on command-stack index changes.
         self.undoStack.indexChanged.connect(self._onUndoIndexChanged)
+
+    @property
+    def displayLevel(self) -> int:
+        return self._displayLevel
+
+    @displayLevel.setter
+    def displayLevel(self, level: int) -> None:
+        self._displayLevel = int(level)
+        # Repaint every instance so it re-evaluates its collapse state.
+        # DeviceCoordinateCache serves a stale pixmap until item.update()
+        # is called, so a bare scene update() is not enough here.
+        for item in self.items():
+            if isinstance(item, lshp.layoutInstance):
+                item.update()
+        self.update()
 
     @property
     def drawMode(self):
@@ -728,6 +747,27 @@ class layoutScene(editorScene):
         self.messageLine.setText(
             f"Flattened {len(instances)} instance(s) into {len(produced)} shape(s)"
         )
+
+    def collapseSelectedInstances(self) -> None:
+        """Draw selected instances as labelled bounding boxes."""
+        for item in self.selectedItems():
+            if isinstance(item, lshp.layoutInstance):
+                item.userCollapsed = True
+        self.update()
+
+    def expandSelectedInstances(self) -> None:
+        """Draw selected instances' contents again."""
+        for item in self.selectedItems():
+            if isinstance(item, lshp.layoutInstance):
+                item.userCollapsed = False
+        self.update()
+
+    def expandAllInstances(self) -> None:
+        """Clear the per-instance collapse override on every instance."""
+        for item in self.items():
+            if isinstance(item, lshp.layoutInstance):
+                item.userCollapsed = False
+        self.update()
 
     def makeCellFromSelection(self, libName: str, cellName: str,
                               overwrite: bool = False):
