@@ -1,10 +1,10 @@
-# `defaultPDK/pcells.py`
+# `defaultPDK\pcells.py`
 
 **Module:** `defaultPDK.pcells`
 
 ## Purpose
 
-Parameterized-cell classes for the default PDK; exposed through the `pcells` registry dict.
+Module in `defaultPDK`.
 
 ## Classes
 
@@ -21,9 +21,9 @@ Parameterized-cell classes for the default PDK; exposed through the `pcells` reg
 
 ## Depends on
 
-- [[revedaEditor/backend/pdkLoader|revedaEditor.backend.pdkLoader]]
-- [[revedaEditor/common/layoutShapes|revedaEditor.common.layoutShapes]]
+- [[revedaEditor\backend\pdkLoader|revedaEditor.backend.pdkLoader]]
+- [[revedaEditor\common\layoutShapes|revedaEditor.common.layoutShapes]]
 
 ## Used by
 
-- [[revedaEditor/tests/test_layout_transforms|revedaEditor.tests.test_layout_transforms]]
+- [[revedaEditor\tests\test_layout_transforms|revedaEditor.tests.test_layout_transforms]]

@@ -496,10 +496,8 @@ class layoutItems:
         self.scene = scene
         self.libraryDict = scene.libraryDict
         self.rulerFont = scene.rulerFont
-        self.rulerTickLength = scene.rulerTickLength
         self.snapTuple = scene.snapTuple
         self.rulerWidth = scene.rulerWidth
-        self.rulerTickGap = scene.rulerTickGap
         self._library_paths = {}
         self._active_layout_paths = set()
         for name, path in self.libraryDict.items():
@@ -571,6 +569,7 @@ class layoutItems:
     # bounding-rect center, so it never changes the rect. Only ang (rotation
     # about top) and translation move bounds.
     _UNBOUNDABLE = object()
+    _RULER_BOUNDS_MARGIN = 200.0
     _boundsCacheSize = 256
     _localBoundsCache = {}
 
@@ -585,7 +584,7 @@ class layoutItems:
         libraryContext = tuple(sorted(
             (name, str(path)) for name, path in self._library_paths.items()
         ))
-        return filePathKey, self.rulerTickLength, libraryContext
+        return filePathKey, libraryContext
 
     def _cachedLocalBounds(self, filePathKey, fileContents):
         """Cached local bounds for a referenced layout cellview.
@@ -665,7 +664,9 @@ class layoutItems:
                     rec.get("se", 0), rec.get("ee", 0)
                 )
             else:
-                margin = self.rulerTickLength * 4
+                # Ruler ticks/labels render screen-space; a fixed scene
+                # margin covers them at typical zoom levels.
+                margin = self._RULER_BOUNDS_MARGIN
             return self._applyRecordTransform(
                 bounds.adjusted(-margin, -margin, margin, margin), rec
             )
@@ -932,14 +933,36 @@ class layoutItems:
         return path
 
     def createRulerShape(self, item):
-        # Geometry is saved pos-folded (pos() + local); see createRectShape.
-        ruler = lshp.layoutRuler(
-            QLineF(QPointF(*item["dfl1"]), QPointF(*item["dfl2"])),
-            self.rulerWidth, self.rulerTickGap, self.rulerTickLength,
-            self.rulerFont, item["md"]
-        )
-        self._set_common_attrs(ruler, item)
-        return ruler
+        """Rebuild a ruler from its canonical record.
+
+        ``dfl1``/``dfl2`` are stored as a horizontal segment; ``ang`` is the
+        drawn direction and ``top`` its pivot (both emitted by
+        ``_encodeLayoutRuler`` and by pre-rewrite files). Fold the stored
+        transform — mirror about the segment bbox centre, then rotate
+        ``-ang`` about ``top`` — into the true scene endpoints. New-format
+        records (``ang`` matching dfl direction or 0) pass through unchanged.
+        """
+        p1 = QPointF(*item["dfl1"])
+        p2 = QPointF(*item["dfl2"])
+        top = item.get("top", item["dfl1"])
+        ang = float(item.get("ang", 0) or 0)
+        fl = tuple(item.get("fl", (1, 1)))
+        if ang != 0 or fl != (1, 1):
+            xf = QTransform()
+            xf.translate(top[0], top[1])
+            xf.rotate(-ang)
+            xf.translate(-top[0], -top[1])
+            if fl != (1, 1):
+                center = QRectF(p1, p2).normalized().center()
+                xf = xf * QTransform(
+                    fl[0], 0, 0, fl[1],
+                    center.x() - fl[0] * center.x(),
+                    center.y() - fl[1] * center.y())
+            p1 = xf.map(p1)
+            p2 = xf.map(p2)
+        return lshp.layoutRuler(
+            QLineF(p1, p2), self.rulerWidth, self.rulerFont,
+            int(item.get("md", 0)))
 
     def createLabelShape(self, item):
         # Labels set their own rotation/flip from labelOrient in __init__;

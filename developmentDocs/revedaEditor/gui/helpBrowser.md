@@ -1,10 +1,10 @@
-# `revedaEditor/gui/helpBrowser.py`
+# `revedaEditor\gui\helpBrowser.py`
 
 **Module:** `revedaEditor.gui.helpBrowser`
 
 ## Purpose
 
-Markdown documentation browser plus about/license dialogs.
+Module in `revedaEditor\gui`.
 
 ## Classes
 
@@ -31,5 +31,5 @@ Markdown documentation browser plus about/license dialogs.
 
 ## Used by
 
-- [[revedaEditor/gui/editorWindow|revedaEditor.gui.editorWindow]]
-- [[revedaEditor/gui/revedaMain|revedaEditor.gui.revedaMain]]
+- [[revedaEditor\gui\editorWindow|revedaEditor.gui.editorWindow]]
+- [[revedaEditor\gui\revedaMain|revedaEditor.gui.revedaMain]]

@@ -1,10 +1,10 @@
-# `revedaEditor/fileio/exportGDS.py`
+# `revedaEditor\fileio\exportGDS.py`
 
 **Module:** `revedaEditor.fileio.exportGDS`
 
 ## Purpose
 
-GDS/OAS stream-out: walks the layout scene through hierarchy into `gdstk`, honoring `layerMap`/`cellNameMap`/`flattenDepth` stream options. `layoutGroup` is transparent to export: its members emit into the parent cell through the ancestor `frameItem`, so the group transform folds into their geometry.
+Module in `revedaEditor\fileio`.
 
 ## Classes
 
@@ -31,10 +31,10 @@ GDS/OAS stream-out: walks the layout scene through hierarchy into `gdstk`, honor
 
 ## Depends on
 
-- [[revedaEditor/backend/pdkLoader|revedaEditor.backend.pdkLoader]]
-- [[revedaEditor/common/layoutShapes|revedaEditor.common.layoutShapes]]
+- [[revedaEditor\backend\pdkLoader|revedaEditor.backend.pdkLoader]]
+- [[revedaEditor\common\layoutShapes|revedaEditor.common.layoutShapes]]
 
 ## Used by
 
-- [[revedaEditor/scenes/layoutScene|revedaEditor.scenes.layoutScene]]
-- [[revedaEditor/tests/test_layout_transforms|revedaEditor.tests.test_layout_transforms]]
+- [[revedaEditor\scenes\layoutScene|revedaEditor.scenes.layoutScene]]
+- [[revedaEditor\tests\test_layout_transforms|revedaEditor.tests.test_layout_transforms]]

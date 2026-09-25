@@ -1,10 +1,10 @@
-# `scripts/machine_fingerprint.py`
+# `scripts\machine_fingerprint.py`
 
 **Module:** `scripts.machine_fingerprint`
 
 ## Purpose
 
-Machine-fingerprint helper used by license generation.
+Module in `scripts`.
 
 ## Functions
 

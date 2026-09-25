@@ -1,21 +1,10 @@
-# `revedaEditor/tests/test_netexpr.py`
+# `revedaEditor\tests\test_netexpr.py`
 
 **Module:** `revedaEditor.tests.test_netexpr`
 
 ## Purpose
 
-Net-expression / netSet tests.
-
-## Module docstring
-
 Phase 3 tests — net expressions and inherited connections (netSet).
-
-Covers the Qt-free `connectivity.netexpr` helpers, expression evaluation
-inside `connectivity.resolve`, `nx`/`nst` persistence, scene
-integration (`nameSceneNets(netSet=...)`, `collectNetExprNames`, the
-resolved-name visibility toggle), and the end-to-end netlister path: a
-`vdd!` supply propagated through two hierarchy levels via netSet
-overrides.
 
 ## Classes
 
@@ -77,12 +66,12 @@ overrides.
 
 ## Depends on
 
-- [[revedaEditor/backend/libraryMethods|revedaEditor.backend.libraryMethods]]
-- [[revedaEditor/backend/libraryModelView|revedaEditor.backend.libraryModelView]]
-- [[revedaEditor/common/labels|revedaEditor.common.labels]]
-- [[revedaEditor/common/net|revedaEditor.common.net]]
-- [[revedaEditor/common/shapes|revedaEditor.common.shapes]]
-- [[revedaEditor/connectivity/__init__|revedaEditor.connectivity.__init__]]
-- [[revedaEditor/netlisting/__init__|revedaEditor.netlisting.__init__]]
-- [[revedaEditor/netlisting/xyceNetlist|revedaEditor.netlisting.xyceNetlist]]
-- [[revedaEditor/tests/sceneTestUtils|revedaEditor.tests.sceneTestUtils]]
+- [[revedaEditor\backend\libraryMethods|revedaEditor.backend.libraryMethods]]
+- [[revedaEditor\backend\libraryModelView|revedaEditor.backend.libraryModelView]]
+- [[revedaEditor\common\labels|revedaEditor.common.labels]]
+- [[revedaEditor\common\net|revedaEditor.common.net]]
+- [[revedaEditor\common\shapes|revedaEditor.common.shapes]]
+- [[revedaEditor\connectivity\__init__|revedaEditor.connectivity.__init__]]
+- [[revedaEditor\netlisting\__init__|revedaEditor.netlisting.__init__]]
+- [[revedaEditor\netlisting\xyceNetlist|revedaEditor.netlisting.xyceNetlist]]
+- [[revedaEditor\tests\sceneTestUtils|revedaEditor.tests.sceneTestUtils]]

@@ -1,10 +1,10 @@
-# `revedaEditor/fileio/importLayp.py`
+# `revedaEditor\fileio\importLayp.py`
 
 **Module:** `revedaEditor.fileio.importLayp`
 
 ## Purpose
 
-`.lyp` layer-properties XML import (KLayout-style) converting layer definitions/stipples into Revolution EDA layer data.
+Module in `revedaEditor\fileio`.
 
 ## Functions
 
@@ -18,9 +18,9 @@
 
 ## Depends on
 
-- [[revedaEditor/backend/dataDefinitions|revedaEditor.backend.dataDefinitions]]
-- [[revedaEditor/gui/stippleEditor|revedaEditor.gui.stippleEditor]]
+- [[revedaEditor\backend\dataDefinitions|revedaEditor.backend.dataDefinitions]]
+- [[revedaEditor\gui\stippleEditor|revedaEditor.gui.stippleEditor]]
 
 ## Used by
 
-- [[revedaEditor/gui/revedaMain|revedaEditor.gui.revedaMain]]
+- [[revedaEditor\gui\revedaMain|revedaEditor.gui.revedaMain]]

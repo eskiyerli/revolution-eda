@@ -1,10 +1,10 @@
-# `revedaEditor/tests/test_selection_state.py`
+# `revedaEditor\tests\test_selection_state.py`
 
 **Module:** `revedaEditor.tests.test_selection_state`
 
 ## Purpose
 
-Selection-state machinery tests.
+Module in `revedaEditor\tests`.
 
 ## Classes
 
@@ -18,4 +18,4 @@ Selection-state machinery tests.
 
 ## Depends on
 
-- [[revedaEditor/scenes/editorScene|revedaEditor.scenes.editorScene]]
+- [[revedaEditor\scenes\editorScene|revedaEditor.scenes.editorScene]]

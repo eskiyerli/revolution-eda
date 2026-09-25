@@ -1,10 +1,10 @@
-# `revedaEditor/tests/test_schematic_checks.py`
+# `revedaEditor\tests\test_schematic_checks.py`
 
 **Module:** `revedaEditor.tests.test_schematic_checks`
 
 ## Purpose
 
-Schematic check-rule tests.
+Module in `revedaEditor\tests`.
 
 ## Functions
 
@@ -40,8 +40,8 @@ Schematic check-rule tests.
 
 ## Depends on
 
-- [[revedaEditor/checks/schematic|revedaEditor.checks.schematic]]
-- [[revedaEditor/common/net|revedaEditor.common.net]]
-- [[revedaEditor/common/shapes|revedaEditor.common.shapes]]
-- [[revedaEditor/gui/__init__|revedaEditor.gui.__init__]]
-- [[revedaEditor/tests/sceneTestUtils|revedaEditor.tests.sceneTestUtils]]
+- [[revedaEditor\checks\schematic|revedaEditor.checks.schematic]]
+- [[revedaEditor\common\net|revedaEditor.common.net]]
+- [[revedaEditor\common\shapes|revedaEditor.common.shapes]]
+- [[revedaEditor\gui\__init__|revedaEditor.gui.__init__]]
+- [[revedaEditor\tests\sceneTestUtils|revedaEditor.tests.sceneTestUtils]]

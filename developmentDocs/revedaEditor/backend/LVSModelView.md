@@ -1,10 +1,10 @@
-# `revedaEditor/backend/LVSModelView.py`
+# `revedaEditor\backend\LVSModelView.py`
 
 **Module:** `revedaEditor.backend.LVSModelView`
 
 ## Purpose
 
-Qt table models/views for the LVS results browser (nets, devices, cells, cross-references, parameter mismatches).
+Module in `revedaEditor\backend`.
 
 ## Classes
 
@@ -88,5 +88,5 @@ Qt table models/views for the LVS results browser (nets, devices, cells, cross-r
 
 ## Used by
 
-- [[revedaEditor/gui/lvsResults|revedaEditor.gui.lvsResults]]
-- [[revedaEditor/tests/test_lvs_mismatch_view|revedaEditor.tests.test_lvs_mismatch_view]]
+- [[revedaEditor\gui\lvsResults|revedaEditor.gui.lvsResults]]
+- [[revedaEditor\tests\test_lvs_mismatch_view|revedaEditor.tests.test_lvs_mismatch_view]]

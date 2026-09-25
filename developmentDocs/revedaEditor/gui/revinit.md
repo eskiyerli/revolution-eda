@@ -1,11 +1,11 @@
-# `revedaEditor/gui/revinit.py`
+# `revedaEditor\gui\revinit.py`
 
 **Module:** `revedaEditor.gui.revinit`
 
 ## Purpose
 
-Version constant (`__version__`).
+Module in `revedaEditor\gui`.
 
 ## Used by
 
-- [[revedaEditor/gui/revedaMain|revedaEditor.gui.revedaMain]]
+- [[revedaEditor\gui\revedaMain|revedaEditor.gui.revedaMain]]

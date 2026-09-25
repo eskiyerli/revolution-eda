@@ -1,7 +1,7 @@
-# `revedaEditor/tests/__init__.py`
+# `revedaEditor\tests\__init__.py`
 
 **Module:** `revedaEditor.tests.__init__`
 
 ## Purpose
 
-Test package marker.
+Module in `revedaEditor\tests`.

@@ -1,10 +1,10 @@
-# `revedaEditor/tests/test_layout_stretch.py`
+# `revedaEditor\tests\test_layout_stretch.py`
 
 **Module:** `revedaEditor.tests.test_layout_stretch`
 
 ## Purpose
 
-Layout stretch-edit tests.
+Module in `revedaEditor\tests`.
 
 ## Functions
 
@@ -23,6 +23,6 @@ Layout stretch-edit tests.
 
 ## Depends on
 
-- [[defaultPDK/layoutLayers|defaultPDK.layoutLayers]]
-- [[revedaEditor/backend/undoStack|revedaEditor.backend.undoStack]]
-- [[revedaEditor/common/__init__|revedaEditor.common.__init__]]
+- [[defaultPDK\layoutLayers|defaultPDK.layoutLayers]]
+- [[revedaEditor\backend\undoStack|revedaEditor.backend.undoStack]]
+- [[revedaEditor\common\__init__|revedaEditor.common.__init__]]

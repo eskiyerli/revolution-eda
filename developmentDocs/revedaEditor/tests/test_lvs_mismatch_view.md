@@ -1,10 +1,10 @@
-# `revedaEditor/tests/test_lvs_mismatch_view.py`
+# `revedaEditor\tests\test_lvs_mismatch_view.py`
 
 **Module:** `revedaEditor.tests.test_lvs_mismatch_view`
 
 ## Purpose
 
-LVS mismatch view tests.
+Module in `revedaEditor\tests`.
 
 ## Functions
 
@@ -15,4 +15,4 @@ LVS mismatch view tests.
 
 ## Depends on
 
-- [[revedaEditor/backend/LVSModelView|revedaEditor.backend.LVSModelView]]
+- [[revedaEditor\backend\LVSModelView|revedaEditor.backend.LVSModelView]]

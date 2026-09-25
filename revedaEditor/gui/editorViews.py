@@ -676,6 +676,15 @@ class layoutView(editorView):
             elif self.viewScene.editModes.cutShape:
                 self.viewScene.finishCutLine()
                 self.viewScene.editModes.setMode("selectItem")
+            elif self.viewScene.editModes.drawRuler:
+                newRuler = self.viewScene._newRuler
+                if (newRuler is not None
+                        and newRuler.scene() is not None):
+                    # The first click already pushed an addShapeUndo;
+                    # stepping the index back undoes it and drops the draft.
+                    self.viewScene.undoStack.removeLastCommand()
+                self.viewScene._newRuler = None
+                self.viewScene.editModes.setMode("selectItem")
             elif self.viewScene.editModes.addVia:
                 self.viewScene.arrayViaTuple = None
                 self.viewScene.arrayVia = None

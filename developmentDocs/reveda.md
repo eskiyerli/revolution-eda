@@ -25,7 +25,7 @@ Application entrypoint: builds `revedaApp` (a QApplication subclass), resolves t
 
 ## Depends on
 
-- [[revedaEditor/backend/pdkLoader|revedaEditor.backend.pdkLoader]]
-- [[revedaEditor/backend/pluginsLoader|revedaEditor.backend.pluginsLoader]]
-- [[revedaEditor/gui/pythonConsole|revedaEditor.gui.pythonConsole]]
-- [[revedaEditor/gui/revedaMain|revedaEditor.gui.revedaMain]]
+- [[revedaEditor\backend\pdkLoader|revedaEditor.backend.pdkLoader]]
+- [[revedaEditor\backend\pluginsLoader|revedaEditor.backend.pluginsLoader]]
+- [[revedaEditor\gui\pythonConsole|revedaEditor.gui.pythonConsole]]
+- [[revedaEditor\gui\revedaMain|revedaEditor.gui.revedaMain]]

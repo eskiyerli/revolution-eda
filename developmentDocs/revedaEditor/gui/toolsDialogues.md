@@ -1,10 +1,10 @@
-# `revedaEditor/gui/toolsDialogues.py`
+# `revedaEditor\gui\toolsDialogues.py`
 
 **Module:** `revedaEditor.gui.toolsDialogues`
 
 ## Purpose
 
-`findProjectEditors` dialog for locating open editor windows.
+Module in `revedaEditor\gui`.
 
 ## Classes
 
@@ -12,4 +12,4 @@
 
 ## Used by
 
-- [[revedaEditor/gui/schematicEditor|revedaEditor.gui.schematicEditor]]
+- [[revedaEditor\gui\schematicEditor|revedaEditor.gui.schematicEditor]]

@@ -1,12 +1,8 @@
-# `revedaEditor/fileio/importlyrdb.py`
+# `revedaEditor\fileio\importlyrdb.py`
 
 **Module:** `revedaEditor.fileio.importlyrdb`
 
 ## Purpose
-
-KLayout DRC XML report (`.lyrdb`) to dictionary/marker conversion.
-
-## Module docstring
 
 KLayout DRC XML report to dictionary converter using lxml.
 Handles nested categories, cells, and DRC violations with polygons.
@@ -32,4 +28,4 @@ Handles nested categories, cells, and DRC violations with polygons.
 
 ## Depends on
 
-- [[revedaEditor/backend/pdkLoader|revedaEditor.backend.pdkLoader]]
+- [[revedaEditor\backend\pdkLoader|revedaEditor.backend.pdkLoader]]

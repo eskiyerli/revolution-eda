@@ -1,10 +1,10 @@
-# `revedaEditor/fileio/importSpectre.py`
+# `revedaEditor\fileio\importSpectre.py`
 
 **Module:** `revedaEditor.fileio.importSpectre`
 
 ## Purpose
 
-Spectre netlist/model import into cellviews.
+Module in `revedaEditor\fileio`.
 
 ## Functions
 
@@ -13,10 +13,10 @@ Spectre netlist/model import into cellviews.
 
 ## Depends on
 
-- [[revedaEditor/backend/__init__|revedaEditor.backend.__init__]]
-- [[revedaEditor/fileio/createSymbols|revedaEditor.fileio.createSymbols]]
-- [[revedaEditor/gui/__init__|revedaEditor.gui.__init__]]
+- [[revedaEditor\backend\__init__|revedaEditor.backend.__init__]]
+- [[revedaEditor\fileio\createSymbols|revedaEditor.fileio.createSymbols]]
+- [[revedaEditor\gui\__init__|revedaEditor.gui.__init__]]
 
 ## Used by
 
-- [[revedaEditor/gui/revedaMain|revedaEditor.gui.revedaMain]]
+- [[revedaEditor\gui\revedaMain|revedaEditor.gui.revedaMain]]

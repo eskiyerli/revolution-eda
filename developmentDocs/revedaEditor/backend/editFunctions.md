@@ -1,10 +1,10 @@
-# `revedaEditor/backend/editFunctions.py`
+# `revedaEditor\backend\editFunctions.py`
 
 **Module:** `revedaEditor.backend.editFunctions`
 
 ## Purpose
 
-Shared small widgets (`shortLineEdit`, `boldLabel`, `longLineEdit`); the `gui/editFunctions.py` copy is the actively imported one.
+Module in `revedaEditor\backend`.
 
 ## Classes
 
@@ -15,5 +15,5 @@ Shared small widgets (`shortLineEdit`, `boldLabel`, `longLineEdit`); the `gui/ed
 
 ## Used by
 
-- [[revedaEditor/gui/pdkRegistry|revedaEditor.gui.pdkRegistry]]
-- [[revedaEditor/scenes/schematicScene|revedaEditor.scenes.schematicScene]]
+- [[revedaEditor\gui\pdkRegistry|revedaEditor.gui.pdkRegistry]]
+- [[revedaEditor\scenes\schematicScene|revedaEditor.scenes.schematicScene]]

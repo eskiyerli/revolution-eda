@@ -1,10 +1,10 @@
-# `revedaEditor/gui/fileDialogues.py`
+# `revedaEditor\gui\fileDialogues.py`
 
 **Module:** `revedaEditor.gui.fileDialogues`
 
 ## Purpose
 
-Cell/view/library dialogs: create/delete/rename/copy/select-cellview dialogs and the library dialogs.
+Module in `revedaEditor\gui`.
 
 ## Classes
 
@@ -96,17 +96,17 @@ Cell/view/library dialogs: create/delete/rename/copy/select-cellview dialogs and
 
 ## Depends on
 
-- [[revedaEditor/backend/libraryMethods|revedaEditor.backend.libraryMethods]]
-- [[revedaEditor/gui/editFunctions|revedaEditor.gui.editFunctions]]
+- [[revedaEditor\backend\libraryMethods|revedaEditor.backend.libraryMethods]]
+- [[revedaEditor\gui\editFunctions|revedaEditor.gui.editFunctions]]
 
 ## Used by
 
-- [[revedaEditor/backend/libraryModelView|revedaEditor.backend.libraryModelView]]
-- [[revedaEditor/fileio/importVeriloga|revedaEditor.fileio.importVeriloga]]
-- [[revedaEditor/gui/editorWindow|revedaEditor.gui.editorWindow]]
-- [[revedaEditor/gui/layoutEditor|revedaEditor.gui.layoutEditor]]
-- [[revedaEditor/gui/libraryBrowser|revedaEditor.gui.libraryBrowser]]
-- [[revedaEditor/gui/revedaMain|revedaEditor.gui.revedaMain]]
-- [[revedaEditor/gui/schematicEditor|revedaEditor.gui.schematicEditor]]
-- [[revedaEditor/scenes/layoutScene|revedaEditor.scenes.layoutScene]]
-- [[revedaEditor/scenes/schematicScene|revedaEditor.scenes.schematicScene]]
+- [[revedaEditor\backend\libraryModelView|revedaEditor.backend.libraryModelView]]
+- [[revedaEditor\fileio\importVeriloga|revedaEditor.fileio.importVeriloga]]
+- [[revedaEditor\gui\editorWindow|revedaEditor.gui.editorWindow]]
+- [[revedaEditor\gui\layoutEditor|revedaEditor.gui.layoutEditor]]
+- [[revedaEditor\gui\libraryBrowser|revedaEditor.gui.libraryBrowser]]
+- [[revedaEditor\gui\revedaMain|revedaEditor.gui.revedaMain]]
+- [[revedaEditor\gui\schematicEditor|revedaEditor.gui.schematicEditor]]
+- [[revedaEditor\scenes\layoutScene|revedaEditor.scenes.layoutScene]]
+- [[revedaEditor\scenes\schematicScene|revedaEditor.scenes.schematicScene]]

@@ -1,24 +1,10 @@
-# `revedaEditor/rcextraction/netlist.py`
+# `revedaEditor\rcextraction\netlist.py`
 
 **Module:** `revedaEditor.rcextraction.netlist`
 
 ## Purpose
 
-Parasitic (DSPF-style) netlist emission for extraction results.
-
-## Module docstring
-
 Netlist writers for parasitic extraction results.
-
-Supported output formats:
-- SPICE (.spice) — subcircuit with devices + parasitic R/C elements
-- SPEF (.spef) — Standard Parasitic Exchange Format (IEEE 1481)
-- Spectre (.scs) — Cadence Spectre netlist format
-
-All writers now produce a complete netlist containing:
-1. Original devices (transistors, resistors, capacitors, etc.)
-2. Parasitic resistors (wire segments and vias)
-3. Parasitic capacitors (substrate and inter-net coupling)
 
 ## Classes
 

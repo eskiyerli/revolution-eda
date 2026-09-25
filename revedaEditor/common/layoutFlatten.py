@@ -178,8 +178,7 @@ def _flattenItem(item, out, logger) -> None:
     elif isinstance(item, lshp.layoutRuler):
         p1, p2 = item.sceneEndPoints
         out.append(lshp.layoutRuler(
-            QLineF(p1, p2), width=item.width, tickGap=item.tickGap,
-            tickLength=10, tickFont=item.tickFont, mode=2,
+            QLineF(p1, p2), item.width, item.tickFont, item.mode,
         ))
     # Guide/annotation leftovers (layoutLine, alignLine, drc markers) are
     # intentionally not carried into the flattened content.

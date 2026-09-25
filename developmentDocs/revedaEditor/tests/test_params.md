@@ -1,12 +1,8 @@
-# `revedaEditor/tests/test_params.py`
+# `revedaEditor\tests\test_params.py`
 
 **Module:** `revedaEditor.tests.test_params`
 
 ## Purpose
-
-CDF-lite parameter-model tests.
-
-## Module docstring
 
 Tests for the Qt-free typed parameter model (common/params.py).
 
@@ -65,16 +61,30 @@ Tests for the Qt-free typed parameter model (common/params.py).
 - `TestDialogs`
   - `test_param_value_widget_types()`
   - `test_place_instance_dialog_values()`
+  - `test_place_dialog_hidden_sibling_ppar_paramdef_ctor()`
   - `test_place_dialog_rejects_invalid()`
   - `test_instance_dialog_typed_rows()`
+  - `test_place_dialog_hidden_sibling_context()`
+  - `test_configure_schematic_instance_params()`
   - `test_symbol_labels_dialogue_params_table()`
+- `_Stub` — Minimal stand-in for QLineEdit/QComboBox text accessors.
+  - `text()`
+  - `currentText()`
+- `TestBuildInstanceFromDialog`
+  - `test_hidden_param_preserved()`
+  - `test_invalid_value_falls_back_to_original()`
+  - `test_valid_value_normalizes()`
+  - internals: `_symattrs()`
 
 ## Functions
 
 - `qapp()`
 - `defsJson()`
 - `_makeInstance()` — A schematicSymbol instance with the given symattrs + NLP labels.
+- `_dialogFor()`
+- `_valueRow()`
+- `_patchInstSymbol()`
 
 ## Depends on
 
-- [[revedaEditor/common/params|revedaEditor.common.params]]
+- [[revedaEditor\common\params|revedaEditor.common.params]]

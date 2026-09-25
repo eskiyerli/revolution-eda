@@ -1,10 +1,10 @@
-# `revedaEditor/gui/lvsResults.py`
+# `revedaEditor\gui\lvsResults.py`
 
 **Module:** `revedaEditor.gui.lvsResults`
 
 ## Purpose
 
-LVS results dialog presenting the imported LVS database.
+Module in `revedaEditor\gui`.
 
 ## Classes
 
@@ -32,10 +32,10 @@ LVS results dialog presenting the imported LVS database.
 
 ## Depends on
 
-- [[revedaEditor/backend/LVSModelView|revedaEditor.backend.LVSModelView]]
-- [[revedaEditor/backend/pdkLoader|revedaEditor.backend.pdkLoader]]
-- [[revedaEditor/common/layoutShapes|revedaEditor.common.layoutShapes]]
-- [[revedaEditor/common/net|revedaEditor.common.net]]
-- [[revedaEditor/common/shapes|revedaEditor.common.shapes]]
-- [[revedaEditor/fileio/__init__|revedaEditor.fileio.__init__]]
-- [[revedaEditor/fileio/importlvsdb|revedaEditor.fileio.importlvsdb]]
+- [[revedaEditor\backend\LVSModelView|revedaEditor.backend.LVSModelView]]
+- [[revedaEditor\backend\pdkLoader|revedaEditor.backend.pdkLoader]]
+- [[revedaEditor\common\layoutShapes|revedaEditor.common.layoutShapes]]
+- [[revedaEditor\common\net|revedaEditor.common.net]]
+- [[revedaEditor\common\shapes|revedaEditor.common.shapes]]
+- [[revedaEditor\fileio\__init__|revedaEditor.fileio.__init__]]
+- [[revedaEditor\fileio\importlvsdb|revedaEditor.fileio.importlvsdb]]

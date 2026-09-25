@@ -1,10 +1,10 @@
-# `revedaEditor/scenes/layoutScene.py`
+# `revedaEditor\scenes\layoutScene.py`
 
 **Module:** `revedaEditor.scenes.layoutScene`
 
 ## Purpose
 
-`layoutScene` — layout editing state: `saveLayoutCell`/`loadDesign`, connectivity + net highlighting, SDL incremental sync, flylines, boolean/flatten/merge/multipart operations, and persistent item grouping (`groupSelectedItems`/`ungroupSelectedItems` via `layoutGroup` + `undoGroupShapes`).
+Module in `revedaEditor\scenes`.
 
 ## Classes
 
@@ -18,6 +18,7 @@
   - `mouseReleaseEvent()`
   - `addLayoutViaArray()`
   - `snapToClosestEdge()`
+  - `applyRulerMode()`
   - `drawLayoutRuler()`
   - `drawLayoutMultipart()`
   - `finishCutLine()`
@@ -48,6 +49,13 @@
   - `addListUndoStack()`
   - `loadSchematicInstances()`
   - `updateFromSchematic()`
+  - `sdlMutationAllowed()`
+  - `layoutInstanceDescriptors()`
+  - `applySchematicParameters()`
+  - `resolveLayoutView()`
+  - `stampSdlSource()`
+  - `removeLayoutItemsUndo()`
+  - `createLayoutInstanceFromRecord()`
   - `saveLayoutCell()`
   - `exportCellGDS()`
   - `exportCellOAS()`
@@ -67,9 +75,16 @@
   - `extractPcellInstanceParameters()`
   - `clearLayout()`
   - `moveBySelectedItems()`
-  - `copySelectedItems()`
   - `deleteAllRulers()`
   - `deleteSelectedRulers()`
+  - `topLevelLayoutInstances()`
+  - `topLevelLayoutPins()`
+  - `descendantLayoutPins()`
+  - `pcellPinMap()`
+  - `layoutPinInInstance()`
+  - `connectivityGroupForItem()`
+  - `addOverlayItem()`
+  - `removeOverlayItem()`
   - `markConnectivityDirty()`
   - `addItem()`
   - `removeItem()`
@@ -79,6 +94,7 @@
   - `clearNetHighlights()`
   - `clearFlylines()`
   - `rebuildFlylines()`
+  - `probeTargets()`
   - `probeSchematic()`
   - `selectProbeTargets()`
   - `highlightNetGroupsForEndpoints()`
@@ -87,34 +103,34 @@
   - `setRulerFont()`
   - `updateItem()`
   - `renumberInstances()`
-  - internals: `_updateLabelPlacementMarker()`, `_removeLabelPlacementMarker()`, `_handleMouseRelease()`, `_splitPolygonalShape()`, `_splitRect()`, `_splitPolygon()`, `_splitPath()`, `_handleAlignItemLine()`, `_createLayoutPath()`, `_filterBySelectModes()`, `_itemPassesFilter()`, `_applyItemObjectState()` … (+22)
+  - internals: `_updateLabelPlacementMarker()`, `_removeLabelPlacementMarker()`, `_handleMouseRelease()`, `_registerNewCellview()`, `_splitPolygonalShape()`, `_splitRect()`, `_splitPolygon()`, `_splitPath()`, `_handleAlignItemLine()`, `_createLayoutPath()`, `_makeLayoutMosaicGroup()`, `_filterBySelectModes()` … (+32)
 
 ## Depends on
 
-- [[revedaEditor/backend/correspondence|revedaEditor.backend.correspondence]]
-- [[revedaEditor/backend/dataDefinitions|revedaEditor.backend.dataDefinitions]]
-- [[revedaEditor/backend/libraryMethods|revedaEditor.backend.libraryMethods]]
-- [[revedaEditor/backend/libraryModelView|revedaEditor.backend.libraryModelView]]
-- [[revedaEditor/backend/pdkLoader|revedaEditor.backend.pdkLoader]]
-- [[revedaEditor/backend/undoStack|revedaEditor.backend.undoStack]]
-- [[revedaEditor/common/layoutBoolean|revedaEditor.common.layoutBoolean]]
-- [[revedaEditor/common/layoutFlatten|revedaEditor.common.layoutFlatten]]
-- [[revedaEditor/common/layoutMerge|revedaEditor.common.layoutMerge]]
-- [[revedaEditor/common/layoutShapes|revedaEditor.common.layoutShapes]]
-- [[revedaEditor/connectivity/__init__|revedaEditor.connectivity.__init__]]
-- [[revedaEditor/fileio/exportGDS|revedaEditor.fileio.exportGDS]]
-- [[revedaEditor/fileio/layoutEncoder|revedaEditor.fileio.layoutEncoder]]
-- [[revedaEditor/fileio/loadJSON|revedaEditor.fileio.loadJSON]]
-- [[revedaEditor/fileio/schemaValidation|revedaEditor.fileio.schemaValidation]]
-- [[revedaEditor/gui/alignItems|revedaEditor.gui.alignItems]]
-- [[revedaEditor/gui/editFunctions|revedaEditor.gui.editFunctions]]
-- [[revedaEditor/gui/fileDialogues|revedaEditor.gui.fileDialogues]]
-- [[revedaEditor/gui/layoutDialogues|revedaEditor.gui.layoutDialogues]]
-- [[revedaEditor/gui/propertyDialogues|revedaEditor.gui.propertyDialogues]]
-- [[revedaEditor/scenes/editorScene|revedaEditor.scenes.editorScene]]
+- [[revedaEditor\backend\correspondence|revedaEditor.backend.correspondence]]
+- [[revedaEditor\backend\dataDefinitions|revedaEditor.backend.dataDefinitions]]
+- [[revedaEditor\backend\libraryMethods|revedaEditor.backend.libraryMethods]]
+- [[revedaEditor\backend\libraryModelView|revedaEditor.backend.libraryModelView]]
+- [[revedaEditor\backend\pdkLoader|revedaEditor.backend.pdkLoader]]
+- [[revedaEditor\backend\undoStack|revedaEditor.backend.undoStack]]
+- [[revedaEditor\common\layoutBoolean|revedaEditor.common.layoutBoolean]]
+- [[revedaEditor\common\layoutFlatten|revedaEditor.common.layoutFlatten]]
+- [[revedaEditor\common\layoutMerge|revedaEditor.common.layoutMerge]]
+- [[revedaEditor\common\layoutShapes|revedaEditor.common.layoutShapes]]
+- [[revedaEditor\connectivity\__init__|revedaEditor.connectivity.__init__]]
+- [[revedaEditor\fileio\exportGDS|revedaEditor.fileio.exportGDS]]
+- [[revedaEditor\fileio\layoutEncoder|revedaEditor.fileio.layoutEncoder]]
+- [[revedaEditor\fileio\loadJSON|revedaEditor.fileio.loadJSON]]
+- [[revedaEditor\fileio\schemaValidation|revedaEditor.fileio.schemaValidation]]
+- [[revedaEditor\gui\alignItems|revedaEditor.gui.alignItems]]
+- [[revedaEditor\gui\editFunctions|revedaEditor.gui.editFunctions]]
+- [[revedaEditor\gui\fileDialogues|revedaEditor.gui.fileDialogues]]
+- [[revedaEditor\gui\layoutDialogues|revedaEditor.gui.layoutDialogues]]
+- [[revedaEditor\gui\propertyDialogues|revedaEditor.gui.propertyDialogues]]
+- [[revedaEditor\scenes\editorScene|revedaEditor.scenes.editorScene]]
 
 ## Used by
 
-- [[revedaEditor/gui/editorViews|revedaEditor.gui.editorViews]]
-- [[revedaEditor/gui/layoutEditor|revedaEditor.gui.layoutEditor]]
-- [[revedaEditor/tests/test_layout_transforms|revedaEditor.tests.test_layout_transforms]]
+- [[revedaEditor\gui\editorViews|revedaEditor.gui.editorViews]]
+- [[revedaEditor\gui\layoutEditor|revedaEditor.gui.layoutEditor]]
+- [[revedaEditor\tests\test_layout_transforms|revedaEditor.tests.test_layout_transforms]]

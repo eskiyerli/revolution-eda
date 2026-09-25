@@ -1,11 +1,11 @@
-# `defaultPDK/symLayers.py`
+# `defaultPDK\symLayers.py`
 
 **Module:** `defaultPDK.symLayers`
 
 ## Purpose
 
-Symbol layer definitions (`edLayer` dataclasses).
+Module in `defaultPDK`.
 
 ## Depends on
 
-- [[revedaEditor/backend/dataDefinitions|revedaEditor.backend.dataDefinitions]]
+- [[revedaEditor\backend\dataDefinitions|revedaEditor.backend.dataDefinitions]]

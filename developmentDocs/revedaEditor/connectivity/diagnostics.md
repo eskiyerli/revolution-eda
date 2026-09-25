@@ -1,26 +1,10 @@
-# `revedaEditor/connectivity/diagnostics.py`
+# `revedaEditor\connectivity\diagnostics.py`
 
 **Module:** `revedaEditor.connectivity.diagnostics`
 
 ## Purpose
 
-Headless semantic checks on decoded design arrays (dangling ends, param problems, layout record diagnostics).
-
-## Module docstring
-
 Headless semantic checks on decoded design arrays.
-
-These are the record-level counterparts of the scene check rules: they run
-the *same* connectivity engine on raw JSON records, so aiTerminal design
-ops, importers, and batch tooling validate against identical semantics to
-the GUI.
-
-    checkRecords(records, pinLocator)        -> schematic diagnostics
-    checkLayoutRecords(records, layers, ...) -> layout diagnostics
-
-A schematic `pinLocator` maps (lib, cell, view) -> {pinName: (x, y),
-"directions": {pinName: dir}} in symbol coordinates; build one from a
-library dict with `loadJSON.makeSymbolPinLocator` or supply your own.
 
 ## Classes
 
@@ -29,6 +13,7 @@ library dict with `loadJSON.makeSymbolPinLocator` or supply your own.
 ## Functions
 
 - `_adapterDiagnostic()`
+- `_memoizedPinLocator()` — Memoize one pure symbol-pin lookup per cell view for a check pass.
 - `_manhattan()`
 - `_pointSegDist()`
 - `_danglingEnds()` — Seg endpoints joined to nothing: no coincident endpoint, no T-contact

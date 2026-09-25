@@ -1,10 +1,10 @@
-# `revedaEditor/tests/test_layout_merge.py`
+# `revedaEditor\tests\test_layout_merge.py`
 
 **Module:** `revedaEditor.tests.test_layout_merge`
 
 ## Purpose
 
-Layout merge-geometry tests.
+Module in `revedaEditor\tests`.
 
 ## Functions
 
@@ -44,7 +44,7 @@ Layout merge-geometry tests.
 
 ## Depends on
 
-- [[defaultPDK/layoutLayers|defaultPDK.layoutLayers]]
-- [[revedaEditor/backend/undoStack|revedaEditor.backend.undoStack]]
-- [[revedaEditor/common/__init__|revedaEditor.common.__init__]]
-- [[revedaEditor/common/layoutMerge|revedaEditor.common.layoutMerge]]
+- [[defaultPDK\layoutLayers|defaultPDK.layoutLayers]]
+- [[revedaEditor\backend\undoStack|revedaEditor.backend.undoStack]]
+- [[revedaEditor\common\__init__|revedaEditor.common.__init__]]
+- [[revedaEditor\common\layoutMerge|revedaEditor.common.layoutMerge]]

@@ -1,10 +1,10 @@
-# `revedaEditor/fileio/importVeriloga.py`
+# `revedaEditor\fileio\importVeriloga.py`
 
 **Module:** `revedaEditor.fileio.importVeriloga`
 
 ## Purpose
 
-Verilog-A module import into cellviews.
+Module in `revedaEditor\fileio`.
 
 ## Functions
 
@@ -13,10 +13,10 @@ Verilog-A module import into cellviews.
 
 ## Depends on
 
-- [[revedaEditor/backend/__init__|revedaEditor.backend.__init__]]
-- [[revedaEditor/fileio/createSymbols|revedaEditor.fileio.createSymbols]]
-- [[revedaEditor/gui/fileDialogues|revedaEditor.gui.fileDialogues]]
+- [[revedaEditor\backend\__init__|revedaEditor.backend.__init__]]
+- [[revedaEditor\fileio\createSymbols|revedaEditor.fileio.createSymbols]]
+- [[revedaEditor\gui\fileDialogues|revedaEditor.gui.fileDialogues]]
 
 ## Used by
 
-- [[revedaEditor/gui/revedaMain|revedaEditor.gui.revedaMain]]
+- [[revedaEditor\gui\revedaMain|revedaEditor.gui.revedaMain]]

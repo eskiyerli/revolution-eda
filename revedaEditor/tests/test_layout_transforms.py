@@ -31,10 +31,8 @@ def loader():
     scene = SimpleNamespace(
         libraryDict={},
         rulerFont=None,
-        rulerTickLength=5,
         snapTuple=(10, 10),
         rulerWidth=1,
-        rulerTickGap=10,
     )
     return layoutItems(scene)
 
@@ -80,7 +78,7 @@ def test_gdstk_transform_matches_editor_flip_matrix(
 
 
 def test_gds_export_skips_layout_rulers():
-    ruler = lshp.layoutRuler(QLineF(0, 0, 100, 0), 1, 10, 5, QFont())
+    ruler = lshp.layoutRuler(QLineF(0, 0, 100, 0), 1, QFont())
     library = gdsExporter("ruler_test", [ruler], Path("/tmp/ruler_test.gds"))._buildLibrary()
 
     cell = library["ruler_test"]
@@ -89,9 +87,40 @@ def test_gds_export_skips_layout_rulers():
     assert not cell.references
 
 
+def test_ruler_record_round_trip(loader):
+    ruler = lshp.layoutRuler(QLineF(0, 0, 2000, 2000), 1, QFont(), mode=1)
+    saved = layoutEncoder().default(ruler)
+    restored = loader.createRulerShape(saved)
+    p1, p2 = restored.sceneEndPoints
+    assert p1 == QPointF(0, 0)
+    assert p2 == QPointF(2000, 2000)
+    assert restored.mode == 1
+
+
+def test_ruler_legacy_rotated_record_recovers_direction(loader):
+    # Pre-rewrite record: a horizontal segment rotated -ang about top.
+    # ang=90 is what the old code stored for a ruler drawn upward.
+    record = {"type": "Ruler", "dfl1": [0, 0], "dfl2": [3000, 0],
+              "top": [0, 0], "ang": 90, "md": 0, "fl": [1, 1]}
+    restored = loader.createRulerShape(record)
+    p1, p2 = restored.sceneEndPoints
+    assert p1 == QPointF(0, 0)
+    assert p2 == QPointF(0, -3000)
+
+
+def test_ruler_legacy_flipped_record_recovers_endpoints(loader):
+    # Horizontal record mirrored about its centre swaps the endpoints.
+    record = {"type": "Ruler", "dfl1": [0, 0], "dfl2": [3000, 0],
+              "top": [0, 0], "ang": 0, "md": 0, "fl": [-1, 1]}
+    restored = loader.createRulerShape(record)
+    p1, p2 = restored.sceneEndPoints
+    assert p1 == QPointF(3000, 0)
+    assert p2 == QPointF(0, 0)
+
+
 def test_delete_all_rulers_cancels_in_progress_ruler():
-    inProgress = lshp.layoutRuler(QLineF(0, 0, 0, 0), 1, 10, 5, QFont())
-    completed = lshp.layoutRuler(QLineF(0, 0, 100, 0), 1, 10, 5, QFont())
+    inProgress = lshp.layoutRuler(QLineF(0, 0, 0, 0), 1, QFont())
+    completed = lshp.layoutRuler(QLineF(0, 0, 100, 0), 1, QFont())
 
     class RulerScene:
         def __init__(self):
@@ -147,10 +176,8 @@ def test_layout_load_restores_scene_index_after_bulk_insert():
     scene = QGraphicsScene()
     scene.libraryDict = {}
     scene.rulerFont = QFont()
-    scene.rulerTickLength = 5
     scene.snapTuple = (10, 10)
     scene.rulerWidth = 1
-    scene.rulerTickGap = 10
     scene.setItemIndexMethod(QGraphicsScene.ItemIndexMethod.BspTreeIndex)
 
     layoutScene.createLayoutItems(scene, [
@@ -200,10 +227,8 @@ def _makeLayoutScene(libraryDict):
     scene = QGraphicsScene()
     scene.libraryDict = libraryDict
     scene.rulerFont = QFont()
-    scene.rulerTickLength = 5
     scene.snapTuple = (10, 10)
     scene.rulerWidth = 1
-    scene.rulerTickGap = 10
     scene.logger = Mock()
     scene.itemsRefSet = set()
     return scene
@@ -215,8 +240,8 @@ def test_instance_with_bbox_defers_child_construction(tmp_path):
     ])
     scene = SimpleNamespace(
         libraryDict={"library": str(libPath)},
-        rulerFont=QFont(), rulerTickLength=5, snapTuple=(10, 10),
-        rulerWidth=1, rulerTickGap=10, logger=Mock(),
+        rulerFont=QFont(), snapTuple=(10, 10),
+        rulerWidth=1, logger=Mock(),
     )
 
     instance = layoutItems(scene).create({
@@ -260,8 +285,8 @@ def test_instance_without_bbox_computes_bounds_from_dicts(tmp_path):
     ])
     scene = SimpleNamespace(
         libraryDict={"library": str(libPath)},
-        rulerFont=QFont(), rulerTickLength=5, snapTuple=(10, 10),
-        rulerWidth=1, rulerTickGap=10, logger=Mock(),
+        rulerFont=QFont(), snapTuple=(10, 10),
+        rulerWidth=1, logger=Mock(),
     )
 
     instance = layoutItems(scene).create({
@@ -286,8 +311,8 @@ def test_instance_with_unboundable_record_loads_eagerly(tmp_path):
     ])
     scene = SimpleNamespace(
         libraryDict={"library": str(libPath)},
-        rulerFont=QFont(), rulerTickLength=5, snapTuple=(10, 10),
-        rulerWidth=1, rulerTickGap=10, logger=Mock(),
+        rulerFont=QFont(), snapTuple=(10, 10),
+        rulerWidth=1, logger=Mock(),
     )
 
     instance = layoutItems(scene).create({
@@ -381,8 +406,8 @@ def test_encoder_writes_deferred_instance_bbox_without_realising(tmp_path):
     ])
     scene = SimpleNamespace(
         libraryDict={"library": str(libPath)},
-        rulerFont=QFont(), rulerTickLength=5, snapTuple=(10, 10),
-        rulerWidth=1, rulerTickGap=10, logger=Mock(),
+        rulerFont=QFont(), snapTuple=(10, 10),
+        rulerWidth=1, logger=Mock(),
     )
     instance = layoutItems(scene).create({
         "type": "Inst", "lib": "library", "cell": "child", "view": "layout",

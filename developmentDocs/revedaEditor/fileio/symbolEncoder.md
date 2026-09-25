@@ -1,10 +1,10 @@
-# `revedaEditor/fileio/symbolEncoder.py`
+# `revedaEditor\fileio\symbolEncoder.py`
 
 **Module:** `revedaEditor.fileio.symbolEncoder`
 
 ## Purpose
 
-`symbolEncoder` — symbol scene items → `symbol.json` records.
+Module in `revedaEditor\fileio`.
 
 ## Classes
 
@@ -20,12 +20,12 @@
 
 ## Depends on
 
-- [[revedaEditor/common/labels|revedaEditor.common.labels]]
-- [[revedaEditor/common/shapes|revedaEditor.common.shapes]]
+- [[revedaEditor\common\labels|revedaEditor.common.labels]]
+- [[revedaEditor\common\shapes|revedaEditor.common.shapes]]
 
 ## Used by
 
-- [[revedaEditor/fileio/importXschemSym|revedaEditor.fileio.importXschemSym]]
-- [[revedaEditor/fileio/loadJSON|revedaEditor.fileio.loadJSON]]
-- [[revedaEditor/gui/schematicEditor|revedaEditor.gui.schematicEditor]]
-- [[revedaEditor/scenes/symbolScene|revedaEditor.scenes.symbolScene]]
+- [[revedaEditor\fileio\importXschemSym|revedaEditor.fileio.importXschemSym]]
+- [[revedaEditor\fileio\loadJSON|revedaEditor.fileio.loadJSON]]
+- [[revedaEditor\gui\schematicEditor|revedaEditor.gui.schematicEditor]]
+- [[revedaEditor\scenes\symbolScene|revedaEditor.scenes.symbolScene]]

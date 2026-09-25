@@ -1,7 +1,7 @@
-# `revedaEditor/checks/__init__.py`
+# `revedaEditor\checks\__init__.py`
 
 **Module:** `revedaEditor.checks.__init__`
 
 ## Purpose
 
-Package marker for design-rule check modules.
+Module in `revedaEditor\checks`.

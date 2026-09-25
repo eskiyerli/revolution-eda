@@ -254,8 +254,10 @@
         "type": { "const": "Ruler" },
         "dfl1": { "$ref": "#/$defs/point" },
         "dfl2": { "$ref": "#/$defs/point" },
-        "md": { "type": "string" },
-        "ang": { "type": "number" }
+        "md": { "type": "integer" },
+        "top": { "$ref": "#/$defs/point" },
+        "ang": { "type": "number" },
+        "fl": { "$ref": "#/$defs/flipTuple" }
       }
     }
   }

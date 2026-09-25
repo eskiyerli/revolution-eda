@@ -23,8 +23,8 @@ def init_qapp():
 def test_fit_items_in_view_stable_with_ruler():
     scene = makeLayoutScene()
     scene.addItem(lshp.layoutRect(QPoint(0, 0), QPoint(100, 100), m1Layer_drw))
-    ruler = lshp.layoutRuler(QLineF(0, 0, 500, 0), width=2, tickGap=10,
-                             tickLength=10, tickFont=QFont("Arial", 12))
+    ruler = lshp.layoutRuler(QLineF(0, 0, 500, 0), width=2,
+                             tickFont=QFont("Arial", 12))
     scene.addItem(ruler)
 
     view = QGraphicsView(scene)

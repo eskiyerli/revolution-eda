@@ -1,10 +1,10 @@
-# `revedaEditor/scenes/editorScene.py`
+# `revedaEditor\scenes\editorScene.py`
 
 **Module:** `revedaEditor.scenes.editorScene`
 
 ## Purpose
 
-`editorScene` — QGraphicsScene base: edit modes, selection machinery, undo stack, mouse dispatch, grid settings, read-only event filter, `_safeLoadDesign`/`reloadScene`.
+Module in `revedaEditor\scenes`.
 
 ## Classes
 
@@ -19,12 +19,12 @@
   - `rotateSelectedItems()`
   - `rotateAnItem()`
   - `eventFilter()`
-  - `copySelectedItems()`
   - `copySelectionToClipboard()`
   - `pasteClipboard()`
+  - `armedCopyScene()`
   - `beginClipboardPaste()`
   - `cancelArmedCopy()`
-  - `rearmClipboardPaste()` — Rebuild the armed floating copy with current `copyOptions` (options-form Apply/Ok).
+  - `rearmClipboardPaste()`
   - `flipHorizontal()`
   - `flipVertical()`
   - `selectAll()`
@@ -54,19 +54,19 @@
   - `viewNameComplete()`
   - `measureDuration()`
   - `draftPen()`
-  - internals: `_filterBySelectModes()`, `_snapPoint()`, `_handleMouseRelease()`, `_safeLoadDesign()`, `_applyMoveConstraint()`, `_clipboardShapes()`, `_clipboardShapesArray()` (rows×columns array per `copyOptions`), `_fixClipboardShapes()`, `_clipboardTopLeft()`
+  - internals: `_filterBySelectModes()`, `_snapPoint()`, `_handleMouseRelease()`, `_clipboardRecords()`, `_clipboardAcceptable()`, `_clipboardShapes()`, `_clipboardShapesArray()`, `_fixClipboardShapes()`, `_clipboardTopLeft()`, `_commitCopyGroup()`, `_safeLoadDesign()`, `_fitBoundsRect()` … (+1)
 
 ## Depends on
 
-- [[revedaEditor/backend/dataDefinitions|revedaEditor.backend.dataDefinitions]]
-- [[revedaEditor/backend/undoStack|revedaEditor.backend.undoStack]]
-- [[revedaEditor/gui/propertyDialogues|revedaEditor.gui.propertyDialogues]]
+- [[revedaEditor\backend\dataDefinitions|revedaEditor.backend.dataDefinitions]]
+- [[revedaEditor\backend\undoStack|revedaEditor.backend.undoStack]]
+- [[revedaEditor\gui\propertyDialogues|revedaEditor.gui.propertyDialogues]]
 
 ## Used by
 
-- [[revedaEditor/gui/editorViews|revedaEditor.gui.editorViews]]
-- [[revedaEditor/gui/editorWindow|revedaEditor.gui.editorWindow]]
-- [[revedaEditor/scenes/layoutScene|revedaEditor.scenes.layoutScene]]
-- [[revedaEditor/scenes/schematicScene|revedaEditor.scenes.schematicScene]]
-- [[revedaEditor/scenes/symbolScene|revedaEditor.scenes.symbolScene]]
-- [[revedaEditor/tests/test_selection_state|revedaEditor.tests.test_selection_state]]
+- [[revedaEditor\gui\editorViews|revedaEditor.gui.editorViews]]
+- [[revedaEditor\gui\editorWindow|revedaEditor.gui.editorWindow]]
+- [[revedaEditor\scenes\layoutScene|revedaEditor.scenes.layoutScene]]
+- [[revedaEditor\scenes\schematicScene|revedaEditor.scenes.schematicScene]]
+- [[revedaEditor\scenes\symbolScene|revedaEditor.scenes.symbolScene]]
+- [[revedaEditor\tests\test_selection_state|revedaEditor.tests.test_selection_state]]

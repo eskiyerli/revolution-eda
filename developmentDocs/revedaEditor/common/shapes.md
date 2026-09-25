@@ -1,15 +1,13 @@
-# `revedaEditor/common/shapes.py`
+# `revedaEditor\common\shapes.py`
 
 **Module:** `revedaEditor.common.shapes`
 
 ## Purpose
 
-Schematic/symbol graphics items: base `symbolShape` classes, pins, rectangles, lines, arcs, circles, polygons, text, and the `schematicSymbol` instance item.
+Module in `revedaEditor\common`.
 
 ## Classes
 
-- `_LazyModule` — Descriptor that defers PDK module loading until first attribute access.
-  - internals: `__getattr__()`
 - `symbolShape(QGraphicsItem)`
   - `pen()`
   - `brush()`
@@ -267,41 +265,50 @@ Schematic/symbol graphics items: base `symbolShape` classes, pins, rectangles, l
   - `sceneEndPoints()`
   - internals: `__repr__()`, `_determineAngle()`, `_createHorizontalLine()`, `_createVerticalLine()`
 - `pinNetIndexTuple(NamedTuple)`
+- `schematicGroup(symbolShape)` — Persistent selection container for independent schematic symbols.
+  - `symbols()`
+  - `shapes()`
+  - `adoptSymbols()`
+  - `releaseSymbols()`
+  - `boundingRect()`
+  - `paint()`
+  - `sceneEvent()`
+  - internals: `__repr__()`
 
 ## Functions
 
 - `_undoStack()` — Lazy import to avoid circular dependency (undoStack references shapes).
-- `_get_schlyr()` — Lazy accessor for schematic layers PDK module (avoids circular import).
-- `_get_symlyr()` — Lazy accessor for symbol layers PDK module (avoids circular import).
 
 ## Depends on
 
-- [[revedaEditor/backend/pdkLoader|revedaEditor.backend.pdkLoader]]
-- [[revedaEditor/common/labels|revedaEditor.common.labels]]
-- [[revedaEditor/common/net|revedaEditor.common.net]]
+- [[revedaEditor\backend\pdkLoader|revedaEditor.backend.pdkLoader]]
+- [[revedaEditor\common\labels|revedaEditor.common.labels]]
+- [[revedaEditor\common\net|revedaEditor.common.net]]
 
 ## Used by
 
-- [[revedaEditor/backend/undoStack|revedaEditor.backend.undoStack]]
-- [[revedaEditor/checks/schematic|revedaEditor.checks.schematic]]
-- [[revedaEditor/fileio/createSymbols|revedaEditor.fileio.createSymbols]]
-- [[revedaEditor/fileio/extractedSchematic|revedaEditor.fileio.extractedSchematic]]
-- [[revedaEditor/fileio/importXschemSym|revedaEditor.fileio.importXschemSym]]
-- [[revedaEditor/fileio/loadJSON|revedaEditor.fileio.loadJSON]]
-- [[revedaEditor/fileio/schematicEncoder|revedaEditor.fileio.schematicEncoder]]
-- [[revedaEditor/fileio/symbolEncoder|revedaEditor.fileio.symbolEncoder]]
-- [[revedaEditor/gui/alignItems|revedaEditor.gui.alignItems]]
-- [[revedaEditor/gui/lvsResults|revedaEditor.gui.lvsResults]]
-- [[revedaEditor/gui/propertyDialogues|revedaEditor.gui.propertyDialogues]]
-- [[revedaEditor/gui/schematicEditor|revedaEditor.gui.schematicEditor]]
-- [[revedaEditor/netlisting/spectreNetlist|revedaEditor.netlisting.spectreNetlist]]
-- [[revedaEditor/netlisting/vacaskNetlist|revedaEditor.netlisting.vacaskNetlist]]
-- [[revedaEditor/netlisting/xyceNetlist|revedaEditor.netlisting.xyceNetlist]]
-- [[revedaEditor/scenes/schematicScene|revedaEditor.scenes.schematicScene]]
-- [[revedaEditor/scenes/symbolScene|revedaEditor.scenes.symbolScene]]
-- [[revedaEditor/tests/test_connectivity|revedaEditor.tests.test_connectivity]]
-- [[revedaEditor/tests/test_netexpr|revedaEditor.tests.test_netexpr]]
-- [[revedaEditor/tests/test_netlisting|revedaEditor.tests.test_netlisting]]
-- [[revedaEditor/tests/test_schematic_checks|revedaEditor.tests.test_schematic_checks]]
-- [[revedaEditor/tests/test_schematic_ux|revedaEditor.tests.test_schematic_ux]]
-- [[revedaEditor/tests/test_symbol_pins|revedaEditor.tests.test_symbol_pins]]
+- [[revedaEditor\backend\undoStack|revedaEditor.backend.undoStack]]
+- [[revedaEditor\checks\schematic|revedaEditor.checks.schematic]]
+- [[revedaEditor\fileio\createSymbols|revedaEditor.fileio.createSymbols]]
+- [[revedaEditor\fileio\extractedSchematic|revedaEditor.fileio.extractedSchematic]]
+- [[revedaEditor\fileio\importXschemSym|revedaEditor.fileio.importXschemSym]]
+- [[revedaEditor\fileio\loadJSON|revedaEditor.fileio.loadJSON]]
+- [[revedaEditor\fileio\schematicEncoder|revedaEditor.fileio.schematicEncoder]]
+- [[revedaEditor\fileio\symbolEncoder|revedaEditor.fileio.symbolEncoder]]
+- [[revedaEditor\gui\alignItems|revedaEditor.gui.alignItems]]
+- [[revedaEditor\gui\lvsResults|revedaEditor.gui.lvsResults]]
+- [[revedaEditor\gui\propertyDialogues|revedaEditor.gui.propertyDialogues]]
+- [[revedaEditor\gui\schematicEditor|revedaEditor.gui.schematicEditor]]
+- [[revedaEditor\netlisting\spectreNetlist|revedaEditor.netlisting.spectreNetlist]]
+- [[revedaEditor\netlisting\vacaskNetlist|revedaEditor.netlisting.vacaskNetlist]]
+- [[revedaEditor\netlisting\xyceNetlist|revedaEditor.netlisting.xyceNetlist]]
+- [[revedaEditor\scenes\schematicScene|revedaEditor.scenes.schematicScene]]
+- [[revedaEditor\scenes\symbolScene|revedaEditor.scenes.symbolScene]]
+- [[revedaEditor\tests\test_connectivity|revedaEditor.tests.test_connectivity]]
+- [[revedaEditor\tests\test_copy_array|revedaEditor.tests.test_copy_array]]
+- [[revedaEditor\tests\test_netexpr|revedaEditor.tests.test_netexpr]]
+- [[revedaEditor\tests\test_netlisting|revedaEditor.tests.test_netlisting]]
+- [[revedaEditor\tests\test_pitch_repro|revedaEditor.tests.test_pitch_repro]]
+- [[revedaEditor\tests\test_schematic_checks|revedaEditor.tests.test_schematic_checks]]
+- [[revedaEditor\tests\test_schematic_ux|revedaEditor.tests.test_schematic_ux]]
+- [[revedaEditor\tests\test_symbol_pins|revedaEditor.tests.test_symbol_pins]]

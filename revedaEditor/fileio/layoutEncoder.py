@@ -14,6 +14,8 @@ import inspect
 import json
 from typing import Any, Dict
 
+from PySide6.QtCore import QLineF, QPointF
+
 import revedaEditor.common.layoutShapes as lshp
 import revedaEditor.fileio.schemaValidation as sv
 from revedaEditor.backend.pdkLoader import importPDKModule, lazyPDKModule
@@ -254,16 +256,21 @@ class layoutEncoder(json.JSONEncoder):
         }
 
     def _encodeLayoutRuler(self, item: lshp.layoutRuler) -> Dict[str, Any]:
-        # Rotation/flip-neutral geometry; see _encodeLayoutRect.
-        pos = item.pos()
+        # Canonical record: a horizontal local segment whose rotation about
+        # ``top`` (= p1) recovers the drawn direction. The loader folds the
+        # same transform back into scene-space endpoints, and older readers
+        # that replay setRotation(-ang) still render the ruler correctly.
+        p1 = item.mapToScene(item.draftLine.p1())
+        p2 = item.mapToScene(item.draftLine.p2())
+        length = QLineF(p1, p2).length()
         return {
             "type": "Ruler",
-            "dfl1": (pos + item.draftLine.p1()).toTuple(),
-            "dfl2": (pos + item.draftLine.p2()).toTuple(),
-            "top": (pos + item.transformOriginPoint()).toTuple(),
+            "dfl1": p1.toTuple(),
+            "dfl2": (p1 + QPointF(length, 0)).toTuple(),
+            "top": p1.toTuple(),
             "md": item.mode,
-            "ang": item.angle,
-            "fl": item.flipTuple,
+            "ang": QLineF(p1, p2).angle(),
+            "fl": (1, 1),
         }
 
     def _encodeLayoutGroup(self, item: "lshp.layoutGroup") -> Dict[str, Any]:

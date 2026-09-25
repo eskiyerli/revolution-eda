@@ -1,10 +1,10 @@
-# `revedaEditor/tests/test_layout_transforms.py`
+# `revedaEditor\tests\test_layout_transforms.py`
 
 **Module:** `revedaEditor.tests.test_layout_transforms`
 
 ## Purpose
 
-Layout transform/rotation tests.
+Module in `revedaEditor\tests`.
 
 ## Functions
 
@@ -14,6 +14,9 @@ Layout transform/rotation tests.
 - `test_loader_accepts_legacy_layout_record_without_transform_fields()`
 - `test_gdstk_transform_matches_editor_flip_matrix()`
 - `test_gds_export_skips_layout_rulers()`
+- `test_ruler_record_round_trip()`
+- `test_ruler_legacy_rotated_record_recovers_direction()`
+- `test_ruler_legacy_flipped_record_recovers_endpoints()`
 - `test_delete_all_rulers_cancels_in_progress_ruler()`
 - `test_gds_export_reuses_identical_pcell_geometry()`
 - `test_gds_export_keeps_via_enclosures_local_to_instance_cell()`
@@ -34,11 +37,11 @@ Layout transform/rotation tests.
 
 ## Depends on
 
-- [[defaultPDK/layoutLayers|defaultPDK.layoutLayers]]
-- [[defaultPDK/pcells|defaultPDK.pcells]]
-- [[defaultPDK/process|defaultPDK.process]]
-- [[revedaEditor/common/__init__|revedaEditor.common.__init__]]
-- [[revedaEditor/fileio/exportGDS|revedaEditor.fileio.exportGDS]]
-- [[revedaEditor/fileio/layoutEncoder|revedaEditor.fileio.layoutEncoder]]
-- [[revedaEditor/fileio/loadJSON|revedaEditor.fileio.loadJSON]]
-- [[revedaEditor/scenes/layoutScene|revedaEditor.scenes.layoutScene]]
+- [[defaultPDK\layoutLayers|defaultPDK.layoutLayers]]
+- [[defaultPDK\pcells|defaultPDK.pcells]]
+- [[defaultPDK\process|defaultPDK.process]]
+- [[revedaEditor\common\__init__|revedaEditor.common.__init__]]
+- [[revedaEditor\fileio\exportGDS|revedaEditor.fileio.exportGDS]]
+- [[revedaEditor\fileio\layoutEncoder|revedaEditor.fileio.layoutEncoder]]
+- [[revedaEditor\fileio\loadJSON|revedaEditor.fileio.loadJSON]]
+- [[revedaEditor\scenes\layoutScene|revedaEditor.scenes.layoutScene]]

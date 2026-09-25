@@ -1,10 +1,10 @@
-# `revedaEditor/gui/libraryBrowser.py`
+# `revedaEditor\gui\libraryBrowser.py`
 
 **Module:** `revedaEditor.gui.libraryBrowser`
 
 ## Purpose
 
-`libraryBrowser` — the design-libraries window hosting the column/tree view, context menus, and new/open cellview entry points.
+Module in `revedaEditor\gui`.
 
 ## Classes
 
@@ -34,14 +34,14 @@
 
 ## Depends on
 
-- [[revedaEditor/backend/dataDefinitions|revedaEditor.backend.dataDefinitions]]
-- [[revedaEditor/backend/libBackEnd|revedaEditor.backend.libBackEnd]]
-- [[revedaEditor/backend/libraryMethods|revedaEditor.backend.libraryMethods]]
-- [[revedaEditor/backend/libraryModelView|revedaEditor.backend.libraryModelView]]
-- [[revedaEditor/backend/startThread|revedaEditor.backend.startThread]]
-- [[revedaEditor/gui/editFunctions|revedaEditor.gui.editFunctions]]
-- [[revedaEditor/gui/fileDialogues|revedaEditor.gui.fileDialogues]]
+- [[revedaEditor\backend\dataDefinitions|revedaEditor.backend.dataDefinitions]]
+- [[revedaEditor\backend\libBackEnd|revedaEditor.backend.libBackEnd]]
+- [[revedaEditor\backend\libraryMethods|revedaEditor.backend.libraryMethods]]
+- [[revedaEditor\backend\libraryModelView|revedaEditor.backend.libraryModelView]]
+- [[revedaEditor\backend\startThread|revedaEditor.backend.startThread]]
+- [[revedaEditor\gui\editFunctions|revedaEditor.gui.editFunctions]]
+- [[revedaEditor\gui\fileDialogues|revedaEditor.gui.fileDialogues]]
 
 ## Used by
 
-- [[revedaEditor/gui/revedaMain|revedaEditor.gui.revedaMain]]
+- [[revedaEditor\gui\revedaMain|revedaEditor.gui.revedaMain]]

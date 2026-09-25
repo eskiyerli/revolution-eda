@@ -1,10 +1,10 @@
-# `revedaEditor/gui/layoutDialogues.py`
+# `revedaEditor\gui\layoutDialogues.py`
 
 **Module:** `revedaEditor.gui.layoutDialogues`
 
 ## Purpose
 
-Layout creation/property dialogs: instance placement (incl. arrays), paths, pins, labels, vias, multipart parameters, layer ops.
+Module in `revedaEditor\gui`.
 
 ## Classes
 
@@ -13,6 +13,7 @@ Layout creation/property dialogs: instance placement (incl. arrays), paths, pins
 - `layoutInstancePropertiesDialogue(layoutInstanceDialogue)`
 - `pcellLinkDialogue(QDialog)`
 - `createPathDialogue(QDialog)`
+- `rulerOptionsDialogue(QDialog)` — F3 options form for ruler draw mode (K): angle constraint and
 - `layoutPathPropertiesDialog(createPathDialogue)`
 - `createLayoutPinDialog(QDialog)`
   - `familyFontStyles()`
@@ -46,6 +47,7 @@ Layout creation/property dialogs: instance placement (incl. arrays), paths, pins
 - `formDictionary` — This code defines a utility class formDictionary that extracts data
   - `extractDictFormLayout()`
 - `createMultipartDialogue(QDialog)` — Pick a multipart kind and its parameters before the two-click draw.
+  - `setInitialSpec()`
   - `selectedSpec()`
   - internals: `_clearFields()`, `_rebuildFields()`
 - `makeCellDialogue(QDialog)` — Ask for the library and cell name used by Edit > Make Cell.
@@ -62,13 +64,13 @@ Layout creation/property dialogs: instance placement (incl. arrays), paths, pins
 
 ## Depends on
 
-- [[revedaEditor/backend/drcModelView|revedaEditor.backend.drcModelView]]
-- [[revedaEditor/backend/pdkLoader|revedaEditor.backend.pdkLoader]]
-- [[revedaEditor/common/layoutShapes|revedaEditor.common.layoutShapes]]
-- [[revedaEditor/gui/editFunctions|revedaEditor.gui.editFunctions]]
+- [[revedaEditor\backend\drcModelView|revedaEditor.backend.drcModelView]]
+- [[revedaEditor\backend\pdkLoader|revedaEditor.backend.pdkLoader]]
+- [[revedaEditor\common\layoutShapes|revedaEditor.common.layoutShapes]]
+- [[revedaEditor\gui\editFunctions|revedaEditor.gui.editFunctions]]
 
 ## Used by
 
-- [[revedaEditor/backend/libraryModelView|revedaEditor.backend.libraryModelView]]
-- [[revedaEditor/gui/layoutEditor|revedaEditor.gui.layoutEditor]]
-- [[revedaEditor/scenes/layoutScene|revedaEditor.scenes.layoutScene]]
+- [[revedaEditor\backend\libraryModelView|revedaEditor.backend.libraryModelView]]
+- [[revedaEditor\gui\layoutEditor|revedaEditor.gui.layoutEditor]]
+- [[revedaEditor\scenes\layoutScene|revedaEditor.scenes.layoutScene]]

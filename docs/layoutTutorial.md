@@ -407,15 +407,24 @@ layout file directly.
 
 ### Create -> Add Ruler (`K`) / Delete Rulers (`Shift+K`)
 
-Rulers are measurement aids drawn in the layout canvas.
+Rulers are measurement aids drawn in the layout canvas with two clicks:
+the first anchors the start point, the second the end point. The status
+line shows the live length while the second point tracks the cursor.
 
 - `K` adds a ruler.
 - `Ctrl+K` deletes the selected rulers.
 - `Shift+K` removes all rulers.
 
-Rulers display measurement ticks and follow the layout grid. The endpoint
-label shows `length (dX,dY)` in layout units — both the total distance and
-the per-axis displacement.
+Rulers can be drawn in any direction — left to right, right to left, top to
+bottom, or bottom to top — and always report a positive distance. The
+default angle constraint is orthogonal; `F3` while drawing opens the ruler
+options where the constraint can be switched to diagonal (45° steps) or
+any angle, and endpoint edge-snapping can be toggled. Major ticks are
+labeled with the cumulative distance from the start point and the end cap
+shows the total length in µm; tick density adapts to the zoom level so the
+display never clutters. A placed ruler moves with `M` and its endpoints can
+be re-anchored with stretch (`S`), honoring the same angle constraint and
+edge snap.
 
 ![layoutEditorRuler.png](assets/layoutEditorRuler.png)
 

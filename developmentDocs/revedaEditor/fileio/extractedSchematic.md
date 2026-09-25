@@ -1,10 +1,10 @@
-# `revedaEditor/fileio/extractedSchematic.py`
+# `revedaEditor\fileio\extractedSchematic.py`
 
 **Module:** `revedaEditor.fileio.extractedSchematic`
 
 ## Purpose
 
-`klayoutSchematicGenerator` — reconstructs a schematic view from an extracted (RCX/LVS) netlist.
+Module in `revedaEditor\fileio`.
 
 ## Classes
 
@@ -21,9 +21,9 @@
 
 ## Depends on
 
-- [[revedaEditor/backend/dataDefinitions|revedaEditor.backend.dataDefinitions]]
-- [[revedaEditor/backend/libBackEnd|revedaEditor.backend.libBackEnd]]
-- [[revedaEditor/backend/libraryMethods|revedaEditor.backend.libraryMethods]]
-- [[revedaEditor/common/net|revedaEditor.common.net]]
-- [[revedaEditor/common/shapes|revedaEditor.common.shapes]]
-- [[revedaEditor/fileio/__init__|revedaEditor.fileio.__init__]]
+- [[revedaEditor\backend\dataDefinitions|revedaEditor.backend.dataDefinitions]]
+- [[revedaEditor\backend\libBackEnd|revedaEditor.backend.libBackEnd]]
+- [[revedaEditor\backend\libraryMethods|revedaEditor.backend.libraryMethods]]
+- [[revedaEditor\common\net|revedaEditor.common.net]]
+- [[revedaEditor\common\shapes|revedaEditor.common.shapes]]
+- [[revedaEditor\fileio\__init__|revedaEditor.fileio.__init__]]

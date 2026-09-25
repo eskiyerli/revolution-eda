@@ -1,10 +1,10 @@
-# `revedaEditor/gui/configEditor.py`
+# `revedaEditor\gui\configEditor.py`
 
 **Module:** `revedaEditor.gui.configEditor`
 
 ## Purpose
 
-Hierarchy config-view editor: `configEditor` window + container driving switch/stop view traversal.
+Module in `revedaEditor\gui`.
 
 ## Classes
 
@@ -33,13 +33,13 @@ Hierarchy config-view editor: `configEditor` window + container driving switch/s
 
 ## Depends on
 
-- [[revedaEditor/backend/dataDefinitions|revedaEditor.backend.dataDefinitions]]
-- [[revedaEditor/backend/libBackEnd|revedaEditor.backend.libBackEnd]]
-- [[revedaEditor/backend/libraryMethods|revedaEditor.backend.libraryMethods]]
-- [[revedaEditor/gui/editFunctions|revedaEditor.gui.editFunctions]]
-- [[revedaEditor/gui/schematicEditor|revedaEditor.gui.schematicEditor]]
-- [[revedaEditor/resources/resources|revedaEditor.resources.resources]]
+- [[revedaEditor\backend\dataDefinitions|revedaEditor.backend.dataDefinitions]]
+- [[revedaEditor\backend\libBackEnd|revedaEditor.backend.libBackEnd]]
+- [[revedaEditor\backend\libraryMethods|revedaEditor.backend.libraryMethods]]
+- [[revedaEditor\gui\editFunctions|revedaEditor.gui.editFunctions]]
+- [[revedaEditor\gui\schematicEditor|revedaEditor.gui.schematicEditor]]
+- [[revedaEditor\resources\resources|revedaEditor.resources.resources]]
 
 ## Used by
 
-- [[revedaEditor/backend/libraryModelView|revedaEditor.backend.libraryModelView]]
+- [[revedaEditor\backend\libraryModelView|revedaEditor.backend.libraryModelView]]

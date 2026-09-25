@@ -1,10 +1,10 @@
-# `revedaEditor/tests/test_labels_nlp.py`
+# `revedaEditor\tests\test_labels_nlp.py`
 
 **Module:** `revedaEditor.tests.test_labels_nlp`
 
 ## Purpose
 
-Label/PyLabel evaluation tests.
+Module in `revedaEditor\tests`.
 
 ## Classes
 
@@ -28,4 +28,4 @@ Label/PyLabel evaluation tests.
 
 ## Depends on
 
-- [[revedaEditor/common/labels|revedaEditor.common.labels]]
+- [[revedaEditor\common\labels|revedaEditor.common.labels]]

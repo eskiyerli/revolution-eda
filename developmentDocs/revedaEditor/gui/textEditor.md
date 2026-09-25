@@ -1,10 +1,10 @@
-# `revedaEditor/gui/textEditor.py`
+# `revedaEditor\gui\textEditor.py`
 
 **Module:** `revedaEditor.gui.textEditor`
 
 ## Purpose
 
-Text-editor family (JSON/Verilog-A/SPICE/Spectre/VACASK/Xyce) with per-language syntax highlighters.
+Module in `revedaEditor\gui`.
 
 ## Classes
 
@@ -69,8 +69,8 @@ Text-editor family (JSON/Verilog-A/SPICE/Spectre/VACASK/Xyce) with per-language 
 
 ## Depends on
 
-- [[revedaEditor/backend/dataDefinitions|revedaEditor.backend.dataDefinitions]]
+- [[revedaEditor\backend\dataDefinitions|revedaEditor.backend.dataDefinitions]]
 
 ## Used by
 
-- [[revedaEditor/backend/libraryModelView|revedaEditor.backend.libraryModelView]]
+- [[revedaEditor\backend\libraryModelView|revedaEditor.backend.libraryModelView]]

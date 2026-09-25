@@ -1,10 +1,10 @@
-# `revedaEditor/resources/resources.py`
+# `revedaEditor\resources\resources.py`
 
 **Module:** `revedaEditor.resources.resources`
 
 ## Purpose
 
-Compiled Qt resource module (icons) generated from `reveda.qrc` by `pyside6-rcc` — regenerated, never edited.
+Module in `revedaEditor\resources`.
 
 ## Functions
 
@@ -13,5 +13,5 @@ Compiled Qt resource module (icons) generated from `reveda.qrc` by `pyside6-rcc`
 
 ## Used by
 
-- [[revedaEditor/gui/configEditor|revedaEditor.gui.configEditor]]
-- [[revedaEditor/gui/editorWindow|revedaEditor.gui.editorWindow]]
+- [[revedaEditor\gui\configEditor|revedaEditor.gui.configEditor]]
+- [[revedaEditor\gui\editorWindow|revedaEditor.gui.editorWindow]]

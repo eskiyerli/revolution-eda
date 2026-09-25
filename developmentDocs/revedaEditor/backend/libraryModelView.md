@@ -1,10 +1,10 @@
-# `revedaEditor/backend/libraryModelView.py`
+# `revedaEditor\backend\libraryModelView.py`
 
 **Module:** `revedaEditor.backend.libraryModelView`
 
 ## Purpose
 
-`BaseDesignLibrariesView` and its column/tree concrete views — library tree population, `openView`/`openCellView` dispatch through `EditorFactory`, cell/view create/delete/rename flows, text-view handlers.
+Module in `revedaEditor\backend`.
 
 ## Classes
 
@@ -80,22 +80,23 @@
 
 ## Depends on
 
-- [[revedaEditor/backend/dataDefinitions|revedaEditor.backend.dataDefinitions]]
-- [[revedaEditor/backend/libBackEnd|revedaEditor.backend.libBackEnd]]
-- [[revedaEditor/backend/libraryMethods|revedaEditor.backend.libraryMethods]]
-- [[revedaEditor/gui/configEditor|revedaEditor.gui.configEditor]]
-- [[revedaEditor/gui/fileDialogues|revedaEditor.gui.fileDialogues]]
-- [[revedaEditor/gui/layoutDialogues|revedaEditor.gui.layoutDialogues]]
-- [[revedaEditor/gui/textEditor|revedaEditor.gui.textEditor]]
+- [[revedaEditor\backend\dataDefinitions|revedaEditor.backend.dataDefinitions]]
+- [[revedaEditor\backend\libBackEnd|revedaEditor.backend.libBackEnd]]
+- [[revedaEditor\backend\libraryMethods|revedaEditor.backend.libraryMethods]]
+- [[revedaEditor\fileio\schemaValidation|revedaEditor.fileio.schemaValidation]]
+- [[revedaEditor\gui\configEditor|revedaEditor.gui.configEditor]]
+- [[revedaEditor\gui\fileDialogues|revedaEditor.gui.fileDialogues]]
+- [[revedaEditor\gui\layoutDialogues|revedaEditor.gui.layoutDialogues]]
+- [[revedaEditor\gui\textEditor|revedaEditor.gui.textEditor]]
 
 ## Used by
 
-- [[revedaEditor/fileio/importXschemSym|revedaEditor.fileio.importXschemSym]]
-- [[revedaEditor/gui/editorWindow|revedaEditor.gui.editorWindow]]
-- [[revedaEditor/gui/layoutEditor|revedaEditor.gui.layoutEditor]]
-- [[revedaEditor/gui/libraryBrowser|revedaEditor.gui.libraryBrowser]]
-- [[revedaEditor/gui/schematicEditor|revedaEditor.gui.schematicEditor]]
-- [[revedaEditor/gui/symbolEditor|revedaEditor.gui.symbolEditor]]
-- [[revedaEditor/scenes/layoutScene|revedaEditor.scenes.layoutScene]]
-- [[revedaEditor/tests/test_netexpr|revedaEditor.tests.test_netexpr]]
-- [[revedaEditor/tests/test_netlisting|revedaEditor.tests.test_netlisting]]
+- [[revedaEditor\fileio\importXschemSym|revedaEditor.fileio.importXschemSym]]
+- [[revedaEditor\gui\editorWindow|revedaEditor.gui.editorWindow]]
+- [[revedaEditor\gui\layoutEditor|revedaEditor.gui.layoutEditor]]
+- [[revedaEditor\gui\libraryBrowser|revedaEditor.gui.libraryBrowser]]
+- [[revedaEditor\gui\schematicEditor|revedaEditor.gui.schematicEditor]]
+- [[revedaEditor\gui\symbolEditor|revedaEditor.gui.symbolEditor]]
+- [[revedaEditor\scenes\layoutScene|revedaEditor.scenes.layoutScene]]
+- [[revedaEditor\tests\test_netexpr|revedaEditor.tests.test_netexpr]]
+- [[revedaEditor\tests\test_netlisting|revedaEditor.tests.test_netlisting]]

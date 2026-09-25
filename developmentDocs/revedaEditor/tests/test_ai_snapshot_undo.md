@@ -1,12 +1,8 @@
-# `revedaEditor/tests/test_ai_snapshot_undo.py`
+# `revedaEditor\tests\test_ai_snapshot_undo.py`
 
 **Module:** `revedaEditor.tests.test_ai_snapshot_undo`
 
 ## Purpose
-
-aiTerminal snapshot/undo integration tests.
-
-## Module docstring
 
 Tests for the editor-owned AI JSON snapshot undo command.
 
@@ -18,4 +14,4 @@ Tests for the editor-owned AI JSON snapshot undo command.
 
 ## Depends on
 
-- [[revedaEditor/backend/undoStack|revedaEditor.backend.undoStack]]
+- [[revedaEditor\backend\undoStack|revedaEditor.backend.undoStack]]

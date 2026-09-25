@@ -1,10 +1,10 @@
-# `revedaEditor/gui/layoutEditor.py`
+# `revedaEditor\gui\layoutEditor.py`
 
 **Module:** `revedaEditor.gui.layoutEditor`
 
 ## Purpose
 
-`layoutEditor` window + `layoutContainer`: layout menus/actions, save/load, GDS export, SDL sync, flyline and cross-probe actions. Edit menu and the item context menu carry Group Items (`Ctrl+G`) / Ungroup Items (`Ctrl+Shift+G`) → `layoutScene.groupSelectedItems`/`ungroupSelectedItems`.
+Module in `revedaEditor\gui`.
 
 ## Classes
 
@@ -22,6 +22,7 @@
   - `delSelectedRulerClick()`
   - `delRulerClick()`
   - `createPathClick()`
+  - `editActivePlacementOptions()`
   - `createPinClick()`
   - `createLabelClick()`
   - `createViaClick()`
@@ -44,7 +45,7 @@
   - `closeEvent()`
   - `lvsRectangles()`
   - `drcPolygons()`
-  - internals: `_createMenuBar()`, `_createActions()`, `_addActions()`, `_layoutContextMenu()`, `_createToolBars()`, `_createTriggers()`, `_createShortcuts()`, `_exportLayoutCell()`, `_findInstanceTransform()`
+  - internals: `_createMenuBar()`, `_createActions()`, `_addActions()`, `_layoutContextMenu()`, `_createToolBars()`, `_createTriggers()`, `_createShortcuts()`, `_configureRulerOptions()`, `_configureLayoutInstanceOptions()`, `_configureLayoutPinPlacement()`, `_configureLayoutLabelPlacement()`, `_configureViaPlacement()` … (+4)
 - `layoutContainer(edw.editorContainer)`
   - `init_UI()`
   - `findSelectedLayer()`
@@ -62,14 +63,20 @@
 
 ## Depends on
 
-- [[revedaEditor/backend/dataDefinitions|revedaEditor.backend.dataDefinitions]]
-- [[revedaEditor/backend/libBackEnd|revedaEditor.backend.libBackEnd]]
-- [[revedaEditor/backend/libraryMethods|revedaEditor.backend.libraryMethods]]
-- [[revedaEditor/backend/libraryModelView|revedaEditor.backend.libraryModelView]]
-- [[revedaEditor/backend/pdkLoader|revedaEditor.backend.pdkLoader]]
-- [[revedaEditor/gui/editorViews|revedaEditor.gui.editorViews]]
-- [[revedaEditor/gui/editorWindow|revedaEditor.gui.editorWindow]]
-- [[revedaEditor/gui/fileDialogues|revedaEditor.gui.fileDialogues]]
-- [[revedaEditor/gui/layoutDialogues|revedaEditor.gui.layoutDialogues]]
-- [[revedaEditor/gui/lsw|revedaEditor.gui.lsw]]
-- [[revedaEditor/scenes/layoutScene|revedaEditor.scenes.layoutScene]]
+- [[revedaEditor\backend\dataDefinitions|revedaEditor.backend.dataDefinitions]]
+- [[revedaEditor\backend\libBackEnd|revedaEditor.backend.libBackEnd]]
+- [[revedaEditor\backend\libraryMethods|revedaEditor.backend.libraryMethods]]
+- [[revedaEditor\backend\libraryModelView|revedaEditor.backend.libraryModelView]]
+- [[revedaEditor\backend\pdkLoader|revedaEditor.backend.pdkLoader]]
+- [[revedaEditor\common\layoutShapes|revedaEditor.common.layoutShapes]]
+- [[revedaEditor\gui\editorViews|revedaEditor.gui.editorViews]]
+- [[revedaEditor\gui\editorWindow|revedaEditor.gui.editorWindow]]
+- [[revedaEditor\gui\fileDialogues|revedaEditor.gui.fileDialogues]]
+- [[revedaEditor\gui\layoutDialogues|revedaEditor.gui.layoutDialogues]]
+- [[revedaEditor\gui\lsw|revedaEditor.gui.lsw]]
+- [[revedaEditor\scenes\layoutScene|revedaEditor.scenes.layoutScene]]
+
+## Used by
+
+- [[revedaEditor\tests\test_sdl_adapter|revedaEditor.tests.test_sdl_adapter]]
+- [[revedaEditor\tests\test_sdl_free_baseline|revedaEditor.tests.test_sdl_free_baseline]]

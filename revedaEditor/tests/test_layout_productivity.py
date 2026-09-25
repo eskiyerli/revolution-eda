@@ -511,27 +511,23 @@ def test_export_dialog_parsers():
 def test_ruler_delta_label(scene):
     ruler = lshp.layoutRuler(
         draftLine=QLineF(QPointF(0, 0), QPointF(3000, 0)),
-        width=1.0, tickGap=25.0, tickLength=5,
-        tickFont=QFont("Arial", 10), mode=0,
+        width=1.0, tickFont=QFont("Arial", 10), mode=0,
     )
     scene.addItem(ruler)
-    ruler._createRulerTicks()
-    last = ruler._tickTuples[-1].text
+    marks = ruler._tickMarks(scale=10.0)
     # 3000 scene units / dbu=1000 -> "3"
-    assert last == "3"
+    assert marks[-1][2] == "3"
 
 
 def test_ruler_delta_label_diagonal(scene):
     ruler = lshp.layoutRuler(
         draftLine=QLineF(QPointF(0, 0), QPointF(3000, 4000)),
-        width=1.0, tickGap=25.0, tickLength=5,
-        tickFont=QFont("Arial", 10), mode=2,  # any-angle keeps the diagonal
+        width=1.0, tickFont=QFont("Arial", 10), mode=2,
     )
     scene.addItem(ruler)
-    ruler._createRulerTicks()
-    last = ruler._tickTuples[-1].text
+    marks = ruler._tickMarks(scale=10.0)
     # hypot(3000, 4000) / dbu=1000 -> "5"
-    assert last == "5"
+    assert marks[-1][2] == "5"
 
 
 def test_ruler_mode_option_applies_to_draft(scene):
@@ -563,12 +559,11 @@ def test_ruler_snap_toggle(scene):
 
 def test_delete_selected_rulers(scene):
     r1 = lshp.layoutRuler(
-        QLineF(0, 0, 100, 0), 1.0, 25.0, 5, QFont("Arial", 10))
+        QLineF(0, 0, 100, 0), 1.0, QFont("Arial", 10))
     r2 = lshp.layoutRuler(
-        QLineF(0, 100, 100, 100), 1.0, 25.0, 5, QFont("Arial", 10))
+        QLineF(0, 100, 100, 100), 1.0, QFont("Arial", 10))
     scene.addItem(r1)
     scene.addItem(r2)
-    scene.rulersSet.update({r1, r2})
     r1.setSelected(True)
     assert scene.deleteSelectedRulers() is True
     remaining = [i for i in scene.items()
@@ -578,9 +573,8 @@ def test_delete_selected_rulers(scene):
 
 def test_delete_all_rulers_kept(scene):
     r1 = lshp.layoutRuler(
-        QLineF(0, 0, 100, 0), 1.0, 25.0, 5, QFont("Arial", 10))
+        QLineF(0, 0, 100, 0), 1.0, QFont("Arial", 10))
     scene.addItem(r1)
-    scene.rulersSet.add(r1)
     scene.deleteAllRulers()
     assert not [i for i in scene.items()
                 if isinstance(i, lshp.layoutRuler)]

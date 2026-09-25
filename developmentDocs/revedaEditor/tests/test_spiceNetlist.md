@@ -1,10 +1,10 @@
-# `revedaEditor/tests/test_spiceNetlist.py`
+# `revedaEditor\tests\test_spiceNetlist.py`
 
 **Module:** `revedaEditor.tests.test_spiceNetlist`
 
 ## Purpose
 
-SPICE netlist-parsing tests.
+Module in `revedaEditor\tests`.
 
 ## Functions
 
@@ -14,4 +14,4 @@ SPICE netlist-parsing tests.
 
 ## Depends on
 
-- [[revedaEditor/fileio/spiceNetlist|revedaEditor.fileio.spiceNetlist]]
+- [[revedaEditor\fileio\spiceNetlist|revedaEditor.fileio.spiceNetlist]]

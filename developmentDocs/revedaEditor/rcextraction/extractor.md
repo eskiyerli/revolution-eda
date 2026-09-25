@@ -1,22 +1,10 @@
-# `revedaEditor/rcextraction/extractor.py`
+# `revedaEditor\rcextraction\extractor.py`
 
 **Module:** `revedaEditor.rcextraction.extractor`
 
 ## Purpose
 
-Unified RC extractor consuming the RCX database: parasitic R/C modeling, device pin anchoring, coupling capacitance.
-
-## Module docstring
-
 Unified RC extractor that consumes an RCX database.
-
-This is the main extraction engine. It reads a pre-solved .rcx.json
-(produced by the LVS export step) and computes parasitic R and C for
-each net. It then outputs a complete netlist with both the original
-devices and parasitic elements.
-
-The extractor builds a connected spatial graph of resistors and capacitors
-for each net, linking wire segments, vias, ports, and transistor terminals.
 
 ## Classes
 

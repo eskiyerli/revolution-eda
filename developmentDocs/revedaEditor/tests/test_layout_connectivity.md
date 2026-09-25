@@ -1,12 +1,8 @@
-# `revedaEditor/tests/test_layout_connectivity.py`
+# `revedaEditor\tests\test_layout_connectivity.py`
 
 **Module:** `revedaEditor.tests.test_layout_connectivity`
 
 ## Purpose
-
-Layout connectivity and hierarchy-aware net-highlight tests (instance internals, mosaics, tap cells).
-
-## Module docstring
 
 Tests for the unified layout connectivity engine and layoutScene
 integration (connectivity.layout + adapters.fromLayoutItems).
@@ -42,12 +38,16 @@ integration (connectivity.layout + adapters.fromLayoutItems).
 - `test_layoutScene_highlight_through_instance()` — The psub-tap case: highlighting the routed net paints the tap's
 - `test_highlight_reaches_mosaic_elements()` — Array-element clones join connectivity like the base element.
 - `test_highlight_reaches_nested_instances()` — Internals of an instance nested inside another instance resolve.
+- `_bruteforcePartition()` — Reference O(n^2) grouping: returns a frozenset of frozensets of shape
+- `_groupPartition()`
+- `test_grid_matches_bruteforce_random()` — Randomized equivalence: grid grouping == pairwise grouping.
+- `test_grid_prunes_far_shapes()` — The index must not quadratic-scan: N spaced-out shapes should cost
 
 ## Depends on
 
-- [[defaultPDK/layoutLayers|defaultPDK.layoutLayers]]
-- [[defaultPDK/process|defaultPDK.process]]
-- [[revedaEditor/common/__init__|revedaEditor.common.__init__]]
-- [[revedaEditor/connectivity/__init__|revedaEditor.connectivity.__init__]]
-- [[revedaEditor/connectivity/layout|revedaEditor.connectivity.layout]]
-- [[revedaEditor/tests/sceneTestUtils|revedaEditor.tests.sceneTestUtils]]
+- [[defaultPDK\layoutLayers|defaultPDK.layoutLayers]]
+- [[defaultPDK\process|defaultPDK.process]]
+- [[revedaEditor\common\__init__|revedaEditor.common.__init__]]
+- [[revedaEditor\connectivity\__init__|revedaEditor.connectivity.__init__]]
+- [[revedaEditor\connectivity\layout|revedaEditor.connectivity.layout]]
+- [[revedaEditor\tests\sceneTestUtils|revedaEditor.tests.sceneTestUtils]]

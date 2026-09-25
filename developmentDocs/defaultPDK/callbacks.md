@@ -1,10 +1,10 @@
-# `defaultPDK/callbacks.py`
+# `defaultPDK\callbacks.py`
 
 **Module:** `defaultPDK.callbacks`
 
 ## Purpose
 
-PDK callbacks evaluated by PyLabels/parameter resolution (`Quantity`-rendered values).
+Module in `defaultPDK`.
 
 ## Classes
 

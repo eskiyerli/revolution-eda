@@ -1,10 +1,10 @@
-# `revedaEditor/backend/undoStack.py`
+# `revedaEditor\backend\undoStack.py`
 
 **Module:** `revedaEditor.backend.undoStack`
 
 ## Purpose
 
-`undoStack` (QUndoStack subclass) and every `QUndoCommand` used for undoable scene edits (add/delete/move/copy/rotate/transform/group/rename...).
+Module in `revedaEditor\backend`.
 
 ## Classes
 
@@ -44,16 +44,16 @@
 - `undoMoveByCommand(QUndoCommand)`
   - `redo()`
   - `undo()`
+- `undoGroupShapes(QUndoCommand)` — Attach/detach members of a persistent `layoutGroup`.
+  - `redo()`
+  - `undo()`
+  - internals: `_doAttach()`, `_doDetach()`
 - `undoStretchShape(QUndoCommand)` — Undo command for stretching a shape in-place.
   - `undo()`
   - `redo()`
 - `undoGroupMove(QUndoCommand)`
   - `redo()`
   - `undo()`
-- `undoGroupShapes(QUndoCommand)` — Attach/detach members of a persistent ``layoutGroup``.
-  - `redo()`
-  - `undo()`
-  - internals: `_doAttach()`, `_doDetach()`
 - `replaceDesignSnapshotUndo(QUndoCommand)` — Undo command that applies complete persisted-design snapshots.
   - `undo()`
   - `redo()`
@@ -61,15 +61,15 @@
 
 ## Depends on
 
-- [[revedaEditor/common/layoutShapes|revedaEditor.common.layoutShapes]]
-- [[revedaEditor/common/shapes|revedaEditor.common.shapes]]
+- [[revedaEditor\common\layoutShapes|revedaEditor.common.layoutShapes]]
+- [[revedaEditor\common\shapes|revedaEditor.common.shapes]]
 
 ## Used by
 
-- [[revedaEditor/scenes/editorScene|revedaEditor.scenes.editorScene]]
-- [[revedaEditor/scenes/layoutScene|revedaEditor.scenes.layoutScene]]
-- [[revedaEditor/scenes/schematicScene|revedaEditor.scenes.schematicScene]]
-- [[revedaEditor/scenes/symbolScene|revedaEditor.scenes.symbolScene]]
-- [[revedaEditor/tests/test_ai_snapshot_undo|revedaEditor.tests.test_ai_snapshot_undo]]
-- [[revedaEditor/tests/test_layout_merge|revedaEditor.tests.test_layout_merge]]
-- [[revedaEditor/tests/test_layout_stretch|revedaEditor.tests.test_layout_stretch]]
+- [[revedaEditor\scenes\editorScene|revedaEditor.scenes.editorScene]]
+- [[revedaEditor\scenes\layoutScene|revedaEditor.scenes.layoutScene]]
+- [[revedaEditor\scenes\schematicScene|revedaEditor.scenes.schematicScene]]
+- [[revedaEditor\scenes\symbolScene|revedaEditor.scenes.symbolScene]]
+- [[revedaEditor\tests\test_ai_snapshot_undo|revedaEditor.tests.test_ai_snapshot_undo]]
+- [[revedaEditor\tests\test_layout_merge|revedaEditor.tests.test_layout_merge]]
+- [[revedaEditor\tests\test_layout_stretch|revedaEditor.tests.test_layout_stretch]]

@@ -1,10 +1,10 @@
-# `revedaEditor/common/net.py`
+# `revedaEditor\common\net.py`
 
 **Module:** `revedaEditor.common.net`
 
 ## Purpose
 
-Schematic wire/bus graphics items (`schematicNet`), net-name label items, and name-strength machinery.
+Module in `revedaEditor\common`.
 
 ## Classes
 
@@ -88,6 +88,7 @@ Schematic wire/bus graphics items (`schematicNet`), net-name label items, and na
   - `parent()`
   - `mouseReleaseEvent()`
 - `netFlightLine(QGraphicsPathItem)`
+  - `wireHighlightPen()`
   - `paint()`
   - internals: `__repr__()`, `_createPath()`
 - `guideLine(QGraphicsLineItem)`
@@ -107,23 +108,24 @@ Schematic wire/bus graphics items (`schematicNet`), net-name label items, and na
 
 ## Depends on
 
-- [[revedaEditor/backend/pdkLoader|revedaEditor.backend.pdkLoader]]
+- [[revedaEditor\backend\pdkLoader|revedaEditor.backend.pdkLoader]]
 
 ## Used by
 
-- [[revedaEditor/checks/schematic|revedaEditor.checks.schematic]]
-- [[revedaEditor/common/shapes|revedaEditor.common.shapes]]
-- [[revedaEditor/fileio/extractedSchematic|revedaEditor.fileio.extractedSchematic]]
-- [[revedaEditor/fileio/loadJSON|revedaEditor.fileio.loadJSON]]
-- [[revedaEditor/fileio/schematicEncoder|revedaEditor.fileio.schematicEncoder]]
-- [[revedaEditor/gui/editorViews|revedaEditor.gui.editorViews]]
-- [[revedaEditor/gui/lvsResults|revedaEditor.gui.lvsResults]]
-- [[revedaEditor/gui/propertyDialogues|revedaEditor.gui.propertyDialogues]]
-- [[revedaEditor/scenes/schematicScene|revedaEditor.scenes.schematicScene]]
-- [[revedaEditor/tests/test_connectivity|revedaEditor.tests.test_connectivity]]
-- [[revedaEditor/tests/test_net|revedaEditor.tests.test_net]]
-- [[revedaEditor/tests/test_netexpr|revedaEditor.tests.test_netexpr]]
-- [[revedaEditor/tests/test_netlisting|revedaEditor.tests.test_netlisting]]
-- [[revedaEditor/tests/test_schematic_checks|revedaEditor.tests.test_schematic_checks]]
-- [[revedaEditor/tests/test_schematic_ux|revedaEditor.tests.test_schematic_ux]]
-- [[revedaEditor/tests/test_wire_editing|revedaEditor.tests.test_wire_editing]]
+- [[revedaEditor\checks\schematic|revedaEditor.checks.schematic]]
+- [[revedaEditor\common\shapes|revedaEditor.common.shapes]]
+- [[revedaEditor\fileio\extractedSchematic|revedaEditor.fileio.extractedSchematic]]
+- [[revedaEditor\fileio\loadJSON|revedaEditor.fileio.loadJSON]]
+- [[revedaEditor\fileio\schematicEncoder|revedaEditor.fileio.schematicEncoder]]
+- [[revedaEditor\gui\editorViews|revedaEditor.gui.editorViews]]
+- [[revedaEditor\gui\lvsResults|revedaEditor.gui.lvsResults]]
+- [[revedaEditor\gui\propertyDialogues|revedaEditor.gui.propertyDialogues]]
+- [[revedaEditor\scenes\schematicScene|revedaEditor.scenes.schematicScene]]
+- [[revedaEditor\tests\test_connectivity|revedaEditor.tests.test_connectivity]]
+- [[revedaEditor\tests\test_copy_array|revedaEditor.tests.test_copy_array]]
+- [[revedaEditor\tests\test_net|revedaEditor.tests.test_net]]
+- [[revedaEditor\tests\test_netexpr|revedaEditor.tests.test_netexpr]]
+- [[revedaEditor\tests\test_netlisting|revedaEditor.tests.test_netlisting]]
+- [[revedaEditor\tests\test_schematic_checks|revedaEditor.tests.test_schematic_checks]]
+- [[revedaEditor\tests\test_schematic_ux|revedaEditor.tests.test_schematic_ux]]
+- [[revedaEditor\tests\test_wire_editing|revedaEditor.tests.test_wire_editing]]

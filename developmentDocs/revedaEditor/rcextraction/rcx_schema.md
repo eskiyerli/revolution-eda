@@ -1,23 +1,10 @@
-# `revedaEditor/rcextraction/rcx_schema.py`
+# `revedaEditor\rcextraction\rcx_schema.py`
 
 **Module:** `revedaEditor.rcextraction.rcx_schema`
 
 ## Purpose
 
-RCX database schema definitions.
-
-## Module docstring
-
 RCX database schema — the contract between LVS and RC extraction.
-
-The .rcx.json file is the extraction database that LVS produces and the
-RC extractor consumes. It contains:
-- Verified net connectivity with schematic net names
-- Net geometry (shapes on routing layers for R/C computation)
-- Device list with model names, parameters, and terminal-to-net mapping
-- Port definitions (external interface of the cell)
-
-This module defines the schema as dataclasses and provides load/save utilities.
 
 ## Classes
 

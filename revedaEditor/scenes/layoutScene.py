@@ -191,11 +191,10 @@ class layoutScene(editorScene):
         # item-local geometry anchors that the two-click draw fills in.
         self.newMultipartSpec = None
         self._selectionRectItem = None
-        self.rulersSet = set()
-        self.rulerFont = self.setRulerFont(12 * fabproc.dbu)
+        # Ruler labels render inverse-scaled, so the font size is an actual
+        # screen point size — not a scene-unit size.
+        self.rulerFont = self.setRulerFont(12)
         self.rulerFont.setKerning(False)
-        self.rulerTickGap = fabproc.dbu
-        self.rulerTickLength = 10
         self.rulerWidth = 2
         # Ruler options (F3 while drawing): angle constraint and edge snap.
         self.rulerMode = 0
@@ -380,9 +379,18 @@ class layoutScene(editorScene):
                 QLineF(self.newPolygon.points[-1], self.mouseMoveLoc)
             )
         elif self.editModes.drawRuler and self._newRuler is not None:
-            self._newRuler.draftLine = QLineF(
-                self._newRuler.draftLine.p1(), self.mouseMoveLoc
-            )
+            if self._newRuler.scene() is None:
+                self._newRuler = None  # removed while drawing (e.g. undo)
+            if self._newRuler is not None:
+                rulerEnd = self.mouseMoveLoc
+                if self.rulerSnapToEdge:
+                    snapped = self.snapToClosestEdge(
+                        self.mouseMoveLoc, ruler=self._newRuler)
+                    if snapped != self.mouseMoveLoc:
+                        rulerEnd = snapped
+                self._newRuler.draftLine = QLineF(
+                    self._newRuler.draftLine.p1(), rulerEnd
+                )
         elif self.editModes.drawMultipart and self._newMultipart is not None:
             self._newMultipart.updateDraftGeometry(self.mouseMoveLoc)
         # Handle adding via mode with array via tuple
@@ -402,9 +410,14 @@ class layoutScene(editorScene):
         cursorPosition = self.toLayoutCoord(self.mouseMoveLoc - self.origin)
 
         # Show the cursor position in the status line
-        self.statusLine.showMessage(
+        statusText = (
             f"Cursor Position: ({cursorPosition.x():.3f}u, {cursorPosition.y():.3f}u)"
         )
+        if self.editModes.drawRuler and self._newRuler is not None:
+            rulerLength = self.toLayoutDistance(
+                self._newRuler.draftLine.length())
+            statusText += f"   Ruler: {rulerLength:.3f}u"
+        self.statusLine.showMessage(statusText)
         self.messageLine.setText(self.messages.get(self.editModes.mode(), self.editModes.mode()))
 
     def mouseReleaseEvent(self, event) -> None:
@@ -545,11 +558,9 @@ class layoutScene(editorScene):
                        if self.rulerSnapToEdge else self.mouseReleaseLoc)
             self._newRuler = lshp.layoutRuler(
                 QLineF(startPt, startPt),
-                width=self.rulerWidth,
-                tickGap=self.rulerTickGap,
-                tickLength=self.rulerTickLength,
-                tickFont=self.rulerFont,
-                mode=self.rulerMode,
+                self.rulerWidth,
+                self.rulerFont,
+                self.rulerMode,
             )
             self.addUndoStack(self._newRuler)
 

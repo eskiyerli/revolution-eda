@@ -1,22 +1,10 @@
-# `revedaEditor/connectivity/primitives.py`
+# `revedaEditor\connectivity\primitives.py`
 
 **Module:** `revedaEditor.connectivity.primitives`
 
 ## Purpose
 
-Shared primitives: shape-record normalization and point/segment/rect predicates consumed by the engine.
-
-## Module docstring
-
 Qt-free connectivity primitives.
-
-The connectivity engine works on plain data records so the same code path
-serves live scenes (GUI), decoded JSON design arrays (aiTerminal ops,
-importers, batch netlisting) and unit tests. Scenes and records are mapped
-into these primitives by `adapters.py`.
-
-Name strengths mirror `netNameStrengthEnum` in `common/net.py`; they are
-plain ints here so this module stays importable without Qt.
 
 ## Classes
 

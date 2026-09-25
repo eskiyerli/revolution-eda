@@ -1,10 +1,10 @@
-# `revedaEditor/gui/pdkRegistry.py`
+# `revedaEditor\gui\pdkRegistry.py`
 
 **Module:** `revedaEditor.gui.pdkRegistry`
 
 ## Purpose
 
-PDK registry window for managing configured PDKs.
+Module in `revedaEditor\gui`.
 
 ## Classes
 
@@ -14,4 +14,5 @@ PDK registry window for managing configured PDKs.
 
 ## Depends on
 
-- [[revedaEditor/backend/editFunctions|revedaEditor.backend.editFunctions]]
+- [[revedaEditor\backend\editFunctions|revedaEditor.backend.editFunctions]]
+- [[revedaEditor\backend\fileUtils|revedaEditor.backend.fileUtils]]

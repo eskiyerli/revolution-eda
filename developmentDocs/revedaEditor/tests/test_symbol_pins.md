@@ -1,10 +1,10 @@
-# `revedaEditor/tests/test_symbol_pins.py`
+# `revedaEditor\tests\test_symbol_pins.py`
 
 **Module:** `revedaEditor.tests.test_symbol_pins`
 
 ## Purpose
 
-Symbol pin and pin-locator tests.
+Module in `revedaEditor\tests`.
 
 ## Functions
 
@@ -17,4 +17,4 @@ Symbol pin and pin-locator tests.
 
 ## Depends on
 
-- [[revedaEditor/common/shapes|revedaEditor.common.shapes]]
+- [[revedaEditor\common\shapes|revedaEditor.common.shapes]]

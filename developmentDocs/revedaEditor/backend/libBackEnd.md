@@ -1,10 +1,10 @@
-# `revedaEditor/backend/libBackEnd.py`
+# `revedaEditor\backend\libBackEnd.py`
 
 **Module:** `revedaEditor.backend.libBackEnd`
 
 ## Purpose
 
-Library model items — `libraryItem`/`cellItem`/`viewItem` (QStandardItem subclasses carrying filesystem paths) plus cell/view creation helpers.
+Module in `revedaEditor\backend`.
 
 ## Classes
 
@@ -40,23 +40,28 @@ Library model items — `libraryItem`/`cellItem`/`viewItem` (QStandardItem subcl
 - `copyCell()` — Copy a cell to a new location with a new name.
 - `renameCell()` — Function to rename a cell in the parentW with a new name.
 
+## Depends on
+
+- [[revedaEditor\fileio\schemaValidation|revedaEditor.fileio.schemaValidation]]
+
 ## Used by
 
-- [[revedaEditor/backend/libraryMethods|revedaEditor.backend.libraryMethods]]
-- [[revedaEditor/backend/libraryModelView|revedaEditor.backend.libraryModelView]]
-- [[revedaEditor/fileio/extractedSchematic|revedaEditor.fileio.extractedSchematic]]
-- [[revedaEditor/fileio/importGDS|revedaEditor.fileio.importGDS]]
-- [[revedaEditor/fileio/importXschemSym|revedaEditor.fileio.importXschemSym]]
-- [[revedaEditor/gui/configEditor|revedaEditor.gui.configEditor]]
-- [[revedaEditor/gui/editorWindow|revedaEditor.gui.editorWindow]]
-- [[revedaEditor/gui/layoutEditor|revedaEditor.gui.layoutEditor]]
-- [[revedaEditor/gui/libraryBrowser|revedaEditor.gui.libraryBrowser]]
-- [[revedaEditor/gui/schematicEditor|revedaEditor.gui.schematicEditor]]
-- [[revedaEditor/gui/symbolEditor|revedaEditor.gui.symbolEditor]]
-- [[revedaEditor/netlisting/spectreNetlist|revedaEditor.netlisting.spectreNetlist]]
-- [[revedaEditor/netlisting/vacaskNetlist|revedaEditor.netlisting.vacaskNetlist]]
-- [[revedaEditor/netlisting/xyceNetlist|revedaEditor.netlisting.xyceNetlist]]
-- [[revedaEditor/tests/test_correspondence|revedaEditor.tests.test_correspondence]]
-- [[revedaEditor/tests/test_import_gds|revedaEditor.tests.test_import_gds]]
-- [[revedaEditor/tests/test_netlisting|revedaEditor.tests.test_netlisting]]
-- [[revedaEditor/tests/test_platform_hardening|revedaEditor.tests.test_platform_hardening]]
+- [[revedaEditor\backend\libraryMethods|revedaEditor.backend.libraryMethods]]
+- [[revedaEditor\backend\libraryModelView|revedaEditor.backend.libraryModelView]]
+- [[revedaEditor\fileio\extractedSchematic|revedaEditor.fileio.extractedSchematic]]
+- [[revedaEditor\fileio\importGDS|revedaEditor.fileio.importGDS]]
+- [[revedaEditor\fileio\importXschemSym|revedaEditor.fileio.importXschemSym]]
+- [[revedaEditor\gui\configEditor|revedaEditor.gui.configEditor]]
+- [[revedaEditor\gui\editorWindow|revedaEditor.gui.editorWindow]]
+- [[revedaEditor\gui\layoutEditor|revedaEditor.gui.layoutEditor]]
+- [[revedaEditor\gui\libraryBrowser|revedaEditor.gui.libraryBrowser]]
+- [[revedaEditor\gui\schematicEditor|revedaEditor.gui.schematicEditor]]
+- [[revedaEditor\gui\symbolEditor|revedaEditor.gui.symbolEditor]]
+- [[revedaEditor\netlisting\spectreNetlist|revedaEditor.netlisting.spectreNetlist]]
+- [[revedaEditor\netlisting\vacaskNetlist|revedaEditor.netlisting.vacaskNetlist]]
+- [[revedaEditor\netlisting\xyceNetlist|revedaEditor.netlisting.xyceNetlist]]
+- [[revedaEditor\tests\test_correspondence|revedaEditor.tests.test_correspondence]]
+- [[revedaEditor\tests\test_import_gds|revedaEditor.tests.test_import_gds]]
+- [[revedaEditor\tests\test_netlisting|revedaEditor.tests.test_netlisting]]
+- [[revedaEditor\tests\test_platform_hardening|revedaEditor.tests.test_platform_hardening]]
+- [[revedaEditor\tests\test_sdl_free_baseline|revedaEditor.tests.test_sdl_free_baseline]]

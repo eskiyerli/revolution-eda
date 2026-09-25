@@ -1,10 +1,10 @@
-# `revedaEditor/backend/processManager.py`
+# `revedaEditor\backend\processManager.py`
 
 **Module:** `revedaEditor.backend.processManager`
 
 ## Purpose
 
-`ProcessManager` — QProcess-based launcher for external tools (simulators, checkers) from editor windows.
+Module in `revedaEditor\backend`.
 
 ## Classes
 
@@ -24,4 +24,4 @@
 
 ## Used by
 
-- [[revedaEditor/gui/editorWindow|revedaEditor.gui.editorWindow]]
+- [[revedaEditor\gui\editorWindow|revedaEditor.gui.editorWindow]]

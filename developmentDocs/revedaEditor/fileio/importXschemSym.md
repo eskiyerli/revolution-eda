@@ -1,10 +1,10 @@
-# `revedaEditor/fileio/importXschemSym.py`
+# `revedaEditor\fileio\importXschemSym.py`
 
 **Module:** `revedaEditor.fileio.importXschemSym`
 
 ## Purpose
 
-Xschem symbol-file import/conversion into symbol cellviews.
+Module in `revedaEditor\fileio`.
 
 ## Classes
 
@@ -19,15 +19,15 @@ Xschem symbol-file import/conversion into symbol cellviews.
 
 ## Depends on
 
-- [[revedaEditor/backend/libBackEnd|revedaEditor.backend.libBackEnd]]
-- [[revedaEditor/backend/libraryMethods|revedaEditor.backend.libraryMethods]]
-- [[revedaEditor/backend/libraryModelView|revedaEditor.backend.libraryModelView]]
-- [[revedaEditor/backend/pdkLoader|revedaEditor.backend.pdkLoader]]
-- [[revedaEditor/common/labels|revedaEditor.common.labels]]
-- [[revedaEditor/common/shapes|revedaEditor.common.shapes]]
-- [[revedaEditor/fileio/symbolEncoder|revedaEditor.fileio.symbolEncoder]]
-- [[revedaEditor/gui/symbolEditor|revedaEditor.gui.symbolEditor]]
+- [[revedaEditor\backend\libBackEnd|revedaEditor.backend.libBackEnd]]
+- [[revedaEditor\backend\libraryMethods|revedaEditor.backend.libraryMethods]]
+- [[revedaEditor\backend\libraryModelView|revedaEditor.backend.libraryModelView]]
+- [[revedaEditor\backend\pdkLoader|revedaEditor.backend.pdkLoader]]
+- [[revedaEditor\common\labels|revedaEditor.common.labels]]
+- [[revedaEditor\common\shapes|revedaEditor.common.shapes]]
+- [[revedaEditor\fileio\symbolEncoder|revedaEditor.fileio.symbolEncoder]]
+- [[revedaEditor\gui\symbolEditor|revedaEditor.gui.symbolEditor]]
 
 ## Used by
 
-- [[revedaEditor/gui/revedaMain|revedaEditor.gui.revedaMain]]
+- [[revedaEditor\gui\revedaMain|revedaEditor.gui.revedaMain]]

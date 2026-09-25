@@ -1,21 +1,10 @@
-# `revedaEditor/rcextraction/tech.py`
+# `revedaEditor\rcextraction\tech.py`
 
 **Module:** `revedaEditor.rcextraction.tech`
 
 ## Purpose
 
-RCX technology-file (process stackup) parsing.
-
-## Module docstring
-
 Technology file loader and layer stackup definitions.
-
-A tech file defines the physical properties of each layer needed for
-parasitic extraction: sheet resistance, thickness, height above substrate,
-dielectric constants, and via resistance.
-
-Supports process corners (nom, hrhc, lrhc, hrlc, lrlc) where R and C
-values vary while physical geometry (thickness, height) stays the same.
 
 ## Classes
 

@@ -1,10 +1,10 @@
-# `revedaEditor/common/layoutShapes.py`
+# `revedaEditor\common\layoutShapes.py`
 
 **Module:** `revedaEditor.common.layoutShapes`
 
 ## Purpose
 
-All layout graphics items — `layoutRect/Path/Via/Pin/Label/Polygon`, `layoutInstance`/`layoutPcell` (incl. mosaics), `layoutRuler`, `layoutFlightLine`, the `layoutMultipart` family (guard ring, shielded path, bus route), and `layoutGroup` (persistent user item groups).
+Module in `revedaEditor\common`.
 
 ## Classes
 
@@ -145,22 +145,25 @@ All layout graphics items — `layoutRect/Path/Via/Pin/Label/Polygon`, `layoutIn
   - `mouseMoveEvent()`
   - `mouseReleaseEvent()`
   - internals: `__repr__()`, `_rectCorners()`, `_snapEndPoint()`, `_createManhattanPath()`, `_createDiagonalPath()`, `_createAnyAnglePath()`, `_createHorizontalPath()`, `_createVerticalPath()`, `_extractRect()`, `_nearestStretchEnd()`, `_stretchToScenePoint()`, `_restoreStretchOrientation()`
-- `layoutRuler(layoutShape)`
+- `layoutRuler(layoutShape)` — Two-point measurement annotation with zoom-adaptive ticks.
   - `snapPointToClosestEdge()`
   - `boundingRect()`
   - `shape()`
   - `paint()`
   - `draftLine()`
   - `draftLine()`
-  - `angle()`
-  - `angle()`
   - `width()`
   - `width()`
   - `mode()`
   - `mode()`
   - `tickFont()`
-  - `tickGap()`
-  - internals: `__repr__()`, `_determineAngle()`, `_createManhattanRuler()`, `_createDiagonalRuler()`, `_createAnyAngleRuler()`, `_closestPointOnSegment()`, `_extractItemEdges()`, `_getNiceStep()`, `_lengthToLayoutUnits()`, `_createRulerTicks()`, `_labelRotation()`
+  - `sceneEndPoints()`
+  - `captureGeometry()`
+  - `restoreGeometry()`
+  - `mousePressEvent()`
+  - `mouseMoveEvent()`
+  - `mouseReleaseEvent()`
+  - internals: `__repr__()`, `_constrainedEnd()`, `_applyConstraint()`, `_closestPointOnSegment()`, `_extractItemEdges()`, `_getNiceStep()`, `_lengthToLayoutUnits()`, `_tickSpacing()`, `_tickMarks()`, `_updateBoundingRect()`, `_nearestStretchEnd()`, `_stretchToScenePoint()`
 - `layoutLabel(layoutShape)`
   - `setOrient()`
   - `boundingRect()`
@@ -183,6 +186,7 @@ All layout graphics items — `layoutRect/Path/Via/Pin/Label/Polygon`, `layoutIn
   - `labelAlign()`
   - `labelOrient()`
   - `labelOrient()`
+  - `addExtraRotation()`
   - internals: `_fontEntry()`, `__repr__()`
 - `layoutPin(layoutShape)`
   - `paint()`
@@ -285,10 +289,9 @@ All layout graphics items — `layoutRect/Path/Via/Pin/Label/Polygon`, `layoutIn
   - `updateDraftGeometry()`
   - internals: `_build()`
 - `layoutGroup(layoutShape)` — Persistent item group: a top-level container whose children are
-  ordinary layout shapes parented to it (members keep scene coords as group-local coords).
-  - `adoptShapes()` — Reparent `shapes` under this group without moving them.
-  - `releaseShapes()` — Detach members back to top level, preserving scene appearance.
   - `shapes()`
+  - `adoptShapes()`
+  - `releaseShapes()`
   - `boundingRect()`
   - `paint()`
   - `sceneEvent()`
@@ -317,26 +320,27 @@ All layout graphics items — `layoutRect/Path/Via/Pin/Label/Polygon`, `layoutIn
 - `getProcessDBU()` — Return the active PDK's database units, caching after first resolution.
 - `_undoStack()` — Lazy import to avoid circular dependency (undoStack imports this module).
 - `_multipartOffset()` — Unit perpendicular to p1->p2 scaled by `distance`.
-- `_applySceneTransform()` — Re-express a captured item->scene matrix as the item's own pos/angle/flip while the item is top-level.
+- `_applySceneTransform()` — Re-express `target` (a captured item->scene matrix) as the item's
 
 ## Depends on
 
-- [[revedaEditor/backend/dataDefinitions|revedaEditor.backend.dataDefinitions]]
-- [[revedaEditor/backend/pdkLoader|revedaEditor.backend.pdkLoader]]
+- [[revedaEditor\backend\dataDefinitions|revedaEditor.backend.dataDefinitions]]
+- [[revedaEditor\backend\pdkLoader|revedaEditor.backend.pdkLoader]]
 
 ## Used by
 
-- [[defaultPDK/pcells|defaultPDK.pcells]]
-- [[revedaEditor/backend/undoStack|revedaEditor.backend.undoStack]]
-- [[revedaEditor/common/layoutBoolean|revedaEditor.common.layoutBoolean]]
-- [[revedaEditor/common/layoutFlatten|revedaEditor.common.layoutFlatten]]
-- [[revedaEditor/common/layoutMerge|revedaEditor.common.layoutMerge]]
-- [[revedaEditor/fileio/exportGDS|revedaEditor.fileio.exportGDS]]
-- [[revedaEditor/fileio/importGDS|revedaEditor.fileio.importGDS]]
-- [[revedaEditor/fileio/layoutEncoder|revedaEditor.fileio.layoutEncoder]]
-- [[revedaEditor/fileio/loadJSON|revedaEditor.fileio.loadJSON]]
-- [[revedaEditor/gui/layoutDialogues|revedaEditor.gui.layoutDialogues]]
-- [[revedaEditor/gui/lvsResults|revedaEditor.gui.lvsResults]]
-- [[revedaEditor/scenes/layoutScene|revedaEditor.scenes.layoutScene]]
-- [[revedaEditor/tests/test_layout_groups|revedaEditor.tests.test_layout_groups]]
-- [[revedaEditor/tests/test_layout_productivity|revedaEditor.tests.test_layout_productivity]]
+- [[defaultPDK\pcells|defaultPDK.pcells]]
+- [[revedaEditor\backend\undoStack|revedaEditor.backend.undoStack]]
+- [[revedaEditor\common\layoutBoolean|revedaEditor.common.layoutBoolean]]
+- [[revedaEditor\common\layoutFlatten|revedaEditor.common.layoutFlatten]]
+- [[revedaEditor\common\layoutMerge|revedaEditor.common.layoutMerge]]
+- [[revedaEditor\fileio\exportGDS|revedaEditor.fileio.exportGDS]]
+- [[revedaEditor\fileio\importGDS|revedaEditor.fileio.importGDS]]
+- [[revedaEditor\fileio\layoutEncoder|revedaEditor.fileio.layoutEncoder]]
+- [[revedaEditor\fileio\loadJSON|revedaEditor.fileio.loadJSON]]
+- [[revedaEditor\gui\layoutDialogues|revedaEditor.gui.layoutDialogues]]
+- [[revedaEditor\gui\layoutEditor|revedaEditor.gui.layoutEditor]]
+- [[revedaEditor\gui\lvsResults|revedaEditor.gui.lvsResults]]
+- [[revedaEditor\scenes\layoutScene|revedaEditor.scenes.layoutScene]]
+- [[revedaEditor\tests\test_fit_bounds|revedaEditor.tests.test_fit_bounds]]
+- [[revedaEditor\tests\test_layout_productivity|revedaEditor.tests.test_layout_productivity]]

@@ -1,10 +1,10 @@
-# `revedaEditor/tests/test_wire_editing.py`
+# `revedaEditor\tests\test_wire_editing.py`
 
 **Module:** `revedaEditor.tests.test_wire_editing`
 
 ## Purpose
 
-Wire-editing semantics tests.
+Module in `revedaEditor\tests`.
 
 ## Functions
 
@@ -29,5 +29,5 @@ Wire-editing semantics tests.
 
 ## Depends on
 
-- [[revedaEditor/common/net|revedaEditor.common.net]]
-- [[revedaEditor/tests/sceneTestUtils|revedaEditor.tests.sceneTestUtils]]
+- [[revedaEditor\common\net|revedaEditor.common.net]]
+- [[revedaEditor\tests\sceneTestUtils|revedaEditor.tests.sceneTestUtils]]

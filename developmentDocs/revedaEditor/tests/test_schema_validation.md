@@ -1,12 +1,8 @@
-# `revedaEditor/tests/test_schema_validation.py`
+# `revedaEditor\tests\test_schema_validation.py`
 
 **Module:** `revedaEditor.tests.test_schema_validation`
 
 ## Purpose
-
-JSON schema-validation tests.
-
-## Module docstring
 
 Tests for revedaEditor.fileio.schemaValidation module.
 
@@ -24,7 +20,7 @@ Tests for revedaEditor.fileio.schemaValidation module.
   - `test_non_dict_header()`
   - `test_invalid_grid_settings_type()`
   - `test_invalid_snap_grid_format()`
-  - `test_null_grid_settings_is_valid()`
+  - `test_null_grid_settings_is_invalid()`
   - `test_item_missing_type_field()`
   - `test_minimal_valid_file()`
   - `test_legacy_file_without_schema_version()`
@@ -47,6 +43,21 @@ Tests for revedaEditor.fileio.schemaValidation module.
 - `TestDesignFileValidationError`
   - `test_error_attributes()`
   - `test_default_errors_list()`
+- `TestSchemaCompatibility`
+  - `test_headers_are_canonical_for_ordinary_views()`
+  - `test_legacy_unversioned_data_is_accepted_without_mutation()`
+  - `test_current_version_is_accepted_without_migration()`
+  - `test_unsupported_labelled_version_is_rejected()`
+  - `test_malformed_version_is_rejected()`
+  - `test_registered_migration_is_pure_and_runs_once()`
+- `TestPCellDefinitionValidation`
+  - `test_legacy_pcell_definition_is_accepted()`
+  - `test_invalid_pcell_definition_is_rejected()`
+- `TestHierarchicalSchemaEnforcement` — Child cellviews with an unsupported future schemaVersion must be
+  - `test_inst_symbol_rejects_future_symbol_version()`
+  - `test_inst_layout_rejects_future_layout_version()`
+  - `test_symbol_factory_rejects_future_version()`
+  - `test_layout_factory_rejects_future_version()`
 
 ## Functions
 
@@ -54,7 +65,8 @@ Tests for revedaEditor.fileio.schemaValidation module.
 - `valid_schematic_data()`
 - `valid_layout_data()`
 - `test_schema_version_is_string()`
+- `_writeLibraryCell()` — Minimal on-disk library: mylib/sub/<viewName>.json.
 
 ## Depends on
 
-- [[revedaEditor/fileio/schemaValidation|revedaEditor.fileio.schemaValidation]]
+- [[revedaEditor\fileio\schemaValidation|revedaEditor.fileio.schemaValidation]]

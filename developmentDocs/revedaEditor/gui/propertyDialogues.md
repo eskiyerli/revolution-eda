@@ -1,16 +1,18 @@
-# `revedaEditor/gui/propertyDialogues.py`
+# `revedaEditor\gui\propertyDialogues.py`
 
 **Module:** `revedaEditor.gui.propertyDialogues`
 
 ## Purpose
 
-Schematic/symbol property and creation dialogs (instance placement, pins, labels, parameter widgets).
+Module in `revedaEditor\gui`.
 
 ## Classes
 
-- `placeInstanceDialog(QDialog)` — Compact parameter form shown while placing an instance.
+- `placeInstanceDialog(QDialog)` — Label-driven schematic placement options form.
+  - `refreshPreview()`
+  - `arraySpec()`
   - `paramValues()`
-  - internals: `_validateAndAccept()`
+  - internals: `_connectValueChanged()`, `_scheduleValuesChanged()`, `_emitValuesChanged()`, `_validateAndAccept()`
 - `rectPropertyDialog(QDialog)` — Property dialog for symbol rectangles.
 - `circlePropertyDialog(QDialog)`
 - `arcPropertyDialog(QDialog)`
@@ -52,7 +54,7 @@ Schematic/symbol property and creation dialogs (instance placement, pins, labels
 - `layoutDisplayConfigDialog(QDialog)`
 - `selectConfigDialogue(QDialog)`
 - `moveByDialogue(QDialog)`
-- `copyOptionsDialogue(QDialog)` — Modeless copy-options form (F3 while a copy is armed): rows×columns array + Delta X/Y pitch; Apply/Ok write `scene.copyOptions` and rearm the ghost.
+- `copyOptionsDialogue(QDialog)` — Modeless copy-options form (Virtuoso F3 convention): place the
   - internals: `_unitScale()`, `_displayPitch()`, `_applyOptions()`
 
 ## Functions
@@ -61,18 +63,19 @@ Schematic/symbol property and creation dialogs (instance placement, pins, labels
 
 ## Depends on
 
-- [[revedaEditor/common/labels|revedaEditor.common.labels]]
-- [[revedaEditor/common/net|revedaEditor.common.net]]
-- [[revedaEditor/common/params|revedaEditor.common.params]]
-- [[revedaEditor/common/shapes|revedaEditor.common.shapes]]
-- [[revedaEditor/gui/editFunctions|revedaEditor.gui.editFunctions]]
+- [[revedaEditor\backend\pdkLoader|revedaEditor.backend.pdkLoader]]
+- [[revedaEditor\common\labels|revedaEditor.common.labels]]
+- [[revedaEditor\common\net|revedaEditor.common.net]]
+- [[revedaEditor\common\params|revedaEditor.common.params]]
+- [[revedaEditor\common\shapes|revedaEditor.common.shapes]]
+- [[revedaEditor\gui\editFunctions|revedaEditor.gui.editFunctions]]
 
 ## Used by
 
-- [[revedaEditor/gui/editorWindow|revedaEditor.gui.editorWindow]]
-- [[revedaEditor/gui/schematicEditor|revedaEditor.gui.schematicEditor]]
-- [[revedaEditor/gui/symbolEditor|revedaEditor.gui.symbolEditor]]
-- [[revedaEditor/scenes/editorScene|revedaEditor.scenes.editorScene]]
-- [[revedaEditor/scenes/layoutScene|revedaEditor.scenes.layoutScene]]
-- [[revedaEditor/scenes/schematicScene|revedaEditor.scenes.schematicScene]]
-- [[revedaEditor/scenes/symbolScene|revedaEditor.scenes.symbolScene]]
+- [[revedaEditor\gui\editorWindow|revedaEditor.gui.editorWindow]]
+- [[revedaEditor\gui\schematicEditor|revedaEditor.gui.schematicEditor]]
+- [[revedaEditor\gui\symbolEditor|revedaEditor.gui.symbolEditor]]
+- [[revedaEditor\scenes\editorScene|revedaEditor.scenes.editorScene]]
+- [[revedaEditor\scenes\layoutScene|revedaEditor.scenes.layoutScene]]
+- [[revedaEditor\scenes\schematicScene|revedaEditor.scenes.schematicScene]]
+- [[revedaEditor\scenes\symbolScene|revedaEditor.scenes.symbolScene]]

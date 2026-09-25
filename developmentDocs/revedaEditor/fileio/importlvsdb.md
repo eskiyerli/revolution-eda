@@ -1,10 +1,10 @@
-# `revedaEditor/fileio/importlvsdb.py`
+# `revedaEditor\fileio\importlvsdb.py`
 
 **Module:** `revedaEditor.fileio.importlvsdb`
 
 ## Purpose
 
-KLayout LVS database (`.lvsdb`) parser producing error markers (`LVSErrorRect`) for the results browser.
+Module in `revedaEditor\fileio`.
 
 ## Classes
 
@@ -32,4 +32,4 @@ KLayout LVS database (`.lvsdb`) parser producing error markers (`LVSErrorRect`) 
 
 ## Used by
 
-- [[revedaEditor/gui/lvsResults|revedaEditor.gui.lvsResults]]
+- [[revedaEditor\gui\lvsResults|revedaEditor.gui.lvsResults]]

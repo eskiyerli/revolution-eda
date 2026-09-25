@@ -1,10 +1,10 @@
-# `revedaEditor/backend/startThread.py`
+# `revedaEditor\backend\startThread.py`
 
 **Module:** `revedaEditor.backend.startThread`
 
 ## Purpose
 
-Thin `QThread` wrapper used to run background work off the GUI thread.
+Module in `revedaEditor\backend`.
 
 ## Classes
 
@@ -14,5 +14,6 @@ Thin `QThread` wrapper used to run background work off the GUI thread.
 
 ## Used by
 
-- [[revedaEditor/gui/editorWindow|revedaEditor.gui.editorWindow]]
-- [[revedaEditor/gui/libraryBrowser|revedaEditor.gui.libraryBrowser]]
+- [[revedaEditor\backend\pluginsLoader|revedaEditor.backend.pluginsLoader]]
+- [[revedaEditor\gui\editorWindow|revedaEditor.gui.editorWindow]]
+- [[revedaEditor\gui\libraryBrowser|revedaEditor.gui.libraryBrowser]]

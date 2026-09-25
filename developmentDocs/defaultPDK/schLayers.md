@@ -1,11 +1,11 @@
-# `defaultPDK/schLayers.py`
+# `defaultPDK\schLayers.py`
 
 **Module:** `defaultPDK.schLayers`
 
 ## Purpose
 
-Schematic layer definitions (`edLayer` dataclasses).
+Module in `defaultPDK`.
 
 ## Depends on
 
-- [[revedaEditor/backend/dataDefinitions|revedaEditor.backend.dataDefinitions]]
+- [[revedaEditor\backend\dataDefinitions|revedaEditor.backend.dataDefinitions]]

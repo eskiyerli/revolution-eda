@@ -1,10 +1,10 @@
-# `revedaEditor/gui/editorViews.py`
+# `revedaEditor\gui\editorViews.py`
 
 **Module:** `revedaEditor.gui.editorViews`
 
 ## Purpose
 
-`editorView` (QGraphicsView): zoom/pan, `viewRect` tracking, grid/line background rendering, mouse/key event forwarding to the scene.
+Module in `revedaEditor\gui`.
 
 ## Classes
 
@@ -35,16 +35,16 @@
 
 ## Depends on
 
-- [[revedaEditor/backend/pdkLoader|revedaEditor.backend.pdkLoader]]
-- [[revedaEditor/common/net|revedaEditor.common.net]]
-- [[revedaEditor/scenes/editorScene|revedaEditor.scenes.editorScene]]
-- [[revedaEditor/scenes/layoutScene|revedaEditor.scenes.layoutScene]]
-- [[revedaEditor/scenes/schematicScene|revedaEditor.scenes.schematicScene]]
-- [[revedaEditor/scenes/symbolScene|revedaEditor.scenes.symbolScene]]
+- [[revedaEditor\backend\pdkLoader|revedaEditor.backend.pdkLoader]]
+- [[revedaEditor\common\net|revedaEditor.common.net]]
+- [[revedaEditor\scenes\editorScene|revedaEditor.scenes.editorScene]]
+- [[revedaEditor\scenes\layoutScene|revedaEditor.scenes.layoutScene]]
+- [[revedaEditor\scenes\schematicScene|revedaEditor.scenes.schematicScene]]
+- [[revedaEditor\scenes\symbolScene|revedaEditor.scenes.symbolScene]]
 
 ## Used by
 
-- [[revedaEditor/gui/editorWindow|revedaEditor.gui.editorWindow]]
-- [[revedaEditor/gui/layoutEditor|revedaEditor.gui.layoutEditor]]
-- [[revedaEditor/gui/schematicEditor|revedaEditor.gui.schematicEditor]]
-- [[revedaEditor/gui/symbolEditor|revedaEditor.gui.symbolEditor]]
+- [[revedaEditor\gui\editorWindow|revedaEditor.gui.editorWindow]]
+- [[revedaEditor\gui\layoutEditor|revedaEditor.gui.layoutEditor]]
+- [[revedaEditor\gui\schematicEditor|revedaEditor.gui.schematicEditor]]
+- [[revedaEditor\gui\symbolEditor|revedaEditor.gui.symbolEditor]]

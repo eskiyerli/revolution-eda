@@ -1,10 +1,10 @@
-# `revedaEditor/gui/editorTypes.py`
+# `revedaEditor\gui\editorTypes.py`
 
 **Module:** `revedaEditor.gui.editorTypes`
 
 ## Purpose
 
-`Protocol` definitions typing the editor-window/container contract (`EditorContainer`, `BaseEditor`).
+Module in `revedaEditor\gui`.
 
 ## Classes
 
@@ -20,4 +20,4 @@
 
 ## Used by
 
-- [[revedaEditor/gui/editorFactory|revedaEditor.gui.editorFactory]]
+- [[revedaEditor\gui\editorFactory|revedaEditor.gui.editorFactory]]

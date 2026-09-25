@@ -1599,111 +1599,96 @@ class layoutPath(layoutShape):
 
 
 class layoutRuler(layoutShape):
+    """Two-point measurement annotation with zoom-adaptive ticks.
+
+    The item stores its true endpoints and carries no item rotation of its
+    own: the angle constraint is folded into the endpoints directly. Tick
+    spacing, lengths and labels are computed inside ``paint()`` from the
+    current view scale, so tick density adapts to the zoom level instead of
+    cluttering the display. Distances are reported in layout units (µm) and
+    are always non-negative regardless of draw direction.
+    """
+
+    # Screen-pixel targets for the adaptive tick layout.
+    _MAJOR_TICK_PX = 70.0   # target on-screen spacing of major ticks
+    _MINOR_TICK_PX = 10.0   # minor ticks hidden below this on-screen spacing
+    _LABEL_GAP_PX = 12.0    # min on-screen gap between consecutive labels
+    _MIN_RULER_LABEL_PX = 24.0  # no labels when the ruler is shorter on screen
+    _MINOR_LEN_PX = 6.0
+    _MAJOR_LEN_PX = 10.0
+    _END_LEN_PX = 14.0
+    _HIT_PX = 6.0           # half-width of the click hit margin
+
     def __init__(
             self,
             draftLine: QLineF,
             width: float,
-            tickGap: float,
-            tickLength: int,
             tickFont: QFont,
             mode: int = 0,
     ):
-        """
-        Initialize the TickLine object.
-
-        Args:
-            draftLine (QLineF): The draft line.
-            width (float): The width of the line.
-            tickGap (float): The gap between ticks.
-            tickLength (int): The length of the ticks.
-            tickFont (QFont): The font for tick labels.
-            mode (int, optional): The mode. Defaults to 0.
-        """
         super().__init__()
-
-        self._draftLine = draftLine
         self._width = width
-        self._tickGap = tickGap
-        self._tickLength = tickLength
-        self._mode = mode
-        self._angle = 0
-        self._rect = QRect(0, 0, 0, 0)
+        self._mode = int(mode)
+        self._tickFont = tickFont if isinstance(tickFont, QFont) else QFont()
         penColour = QColor(255, 255, 40)
         self._pen = QPen(penColour, self._width, Qt.SolidLine)
         self._pen.setCosmetic(True)
         self._selectedPen = QPen(Qt.red, self._width + 1, Qt.SolidLine)
         self._selectedPen.setCosmetic(True)
-        # self._pen.setCosmetic(True)
-        self._tickTuples = list()
-        self._tickLines = []
-        self._labelTicks = []
-        self._tickFont = tickFont
-        self._determineAngle(self._draftLine.angle())
         self._fm = QFontMetrics(self._tickFont)
         self._fontHeight = self._fm.boundingRect("0").height()
         self._fontWidth = self._fm.boundingRect("0.000").width()
-        # The bounding rect's label margin tracks the last painted view
-        # scale; paint() recomputes it when the zoom drifts >10%.
+        self._draftLine = QLineF(draftLine)
+        self._applyConstraint()
+        # Ticks and labels render at fixed screen sizes, so their scene-space
+        # footprint grows as the view zooms out. The bounding margin and hit
+        # path track the last painted scale; paint() recomputes both when the
+        # zoom drifts >10%. The footprint stays bounded because labels are
+        # suppressed entirely once the ruler shrinks below
+        # _MIN_RULER_LABEL_PX on screen.
         self._lastBoundingScale = 1.0
         self._boundingRect = QRectF()
-        # Enable child event filtering for filters and handles
-        self.setFiltersChildEvents(True)
-        self.setHandlesChildEvents(True)
-        # Enable flag to indicate that the item contains children in shape
-        self.setFlag(QGraphicsItem.ItemContainsChildrenInShape, True)
-        self._createRulerTicks()
-        # self.setCacheMode(QGraphicsItem.DeviceCoordinateCache)
-        # self.update(self.boundingRect())
+        self._shapePath = QPainterPath()
+        self._updateBoundingRect()
+        # Endpoint stretch state (stretch mode S).
+        self._stretchSide = None
+        self._anchorScene = None
+        self._stretchDragged = False
+        # Paint output is zoom-dependent; device-coordinate caching would
+        # serve stale tick geometry after zoom changes.
+        self.setCacheMode(QGraphicsItem.NoCache)
         self.setZValue(999)
 
     def __repr__(self) -> str:
         return (
-            f"layoutRuler({self._draftLine}, {self._width}, {self._tickGap}, "
-            f"{self._tickLength}, {self._tickFont}, {self._mode})"
+            f"layoutRuler({self._draftLine}, {self._width}, "
+            f"{self._tickFont}, {self._mode})"
         )
 
-    def _determineAngle(self, angle: float):
-        match self._mode:
-            case 0:  # manhattan
-                self._createManhattanRuler(angle)
-            case 1:  # diagonal
-                self._createDiagonalRuler(angle)
-            case 2:
-                self._createAnyAngleRuler(angle)
-        self._draftLine.setAngle(0)
-        self.setTransformOriginPoint(self.draftLine.p1())
-        self.setRotation(-self._angle)
+    def _constrainedEnd(self, anchor: QPointF, target: QPointF) -> QPointF:
+        """Return ``target`` snapped to the mode's angle constraint, measured
+        relative to ``anchor``. Symmetric: works for either endpoint."""
+        dx = target.x() - anchor.x()
+        dy = target.y() - anchor.y()
+        if self._mode == 0:  # orthogonal: keep the dominant axis
+            if abs(dx) >= abs(dy):
+                return QPointF(target.x(), anchor.y())
+            return QPointF(anchor.x(), target.y())
+        if self._mode == 1:  # diagonal: snap to the nearest 45-degree step
+            length = math.hypot(dx, dy)
+            if length <= 0:
+                return QPointF(target)
+            # QLineF.angle() is counterclockwise from +x with +y measured up,
+            # i.e. atan2(-dy, dx); reconstruct with the same convention.
+            angle = math.atan2(-dy, dx)
+            snapped = round(angle / (math.pi / 4)) * (math.pi / 4)
+            return anchor + QPointF(
+                length * math.cos(snapped), -length * math.sin(snapped))
+        return QPointF(target)
 
-    def _createManhattanRuler(self, angle):
-        if 0 <= angle <= 45 or 360 > angle > 315:
-            self._angle = 0
-        elif 45 < angle <= 135:
-            self._angle = 90
-        elif 135 < angle <= 225:
-            self._angle = 180
-        elif 225 < angle <= 315:
-            self._angle = 270
-
-    def _createDiagonalRuler(self, angle):
-        if 0 <= angle <= 22.5 or 360 > angle > 337.5:
-            self._angle = 0
-        elif 22.5 < angle <= 67.5:
-            self._angle = 45
-        elif 67.5 < angle <= 112.5:
-            self._angle = 90
-        elif 112.5 < angle <= 157.5:
-            self._angle = 135
-        elif 157.5 < angle <= 202.5:
-            self._angle = 180
-        elif 202.5 < angle <= 247.5:
-            self._angle = 225
-        elif 247.5 < angle <= 292.5:
-            self._angle = 270
-        elif 292.5 < angle <= 337.5:
-            self._angle = 315
-
-    def _createAnyAngleRuler(self, angle):
-        self._angle = angle
+    def _applyConstraint(self) -> None:
+        self._draftLine.setP2(
+            self._constrainedEnd(self._draftLine.p1(), self._draftLine.p2()))
 
     @staticmethod
     def _closestPointOnSegment(p, a, b) -> QPointF:
@@ -1800,109 +1785,122 @@ class layoutRuler(layoutShape):
         """Convert a scalar length in scene units to layout units.
 
         Uses the scene's ``toLayoutDistance`` when the ruler is already part of a
-        scene, otherwise falls back to the process dbu (used while ticks are
-        built in ``__init__`` before the item joins a scene).
+        scene, otherwise falls back to the process dbu (e.g. before the item
+        joins a scene).
         """
         scene = self.scene()
         if scene is not None and hasattr(scene, "toLayoutDistance"):
             return scene.toLayoutDistance(length)
         return length / getProcessDBU()
 
-    def _createRulerTicks(self):
-        self._tickTuples = []
-        p1 = self._draftLine.p1()
-        p2 = self._draftLine.p2()
-        directionVec = p2 - p1
-        lineLength = self._draftLine.length()
+    def _tickSpacing(self, scale: float) -> Tuple[float, float]:
+        """(major_step, minor_step) in scene units for the given view scale.
 
-        if lineLength > 0:
-            direction = QPointF(directionVec.x() / lineLength, directionVec.y() / lineLength)
-            perpendicular = QPointF(-direction.y(), direction.x())
-            perpTickMajor = perpendicular * self._tickLength
-            perpTickMinor = perpendicular * (self._tickLength * 0.5)
+        Steps are picked from a 1-2-5 ladder in layout units so labels land
+        on round values; minor ticks (major/5) are dropped entirely once they
+        would render closer than ``_MINOR_TICK_PX`` on screen.
+        """
+        dbu = getProcessDBU()
+        pxPerUm = max(scale, 1e-9) * dbu
+        majorUm = self._getNiceStep(self._MAJOR_TICK_PX / pxPerUm)
+        majorScene = majorUm * dbu
+        minorScene = majorScene / 5.0
+        if minorScene * scale < self._MINOR_TICK_PX:
+            minorScene = 0.0
+        return majorScene, minorScene
 
-            labelStep = max(self._tickGap, self._getNiceStep(lineLength / 6.0))
-            tickStep = max(self._tickGap, labelStep / 5.0)
+    def _tickMarks(
+            self, scale: float, distMin: float = 0.0,
+            distMax: Optional[float] = None,
+    ) -> List[Tuple[float, bool, str]]:
+        """[(distance_along, is_major, label)] for the given view scale.
 
-            numberOfTicks = math.floor(lineLength / tickStep)
-            for i in range(numberOfTicks + 1):
-                distOnLine = i * tickStep
-                if distOnLine > lineLength:
-                    break
+        Labels carry the cumulative distance from p1 in layout units; the
+        last mark is always the total length at p2. Intermediate major labels
+        are blanked when they would crowd the end label. ``distMin``/
+        ``distMax`` limit generation to a sub-range of the segment (paint
+        uses it to clip work to the exposed region).
+        """
+        length = self._draftLine.length()
+        if length <= 0:
+            return []
+        if distMax is None:
+            distMax = length
+        majorStep, minorStep = self._tickSpacing(scale)
+        step = minorStep if minorStep > 0 else majorStep
 
-                tickPos = p1 + direction * distOnLine
-                modStep = distOnLine % labelStep
-                isMajor = (modStep < (tickStep * 0.1)) or ((labelStep - modStep) < (tickStep * 0.1))
-                isNearEnd = (lineLength - distOnLine) < (0.3 * labelStep) and (lineLength - distOnLine) > 0.001
+        # Pass 1: tick distances (major/minor) inside the clipped range.
+        marks = [(0.0, True)] if distMin <= 0 else []
+        n = max(1, math.ceil(distMin / step - 1e-6))
+        while n * step < min(length, distMax) - step * 1e-3:
+            dist = n * step
+            marks.append((dist, step == majorStep or n % 5 == 0))
+            n += 1
+        if distMax >= length:
+            marks.append((length, True))
 
-                if isMajor:
-                    perpTick = perpTickMajor
-                    valStr = (
-                        f"{round(self._lengthToLayoutUnits(distOnLine), 3):g}"
-                        if not isNearEnd
-                        else ""
-                    )
-                else:
-                    perpTick = perpTickMinor
-                    valStr = ""
+        # Pass 2: label stride. Labels render at a fixed screen size, so
+        # only every Nth major tick carries text — N keeps consecutive
+        # labels a label-extent plus a gap apart at the current zoom. The
+        # widest label is estimated from a sample of majors (intermediate
+        # labels like "4.995" are often wider than the end label "5"), and
+        # the extent is measured along the ruler direction so steep rulers
+        # account for label height rather than width.
+        fmt = lambda d: f"{self._lengthToLayoutUnits(d):.4g}"
+        majorDists = [d for d, isMajor in marks if isMajor]
+        sample = majorDists[::max(1, len(majorDists) // 32)]
+        widestPx = max(self._fm.horizontalAdvance(fmt(d)) for d in sample)
+        unitDx = abs(self._draftLine.dx() / length)
+        unitDy = abs(self._draftLine.dy() / length)
+        labelPx = (unitDx * (widestPx + 4.0) + unitDy * self._fontHeight
+                   + self._LABEL_GAP_PX)
+        labelStep = majorStep * max(
+            1, math.ceil(labelPx / (majorStep * scale)))
+        labelsOn = length * scale >= self._MIN_RULER_LABEL_PX
+        # The "0" and end labels are always at fixed positions, so suppress
+        # the start label when it is within a label-extent of the end label.
+        startLabelOn = length * scale >= labelPx
 
-                tickLine = QLineF(tickPos, tickPos + perpTick)
-                self._tickTuples.append(
-                    ddef.rulerTuple(
-                        tickPos + perpTick,
-                        (tickLine.p1(), tickLine.p2()),
-                        valStr,
-                    )
-                )
-
-            finalLine = QLineF(p2, p2 + perpTickMajor)
-            lengthStr = f"{round(self._lengthToLayoutUnits(lineLength), 3):g}"
-            self._tickTuples.append(
-                ddef.rulerTuple(
-                    p2 + direction * 2,
-                    (finalLine.p1(), finalLine.p2()),
-                    lengthStr,
-                )
-            )
-
-        self._rect = QRectF(
-            self._draftLine.p1().toPoint(), self._draftLine.p2().toPoint()
-        ).normalized()
-
-        # Rebuild the hit-shape path here (once per geometry change) so
-        # shape() stays O(1) for scene hit-testing.
-        path = QPainterPath()
-        path.moveTo(self._draftLine.p1())
-        path.lineTo(self._draftLine.p2())
-        for tickTuple in self._tickTuples:
-            path.moveTo(tickTuple.line[0])
-            path.lineTo(tickTuple.line[1])
-        margin = max(self._tickLength, self._width * 2.0)
-        self._shapePath = QPainterPath()
-        self._shapePath.addRect(
-            path.boundingRect().adjusted(-margin, -margin, margin, margin)
-        )
-        self._tickLines = [QLineF(*tickTuple.line)
-                           for tickTuple in self._tickTuples]
-        self._labelTicks = [t for t in self._tickTuples if t.text]
-        self._updateBoundingRect()
+        return [
+            (dist, isMajor,
+             fmt(dist) if isMajor and labelsOn and (
+                 (dist <= 0 and startLabelOn)
+                 or dist >= length
+                 or ((length - dist) >= 0.75 * labelStep
+                     and abs(dist - round(dist / labelStep) * labelStep)
+                     < 1e-6 * labelStep)) else "")
+            for dist, isMajor in marks
+        ]
 
     def _updateBoundingRect(self) -> None:
-        """Refresh the cached bounding rect for the last painted view scale.
+        """Refresh the cached bounding rect and hit path for the last painted
+        view scale.
 
-        The tick labels render at a fixed screen size (inverse-scaled), so
+        Ticks and labels render at fixed screen sizes (inverse-scaled), so
         their scene-space footprint grows as the view zooms out. Recomputing
-        that margin on every boundingRect() call showed up in profiles and —
-        worse — made itemsBoundingRect() zoom-dependent. Instead the margin
-        is cached and refreshed from paint() whenever the scale drifts >10%.
+        the margin on every boundingRect() call made itemsBoundingRect()
+        zoom-dependent; instead it is cached and refreshed from paint()
+        whenever the scale drifts >10%.
         """
         scale = self._lastBoundingScale if self._lastBoundingScale > 0 else 1.0
-        sceneMargin = max(self._fontWidth, self._fontHeight, self._tickLength) / scale
-        # Add a fixed scene-unit margin for the tick lines themselves
-        margin = max(sceneMargin * 1.5, self._tickLength * 2)
-        self._boundingRect = (
-            QRectF(self._rect).normalized().adjusted(-margin, -margin, margin, margin)
-        )
+        invScale = 1.0 / scale
+        lineRect = QRectF(
+            self._draftLine.p1(), self._draftLine.p2()).normalized()
+        # Cover end caps, tick lengths, and the longest plausible label —
+        # but only when labels are drawn at this scale. This keeps the
+        # footprint bounded: labels render only when the ruler is at least
+        # _MIN_RULER_LABEL_PX long on screen, so their scene-space extent
+        # never exceeds ~O(ruler length).
+        margin = self._END_LEN_PX * invScale + self._width
+        if lineRect.width() + lineRect.height() > 0 and (
+                self._draftLine.length() * scale
+                >= self._MIN_RULER_LABEL_PX):
+            margin += (self._fontWidth * 3 + self._fontHeight) * invScale
+        self._boundingRect = lineRect.adjusted(-margin, -margin, margin, margin)
+        hitMargin = self._HIT_PX * invScale + self._width
+        self._shapePath = QPainterPath()
+        self._shapePath.addRect(
+            lineRect.adjusted(-hitMargin, -hitMargin, hitMargin, hitMargin))
 
     def boundingRect(self) -> QRectF:
         return self._boundingRect
@@ -1910,22 +1908,14 @@ class layoutRuler(layoutShape):
     def shape(self) -> QPainterPath:
         # The default QGraphicsItem shape is the full boundingRect, which grows
         # unbounded at low zoom because the labels are inverse-scaled. Keep the
-        # hit region tight (ruler line + tick marks plus a small margin) so the
-        # ruler does not steal clicks from other items.
+        # hit region tight (the segment plus a small margin) so the ruler does
+        # not steal clicks from other items.
         return self._shapePath
 
-    def _labelRotation(self) -> float:
-        return self._angle
-
     def paint(self, painter, option, widget=None) -> None:
-        if self.isSelected():
-            painter.setPen(self._selectedPen)
-            painter.drawRect(self.childrenBoundingRect())
-        else:
-            painter.setPen(self._pen)
-
+        pen = self._selectedPen if self.isSelected() else self._pen
+        painter.setPen(pen)
         painter.drawLine(self._draftLine)
-        painter.setFont(self._tickFont)
 
         worldTransform = painter.worldTransform()
         scale = math.hypot(worldTransform.m11(), worldTransform.m12())
@@ -1939,62 +1929,75 @@ class layoutRuler(layoutShape):
             self._lastBoundingScale = scale
             self._updateBoundingRect()
 
-        p1Scene = self.mapToScene(self._draftLine.p1())
-        p2Scene = self.mapToScene(self._draftLine.p2())
-        lineAngle = QLineF(p1Scene, p2Scene).angle()
-        screenAngle = -lineAngle
-        while screenAngle > 180:
-            screenAngle -= 360
-        while screenAngle <= -180:
-            screenAngle += 360
+        p1 = self._draftLine.p1()
+        p2 = self._draftLine.p2()
+        length = self._draftLine.length()
+        if length <= 0:
+            return
+        direction = QPointF(
+            self._draftLine.dx() / length, self._draftLine.dy() / length)
+        perpendicular = QPointF(-direction.y(), direction.x())
+        # Ticks always extend to the visually "up/right" side of the line so
+        # the display is identical for either draw direction.
+        if perpendicular.y() > 0 or (
+                perpendicular.y() == 0 and perpendicular.x() < 0):
+            perpendicular = -perpendicular
 
-        # The painter already includes this item's rotation. Counter-rotate
-        # labels so their glyphs remain upright in the viewport.
-        textAngle = self._labelRotation()
+        invScale = 1.0 / scale
+        # Tick marks and labels keep a constant on-screen size at every zoom
+        # level.
+        tickLen = {False: self._MINOR_LEN_PX / scale,
+                   True: self._MAJOR_LEN_PX / scale}
+        endLen = self._END_LEN_PX / scale
 
-        # Determine minimum screen-pixel spacing needed between labels
-        minLabelScreenPx = self._fontWidth * 1.5
-        # Convert to scene units: labels closer than this are skipped
-        minLabelSceneDist = minLabelScreenPx / scale if scale > 0 else 0
+        # Endpoint caps straddle the line.
+        for endPt in (p1, p2):
+            capHalf = perpendicular * (endLen * 0.5)
+            painter.drawLine(QLineF(endPt - capHalf, endPt + capHalf))
 
-        # Determine text offset direction based on angle quadrant
-        # Positive offset places text on the tick side (away from ruler line)
-        textOffsetX = 3.0
-        textOffsetY = -self._fontHeight * 0.3
-        if 90 < abs(screenAngle) <= 180:
-            textOffsetX = -self._fontWidth - 3.0
+        painter.setFont(self._tickFont)
+        # Clip tick work to the exposed region: project its corners onto the
+        # ruler direction and only emit marks inside that range (plus a label
+        # margin, since text extends past its anchor tick).
+        exposed = getattr(option, "exposedRect", None)
+        if exposed is None or exposed.isNull():
+            exposed = self._boundingRect
+        projs = [QPointF.dotProduct(QPointF(corner) - p1, direction)
+                 for corner in (exposed.topLeft(), exposed.topRight(),
+                                exposed.bottomLeft(), exposed.bottomRight())]
+        labelPad = (self._fontWidth * 3 + self._fontHeight) * invScale
+        marks = self._tickMarks(
+            scale, min(projs) - labelPad, max(projs) + labelPad)
+        # Labels are drawn horizontally (screen-aligned) at the tick tip;
+        # when the ruler points left the last label is right-aligned so it
+        # clears the line instead of overlapping it.
+        pointsLeft = direction.x() < -1e-9
+        for dist, isMajor, label in marks:
+            tickPos = p1 + direction * dist
+            isEnd = dist <= 0 or dist >= length
+            if not isEnd:
+                painter.drawLine(QLineF(
+                    tickPos, tickPos + perpendicular * tickLen[isMajor]))
+            if label:
+                tickHalf = endLen * 0.5 if isEnd else tickLen[isMajor]
+                tip = tickPos + perpendicular * tickHalf
+                painter.save()
+                painter.translate(tip)
+                painter.scale(invScale, invScale)
+                offsetX = 4.0
+                if pointsLeft and dist >= length:
+                    offsetX = -4.0 - self._fm.horizontalAdvance(label)
+                painter.drawText(QPointF(offsetX, -self._fontHeight * 0.2),
+                                 label)
+                painter.restore()
 
-        # Draw ticks individually — batched painter.drawLines() misrenders
-        # under the OpenGL viewport used by the layout view.
-        for tickLine in self._tickLines:
-            painter.drawLine(tickLine)
-
-        lastLabelPos = None
-        lastLabelIndex = len(self._labelTicks) - 1
-        for idx, tickTuple in enumerate(self._labelTicks):
-            tickPos = tickTuple.point
-            # Always draw the first (0) and last (total length) labels;
-            # skip intermediate labels that are too close at current zoom.
-            isEndLabel = (idx == 0 or idx == lastLabelIndex)
-            if not isEndLabel and lastLabelPos is not None:
-                dist = QLineF(lastLabelPos, tickPos).length()
-                if dist < minLabelSceneDist:
-                    continue
-            lastLabelPos = tickPos
-
-            painter.save()
-            painter.translate(tickPos)
-            # Clamp the inverse scale: text stays constant size down to
-            # scale=1, then shrinks proportionally (square-root) below that
-            # so it doesn't dominate the ruler at very low zoom levels.
-            if scale >= 1.0:
-                invScale = 1.0 / scale
-            else:
-                invScale = math.sqrt(1.0 / scale)
-            painter.scale(invScale, invScale)
-            painter.rotate(textAngle)
-            painter.drawText(QPointF(textOffsetX, textOffsetY), tickTuple.text)
-            painter.restore()
+        if self.isSelected():
+            # Endpoint handles cue the stretch affordance.
+            handleHalf = 2.5 / scale
+            for endPt in (p1, p2):
+                painter.drawRect(QRectF(
+                    endPt.x() - handleHalf, endPt.y() - handleHalf,
+                    2 * handleHalf, 2 * handleHalf))
 
     @property
     def draftLine(self):
@@ -2003,21 +2006,9 @@ class layoutRuler(layoutShape):
     @draftLine.setter
     def draftLine(self, line: QLineF):
         self.prepareGeometryChange()
-        self._draftLine = line
-        angle = self._draftLine.angle()
-        self._determineAngle(angle)
-        self._createRulerTicks()
-
-    @property
-    def angle(self) -> float:
-        return self._angle
-
-    @angle.setter
-    def angle(self, value: float):
-        self.prepareGeometryChange()
-        self._angle = value
-        self.setTransformOriginPoint(self._draftLine.p1())
-        self.setRotation(-self._angle)
+        self._draftLine = QLineF(line)
+        self._applyConstraint()
+        self._updateBoundingRect()
 
     @property
     def width(self):
@@ -2026,6 +2017,8 @@ class layoutRuler(layoutShape):
     @width.setter
     def width(self, width: float):
         self._width = width
+        self._pen.setWidthF(width)
+        self._selectedPen.setWidthF(width + 1)
 
     @property
     def mode(self):
@@ -2033,19 +2026,92 @@ class layoutRuler(layoutShape):
 
     @mode.setter
     def mode(self, value: int):
-        self._mode = value
+        self.prepareGeometryChange()
+        self._mode = int(value)
         # Re-apply the angle constraint to the current draft end-point —
         # it already tracks the last mouse position during a draw.
         if getattr(self, "_draftLine", None) is not None:
-            self.draftLine = self._draftLine
+            self._applyConstraint()
+            self._updateBoundingRect()
 
     @property
     def tickFont(self):
         return self._tickFont
 
     @property
-    def tickGap(self):
-        return self._tickGap
+    def sceneEndPoints(self):
+        return [self.mapToScene(self._draftLine.p1()),
+                self.mapToScene(self._draftLine.p2())]
+
+    def captureGeometry(self):
+        return (QLineF(self._draftLine), self._mode)
+
+    def restoreGeometry(self, state):
+        line, mode = state
+        self.prepareGeometryChange()
+        self._draftLine = QLineF(line)
+        self._mode = mode
+        self._updateBoundingRect()
+        self.update()
+
+    def _nearestStretchEnd(self, scenePos: QPointF):
+        """Return the grabbed side and the opposite (anchor) end, scene coords."""
+        p1Scene, p2Scene = self.sceneEndPoints
+        if (QLineF(scenePos, p1Scene).length()
+                <= QLineF(scenePos, p2Scene).length()):
+            return "p1", QPointF(p2Scene)
+        return "p2", QPointF(p1Scene)
+
+    def _stretchToScenePoint(self, targetScene: QPointF) -> None:
+        """Re-anchor the grabbed end, keeping the stored endpoints in the
+        scene frame translated by pos() (same convention as layoutPath)."""
+        anchorLocal = self._anchorScene - self.pos()
+        targetLocal = QPointF(targetScene) - self.pos()
+        constrained = self._constrainedEnd(anchorLocal, targetLocal)
+        self.prepareGeometryChange()
+        if self._stretchSide == "p1":
+            self._draftLine = QLineF(constrained, anchorLocal)
+        else:
+            self._draftLine = QLineF(anchorLocal, constrained)
+        self._updateBoundingRect()
+
+    def mousePressEvent(self, event: QGraphicsSceneMouseEvent) -> None:
+        super().mousePressEvent(event)
+        if self._stretchActive():
+            self.setFlag(QGraphicsItem.ItemIsMovable, False)
+            self._stretchOldGeometry = self.captureGeometry()
+            self._stretchDragged = False
+            # Any press on an armed ruler grabs the nearer endpoint.
+            self._stretchSide, self._anchorScene = self._nearestStretchEnd(
+                event.scenePos())
+            self.setCursor(Qt.SizeAllCursor)
+
+    def mouseMoveEvent(self, event: QGraphicsSceneMouseEvent) -> None:
+        if self._stretch and self._stretchSide:
+            scene = self.scene()
+            scenePos = event.scenePos()
+            targetScene = QPointF(scenePos)
+            if scene is not None and hasattr(scene, "snapToGrid"):
+                targetScene = QPointF(scene.snapToGrid(scenePos.toPoint()))
+            if (scene is not None
+                    and getattr(scene, "rulerSnapToEdge", True)
+                    and hasattr(scene, "snapToClosestEdge")):
+                snapped = scene.snapToClosestEdge(scenePos, exclude=self)
+                if snapped != scenePos:
+                    targetScene = QPointF(snapped)
+            self._stretchToScenePoint(targetScene)
+            self._stretchDragged = True
+        else:
+            super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent) -> None:
+        super().mouseReleaseEvent(event)
+        if self._stretch and self._stretchSide is not None:
+            self._pushStretchUndo()
+            self._stretchSide = None
+            self._anchorScene = None
+            self._stretchDragged = False
+            self.setCursor(Qt.ArrowCursor)
 
 
 class layoutLabel(layoutShape):

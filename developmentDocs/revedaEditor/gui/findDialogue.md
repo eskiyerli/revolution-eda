@@ -1,20 +1,10 @@
-# `revedaEditor/gui/findDialogue.py`
+# `revedaEditor\gui\findDialogue.py`
 
 **Module:** `revedaEditor.gui.findDialogue`
 
 ## Purpose
 
-Non-modal find/replace dialog and the check-marker browser for the schematic editor.
-
-## Module docstring
-
 Find/replace dialog for schematic editors.
-
-Searches instances, nets and pins by name pattern (shell wildcards) and
-optional property filter, backed by `schematicScene.findItems` — nets
-resolve through the unified connectivity engine so a hit selects every
-member wire of the electrical net. Selecting a row zooms to the hit;
-Replace renames via `schematicScene.replaceHitName`.
 
 ## Classes
 
@@ -27,8 +17,8 @@ Replace renames via `schematicScene.replaceHitName`.
 
 ## Depends on
 
-- [[revedaEditor/gui/editFunctions|revedaEditor.gui.editFunctions]]
+- [[revedaEditor\gui\editFunctions|revedaEditor.gui.editFunctions]]
 
 ## Used by
 
-- [[revedaEditor/gui/schematicEditor|revedaEditor.gui.schematicEditor]]
+- [[revedaEditor\gui\schematicEditor|revedaEditor.gui.schematicEditor]]

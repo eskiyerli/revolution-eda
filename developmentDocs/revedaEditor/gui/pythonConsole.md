@@ -1,12 +1,8 @@
-# `revedaEditor/gui/pythonConsole.py`
+# `revedaEditor\gui\pythonConsole.py`
 
 **Module:** `revedaEditor.gui.pythonConsole`
 
 ## Purpose
-
-Interactive Python console widget embedded in the main window (stdin/stdout redirection, history).
-
-## Module docstring
 
 Console
 Interactive console widget.  Use to add an interactive python interpreter
@@ -36,4 +32,4 @@ in a GUI application.
 ## Used by
 
 - [[reveda|reveda]]
-- [[revedaEditor/gui/revedaMain|revedaEditor.gui.revedaMain]]
+- [[revedaEditor\gui\revedaMain|revedaEditor.gui.revedaMain]]

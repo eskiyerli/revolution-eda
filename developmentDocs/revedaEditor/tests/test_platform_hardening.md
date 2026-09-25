@@ -1,12 +1,8 @@
-# `revedaEditor/tests/test_platform_hardening.py`
+# `revedaEditor\tests\test_platform_hardening.py`
 
 **Module:** `revedaEditor.tests.test_platform_hardening`
 
 ## Purpose
-
-Phase 7 tests: lock files, autosave/crash recovery, bindkeys, session save/restore.
-
-## Module docstring
 
 Phase 7 — platform hardening: autosave/crash recovery, cellview lock
 files, configurable bindkeys, and session save/restore in reveda.conf.
@@ -19,6 +15,7 @@ files, configurable bindkeys, and session save/restore in reveda.conf.
 - `test_acquire_lock_held_then_contended()`
 - `test_acquire_lock_takes_over_stale()`
 - `test_acquire_lock_malformed_is_stale()`
+- `test_acquire_lock_does_not_probe_or_replace_remote_owner()`
 - `test_release_lock_only_ours()`
 - `test_process_alive_checks()`
 - `test_is_autosave_newer()`
@@ -27,11 +24,13 @@ files, configurable bindkeys, and session save/restore in reveda.conf.
 - `test_autosave_skips_clean_and_unchanged()`
 - `test_autosave_skips_readonly_and_preview()`
 - `test_save_cellview_to_dispatches_scene_method()`
+- `test_save_cellview_to_reports_false_save_result()`
 - `test_resolve_load_path_prompts_and_restores()`
 - `test_resolve_load_path_decline_removes_autosave()`
 - `test_resolve_load_path_no_prompt_without_lock()` — A read-only (contended) editor never gets the restore prompt.
 - `test_lock_contention_forces_readonly()`
 - `test_clear_autosave()`
+- `test_devdocs_sources_exclude_private_ignored_modules()`
 - `test_bindkey_defaults_shipped_loadable()`
 - `test_bindkey_user_override_merges()`
 - `test_bindkey_malformed_files_skipped()`
@@ -47,9 +46,9 @@ files, configurable bindkeys, and session save/restore in reveda.conf.
 
 ## Depends on
 
-- [[revedaEditor/backend/bindkeys|revedaEditor.backend.bindkeys]]
-- [[revedaEditor/backend/cellviewState|revedaEditor.backend.cellviewState]]
-- [[revedaEditor/backend/dataDefinitions|revedaEditor.backend.dataDefinitions]]
-- [[revedaEditor/backend/libBackEnd|revedaEditor.backend.libBackEnd]]
-- [[revedaEditor/gui/editorWindow|revedaEditor.gui.editorWindow]]
-- [[revedaEditor/gui/revedaMain|revedaEditor.gui.revedaMain]]
+- [[revedaEditor\backend\bindkeys|revedaEditor.backend.bindkeys]]
+- [[revedaEditor\backend\cellviewState|revedaEditor.backend.cellviewState]]
+- [[revedaEditor\backend\dataDefinitions|revedaEditor.backend.dataDefinitions]]
+- [[revedaEditor\backend\libBackEnd|revedaEditor.backend.libBackEnd]]
+- [[revedaEditor\gui\editorWindow|revedaEditor.gui.editorWindow]]
+- [[revedaEditor\gui\revedaMain|revedaEditor.gui.revedaMain]]

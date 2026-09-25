@@ -1,10 +1,10 @@
-# `revedaEditor/gui/utilDialogues.py`
+# `revedaEditor\gui\utilDialogues.py`
 
 **Module:** `revedaEditor.gui.utilDialogues`
 
 ## Purpose
 
-Customized print dialog (`revedaPrintDialog`).
+Module in `revedaEditor\gui`.
 
 ## Classes
 

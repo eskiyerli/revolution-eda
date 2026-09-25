@@ -1,10 +1,10 @@
-# `revedaEditor/gui/stippleEditor.py`
+# `revedaEditor\gui\stippleEditor.py`
 
 **Module:** `revedaEditor.gui.stippleEditor`
 
 ## Purpose
 
-Stipple-pattern editor for LSW fill textures.
+Module in `revedaEditor\gui`.
 
 ## Classes
 
@@ -29,5 +29,5 @@ Stipple-pattern editor for LSW fill textures.
 
 ## Used by
 
-- [[revedaEditor/fileio/importLayp|revedaEditor.fileio.importLayp]]
-- [[revedaEditor/gui/revedaMain|revedaEditor.gui.revedaMain]]
+- [[revedaEditor\fileio\importLayp|revedaEditor.fileio.importLayp]]
+- [[revedaEditor\gui\revedaMain|revedaEditor.gui.revedaMain]]

@@ -1,20 +1,17 @@
-# `revedaEditor/tests/test_layout_groups.py`
+# `revedaEditor\tests\test_layout_groups.py`
 
 **Module:** `revedaEditor.tests.test_layout_groups`
 
 ## Purpose
 
-Persistent layout item group tests (`layoutGroup` + `Group` records):
-group/ungroup behaviour, selection-as-unit, transform composition on
-release, undo/redo, encoder/factory round-trips, clipboard, connectivity
-anchors, `LayoutGeometryReader` expansion, and nested groups.
+Tests for persistent layout item groups (layoutGroup + Group records).
 
 ## Functions
 
 - `init_qapp()`
 - `_rect()`
-- `_group_two()`
-- `_top_lefts()`
+- `_group_two()` — Group two fresh rects; return (group, r1, r2).
+- `_top_lefts()` — Scene position of a layoutRect's drawn top-left corner.
 - `test_group_selected_items_creates_container()`
 - `test_group_requires_two_items()`
 - `test_group_moves_members_as_unit()`
@@ -33,12 +30,13 @@ anchors, `LayoutGeometryReader` expansion, and nested groups.
 - `test_reader_expands_group_records()`
 - `test_reader_shifts_grouped_anchors()`
 - `test_nested_groups_ungroup_one_level()`
+- `test_pcell_placement_options_retained_for_repeats()` — Accepted PCell/mosaic options are reused on later clicks; the
 
 ## Depends on
 
-- [[defaultPDK/layoutLayers|defaultPDK.layoutLayers]]
-- [[revedaEditor/common/layoutShapes|revedaEditor.common.layoutShapes]]
-- [[revedaEditor/connectivity/__init__|revedaEditor.connectivity.__init__]]
-- [[revedaEditor/fileio/layoutEncoder|revedaEditor.fileio.layoutEncoder]]
-- [[revedaEditor/fileio/loadJSON|revedaEditor.fileio.loadJSON]]
-- [[revedaEditor/tests/sceneTestUtils|revedaEditor.tests.sceneTestUtils]]
+- [[defaultPDK\__init__|defaultPDK.__init__]]
+- [[defaultPDK\layoutLayers|defaultPDK.layoutLayers]]
+- [[revedaEditor\common\__init__|revedaEditor.common.__init__]]
+- [[revedaEditor\connectivity\__init__|revedaEditor.connectivity.__init__]]
+- [[revedaEditor\fileio\__init__|revedaEditor.fileio.__init__]]
+- [[revedaEditor\tests\sceneTestUtils|revedaEditor.tests.sceneTestUtils]]

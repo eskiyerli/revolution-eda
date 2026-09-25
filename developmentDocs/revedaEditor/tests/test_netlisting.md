@@ -1,20 +1,10 @@
-# `revedaEditor/tests/test_netlisting.py`
+# `revedaEditor\tests\test_netlisting.py`
 
 **Module:** `revedaEditor.tests.test_netlisting`
 
 ## Purpose
 
-Netlister output tests.
-
-## Module docstring
-
 Netlister tests against the real xyceNetlist API.
-
-Covers the pure helpers (parseArrayNotation, expandPinNames), view selection
-(_findViewFromSwitchList / determineNetlistView) against real cellItem/viewItem
-objects, golden netlist-line generation from a real schematicSymbol, and an
-end-to-end collectSubcircuitContent run on a real schematicScene backed by a
-real designLibrariesModel built from a temporary on-disk library.
 
 ## Functions
 
@@ -41,11 +31,11 @@ real designLibrariesModel built from a temporary on-disk library.
 
 ## Depends on
 
-- [[revedaEditor/backend/libBackEnd|revedaEditor.backend.libBackEnd]]
-- [[revedaEditor/backend/libraryMethods|revedaEditor.backend.libraryMethods]]
-- [[revedaEditor/backend/libraryModelView|revedaEditor.backend.libraryModelView]]
-- [[revedaEditor/common/labels|revedaEditor.common.labels]]
-- [[revedaEditor/common/net|revedaEditor.common.net]]
-- [[revedaEditor/common/shapes|revedaEditor.common.shapes]]
-- [[revedaEditor/netlisting/xyceNetlist|revedaEditor.netlisting.xyceNetlist]]
-- [[revedaEditor/tests/sceneTestUtils|revedaEditor.tests.sceneTestUtils]]
+- [[revedaEditor\backend\libBackEnd|revedaEditor.backend.libBackEnd]]
+- [[revedaEditor\backend\libraryMethods|revedaEditor.backend.libraryMethods]]
+- [[revedaEditor\backend\libraryModelView|revedaEditor.backend.libraryModelView]]
+- [[revedaEditor\common\labels|revedaEditor.common.labels]]
+- [[revedaEditor\common\net|revedaEditor.common.net]]
+- [[revedaEditor\common\shapes|revedaEditor.common.shapes]]
+- [[revedaEditor\netlisting\xyceNetlist|revedaEditor.netlisting.xyceNetlist]]
+- [[revedaEditor\tests\sceneTestUtils|revedaEditor.tests.sceneTestUtils]]

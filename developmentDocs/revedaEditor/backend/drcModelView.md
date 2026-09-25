@@ -1,10 +1,10 @@
-# `revedaEditor/backend/drcModelView.py`
+# `revedaEditor\backend\drcModelView.py`
 
 **Module:** `revedaEditor.backend.drcModelView`
 
 ## Purpose
 
-Qt table model/view pair used to browse KLayout DRC results.
+Module in `revedaEditor\backend`.
 
 ## Classes
 
@@ -21,8 +21,8 @@ Qt table model/view pair used to browse KLayout DRC results.
 
 ## Depends on
 
-- [[revedaEditor/backend/pdkLoader|revedaEditor.backend.pdkLoader]]
+- [[revedaEditor\backend\pdkLoader|revedaEditor.backend.pdkLoader]]
 
 ## Used by
 
-- [[revedaEditor/gui/layoutDialogues|revedaEditor.gui.layoutDialogues]]
+- [[revedaEditor\gui\layoutDialogues|revedaEditor.gui.layoutDialogues]]

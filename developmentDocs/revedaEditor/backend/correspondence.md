@@ -1,33 +1,10 @@
-# `revedaEditor/backend/correspondence.py`
+# `revedaEditor\backend\correspondence.py`
 
 **Module:** `revedaEditor.backend.correspondence`
 
 ## Purpose
 
-Schematic↔layout correspondence engine (Phase 6): canonical `sdl` record accessors, name-correspondence diff → `SyncPlan`, `pcellParamsFor` label→kwarg mapping, `flylineEndpoints`.
-
-## Module docstring
-
 Schematic<->layout correspondence engine (XL-lite).
-
-One correspondence model shared by GUI scenes, aiTerminal ops, and batch
-tooling — Qt-free so it can run on decoded JSON records headlessly.
-
-The persisted contract is the `sdl` field on `Inst`/`Pcell` layout
-records, mirrored on the live item as `layoutInstance._sdlSource`::
-
-    {"lib": <schematic lib>, "cell": <schematic cell>,
-     "view": <schematic view>, "inst": <schematic instance name>,
-     "labels": {<labelName>: [<value>, <visible>]}}
-
-`lib`/`cell`/`view` identify the *source schematic cellview* (the cell
-pair), `inst` the instance inside it. An instance whose `sdl` points at a
-different source is foreign to a sync run and is never touched.
-
-Legacy in-memory dicts written before the field was persisted used
-`schematicLib`/`schematicCell`/`schematicInstance` keys (the instance's
-*referenced* cell, not the source); :func:`sdlInstName` normalizes both
-shapes. Such dicts carry no source identity, so they only match by name.
 
 ## Classes
 
@@ -48,9 +25,9 @@ shapes. Such dicts carry no source identity, so they only match by name.
 
 ## Depends on
 
-- [[revedaEditor/connectivity/__init__|revedaEditor.connectivity.__init__]]
+- [[revedaEditor\connectivity\__init__|revedaEditor.connectivity.__init__]]
 
 ## Used by
 
-- [[revedaEditor/scenes/layoutScene|revedaEditor.scenes.layoutScene]]
-- [[revedaEditor/tests/test_correspondence|revedaEditor.tests.test_correspondence]]
+- [[revedaEditor\scenes\layoutScene|revedaEditor.scenes.layoutScene]]
+- [[revedaEditor\tests\test_correspondence|revedaEditor.tests.test_correspondence]]

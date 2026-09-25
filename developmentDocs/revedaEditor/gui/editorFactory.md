@@ -1,12 +1,8 @@
-# `revedaEditor/gui/editorFactory.py`
+# `revedaEditor\gui\editorFactory.py`
 
 **Module:** `revedaEditor.gui.editorFactory`
 
 ## Purpose
-
-`EditorFactory.createEditor` — viewType → editor-class dispatch for the standard editors.
-
-## Module docstring
 
 Editor factory for creating appropriate editor instances based on view type.
 
@@ -23,9 +19,9 @@ Editor factory for creating appropriate editor instances based on view type.
 
 ## Depends on
 
-- [[revedaEditor/gui/editorTypes|revedaEditor.gui.editorTypes]]
+- [[revedaEditor\gui\editorTypes|revedaEditor.gui.editorTypes]]
 
 ## Used by
 
-- [[revedaEditor/gui/__init__|revedaEditor.gui.__init__]]
-- [[revedaEditor/gui/schematicEditor|revedaEditor.gui.schematicEditor]]
+- [[revedaEditor\gui\__init__|revedaEditor.gui.__init__]]
+- [[revedaEditor\gui\schematicEditor|revedaEditor.gui.schematicEditor]]

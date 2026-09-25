@@ -1,10 +1,10 @@
-# `revedaEditor/gui/lsw.py`
+# `revedaEditor\gui\lsw.py`
 
 **Module:** `revedaEditor.gui.lsw`
 
 ## Purpose
 
-Layer Selection Window (LSW): layer table model/view, object-filter table, stipple delegate.
+Module in `revedaEditor\gui`.
 
 ## Classes
 
@@ -33,8 +33,8 @@ Layer Selection Window (LSW): layer table model/view, object-filter table, stipp
 
 ## Depends on
 
-- [[revedaEditor/backend/pdkLoader|revedaEditor.backend.pdkLoader]]
+- [[revedaEditor\backend\pdkLoader|revedaEditor.backend.pdkLoader]]
 
 ## Used by
 
-- [[revedaEditor/gui/layoutEditor|revedaEditor.gui.layoutEditor]]
+- [[revedaEditor\gui\layoutEditor|revedaEditor.gui.layoutEditor]]

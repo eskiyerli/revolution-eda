@@ -1,18 +1,10 @@
-# `revedaEditor/fileio/spiceNetlist.py`
+# `revedaEditor\fileio\spiceNetlist.py`
 
 **Module:** `revedaEditor.fileio.spiceNetlist`
 
 ## Purpose
 
-SPICE/extracted-netlist parsing utilities: subcircuit hierarchy trees, device-line parsing.
-
-## Module docstring
-
 SPICE netlist parsing utilities.
-
-Provides functions to parse SPICE subcircuit netlists into a structured
-representation that can be used for hierarchy tree views, schematic
-generation, and other downstream tasks.
 
 ## Functions
 
@@ -26,4 +18,4 @@ generation, and other downstream tasks.
 
 ## Used by
 
-- [[revedaEditor/tests/test_spiceNetlist|revedaEditor.tests.test_spiceNetlist]]
+- [[revedaEditor\tests\test_spiceNetlist|revedaEditor.tests.test_spiceNetlist]]

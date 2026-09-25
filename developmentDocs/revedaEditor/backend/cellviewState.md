@@ -1,23 +1,10 @@
-# `revedaEditor/backend/cellviewState.py`
+# `revedaEditor\backend\cellviewState.py`
 
 **Module:** `revedaEditor.backend.cellviewState`
 
 ## Purpose
 
-Qt-free cellview lifecycle state: `.lock` files (`{pid,user,host,time}`, stale-pid takeover) and `.autosave` sidecars (newer-than check, parseability check).
-
-## Module docstring
-
 Cellview lifecycle file state: lock files and autosave files.
-
-Qt-free helpers so both the GUI editors and headless tooling can share the
-same on-disk contracts:
-
-- `<view>.lock` — JSON `{"pid", "user", "host", "time"}` next to the
-  cellview JSON. A remote host or live local PID means contention; a dead
-  local PID or unreadable lock is treated as stale and taken over.
-- `<view>.autosave` — periodic snapshot written next to the cellview JSON,
-  offered for crash recovery when newer than the primary file.
 
 ## Functions
 
@@ -36,5 +23,5 @@ same on-disk contracts:
 
 ## Used by
 
-- [[revedaEditor/gui/editorWindow|revedaEditor.gui.editorWindow]]
-- [[revedaEditor/tests/test_platform_hardening|revedaEditor.tests.test_platform_hardening]]
+- [[revedaEditor\gui\editorWindow|revedaEditor.gui.editorWindow]]
+- [[revedaEditor\tests\test_platform_hardening|revedaEditor.tests.test_platform_hardening]]

@@ -1,10 +1,10 @@
-# `revedaEditor/backend/hdlBackEnd.py`
+# `revedaEditor\backend\hdlBackEnd.py`
 
 **Module:** `revedaEditor.backend.hdlBackEnd`
 
 ## Purpose
 
-Container classes describing HDL text views (`verilogaC`, `spiceC`, `spectreC`, `vacaskC`).
+Module in `revedaEditor\backend`.
 
 ## Classes
 
@@ -40,4 +40,4 @@ Container classes describing HDL text views (`verilogaC`, `spiceC`, `spectreC`, 
 
 ## Used by
 
-- [[revedaEditor/fileio/createSymbols|revedaEditor.fileio.createSymbols]]
+- [[revedaEditor\fileio\createSymbols|revedaEditor.fileio.createSymbols]]

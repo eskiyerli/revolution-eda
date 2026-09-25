@@ -1,10 +1,10 @@
-# `revedaEditor/tests/test_import_gds.py`
+# `revedaEditor\tests\test_import_gds.py`
 
 **Module:** `revedaEditor.tests.test_import_gds`
 
 ## Purpose
 
-GDS import tests, including merge mode and grid snapping.
+Module in `revedaEditor\tests`.
 
 ## Functions
 
@@ -20,8 +20,9 @@ GDS import tests, including merge mode and grid snapping.
 - `test_import_preserves_reference_rotation_and_flip()` — Reference rotation and x_reflection should round-trip to ang/fl.
 - `test_import_merge_mode_appends_to_existing_cell()` — With mergeMode on, a second import appends shapes to the same cell
 - `test_import_merge_mode_creates_missing_cell()` — Merge mode still creates cells that do not exist yet.
+- `test_import_merge_mode_preserves_valid_json_for_empty_cell()`
 
 ## Depends on
 
-- [[revedaEditor/backend/libBackEnd|revedaEditor.backend.libBackEnd]]
-- [[revedaEditor/fileio/importGDS|revedaEditor.fileio.importGDS]]
+- [[revedaEditor\backend\libBackEnd|revedaEditor.backend.libBackEnd]]
+- [[revedaEditor\fileio\importGDS|revedaEditor.fileio.importGDS]]

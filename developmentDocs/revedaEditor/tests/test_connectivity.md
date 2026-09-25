@@ -1,19 +1,10 @@
-# `revedaEditor/tests/test_connectivity.py`
+# `revedaEditor\tests\test_connectivity.py`
 
 **Module:** `revedaEditor.tests.test_connectivity`
 
 ## Purpose
 
-Connectivity engine tests — records→net groups, name resolution, via merging.
-
-## Module docstring
-
 Tests for the unified connectivity engine (revedaEditor.connectivity).
-
-Covers geometric joins (endpoint coincidence, endpoint-on-body T contacts,
-non-joining crossings), name resolution priority (global pins, sheet pins,
-SET names, auto names), conflict reporting, the records adapter, and parity
-with schematicScene.nameSceneNets on geometry both implementations agree on.
 
 ## Functions
 
@@ -46,10 +37,13 @@ with schematicScene.nameSceneNets on geometry both implementations agree on.
 - `test_parity_set_name_propagation()`
 - `test_parity_t_contact_difference_is_deliberate()` — Endpoint-on-body T contacts join — the adopted check-context
 - `test_parity_global_pin()`
+- `test_from_records_rotated_instance_pin_positions()` — `ang` on a sys record is the item's Qt rotation (CCW-positive).
+- `test_from_records_rotated_instance_connects()` — A wire ending at the rotated pin's true position must join.
 
 ## Depends on
 
-- [[revedaEditor/common/net|revedaEditor.common.net]]
-- [[revedaEditor/common/shapes|revedaEditor.common.shapes]]
-- [[revedaEditor/connectivity/__init__|revedaEditor.connectivity.__init__]]
-- [[revedaEditor/tests/sceneTestUtils|revedaEditor.tests.sceneTestUtils]]
+- [[revedaEditor\common\net|revedaEditor.common.net]]
+- [[revedaEditor\common\shapes|revedaEditor.common.shapes]]
+- [[revedaEditor\connectivity\__init__|revedaEditor.connectivity.__init__]]
+- [[revedaEditor\connectivity\adapters|revedaEditor.connectivity.adapters]]
+- [[revedaEditor\tests\sceneTestUtils|revedaEditor.tests.sceneTestUtils]]

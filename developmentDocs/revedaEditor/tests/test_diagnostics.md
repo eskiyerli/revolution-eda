@@ -1,12 +1,8 @@
-# `revedaEditor/tests/test_diagnostics.py`
+# `revedaEditor\tests\test_diagnostics.py`
 
 **Module:** `revedaEditor.tests.test_diagnostics`
 
 ## Purpose
-
-Headless connectivity-diagnostics tests.
-
-## Module docstring
 
 Tests for connectivity.diagnostics — headless record-level checks
 (checkRecords / checkLayoutRecords) and the loadJSON pin locator.
@@ -30,7 +26,7 @@ Tests for connectivity.diagnostics — headless record-level checks
 
 ## Depends on
 
-- [[defaultPDK/layoutLayers|defaultPDK.layoutLayers]]
-- [[defaultPDK/process|defaultPDK.process]]
-- [[revedaEditor/connectivity/__init__|revedaEditor.connectivity.__init__]]
-- [[revedaEditor/fileio/loadJSON|revedaEditor.fileio.loadJSON]]
+- [[defaultPDK\layoutLayers|defaultPDK.layoutLayers]]
+- [[defaultPDK\process|defaultPDK.process]]
+- [[revedaEditor\connectivity\__init__|revedaEditor.connectivity.__init__]]
+- [[revedaEditor\fileio\loadJSON|revedaEditor.fileio.loadJSON]]

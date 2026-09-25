@@ -1,12 +1,8 @@
-# `revedaEditor/tests/test_correspondence.py`
+# `revedaEditor\tests\test_correspondence.py`
 
 **Module:** `revedaEditor.tests.test_correspondence`
 
 ## Purpose
-
-Phase 6 tests: `sdl` persistence, incremental `updateFromSchematic` sync, flylines, cross-probing.
-
-## Module docstring
 
 Tests for schematic<->layout correspondence (backend/correspondence.py)
 and the layoutScene SDL sync / flyline / cross-probe integration.
@@ -35,15 +31,17 @@ and the layoutScene SDL sync / flyline / cross-probe integration.
 - `test_updateFromSchematic_removes_and_adopts()`
 - `test_sdl_field_persists_round_trip()`
 - `test_flylines_draw_for_unrouted_and_clear_when_routed()`
+- `test_flylines_resolve_via_pcell_pin_map()` — Symbol pins named differently from layout pins (rsil 'P' vs 'PLUS')
+- `test_updateFromSchematic_rebuilds_flylines_when_unchanged()` — A no-op sync (layout already matches) still refreshes the rat's
 - `test_flylines_track_instance_moves()` — Flylines re-anchor to pin positions on move and drop when the
 - `test_cross_probe_targets_for_selected_instance()`
 - `test_selectProbeTargets_selects_and_highlights()`
 
 ## Depends on
 
-- [[defaultPDK/layoutLayers|defaultPDK.layoutLayers]]
-- [[revedaEditor/backend/correspondence|revedaEditor.backend.correspondence]]
-- [[revedaEditor/backend/dataDefinitions|revedaEditor.backend.dataDefinitions]]
-- [[revedaEditor/backend/libBackEnd|revedaEditor.backend.libBackEnd]]
-- [[revedaEditor/common/__init__|revedaEditor.common.__init__]]
-- [[revedaEditor/tests/sceneTestUtils|revedaEditor.tests.sceneTestUtils]]
+- [[defaultPDK\layoutLayers|defaultPDK.layoutLayers]]
+- [[revedaEditor\backend\correspondence|revedaEditor.backend.correspondence]]
+- [[revedaEditor\backend\dataDefinitions|revedaEditor.backend.dataDefinitions]]
+- [[revedaEditor\backend\libBackEnd|revedaEditor.backend.libBackEnd]]
+- [[revedaEditor\common\__init__|revedaEditor.common.__init__]]
+- [[revedaEditor\tests\sceneTestUtils|revedaEditor.tests.sceneTestUtils]]

@@ -9,9 +9,9 @@
 # under their own separate licenses.
 
 from dataclasses import dataclass
-from typing import NamedTuple, Optional, Union
+from typing import NamedTuple, Optional
 
-from PySide6.QtCore import QPoint, QPointF, Qt
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 
 from revedaEditor.backend import libBackEnd as libb
@@ -210,12 +210,6 @@ class layoutLabelTuple(NamedTuple):
     labelAlign: str
     labelOrient: str
     labelLayer: str
-
-
-class rulerTuple(NamedTuple):
-    point: Union[QPoint, QPointF]
-    line: tuple
-    text: str
 
 
 # # pdk related classes and namedtuples
