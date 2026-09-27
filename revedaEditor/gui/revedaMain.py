@@ -44,6 +44,7 @@ from dotenv import load_dotenv
 import revedaEditor.backend.bindkeys as bkeys
 import revedaEditor.backend.dataDefinitions as ddef
 import revedaEditor.backend.libraryMethods as libm
+import revedaEditor.fileio.importEDIF as impedif
 import revedaEditor.fileio.importGDS as igds
 import revedaEditor.fileio.importLayp as imlyp
 import revedaEditor.fileio.importSpice as impspice
@@ -304,6 +305,7 @@ class MainWindow(QMainWindow):
         self.importTools.addAction(self.importLaypFileAction)
         self.importTools.addAction((self.importXschSymAction))
         self.importTools.addAction(self.importGDSAction)
+        self.importTools.addAction(self.importEDIFAction)
         self.pluginsMenu.addAction(self.setupPluginsAction)
         self.pluginsMenu.addAction(self.pluginUpdatesAction)
         self.pdksMenu.addAction(self.setupPDKsAction)
@@ -341,6 +343,10 @@ class MainWindow(QMainWindow):
         )
         self.importGDSAction = QAction(importVerilogaIcon, "Import GDS...", self)
         self.importGDSAction.setToolTip("Import GDS to Layout")
+        self.importEDIFAction = QAction(
+            importVerilogaIcon, "Import EDIF Schematic...", self
+        )
+        self.importEDIFAction.setToolTip("Import EDIF to Schematic")
         openLibIcon = QIcon(":/icons/database--pencil.png")
         self.libraryBrowserAction = QAction(openLibIcon, "Library Browser", self)
         optionsIcon = QIcon(":/icons/resource-monitor.png")
@@ -368,6 +374,7 @@ class MainWindow(QMainWindow):
         self.importXschSymAction.triggered.connect(self.importXschSymClick)
         self.optionsAction.triggered.connect(self.optionsClick)
         self.importGDSAction.triggered.connect(self.importGDSClick)
+        self.importEDIFAction.triggered.connect(self.importEDIFClick)
         self.createStippleAction.triggered.connect(self.createStippleClick)
         self.setupPluginsAction.triggered.connect(self.setupPluginsClick)
         self.pluginUpdatesAction.triggered.connect(self.setupPluginsClick)
@@ -612,6 +619,44 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 self.logger.error(f"GDS Import failed: {e}")
 
+    def importEDIFClick(self):
+        dlg = fd.edifImportDialogue(
+            self, self.libraryBrowser.designView.libraryModel
+        )
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            edifImportLibName = dlg.libNamesCB.currentText().strip()
+            edifImportFileObj = Path(dlg.inputFileEdit.text().strip())
+            if not edifImportLibName or not edifImportFileObj.exists():
+                self.logger.warning(
+                    "EDIF Import cancelled: missing library name or file."
+                )
+                return
+            edifImportLibDirObj = self.libraryDict.get(edifImportLibName)
+            if edifImportLibDirObj:
+                edifImportLibItem = libm.getLibItem(
+                    self.libraryBrowser.designView.libraryModel,
+                    edifImportLibName,
+                )
+                if edifImportLibItem is None:
+                    edifImportLibItem = (
+                        self.libraryBrowser.designView.libraryModel
+                        .addLibraryToModel(edifImportLibDirObj)
+                    )
+            else:
+                edifImportLibDirObj, edifImportLibItem = self.createNewLibrary(
+                    edifImportLibName
+                )
+            if edifImportLibItem is None:
+                return
+            try:
+                edifImportObj = impedif.edifImporter(
+                    self, edifImportFileObj, edifImportLibItem
+                )
+                edifImportObj.importEDIF()
+                self.logger.info("EDIF Import completed.")
+            except Exception as e:
+                self.logger.error(f"EDIF Import failed: {e}")
+
     def createNewLibrary(self, libraryName):
         warning = QMessageBox()
         warning.setIcon(QMessageBox.Warning)
@@ -634,14 +679,16 @@ class MainWindow(QMainWindow):
                 libraryPath.mkdir(parents=True, exist_ok=True)
                 libraryPath.joinpath("reveda.lib").touch(exist_ok=True)
                 self.libraryDict[libraryName] = libraryPath
+                self.libraryBrowser.writeLibDefFile(
+                    self.libraryDict, self.libraryBrowser.libFilePath
+                )
                 libraryItem = (
                     self.libraryBrowser.designView.libraryModel.addLibraryToModel(
                         libraryPath
                     )
                 )
                 return libraryPath, libraryItem
-        else:
-            return None, None
+        return None, None
 
     def createStippleClick(self):
         stippleWindow = stip.stippleEditor(self)

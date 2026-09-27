@@ -583,6 +583,73 @@ class gdsImportDialogue(QDialog):
             )
 
 
+class edifImportDialogue(QDialog):
+    def __init__(self, parent, model):
+        super().__init__(parent)
+        self.parent = parent
+        self._model = model
+        self.setWindowTitle("Import EDIF Schematic File")
+        self.setMinimumWidth(500)
+        QBtn = (
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+
+        self.buttonBox = QDialogButtonBox(QBtn)
+        self.buttonBox.accepted.connect(self.accept)
+        self.buttonBox.rejected.connect(self.reject)
+
+        self.mainLayout = QVBoxLayout()
+        self.mainLayout.addStretch(2)
+        settingsBox = QGroupBox("EDIF Import Settings")
+        settingsBoxLayout = QFormLayout()
+        settingsBox.setLayout(settingsBoxLayout)
+        self.libNamesCB = QComboBox()
+        self.libNamesCB.setEditable(True)
+        # Own item list: an editable combo bound to the shared libraryModel
+        # would insert typed text as stray rows into that model.
+        self.libNamesCB.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        libDict = getattr(self._model, "libraryDict", None) or {}
+        if libDict:
+            libNames = sorted(libDict.keys())
+        else:
+            libNames = [
+                self._model.item(row).text()
+                for row in range(self._model.rowCount())
+            ]
+        self.libNamesCB.addItems(libNames)
+        self.libNamesCB.setCurrentIndex(-1)
+        self.libNamesCB.setToolTip(
+            "The library the EDIF cells are imported into. Enter a new "
+            "name to create a library."
+        )
+        settingsBoxLayout.addRow(
+            edf.boldLabel("Import Library Name:"), self.libNamesCB
+        )
+        self.mainLayout.addWidget(settingsBox)
+        fileBox = QGroupBox("EDIF File")
+        fileDialogLayout = QHBoxLayout()
+        fileDialogLayout.addWidget(edf.boldLabel("EDIF File:"))
+        self.inputFileEdit = edf.longLineEdit()
+        fileDialogLayout.addWidget(self.inputFileEdit)
+        self.edifImportButton = QPushButton("...")
+        self.edifImportButton.clicked.connect(self.onFileButtonClicked)
+        fileDialogLayout.addWidget(self.edifImportButton)
+        fileBox.setLayout(fileDialogLayout)
+        self.mainLayout.addWidget(fileBox)
+        self.mainLayout.addStretch(2)
+        self.mainLayout.addWidget(self.buttonBox)
+        self.setLayout(self.mainLayout)
+
+    def onFileButtonClicked(self):
+        edifFileName, _ = QFileDialog.getOpenFileName(
+            self,
+            caption="Select EDIF file.",
+            filter="EDIF files (*.edf *.edif *.edn);;All files (*)",
+        )
+        if edifFileName:
+            self.inputFileEdit.setText(edifFileName)
+
+
 class goDownHierDialogue(QDialog):
     def __init__(
         self,
