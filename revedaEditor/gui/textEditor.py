@@ -256,6 +256,11 @@ class textEditor(QMainWindow):
         self.replaceAction.setStatusTip("Replace Text")
         self.replaceAction.triggered.connect(self.replaceText)
 
+        goUpIcon = QIcon(":/icons/arrow-step-out.png")
+        self.goUpAction = QAction(goUpIcon, "Go &Up", self)
+        self.goUpAction.setStatusTip("Go up a level in design hierarchy")
+        self.goUpAction.triggered.connect(self.goUpHierarchy)
+
     def createMenus(self):
         menubar = self.menuBar()
         menubar.setNativeMenuBar(False)
@@ -279,6 +284,7 @@ class textEditor(QMainWindow):
     def createToolbar(self):
         toolbar = QToolBar("Toolbar")
         self.addToolBar(toolbar)
+        self.textToolbar = toolbar
 
         toolbar.addAction(self.openAction)
         toolbar.addAction(self.reloadAction)
@@ -294,6 +300,20 @@ class textEditor(QMainWindow):
         toolbar.addSeparator()
         toolbar.addAction(self.findAction)
         toolbar.addAction(self.replaceAction)
+
+    def goUpHierarchy(self):
+        """Return to the editor that descended into this view.
+
+        Mirrors ``editorWindow.goUpHierarchy``: save editable content,
+        raise the parent editor, then close.  Read-only views (descended
+        with "Read Only") are not saved.
+        """
+        if not self.textEdit.isReadOnly() and self.filePathObj.is_file():
+            self.saveFile()
+        parentEditor = getattr(self, "parentEditor", None)
+        if parentEditor is not None:
+            parentEditor.raise_()
+        self.close()
 
     def openFile(self):
         (fileName, _) = QFileDialog.getOpenFileName(self, "Open File",

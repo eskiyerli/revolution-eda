@@ -48,6 +48,7 @@ from PySide6.QtWidgets import (
 
 import revedaEditor.backend.dataDefinitions as ddef
 import revedaEditor.backend.editFunctions as edf
+import revedaEditor.backend.libBackEnd as libb
 import revedaEditor.backend.libraryMethods as libm
 import revedaEditor.backend.undoStack as us
 import revedaEditor.checks.schematic as schk
@@ -1185,14 +1186,15 @@ class schematicScene(editorScene):
         if not otherNets:
             return False, inputNet, set()
 
-        parallelNets = {net for net in otherNets if inputNet.isParallel(net)}
-        if not parallelNets:
+        collinearNets = {net for net in otherNets
+                         if inputNet.overlapsCollinearly(net)}
+        if not collinearNets:
             return False, inputNet, set()
 
         points = list(inputNet.sceneEndPoints)  # Create a copy
-        busExists = int(any(net.width for net in parallelNets) or inputNet.width)
+        busExists = int(any(net.width for net in collinearNets) or inputNet.width)
 
-        for net in parallelNets:
+        for net in collinearNets:
             points.extend(net.sceneEndPoints)
 
         furthestPoints = self.findFurthestPoints(points)
@@ -1201,7 +1203,7 @@ class schematicScene(editorScene):
         p2 = self.snapToGrid(furthestPoints[1])
         mergedNet = snet.schematicNet(p1, p2, width=busExists)
 
-        processedNets = parallelNets | {inputNet}
+        processedNets = collinearNets | {inputNet}
         for net in processedNets:
             mergedNet.mergeNetName(net)
 
@@ -2731,13 +2733,12 @@ class schematicScene(editorScene):
                     self.appMainW.libraryModel,
                     selectedSymbol.libraryName, )
                 cellItem = libm.getCellItem(libItem, selectedSymbol.cellName)
+                descendableTypes = {"schematic", "symbol",
+                                    *libb.TEXT_VIEW_SUFFIXES}
                 viewNames = [cellItem.child(i).text() for i in
                              range(cellItem.rowCount()) if
-                             "schematic" in cellItem.child(
-                                 i).text() or "symbol" in cellItem.child(
-                                 i).text() or "veriloga" in cellItem.child(
-                                 i).text() or "spice" in cellItem.child(
-                                 i).text() ]
+                             getattr(cellItem.child(i), "viewType",
+                                     None) in descendableTypes]
                 dlg.viewListCB.addItems(viewNames)
                 if dlg.exec() == QDialog.DialogCode.Accepted:
                     selectedSymbol.setSelected(False)
@@ -2749,17 +2750,17 @@ class schematicScene(editorScene):
                     openViewNameT = self.editorWindow.libraryView.openCellView(
                             viewItemT)
 
-                    if viewItem.viewType == "schematic":
+                    childWindow = self.editorWindow.appMainW.openViews.get(
+                        openViewNameT)
+                    if (childWindow is not None
+                            and viewItem.viewType == "schematic"):
                         parentInstanceName = [labelItem.labelValue for labelItem in
                              selectedSymbol.labels.values() if
                              labelItem.labelType == "NLPLabel" and
                             labelItem.labelDefinition == "[@instName]"][0]
-                        self.editorWindow.appMainW.openViews[
-                            openViewNameT].centralW.scene.hierarchyTrail = (
+                        childWindow.centralW.scene.hierarchyTrail = (
                             f"{self.hierarchyTrail}{parentInstanceName}.")
-                    if self.editorWindow.appMainW.openViews[openViewNameT]:
-                        childWindow = self.editorWindow.appMainW.openViews[
-                            openViewNameT]
+                    if childWindow:
                         childWindow.parentEditor = self.editorWindow
                         childWindow.parentObj = selectedSymbol
                         childWindowType = self.findEditorTypeString(childWindow)
@@ -2774,10 +2775,19 @@ class schematicScene(editorScene):
                                 childWindow.goUpAction)
                             if dlg.buttonId == 2:
                                 childWindow.centralW.scene.readOnly = True
+                        elif hasattr(childWindow, "textEdit"):
+                            if (hasattr(childWindow, "textToolbar")
+                                    and hasattr(childWindow, "goUpAction")):
+                                childWindow.textToolbar.addAction(
+                                    childWindow.goUpAction)
+                            if dlg.buttonId == 2:
+                                childWindow.textEdit.setReadOnly(True)
 
                         # Propagate probes to child scene
                         if self.probeMode and self._probedNets:
-                            childScene = childWindow.centralW.scene
+                            childScene = getattr(
+                                getattr(childWindow, "centralW", None),
+                                "scene", None)
                             if hasattr(childScene, 'probePinNames'):
                                 self._propagateProbeToChild(
                                     childScene, selectedSymbol)

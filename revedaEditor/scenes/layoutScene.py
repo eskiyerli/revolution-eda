@@ -38,6 +38,7 @@ from PySide6.QtWidgets import (
 import revedaEditor.backend.correspondence as corr
 import revedaEditor.backend.dataDefinitions as ddef
 import revedaEditor.connectivity as conn
+import revedaEditor.backend.libBackEnd as libb
 import revedaEditor.backend.libraryMethods as libm
 import revedaEditor.backend.libraryModelView as lmview
 import revedaEditor.backend.undoStack as us
@@ -3321,11 +3322,14 @@ class layoutScene(editorScene):
                         self.editorWindow.libraryView.libraryModel, item.libraryName
                     )
                     cellItem = libm.getCellItem(libItem, item.cellName)
+                    descendableTypes = {"layout", "schematic",
+                                        *libb.TEXT_VIEW_SUFFIXES}
                     viewNames = [
                         cellItem.child(i).text()
                         for i in range(cellItem.rowCount())
                         # if cellItem.child(i).text() != item.viewName
-                        if "layout" in cellItem.child(i).text()
+                        if getattr(cellItem.child(i), "viewType", None)
+                        in descendableTypes
                     ]
                     dlg.viewListCB.addItems(viewNames)
                     if dlg.exec() == QDialog.DialogCode.Accepted:
@@ -3342,15 +3346,28 @@ class layoutScene(editorScene):
                                 viewItemT
                             )
                         )
-                        if self.editorWindow.appMainW.openViews[openViewNameT]:
-                            childWindow = self.editorWindow.appMainW.openViews[
-                                openViewNameT
-                            ]
+                        childWindow = self.editorWindow.appMainW.openViews.get(
+                            openViewNameT)
+                        if childWindow:
                             childWindow.parentEditor = self.editorWindow
                             childWindow.parentObj = item
-                            childWindow.layoutToolbar.addAction(childWindow.goUpAction)
+                            for toolbarName in ("layoutToolbar",
+                                                "schematicToolbar",
+                                                "textToolbar"):
+                                toolbar = getattr(childWindow, toolbarName,
+                                                  None)
+                                if (toolbar is not None and hasattr(
+                                        childWindow, "goUpAction")):
+                                    toolbar.addAction(childWindow.goUpAction)
+                                    break
                             if dlg.buttonId == 2:
-                                childWindow.centralW.scene.readOnly = True
+                                childScene = getattr(
+                                    getattr(childWindow, "centralW", None),
+                                    "scene", None)
+                                if childScene is not None:
+                                    childScene.readOnly = True
+                                elif hasattr(childWindow, "textEdit"):
+                                    childWindow.textEdit.setReadOnly(True)
 
     def findClosestFontSize(self, sizes: List[int], target: int = 16) -> int:
         return min(sizes, key=lambda x: abs(x - target))

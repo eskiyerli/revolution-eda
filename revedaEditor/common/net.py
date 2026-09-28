@@ -527,6 +527,19 @@ class schematicNet(QGraphicsItem):
     def isParallel(self, otherNet: "schematicNet") -> bool:
         return abs((self.angle - otherNet.angle) % 180) < 1
 
+    def overlapsCollinearly(self, otherNet: "schematicNet") -> bool:
+        p1, p2 = self.sceneEndPoints
+        q1, q2 = otherNet.sceneEndPoints
+        dx, dy = p2.x() - p1.x(), p2.y() - p1.y()
+        lengthSq = dx * dx + dy * dy
+        if not lengthSq:
+            return False
+        a = dx * (q1.x() - p1.x()) + dy * (q1.y() - p1.y())
+        b = dx * (q2.x() - p1.x()) + dy * (q2.y() - p1.y())
+        return (dx * (q1.y() - p1.y()) == dy * (q1.x() - p1.x())
+                and dx * (q2.y() - p1.y()) == dy * (q2.x() - p1.x())
+                and max(0, min(a, b)) <= min(lengthSq, max(a, b)))
+
     def isOrthogonal(self, otherNet: "schematicNet") -> bool:
         return abs((self.angle - otherNet.angle - 90) % 180) < 1
 

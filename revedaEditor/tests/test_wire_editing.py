@@ -47,6 +47,46 @@ def test_auto_route_l_and_single_undo_macro(scene):
     assert len(_nets(scene)) == 2
 
 
+@pytest.mark.parametrize("start,end", [
+    (QPoint(110, 0), QPoint(210, 0)),
+    (QPoint(0, 10), QPoint(100, 10)),
+    (QPoint(100, 10), QPoint(100, 110)),
+])
+def test_drawing_near_existing_net_preserves_both_geometries(scene, start, end):
+    scene.editModes.setMode("drawWire")
+    scene._handleDrawNet(QPoint(0, 0))
+    scene._handleDrawNet(QPoint(100, 0))
+    _finishAt(scene, QPoint(100, 0))
+    scene._handleDrawNet(start)
+    scene._handleDrawNet(end)
+    _finishAt(scene, end)
+    assert {tuple(p.toTuple() for p in net.sceneEndPoints)
+            for net in _nets(scene)} == {
+        ((0, 0), (100, 0)), (start.toTuple(), end.toTuple())}
+
+
+def test_drawing_truly_overlapping_net_still_merges(scene):
+    scene.editModes.setMode("drawWire")
+    scene._handleDrawNet(QPoint(0, 0))
+    scene._handleDrawNet(QPoint(100, 0))
+    _finishAt(scene, QPoint(100, 0))
+    scene._handleDrawNet(QPoint(50, 0))
+    scene._handleDrawNet(QPoint(150, 0))
+    _finishAt(scene, QPoint(150, 0))
+    assert _endpoints(scene) == [(0, 0), (150, 0)]
+
+
+def test_drawing_net_at_existing_endpoint_merges(scene):
+    scene.editModes.setMode("drawWire")
+    scene._handleDrawNet(QPoint(0, 0))
+    scene._handleDrawNet(QPoint(100, 0))
+    _finishAt(scene, QPoint(100, 0))
+    scene._handleDrawNet(QPoint(100, 0))
+    scene._handleDrawNet(QPoint(200, 0))
+    _finishAt(scene, QPoint(200, 0))
+    assert _endpoints(scene) == [(0, 0), (200, 0)]
+
+
 def test_t_junction_splits_and_auto_terminates(scene):
     scene.editModes.setMode("drawWire")
     scene._handleDrawNet(QPoint(0, 0))
