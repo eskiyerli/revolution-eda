@@ -12,7 +12,7 @@ console area that shows startup messages and logging output.
 - The main window is intentionally simple: most editing happens in the schematic, symbol,
   layout, and config editors opened from the Library Browser.
 - The central area includes an integrated **Python console** that displays the welcome
-  banner (`Welcome to Revolution EDA version 0.9.0`) and all application log messages.
+  banner (`Welcome to Revolution EDA version 1.0.0`) and all application log messages.
 - The menu bar is focused on application setup rather than geometry editing.
 - The **Tools** menu is where you will spend most of your time when setting up a working
   environment.
@@ -393,7 +393,7 @@ The main window embeds a Python console widget that shows the welcome banner and
 output. On startup it displays:
 
 ```
-Welcome to Revolution EDA version 0.9.0
+Welcome to Revolution EDA version 1.0.0
 Revolution Semiconductor (C) 2026.
 Mozilla Public License v2.0
 ```

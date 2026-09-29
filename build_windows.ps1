@@ -1,5 +1,5 @@
 # Windows build script for Revolution EDA
-# Builds standalone binaries for Python 3.12, 3.13, and 3.14 using Poetry virtual environments
+# Builds a standalone binary for Python 3.14 using a Poetry virtual environment
 
 $ErrorActionPreference = "Stop"
 
@@ -10,7 +10,7 @@ $EntryPoint = Join-Path $ScriptDir "reveda.py"
 $VenvBase = if ($env:POETRY_VENV_BASE) { $env:POETRY_VENV_BASE } else { "C:\Users\eskiye50\poetryenvs" }
 $OutputBase = "C:\Users\eskiye50\dist"
 
-foreach ($PyVer in @("3.13")) {
+foreach ($PyVer in @("3.14")) {
     $ArtifactName = "windows-amd64-py${PyVer}"
     Write-Host "========================================" -ForegroundColor Cyan
     Write-Host "Building Revolution EDA for Windows with Python $PyVer" -ForegroundColor Cyan

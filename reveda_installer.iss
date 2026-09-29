@@ -6,10 +6,10 @@
 ; 2) Compile this script with ISCC.
 ;
 ; Optional command-line override example:
-; iscc /DSourceRoot="C:\Users\eskiy\dist\revolution-eda\windows-amd64-py3.13\reveda" reveda_installer.iss
+; iscc /DSourceRoot="C:\Users\eskiye50\dist\revolution-eda\windows-amd64-py3.14\reveda" reveda_installer.iss
 
 #define MyAppName "Revolution EDA"
-#define MyAppVersion "0.9.0"
+#define MyAppVersion "1.0.0"
 #define MyAppPublisher "Revolution EDA"
 #define MyAppExeName "reveda.exe"
 #define MyAppDescription "Electronic Design Automation Software for Professional Custom IC Design Engineers from schematics to GDSII"
@@ -17,7 +17,7 @@
 ; Default source folder matches build_windows.ps1 output convention.
 ; Override with /DSourceRoot="..." when invoking ISCC if needed.
 #ifndef SourceRoot
-  #define SourceRoot "C:\Users\eskiy\dist\revolution-eda\windows-amd64-py3.13\reveda"
+  #define SourceRoot "C:\Users\eskiye50\dist\revolution-eda\windows-amd64-py3.14\reveda"
 #endif
 
 [Setup]

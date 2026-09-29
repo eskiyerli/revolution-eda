@@ -111,7 +111,7 @@ the working directory.
 - Qt translation files are excluded (`--noinclude-dlls='**/translations/*.qm'`); the app
   is English-only.
 
-**Version**: 0.9.0 (in `pyproject.toml`)
+**Version**: 1.0.0 (in `pyproject.toml`)
 
 ## Critical Architectural Patterns
 

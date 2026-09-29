@@ -46,7 +46,7 @@
 # nuitka-project-if: {OS} == "Linux":
 #    nuitka-project: --output-dir=/home/eskiyerli/dist
 # nuitka-project: --product-name="Revolution EDA"
-# nuitka-project: --product-version="0.9.0"
+# nuitka-project: --product-version="1.0.0"
 # nuitka-project: --company-name="Revolution EDA"
 # nuitka-project: --file-description="Electronic Design Automation Software for Professional Custom IC Design Engineers"
 # nuitka-project: --windows-icon-from-ico=revedaCoreLogo.ico

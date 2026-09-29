@@ -132,7 +132,7 @@ never imported** — and the reasons are logged to `reveda.log` and recorded in
 | Field | Meaning |
 |---|---|
 | `plugin_api` | Plugin-contract version (integer). Current core implements `2`; anything higher is skipped. |
-| `min_app_version` / `max_app_version` | reveda version range the plugin supports (e.g. `"0.9.0"`). |
+| `min_app_version` / `max_app_version` | reveda version range the plugin supports (e.g. `"1.0.0"`). |
 | `provides` | List of capabilities the plugin owns (e.g. `["sdl"]`). Core can query `pluginsObj.provides("sdl")` to suppress native features the plugin replaces. |
 | `requires_core` | List of core capabilities the plugin cannot run without (`menuItems`, `viewTypes`, `sdlAdapterV1`, ...). Unknown entries block the import. |
 | `plugin_version` | Installed version string, compared against the registry `version` for update notices. |

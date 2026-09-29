@@ -11,7 +11,7 @@
 __author__ = "Revolution Semiconductor"
 __copyright__ = "Copyright 2025 Revolution Semiconductor"
 __license__ = "Mozilla Public License 2.0"
-__version__ = "0.9.0"
+__version__ = "1.0.0"
 __status__ = "Development"
 
 from . import backend

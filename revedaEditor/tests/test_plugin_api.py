@@ -15,7 +15,7 @@ from PySide6.QtWidgets import QMainWindow
 from revedaEditor.backend import licenseManager, pluginApi
 from revedaEditor.backend.pluginsLoader import pluginsLoader
 
-APP_VERSION = "0.9.0"
+APP_VERSION = "1.0.0"
 
 
 def _make_plugin(root: Path, name: str, config: dict | None) -> Path:
@@ -103,8 +103,8 @@ def test_min_app_version():
     assert pluginApi.checkPluginConfig(
         {"min_app_version": "0.8.0"}, APP_VERSION) == []
     issues = pluginApi.checkPluginConfig(
-        {"min_app_version": "1.0.0"}, APP_VERSION)
-    assert issues and "app >= 1.0.0" in issues[0]
+        {"min_app_version": "1.0.1"}, APP_VERSION)
+    assert issues and "app >= 1.0.1" in issues[0]
 
 
 def test_max_app_version():

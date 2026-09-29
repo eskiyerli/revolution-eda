@@ -145,7 +145,7 @@ VISUAL: A two-lane diagram: “trusted production flow” continues while a shor
 - RC parasitic extraction to **SPICE, SPEF, Spectre, and VACASK**
 - Project, library, PDK, and plugin management
 
-<p class="small">Current project version: 0.9.0. Optional capabilities depend on installed plugins, PDKs, and external simulators.</p>
+<p class="small">Current project version: 1.0.0. Optional capabilities depend on installed plugins, PDKs, and external simulators.</p>
 
 <!--
 SPEAKER NOTE: Describe the product as a coherent environment, not a claim that every signoff function is internally replaced. External simulators and verification tools remain valid parts of a deployable flow.
@@ -339,7 +339,7 @@ VISUAL: “Control” balance scale: inspectability, continuity, and extensibili
 
 | Leadership concern | Pilot control |
 |---|---|
-| “Is it production mature?” | Version 0.9.0: evaluate on a bounded use case; do not assume tapeout readiness |
+| “Is it production mature?” | Version 1.0.0: evaluate on a bounded use case; do not assume tapeout readiness |
 | “Will it disturb the current flow?” | Run side-by-side; exchange only through agreed files and interfaces |
 | “Can it support our process?” | Make one target PDK path a pass/fail workstream |
 | “Who supports it?” | Name an internal owner; evaluate documentation, issue response, and support options |
