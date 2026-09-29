@@ -11,7 +11,7 @@
 __author__ = "Revolution Semiconductor"
 __copyright__ = "Copyright 2025 Revolution Semiconductor"
 __license__ = "Mozilla Public License 2.0"
-__version__ = "0.8.1"
+__version__ = "1.0.0"
 __status__ = "Development"
 # Import all modules to ensure they're available when used as a plugin
 try:

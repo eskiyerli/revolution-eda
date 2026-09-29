@@ -6,44 +6,55 @@ size: 16:9
 footer: "Revolution EDA • Executive briefing"
 style: |
   :root {
-    --ink: #eef4ff;
-    --muted: #a9b7cc;
-    --accent: #ff7a18;
-    --accent2: #20d6c7;
-    --panel: #172238;
+    --ink: #3d4449;
+    --muted: #7f888f;
+    --accent: #f56a6a;
+    --panel: #f4f7f8;
+    --line: #d2d7d9;
   }
   section {
-    background: linear-gradient(135deg, #09111f 0%, #111d31 58%, #152941 100%);
+    background: linear-gradient(135deg, #ffffff 0%, #ffffff 72%, #f7eeee 100%);
     color: var(--ink);
-    font-family: Inter, Aptos, Arial, sans-serif;
+    font-family: Lato, Aptos, Arial, sans-serif;
     padding: 58px 72px;
   }
-  section::after { color: #7790ad; font-size: 16px; }
-  h1 { color: #ffffff; font-size: 48px; line-height: 1.05; letter-spacing: -1.2px; }
-  h2 { color: #ffffff; font-size: 34px; letter-spacing: -0.6px; }
-  h3 { color: var(--accent2); font-size: 23px; }
+  section::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 8px;
+    background: var(--accent);
+  }
+  section::after { color: var(--muted); font-size: 16px; }
+  h1, h2, h3 { font-family: "Roboto Slab", Georgia, serif; }
+  h1 { color: var(--ink); font-size: 48px; line-height: 1.05; letter-spacing: -1.2px; }
+  h2 { color: var(--ink); font-size: 34px; letter-spacing: -0.6px; }
+  h3 { color: var(--accent); font-size: 23px; }
   p, li { font-size: 24px; line-height: 1.32; }
   li { margin: 10px 0; }
   strong { color: var(--accent); }
   table { font-size: 19px; width: 100%; }
-  th { background: #243652; color: var(--accent2); }
-  td { background: rgba(23, 34, 56, 0.82); }
+  th { background: var(--ink); color: #ffffff; }
+  td { background: rgba(244, 247, 248, 0.94); }
+  th, td { border-color: var(--line); }
   blockquote {
     border-left: 5px solid var(--accent);
-    color: #fff;
+    color: var(--ink);
     font-size: 29px;
     padding-left: 24px;
   }
-  footer { color: #7790ad; font-size: 14px; }
-  .lead { font-size: 31px; color: #d7e4f6; max-width: 920px; }
+  footer { color: var(--muted); font-size: 14px; }
+  .lead { font-size: 31px; color: #596168; max-width: 920px; }
   .small { font-size: 17px; color: var(--muted); }
-  .kicker { color: var(--accent2); font-size: 18px; text-transform: uppercase; letter-spacing: 2px; }
+  .kicker { color: var(--accent); font-size: 18px; text-transform: uppercase; letter-spacing: 2px; }
   .columns { display: grid; grid-template-columns: 1fr 1fr; gap: 34px; align-items: center; }
   .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
-  .card { background: rgba(23, 34, 56, 0.94); border: 1px solid #2b4569; border-radius: 14px; padding: 20px; }
+  .card { background: rgba(244, 247, 248, 0.96); border: 1px solid var(--line); border-top: 4px solid var(--accent); border-radius: 8px; padding: 20px; }
   .card p { font-size: 19px; }
   .metric { color: var(--accent); font-size: 38px; font-weight: 700; }
-  img { border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.35); }
+  img { border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 10px 30px rgba(61,68,73,.18); }
   section.title { justify-content: center; }
   section.title h1 { font-size: 58px; max-width: 850px; }
   section.cta { text-align: center; justify-content: center; }
@@ -59,11 +70,11 @@ style: |
 
 <p class="lead"><strong>Revolution EDA</strong> is an open, extensible environment for custom IC schematic, simulation, and layout workflows.</p>
 
-**Executive briefing — 15 slides**
+**Executive briefing — current status and controlled adoption**
 
 <!--
 SPEAKER NOTE: This is not a proposal to replace a qualified production flow overnight. It is an invitation to test a strategic option: a modern, inspectable design environment that can coexist with what the organization already trusts.
-VISUAL: Dark background with a subtle chip floorplan or interconnect pattern. Keep the product name and thesis dominant.
+VISUAL: Bright editorial layout with a subtle chip floorplan or interconnect pattern in charcoal and coral. Keep the product name and thesis dominant.
 -->
 
 ---
@@ -137,19 +148,48 @@ VISUAL: A two-lane diagram: “trusted production flow” continues while a shor
 
 ![bg right:52%](../assets/schematicEditor.png)
 
-- **Schematic & symbol** editing
-- Hierarchical, configuration-driven **netlisting**
-- Optional **simulation and plotting** plugins
-- Hierarchical **layout** with Python PCells
-- **GDS and OAS** import/export
+- **Schematic & symbol** editing with typed parameters and hierarchy navigation
+- Hierarchical, configuration-driven **multi-simulator netlisting**
+- Optional **simulation, plotting, LVS, and AI** plugins
+- Connectivity-aware **layout** with Python PCells and SDL integration
+- **EDIF 2 0 0, GDS, and OAS** interoperability paths
 - RC parasitic extraction to **SPICE, SPEF, Spectre, and VACASK**
-- Project, library, PDK, and plugin management
+- In-app library, PDK, and plugin registries
 
-<p class="small">Current project version: 0.9.0. Optional capabilities depend on installed plugins, PDKs, and external simulators.</p>
+<p class="small">Current project version: 1.0.0, released 29 September 2026. Optional capabilities depend on installed plugins, PDKs, external tools, and qualification for the target flow.</p>
 
 <!--
 SPEAKER NOTE: Describe the product as a coherent environment, not a claim that every signoff function is internally replaced. External simulators and verification tools remain valid parts of a deployable flow.
 VISUAL: Use the real schematic editor screenshot shown on the right.
+-->
+
+---
+
+# Version 1.0.0: a broader, more integrated platform
+
+<div class="cards">
+<div class="card">
+<div class="metric">Design</div>
+<h3>Production-shaped editing</h3>
+<p>Typed instance parameters, net expressions and inherited connections, hierarchy navigation, persistent check markers, find/replace, arrays, and unified copy/paste workflows.</p>
+</div>
+<div class="card">
+<div class="metric">Flow</div>
+<h3>Connected verification</h3>
+<p>One connectivity model now serves editing, diagnostics, netlisting, probing, SDL, LVS integration, and RC extraction across schematic and layout.</p>
+</div>
+<div class="card">
+<div class="metric">Deploy</div>
+<h3>Managed extensibility</h3>
+<p>Plugin registry, compatibility and capability negotiation, update discovery, commercial licensing, and standalone Windows/Linux distribution paths.</p>
+</div>
+</div>
+
+> This is a release milestone—not a blanket signoff qualification. Readiness remains PDK-, plugin-, and flow-specific.
+
+<!--
+SPEAKER NOTE: The September 2026 release consolidates substantial workflow infrastructure. Emphasize that the platform is ready for structured evaluation while target-process qualification remains an explicit pilot activity.
+VISUAL: Three coral-accented release pillars: Design, Flow, Deploy.
 -->
 
 ---
@@ -192,12 +232,13 @@ VISUAL: Show a clean JSON diff flowing into a schematic thumbnail and a Git revi
 
 | Boundary | Revolution EDA path | Executive value |
 |---|---|---|
-| Process enablement | Python-based PDK modules and PCells | Adapt the environment to the process |
+| Process enablement | Python PDK modules, callbacks, and PCells | Adapt the environment to the process |
 | Simulation | Xyce, Spectre, and VACASK netlisting paths | Preserve simulator choice |
-| Model intake | Verilog-A and supported subcircuit parsing | Reuse existing model assets |
+| Design intake | EDIF 2 0 0, Verilog-A, Spectre and VACASK subcircuits | Reuse established design and model assets |
 | Physical exchange | GDS / OAS import and export | Fit established downstream flows |
-| Extracted output | SPICE / SPEF / Spectre / VACASK | Connect analysis and verification stages |
-| Automation | Python console, JSON, plugin API | Build workflow IP with common skills |
+| Verification | Hierarchical LVS integration and RC extraction | Connect intent, comparison, and analysis |
+| Extracted output | SPICE / SPEF / Spectre / VACASK | Feed existing downstream stages |
+| Automation | Python console, JSON, versioned plugin capabilities | Build workflow IP with common skills |
 
 <!--
 SPEAKER NOTE: “Supports” does not mean qualification for a specific company flow. The pilot must verify the exact PDK, model, simulator, and exchange path that matters to the sponsor.
@@ -215,7 +256,7 @@ VISUAL: Replace the table with a hub-and-spoke graphic if presenting live: Revol
 </div>
 <div class="card">
 <h3>Plugin layer</h3>
-<p>Plugins add menus, actions, and custom views without changing core application code.</p>
+<p>Plugins add menus, custom views, simulation, plotting, LVS, SDL, and AI capabilities without changing core code.</p>
 </div>
 <div class="card">
 <h3>Automation layer</h3>
@@ -225,7 +266,7 @@ VISUAL: Replace the table with a hub-and-spoke graphic if presenting live: Revol
 
 ## Build differentiated workflow IP at your pace
 
-Source and binary plugin models allow **open collaboration** and **controlled commercial extensions** to coexist.
+Source and binary plugin models allow **open collaboration** and **controlled commercial extensions** to coexist. Version/capability checks and in-app update discovery make that ecosystem manageable.
 
 <!--
 SPEAKER NOTE: This is the strategic architecture slide. Internal methodology can be expressed in extensions rather than waiting for a monolithic vendor release. Governance still matters: version, test, review, and qualify internal extensions.
@@ -260,13 +301,13 @@ VISUAL: Use the actual AI terminal screenshot. Highlight “backup,” “undo,�
 
 ![bg right:54%](../assets/layoutEditorWindow.png)
 
-- Hierarchical custom layout
-- Rectangles, paths, polygons, pins, labels, and vias
-- Python-based parametric cells
-- Layer visibility and selectability controls
-- Initial schematic-driven layout support
-- Connectivity-aware editing and net highlighting
-- GDS / OAS exchange and RC extraction path
+- Hierarchical custom layout with configurable display depth
+- Rectangles, paths, polygons, pins, labels, and via arrays
+- Python parametric cells with editable parameters
+- Layer visibility, selectability, and used-layer filtering
+- Versioned schematic-driven-layout adapter for compatible plugins
+- Shared connectivity, net naming, probing, and highlighting
+- GDS / OAS exchange, LVS integration, and RC extraction
 
 <!--
 SPEAKER NOTE: This establishes that Revolution EDA is not merely a schematic viewer. Be precise: final signoff readiness depends on the target process and external verification flow selected for the pilot.
@@ -339,16 +380,16 @@ VISUAL: “Control” balance scale: inspectability, continuity, and extensibili
 
 | Leadership concern | Pilot control |
 |---|---|
-| “Is it production mature?” | Version 0.9.0: evaluate on a bounded use case; do not assume tapeout readiness |
+| “Is it production mature?” | Treat v1.0.0 as an evaluation milestone; qualify the exact PDK, plugins, and signoff handoffs |
 | “Will it disturb the current flow?” | Run side-by-side; exchange only through agreed files and interfaces |
-| “Can it support our process?” | Make one target PDK path a pass/fail workstream |
-| “Who supports it?” | Name an internal owner; evaluate documentation, issue response, and support options |
+| “Can it support our process?” | Make one PDK plus DRC/LVS/simulator path a pass/fail workstream |
+| “Can extensions be governed?” | Pin compatible versions, review capabilities, and test registry updates before rollout |
 | “What about security and IP?” | Apply approved AI settings, dependency review, access controls, and artifact handling |
-| “Will it scale?” | Test a representative hierarchy and dataset; record load, edit, netlist, and export behavior |
+| “Will it scale?” | Test a representative hierarchy and dataset; record load, edit, netlist, check, and export behavior |
 
 <!--
 SPEAKER NOTE: Credibility comes from acknowledging maturity. This slide turns objections into evaluation criteria rather than debating them abstractly.
-VISUAL: Risk register with green “controlled experiment” gates—not checkmarks implying the risks are already closed.
+VISUAL: Risk register with coral “controlled experiment” gates—not checkmarks implying the risks are already closed.
 -->
 
 ---
@@ -360,11 +401,11 @@ VISUAL: Risk register with green “controlled experiment” gates—not checkma
 <div class="cards">
 <div class="card">
 <h3>1 — Establish</h3>
-<p>Install, register the PDK and library, import or recreate the reference design, capture baseline effort.</p>
+<p>Install v1.0.0, register the PDK and libraries, import via EDIF or recreate the reference design, and capture baseline effort.</p>
 </div>
 <div class="card">
 <h3>2 — Exercise</h3>
-<p>Edit hierarchy, netlist and simulate, make a layout change, exchange GDS/OAS, test one automation.</p>
+<p>Edit hierarchy, netlist and simulate, exercise DRC/LVS handoffs, change layout, exchange GDS/OAS, and test one automation.</p>
 </div>
 <div class="card">
 <h3>3 — Decide</h3>
@@ -385,8 +426,8 @@ VISUAL: Three gated stages with a decision diamond after stage 3.
 
 | Dimension | Example evidence—not a preclaimed result |
 |---|---|
-| Correctness | Netlist and selected simulation outputs agree within an approved tolerance |
-| Interoperability | Required model, GDS/OAS, and extracted-netlist paths complete without data loss |
+| Correctness | Connectivity checks, netlist, LVS comparison, and selected simulation outputs meet approved criteria |
+| Interoperability | Required EDIF/model, GDS/OAS, and extracted-netlist paths complete without material data loss |
 | Productivity | Engineers complete defined edits and automation tasks; effort is recorded against baseline |
 | Extensibility | One small plugin, script, PCell, or PDK adaptation is implemented and reviewed |
 | Governance | Project is reproducible from controlled source, configuration, and dependency records |
@@ -418,5 +459,5 @@ The upside is strategic design freedom.
 
 <!--
 SPEAKER NOTE: End on the precise decision required. Offer a short follow-up working session to select the block, PDK, simulator, security posture, owner, and scorecard weights.
-VISUAL: Minimal slide. One orange call-to-action button shape: “Select the pilot.”
+VISUAL: Minimal slide. One coral call-to-action button shape: “Select the pilot.”
 -->
