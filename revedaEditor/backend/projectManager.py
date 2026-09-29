@@ -22,9 +22,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from dotenv import load_dotenv
-
-from PySide6.QtCore import QSettings
 from PySide6.QtWidgets import QApplication, QMessageBox
+
+import revedaEditor.backend.editFunctions as edf
 
 if TYPE_CHECKING:
     from revedaEditor.gui.revedaMain import MainWindow
@@ -38,12 +38,12 @@ class RecentProjectsStore:
     """
 
     MAX_ENTRIES = 5
-    SETTINGS_DIR = Path.home() / ".reveda"
-    SETTINGS_FILE = SETTINGS_DIR / "reveda_settings.ini"
+    SETTINGS_DIR = edf.APP_SETTINGS_FILE.parent
+    SETTINGS_FILE = edf.APP_SETTINGS_FILE
 
     def __init__(self):
         self.SETTINGS_DIR.mkdir(parents=True, exist_ok=True)
-        self._settings = QSettings(str(self.SETTINGS_FILE), QSettings.IniFormat)
+        self._settings = edf.appSettings()
         self._projects: list[Path] = self._load()
 
     @property

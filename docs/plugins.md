@@ -209,6 +209,21 @@ This means license state controls execution, not menu discovery. Capability
 providers such as SDL Pro can therefore replace a native action as soon as they
 are installed while still gating the protected callback itself.
 
+### First-party promotional access
+
+Revolution Semiconductor's first-party commercial plugins (`aiTerminal`,
+`revedaPlot`, `revedasim`, and `sdl`) currently have promotional access until
+April 1, 2027 at 00:00 UTC. During this period, `has_valid_license()` and
+`check_and_prompt_license()` authorize those plugins without requiring a stored
+license or displaying an activation prompt. Installed paid licenses remain
+valid, and normal activation is required when the promotional period ends.
+
+The cutoff is fixed in `revedaLicense` and mirrored in the open-source
+`revedaEditor.backend.licenseManager` compatibility boundary so older compiled
+license modules behave consistently. Registry display text is informational
+only; it does not grant access. Third-party plugins are not included in the
+promotion.
+
 ### Real Examples
 
 `aiTerminal` example:

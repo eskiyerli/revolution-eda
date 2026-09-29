@@ -10,22 +10,30 @@
 
 import json
 import logging
+import shutil
 from datetime import date, timedelta
 from functools import partial
 from pathlib import Path
-import shutil
-from typing import List, Dict
+from typing import Dict, List
 
-from PySide6.QtCore import (QSettings, QThreadPool, QThread, Slot, Signal, QTimer,
-                            QObject, QSize, QRectF, Qt)
+from dotenv import load_dotenv
+from PySide6.QtCore import (
+    QObject,
+    QRectF,
+    QSize,
+    Qt,
+    QThread,
+    QThreadPool,
+    QTimer,
+    Signal,
+    Slot,
+)
 from PySide6.QtGui import (
     QAction,
     QIcon,
 )
 from PySide6.QtWidgets import (
     QApplication,
-)
-from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
     QFrame,
@@ -39,16 +47,16 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from dotenv import load_dotenv
 
 import revedaEditor.backend.bindkeys as bkeys
 import revedaEditor.backend.dataDefinitions as ddef
+import revedaEditor.backend.editFunctions as edf
 import revedaEditor.backend.libraryMethods as libm
 import revedaEditor.fileio.importEDIF as impedif
 import revedaEditor.fileio.importGDS as igds
 import revedaEditor.fileio.importLayp as imlyp
-import revedaEditor.fileio.importSpice as impspice
 import revedaEditor.fileio.importSpectre as impspectre
+import revedaEditor.fileio.importSpice as impspice
 import revedaEditor.fileio.importVacask as impvacask
 import revedaEditor.fileio.importVeriloga as impvlga
 import revedaEditor.fileio.importXschemSym as impxsym
@@ -59,7 +67,6 @@ import revedaEditor.gui.pythonConsole as pcon
 import revedaEditor.gui.revinit as revinit
 import revedaEditor.gui.stippleEditor as stip
 from revedaEditor.backend.projectManager import ProjectManager
-
 from revedaEditor.resources import resources  # noqa: F401
 
 
@@ -705,11 +712,7 @@ class MainWindow(QMainWindow):
         return ".".join(parts[:2])
 
     def _configurePluginDiscovery(self) -> None:
-        settingsPath = Path.home() / ".reveda" / "reveda_settings.ini"
-        settingsPath.parent.mkdir(parents=True, exist_ok=True)
-        self._pluginDiscoverySettings = QSettings(
-            str(settingsPath), QSettings.IniFormat
-        )
+        self._pluginDiscoverySettings = edf.appSettings()
         dismissedRelease = self._pluginDiscoverySettings.value(
             "pluginDiscovery/release", ""
         )

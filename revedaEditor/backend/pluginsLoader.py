@@ -25,15 +25,15 @@ from PySide6.QtWidgets import (
 )
 
 import revedaEditor
-from revedaEditor.backend import licenseManager
-from revedaEditor.backend import pluginApi
+import revedaEditor.backend.editFunctions as edf
+from revedaEditor.backend import licenseManager, pluginApi
 from revedaEditor.backend.dataDefinitions import viewItemTuple
 from revedaEditor.backend.startThread import startThread
 
 
 class pluginsLoader(QObject):
     updatesChanged = Signal(dict)
-    _UPDATE_SETTINGS_FILE = Path.home() / ".reveda" / "reveda_settings.ini"
+    _UPDATE_SETTINGS_FILE = edf.APP_SETTINGS_FILE
     _UPDATE_SETTINGS_KEY = "pluginUpdateCheck/lastCheck"
     _UPDATE_CACHE_KEY = "pluginUpdateCheck/registry"
 

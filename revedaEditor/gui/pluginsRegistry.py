@@ -20,6 +20,7 @@ import sys
 import tempfile
 import urllib.request
 import zipfile
+from datetime import datetime
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QUrl, QThread, Signal
@@ -39,7 +40,7 @@ from PySide6.QtWidgets import (
     QWidget,
     QHeaderView,
 )
-from revedaEditor.backend import pluginApi
+from revedaEditor.backend import licenseManager, pluginApi
 from revedaEditor.backend.fileUtils import safeExtractZip
 
 
@@ -205,8 +206,11 @@ class PluginRegistryWindow(QMainWindow):
                 )
             self.tableWidget.setItem(row, 3, latest_item)
             self.tableWidget.setItem(row, 4, QTableWidgetItem(installed_ver))
+            license_text = entry.get("license", "Unknown")
+            if licenseManager.has_promotional_access(name):
+                license_text += " (free until Apr 1, 2027 UTC)"
             self.tableWidget.setItem(
-                row, 5, QTableWidgetItem(entry.get("license", "Unknown"))
+                row, 5, QTableWidgetItem(license_text)
             )
 
     def _installedVersion(self, plugin_dir: Path) -> str:
@@ -271,17 +275,17 @@ class PluginRegistryWindow(QMainWindow):
 
 
     def _install_entry(self, entry: dict):
-        # Commercial plugins need the compiled revedaLicense module. When it
-        # is missing, its download runs asynchronously and this install
-        # resumes in _on_license_download_complete — blocking the GUI thread
-        # on thread.wait() here would deadlock the queued finished() signal.
+        # Commercial plugins need a compatible compiled revedaLicense module.
+        # Its download runs asynchronously and this install resumes in
+        # _on_license_download_complete — blocking the GUI thread on
+        # thread.wait() here would deadlock the queued finished() signal.
         if (self._plugin_requires_license(entry)
                 and not self._revedaLicenseInstalled()):
             ret = QMessageBox.question(
                 self,
                 "License Module Required",
-                "The revedaLicense module is required for commercial plugins but is not "
-                "installed in ~/.reveda/.\n\n"
+                "A compatible revedaLicense module is required for commercial "
+                "plugins but is not installed in ~/.reveda/.\n\n"
                 "Would you like to download and install it now?",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             )
@@ -496,10 +500,11 @@ class PluginRegistryWindow(QMainWindow):
         return None
 
     def _revedaLicenseInstalled(self) -> bool:
-        """True when the compiled revedaLicense module is on disk.
+        """True when a compatible compiled revedaLicense is installed.
 
         The shim in revedaEditor.backend.licenseManager is always present,
-        so check for the actual platform-tagged .pyd/.so in ~/.reveda/.
+        so check for the platform-tagged .pyd/.so and require the license API
+        needed by the current entitlement policy.
         """
         central_dir = Path.home() / ".reveda"
         url = self._revedaLicense_url()
@@ -510,10 +515,19 @@ class PluginRegistryWindow(QMainWindow):
         else:
             compiled_file = central_dir / "revedaLicense.so"
 
-        if compiled_file.exists():
-            importlib.invalidate_caches()
-            return True
-        return False
+        if not compiled_file.exists():
+            return False
+        importlib.invalidate_caches()
+        try:
+            from revedaLicense import licenseManager as license_impl
+        except ImportError:
+            return False
+        api_version = getattr(license_impl, "LICENSE_API_VERSION", 0)
+        try:
+            api_version = int(api_version)
+        except (TypeError, ValueError):
+            api_version = 0
+        return api_version >= licenseManager.MINIMUM_LICENSE_API_VERSION
 
     def _download_revedaLicense(self) -> None:
         """Download and install the compiled revedaLicense extension.
@@ -557,6 +571,19 @@ class PluginRegistryWindow(QMainWindow):
         target = central_dir / target_filename
 
         try:
+            module_was_loaded = (
+                "revedaLicense" in sys.modules
+                or "revedaLicense.licenseManager" in sys.modules
+            )
+            if target.exists() and module_was_loaded:
+                # Windows cannot overwrite an already-loaded extension. Move it
+                # aside and let the next process load the downloaded copy.
+                backup = target.with_suffix(".old")
+                if backup.exists():
+                    backup = target.with_name(
+                        f"{target.name}.{datetime.now().timestamp():.0f}.old"
+                    )
+                target.replace(backup)
             target.write_bytes(content)
             # Ensure the extension is executable on Unix
             if platform.system() != "Windows":
@@ -567,25 +594,35 @@ class PluginRegistryWindow(QMainWindow):
             if central_dir_str not in sys.path:
                 sys.path.insert(0, central_dir_str)
 
-            # Invalidate import caches so the new module can be found
-            importlib.invalidate_caches()
-
-            # Try to import to verify it works
-            try:
-                from revedaLicense.licenseManager import has_valid_license  # noqa: F401
+            # A running process cannot safely reinitialize a loaded compiled
+            # extension. The normal plugin restart prompt follows this install.
+            if module_was_loaded:
                 self._license_download_success = True
+            else:
+                # Invalidate import caches so the new module can be found
+                importlib.invalidate_caches()
+                try:
+                    from revedaLicense import licenseManager as license_impl
+                    api_version = int(getattr(
+                        license_impl, "LICENSE_API_VERSION", 0
+                    ))
+                    self._license_download_success = (
+                        api_version
+                        >= licenseManager.MINIMUM_LICENSE_API_VERSION
+                    )
+                    if not self._license_download_success:
+                        raise ImportError("outdated revedaLicense API")
 
-                # Reload the license module in the main app to ensure it's available
-                app = QApplication.instance()
-                if app and hasattr(app, 'reloadLicenseModule'):
-                    app.reloadLicenseModule()
-            except ImportError as e:
-                QMessageBox.critical(
-                    self, "Install Error",
-                    f"revedaLicense module downloaded but import failed:\n{e}\n"
-                    f"This may indicate a platform mismatch or corrupted download."
-                )
-                self._license_download_success = False
+                    app = QApplication.instance()
+                    if app and hasattr(app, 'reloadLicenseModule'):
+                        app.reloadLicenseModule()
+                except ImportError as e:
+                    QMessageBox.critical(
+                        self, "Install Error",
+                        f"revedaLicense module downloaded but import failed:\n{e}\n"
+                        f"This may indicate a platform mismatch or corrupted download."
+                    )
+                    self._license_download_success = False
         except Exception as e:
             QMessageBox.critical(
                 self, "Install Error", f"Failed to write revedaLicense module:\n{e}"

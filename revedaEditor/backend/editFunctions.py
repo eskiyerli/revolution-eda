@@ -10,10 +10,22 @@
 ##
 
 
+from pathlib import Path
+
 from PySide6.QtCore import (
-    Qt, Signal,
+    QSettings,
+    Qt,
+    Signal,
 )
-from PySide6.QtWidgets import QLineEdit, QLabel, QWidget
+from PySide6.QtWidgets import QLabel, QLineEdit, QWidget
+
+APP_SETTINGS_FILE = Path.home() / ".reveda" / "reveda_settings.ini"
+
+
+def appSettings() -> QSettings:
+    """Return QSettings backed by the shared ~/.reveda/reveda_settings.ini."""
+    APP_SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    return QSettings(str(APP_SETTINGS_FILE), QSettings.IniFormat)
 
 
 class shortLineEdit(QLineEdit):

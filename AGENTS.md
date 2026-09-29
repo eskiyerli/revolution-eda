@@ -114,6 +114,7 @@
 - Saved geometry is scene-origin-relative in many encoders (`*_Encoder._subtract_point(...)`); preserve that convention when adding new JSON fields.
 - Symbol instances tolerate missing libraries by creating a draft placeholder (`loadJSON.py:createDraftSymbol()`); avoid turning unresolved references into hard crashes.
 - Many UI extensions are convention-based: menus are injected by config, PDK modules are imported by fixed filenames, and callbacks are found by symbol/cell names. Renames across those boundaries break runtime discovery.
+- All persisted settings go through `edf.appSettings()` (`backend/editFunctions.py`), which backs `QSettings` with the shared `~/.reveda/reveda_settings.ini`. Never use org/app-name `QSettings("org", "app")` (platform-dependent location) — namespace keys with a `component/` prefix instead.
 - If you need representative examples, use `defaultPDK/` for minimal built-in behavior, and `plugins/aiTerminal`, `plugins/revedasim`, and `plugins/revedaPlot` for plugin patterns. External PDKs (`ihp_pdk/`, `gf180_pdk/`) are in separate repos but follow the same conventions.
 - Use camelCase convention in class, method and variable names.
 - Make sure to prioritize implementation efficiency in the code as we are using Python.
