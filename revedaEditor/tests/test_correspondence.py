@@ -429,3 +429,43 @@ def test_selectProbeTargets_selects_and_highlights(tmp_path):
     assert scene.highlightNetGroupsForEndpoints([("M1", "A")]) == 1
     pin = scene._layoutPinForEndpoint("M1", "A")
     assert pin in scene._netHighlightItems
+
+
+def test_probe_source_key_prefers_cache_then_majority(tmp_path):
+    libDir = _writeLibrary(tmp_path)
+    _writeSchematic(libDir, [_sysRecord("M1"), _sysRecord("M2"),
+                            _sysRecord("M3")])
+    # A second, valid source schematic in the same library.
+    (libDir / "top2").mkdir()
+    (libDir / "top2" / "schematic.json").write_bytes(orjson.dumps(
+        [{"viewType": "schematic"}, {"snapGrid": [10, 10]}]))
+    scene = _sceneFor(libDir)
+    scene.updateFromSchematic(_schematicTuple(libDir))
+    other = ("mylib", "top2", "schematic")
+    byInst = {corr.sdlInstName(i._sdlSource): i
+              for i in scene.items()
+              if isinstance(i, lshp.layoutInstance)}
+    byInst["M1"]._sdlSource = corr.makeSdlSource(*other, "X1", {})
+    byInst["M2"]._sdlSource = corr.makeSdlSource(*other, "X2", {})
+    # Session cache wins even as the minority stamp.
+    assert scene._sdlSourceKeyForScene() == SRC
+    # Reload path (no cache): majority stamp decides.
+    scene._flylineSource = None
+    assert scene._sdlSourceKeyForScene() == other
+
+
+def test_probe_source_key_skips_stale_stamps(tmp_path):
+    libDir = _writeLibrary(tmp_path)
+    _writeSchematic(libDir, [_sysRecord("M1"), _sysRecord("M2")])
+    scene = _sceneFor(libDir)
+    scene.updateFromSchematic(_schematicTuple(libDir))
+    insts = [i for i in scene.items()
+             if isinstance(i, lshp.layoutInstance)]
+    insts[0]._sdlSource = corr.makeSdlSource(
+        "ghostlib", "ghostcell", "schematic", "G1", {})
+    scene._flylineSource = None
+    # The dead stamp is skipped in favour of the surviving source.
+    assert scene._sdlSourceKeyForScene() == SRC
+    # Only dead stamps left -> no probe source at all.
+    insts[1]._sdlSource = insts[0]._sdlSource
+    assert scene._sdlSourceKeyForScene() is None

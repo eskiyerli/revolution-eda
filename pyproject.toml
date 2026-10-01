@@ -26,7 +26,9 @@ classifiers = [
 
 include = [
     { path = "pyqtgraph/**" },
-    { path = "revedaEditor/fileio/schemas/*.json" }
+    { path = "revedaEditor/fileio/schemas/*.json" },
+    { path = "revedaEditor/resources/bindkeys.json" },
+    { path = "revedaEditor/LICENSE.txt" }
 ]
 exclude = [
     "examples",
@@ -64,6 +66,7 @@ httpx = "^0.28.1"
 cryptography = "^48.0.1"
 pyqtgraph = "~0.14.0"
 google-genai = "^1.74.0"
+pygments = "^2.21"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "~8.4.1"

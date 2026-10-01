@@ -17,7 +17,7 @@
 ; Default source folder matches build_windows.ps1 output convention.
 ; Override with /DSourceRoot="..." when invoking ISCC if needed.
 #ifndef SourceRoot
-  #define SourceRoot "C:\Users\eskiye50\dist\revolution-eda\windows-amd64-py3.14\reveda"
+  #define SourceRoot "C:\Users\eskiye50\dist\revolution-eda\windows-amd64-py3.13\reveda"
 #endif
 
 [Setup]

@@ -15,7 +15,7 @@ VENV_BASE="${POETRY_VENV_BASE:-${HOME}/.poetryenvs}"
 OUTPUT_BASE="${HOME}/dist"
 
 # for PY_VER in 3.12 3.13 3.14; do
-for PY_VER in 3.13; do
+for PY_VER in 3.14; do
     # ARTIFACT_NAME="linux-amd64-py${PY_VER}"
     ARTIFACT_NAME="linux-amd64"
     echo "========================================"

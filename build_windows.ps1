@@ -1,5 +1,19 @@
 # Windows build script for Revolution EDA
-# Builds a standalone binary for Python 3.14 using a Poetry virtual environment
+# Builds a standalone binary using a Poetry virtual environment.
+# Most Nuitka options come from nuitka-project directives in reveda.py;
+# this script only adds platform-specific flags.
+#
+# Usage:
+#   .\build_windows.ps1                          # default: Python 3.14 + zip
+#   .\build_windows.ps1 -PythonVersions 3.13,3.14
+#   .\build_windows.ps1 -VenvDir C:\path\to\venv # explicit Poetry venv
+#   .\build_windows.ps1 -SkipZip                 # dist folder only (for Inno Setup)
+
+param(
+    [string[]]$PythonVersions = @("3.13"),
+    [string]$VenvDir = $env:POETRY_VENV,
+    [switch]$SkipZip
+)
 
 $ErrorActionPreference = "Stop"
 
@@ -7,22 +21,37 @@ $ScriptDir = $PSScriptRoot
 $ProjectName = "reveda"
 $EntryPoint = Join-Path $ScriptDir "reveda.py"
 
+# Pinned for reproducible builds; bump deliberately.
+$NuitkaVersion = "4.2.2"
+
 $VenvBase = if ($env:POETRY_VENV_BASE) { $env:POETRY_VENV_BASE } else { "C:\Users\eskiye50\poetryenvs" }
 $OutputBase = "C:\Users\eskiye50\dist"
+$Jobs = if ($env:NUITKA_JOBS) { [int]$env:NUITKA_JOBS } else { [Environment]::ProcessorCount }
 
-foreach ($PyVer in @("3.14")) {
+foreach ($PyVer in $PythonVersions) {
     $ArtifactName = "windows-amd64-py${PyVer}"
     Write-Host "========================================" -ForegroundColor Cyan
     Write-Host "Building Revolution EDA for Windows with Python $PyVer" -ForegroundColor Cyan
     Write-Host "========================================" -ForegroundColor Cyan
 
     # Find Poetry virtual environment
-    $Pattern = Join-Path $VenvBase "*py$PyVer"
-    $MatchedDirs = Get-ChildItem -Directory -Path $Pattern -ErrorAction SilentlyContinue
+    if ($VenvDir) {
+        $MatchedDirs = @(Get-Item -Path $VenvDir -ErrorAction SilentlyContinue)
+    } else {
+        $Pattern = Join-Path $VenvBase "*py$PyVer"
+        $MatchedDirs = Get-ChildItem -Directory -Path $Pattern -ErrorAction SilentlyContinue |
+            Sort-Object Name
+    }
 
     if (-not $MatchedDirs) {
-        Write-Warning "Poetry env for Python $PyVer not found in $VenvBase -- skipping"
+        $Where = if ($VenvDir) { $VenvDir } else { $Pattern }
+        Write-Warning "Poetry env for Python $PyVer not found at $Where -- skipping"
         continue
+    }
+    if ($MatchedDirs.Count -gt 1) {
+        $Msg = "Multiple Poetry envs match Python ${PyVer}; using $($MatchedDirs[0].Name). " +
+            "Pass -VenvDir or set POETRY_VENV to select a different one."
+        Write-Warning $Msg
     }
 
     $PythonPath = Join-Path $MatchedDirs[0].FullName "Scripts\python.exe"
@@ -33,10 +62,10 @@ foreach ($PyVer in @("3.14")) {
 
     Write-Host "Using Python: $PythonPath"
 
-    # Ensure nuitka and key dependencies are installed
-    Write-Host "Installing/upgrading build dependencies..."
+    # Ensure a pinned nuitka is installed
+    Write-Host "Installing build dependencies (nuitka==$NuitkaVersion)..."
     & $PythonPath -m pip install --upgrade pip | Out-Null
-    & $PythonPath -m pip install --upgrade nuitka | Out-Null
+    & $PythonPath -m pip install "nuitka==$NuitkaVersion" | Out-Null
 
     # Output directory per Python version
     $OutputDir = Join-Path $OutputBase "revolution-eda\$ArtifactName"
@@ -48,12 +77,12 @@ foreach ($PyVer in @("3.14")) {
 
     # Build with Nuitka (most options come from nuitka-project directives in reveda.py)
     # Only specify overrides and platform-specific flags here
-    Write-Host "Building with Nuitka (this may take 10-30 minutes)..."
+    Write-Host "Building with Nuitka $NuitkaVersion (this may take 10-30 minutes)..."
     & $PythonPath -m nuitka `
         --msvc=latest `
         --output-dir=$OutputDir `
         --assume-yes-for-downloads `
-        --jobs=2 `
+        --jobs=$Jobs `
         --lto=no `
         $EntryPoint
 
@@ -69,58 +98,20 @@ foreach ($PyVer in @("3.14")) {
         Rename-Item -Path $DistFolder -NewName $ProjectName
     }
 
-    # Compile defaultPDK as a separate .pyd package
-    Write-Host "Compiling defaultPDK as separate package..."
+    # Ensure defaultPDK runtime data exists on disk next to the executable.
+    # The PDK code itself is embedded via --include-package=defaultPDK in
+    # reveda.py, but layer stipple textures and config.json are looked up
+    # through filesystem paths relative to the package/REVEDA_PDK_PATH.
     $PdkSrc = Join-Path $ScriptDir "defaultPDK"
-    $PdkBuildDir = Join-Path $OutputDir "defaultPDK_build"
-    New-Item -ItemType Directory -Force -Path $PdkBuildDir | Out-Null
-
-    & $PythonPath -m nuitka `
-        --mode=package `
-        --msvc=latest `
-        --include-package=defaultPDK `
-        --output-dir=$PdkBuildDir `
-        --assume-yes-for-downloads `
-        --no-pyi-file `
-        --jobs=2 `
-        --lto=no `
-        $PdkSrc
-
-    if ($LASTEXITCODE -eq 0) {
-        # Copy compiled defaultPDK into the artifact
-        $PdkDistFolder = Join-Path $PdkBuildDir "defaultPDK.dist"
-        $PdkTargetFolder = Join-Path $FinalFolder "defaultPDK"
-        if (Test-Path $PdkDistFolder) {
-            if (Test-Path $PdkTargetFolder) { Remove-Item -Recurse -Force $PdkTargetFolder }
-            Copy-Item -Path $PdkDistFolder -Destination $PdkTargetFolder -Recurse -Force
-        } else {
-            # Nuitka may output directly without .dist for package mode
-            $PdkCompiledFolder = Join-Path $PdkBuildDir "defaultPDK"
-            if (Test-Path $PdkCompiledFolder) {
-                if (Test-Path $PdkTargetFolder) { Remove-Item -Recurse -Force $PdkTargetFolder }
-                Copy-Item -Path $PdkCompiledFolder -Destination $PdkTargetFolder -Recurse -Force
-            }
-        }
-        Write-Host "defaultPDK compiled successfully." -ForegroundColor Green
-    } else {
-        Write-Warning "defaultPDK compilation failed -- falling back to source copy"
-    }
-
-    # Ensure defaultPDK exists (fallback: copy source modules including stipples)
     $PdkDst = Join-Path $FinalFolder "defaultPDK"
-    if (-not (Test-Path $PdkDst)) {
-        Write-Host "Copying defaultPDK source modules..."
-        Copy-Item -Path $PdkSrc -Destination $PdkDst -Recurse -Force
+    foreach ($Item in @("config.json", "stipples")) {
+        $Src = Join-Path $PdkSrc $Item
+        $Dst = Join-Path $PdkDst $Item
+        if ((Test-Path $Src) -and -not (Test-Path $Dst)) {
+            New-Item -ItemType Directory -Force -Path $PdkDst | Out-Null
+            Copy-Item -Path $Src -Destination $Dst -Recurse -Force
+        }
     }
-    # Always copy stipples and data files that Nuitka may miss
-    $StipplesSrc = Join-Path $PdkSrc "stipples"
-    $StipplesDst = Join-Path $PdkDst "stipples"
-    if ((Test-Path $StipplesSrc) -and -not (Test-Path $StipplesDst)) {
-        Copy-Item -Path $StipplesSrc -Destination $StipplesDst -Recurse -Force
-    }
-
-    # Clean up defaultPDK build artifacts
-    if (Test-Path $PdkBuildDir) { Remove-Item -Recurse -Force $PdkBuildDir }
 
     # Copy .env.example for reference
     $EnvExample = Join-Path $ScriptDir ".env.example"
@@ -133,12 +124,15 @@ foreach ($PyVer in @("3.14")) {
     $BuildFolder = Join-Path $OutputDir "$ProjectName.build"
     if (Test-Path $BuildFolder) { Remove-Item -Recurse -Force $BuildFolder }
 
-    # Create zip artifact
-    Write-Host "Creating zip artifact..."
-    $ZipName = Join-Path $OutputBase "revolution-eda\${ArtifactName}.zip"
-    Compress-Archive -Path "$FinalFolder\*" -DestinationPath $ZipName -Force
-
-    Write-Host "Build completed! Artifact: $ZipName" -ForegroundColor Green
+    if (-not $SkipZip) {
+        # Create zip artifact
+        Write-Host "Creating zip artifact..."
+        $ZipName = Join-Path $OutputBase "revolution-eda\${ArtifactName}.zip"
+        Compress-Archive -Path "$FinalFolder\*" -DestinationPath $ZipName -Force
+        Write-Host "Build completed! Artifact: $ZipName" -ForegroundColor Green
+    } else {
+        Write-Host "Build completed! Dist folder: $FinalFolder" -ForegroundColor Green
+    }
     Write-Host ""
 }
 

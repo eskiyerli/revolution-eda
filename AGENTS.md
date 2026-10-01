@@ -48,9 +48,11 @@
 - There are a few focused tests under `revedaEditor/tests/` (for example `test_labels_nlp.py`, `test_net.py`, `test_symbol_pins.py`), but validation is still largely manual GUI testing.
 - Standalone packaging uses Nuitka:
   - Nuitka directives are embedded in `reveda.py` (comment block near the top).
-  - Windows builds: `build_windows.ps1` in the project root. It iterates over Python 3.12/3.13/3.14, locating Poetry virtualenvs at `$POETRY_VENV_BASE` (default `C:\Users\eskiye50\poetryenvs\*py3.XX`) and calling `python -m nuitka` directly.
+  - Windows builds: `build_windows.ps1` in the project root. It builds Python 3.14 by default (`-PythonVersions` to override), locating Poetry virtualenvs at `$POETRY_VENV_BASE` (default `C:\Users\eskiye50\poetryenvs\*py3.XX`; override with `-VenvDir`/`POETRY_VENV` when multiple envs match), pins Nuitka via `$NuitkaVersion`, and calls `python -m nuitka` directly. `-SkipZip` skips the zip artifact when feeding the dist folder to Inno Setup.
+  - Installer: `reveda_installer.iss` (Inno Setup) consumes the dist folder; its default `SourceRoot` matches the py3.14 output path and is overridable with `iscc /DSourceRoot=...`.
   - Plugin builds follow the same pattern (e.g. `plugins/aiTerminal/build_windows.ps1`).
   - Output lands in `C:\Users\eskiye50\dist\revolution-eda\` with per-version zip artifacts.
+  - defaultPDK ships embedded via `--include-package`; its on-disk `defaultPDK/` folder in the dist only carries runtime data (`config.json`, `stipples/`) resolved via filesystem paths. `revedaEditor/resources/bindkeys.json` is required on disk — it is an `--include-data-file` in `reveda.py` and a `pyproject.toml` include for wheels.
 
 ## Connectivity architecture (single semantic model)
 - `revedaEditor/connectivity/` is the ONLY connectivity implementation. Everything connectivity-related must go through it: GUI scenes, checks, netlisters, probes, RCX, aiTerminal design ops, and importers. Do not add parallel union-finds or pin-mapping code elsewhere.

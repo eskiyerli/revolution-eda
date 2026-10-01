@@ -74,12 +74,17 @@ class MarkdownViewer(QTextBrowser):
                 text = f.read()
 
             # Convert markdown to HTML
-            html = markdown.markdown(text, extensions=[
+            extensions = [
                 'markdown.extensions.tables',
                 'markdown.extensions.fenced_code',
-                'markdown.extensions.codehilite',
                 'markdown.extensions.toc'
-            ])
+            ]
+            try:
+                import pygments  # noqa: F401
+                extensions.insert(2, 'markdown.extensions.codehilite')
+            except ImportError:
+                pass
+            html = markdown.markdown(text, extensions=extensions)
 
             # Process images to use absolute file paths
             html = self.processImages(html, filePath.parent)

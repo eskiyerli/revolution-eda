@@ -2959,26 +2959,10 @@ class layoutScene(editorScene):
 
     def _inferFlylineSource(self):
         """Locate the schematic cellview named by an SDL-stamped instance."""
-        import revedaEditor.backend.libBackEnd as libb
-
-        for item in self.items():
-            if item.parentItem() is not None or \
-                    not isinstance(item, lshp.layoutInstance):
-                continue
-            key = corr.sdlSourceKey(getattr(item, "_sdlSource", None))
-            if not key:
-                continue
-            lib, cell, view = key
-            libPath = self.libraryDict.get(lib)
-            if libPath is None:
-                continue
-            viewPath = libPath / cell / f"{view or 'schematic'}.json"
-            if not viewPath.exists():
-                continue
-            return ddef.viewItemTuple(
-                libb.libraryItem(libPath),
-                libb.cellItem(libPath / cell),
-                libb.viewItem(viewPath))
+        for key in self._stampedSourceKeys():
+            view = self._validSourceView(key)
+            if view is not None:
+                return view
         return None
 
     @staticmethod
@@ -3164,20 +3148,54 @@ class layoutScene(editorScene):
     # Schematic<->layout cross-probing
     # ------------------------------------------------------------------
 
+    def _stampedSourceKeys(self) -> dict:
+        """{(lib, cell, view): count} stamped on top-level instances."""
+        counts = {}
+        for item in self.items():
+            if item.parentItem() is not None or \
+                    not isinstance(item, lshp.layoutInstance):
+                continue
+            key = corr.sdlSourceKey(getattr(item, "_sdlSource", None))
+            if key:
+                counts[key] = counts.get(key, 0) + 1
+        return counts
+
+    def _validSourceView(self, key):
+        """viewItemTuple for a source key whose view exists, else None."""
+        lib, cell, view = key
+        libPath = self.libraryDict.get(lib)
+        if libPath is None:
+            return None
+        viewPath = libPath / cell / f"{view or 'schematic'}.json"
+        if not viewPath.exists():
+            return None
+        return ddef.viewItemTuple(
+            libb.libraryItem(libPath),
+            libb.cellItem(libPath / cell),
+            libb.viewItem(viewPath))
+
     def _sdlSourceKeyForScene(self):
-        """(lib, cell, view) of the schematic this layout was synced from."""
+        """(lib, cell, view) of the schematic this layout was synced from.
+
+        The session-cached source wins while its stamps survive; otherwise
+        the source stamped on the most instances (first-seen on ties), and
+        finally an unstamped cached source. Stamps naming libraries or
+        views that no longer exist on disk are skipped.
+        """
+        counts = self._stampedSourceKeys()
+        cached = None
         if self._flylineSource is not None:
             t = self._flylineSource
-            return (t.libraryItem.libraryName, t.cellItem.cellName,
-                    t.viewItem.viewName)
-        for item in self.items():
-            if item.parentItem() is None and \
-                    isinstance(item, lshp.layoutInstance):
-                key = corr.sdlSourceKey(
-                    getattr(item, "_sdlSource", None))
-                if key:
-                    return key
-        return None
+            cached = (t.libraryItem.libraryName, t.cellItem.cellName,
+                      t.viewItem.viewName)
+            if cached in counts:
+                return cached
+        best, bestCount = None, 0
+        for key, count in counts.items():
+            if count > bestCount and \
+                    self._validSourceView(key) is not None:
+                best, bestCount = key, count
+        return best or cached
 
     def _layoutPinForEndpoint(self, instName: str, pinName: str):
         """Scene layoutPin matching an (instName, pinName) endpoint."""

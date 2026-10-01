@@ -19,12 +19,16 @@
 # nuitka-project: --enable-plugin=data-files
 # nuitka-project: --include-data-dir=docs=docs
 # nuitka-project: --include-data-dir=revedaEditor/fileio/schemas=revedaEditor/fileio/schemas
+# nuitka-project: --include-data-file=revedaEditor/resources/bindkeys.json=revedaEditor/resources/bindkeys.json
+# nuitka-project: --include-data-file=revedaEditor/LICENSE.txt=revedaEditor/LICENSE.txt
 # nuitka-project: --include-data-file=revedaLogo.png=revedaLogo.png
 # nuitka-project: --include-data-file=LICENSE.txt=LICENSE.txt
 # nuitka-project: --include-package=revedaEditor
 # nuitka-project: --include-package=cryptography
 # nuitka-project: --include-package=markdown
+# nuitka-project: --include-package=pygments
 # nuitka-project: --include-package=polars
+# nuitka-project: --include-package=pyqtgraph
 # nuitka-project: --include-module=pydoc
 # nuitka-project: --include-package=cProfile
 # nuitka-project: --include-package=profile
