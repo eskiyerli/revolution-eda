@@ -317,8 +317,8 @@ class BaseDesignLibrariesView(QWidget):
 
         view_type = viewItemT.viewItem.viewType
 
-        # Handle standard editor types using factory
-        if view_type in EditorFactory.getSupportedViewTypes():
+        # Standard views must never fall through to an optional plugin.
+        if view_type in {"schematic", "layout", "symbol"}:
             editor = EditorFactory.createEditor(view_type, viewItemT.viewItem,
                                                 self.libraryDict,
                                                 self)

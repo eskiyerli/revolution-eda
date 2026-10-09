@@ -238,15 +238,13 @@ class MainWindow(QMainWindow):
             # Core application components
             self.app = QApplication.instance()
             self.logger = logging.getLogger("reveda")
+            self._setupThreadPool()
             # Project manager (handles per-project config loading)
             self.projectManager = ProjectManager(self)
             # Library components
             self.libraryDict = self.readLibDefFile(self.libraryPathObj)
             self.libraryBrowser = libw.libraryBrowser(self)
             self.libraryModel = self.libraryBrowser.designView.libraryModel
-
-            # Thread pool setup
-            self._setupThreadPool()
 
             # Quiet background check for plugin updates: results go to the
             # log; the registry window highlights outdated installs.
@@ -256,6 +254,13 @@ class MainWindow(QMainWindow):
                     self._updatePluginUpdatesAction)
                 self._updatePluginUpdatesAction(pluginsObj.availableUpdates)
                 pluginsObj.checkForUpdates()
+                # Let plugins contribute menu items to the main window too —
+                # the same hook the library browser and editors call.
+                if hasattr(pluginsObj, 'applyPluginMenus'):
+                    try:
+                        pluginsObj.applyPluginMenus(self)
+                    except Exception:
+                        self.logger.exception('applyPluginMenus failed')
 
             # Final initialization
             self.loadAppState()

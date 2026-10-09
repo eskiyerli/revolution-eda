@@ -489,7 +489,7 @@ Treat these as optional, PDK-provided features rather than core layout-editor fu
   are resolved by library and cell name; PCell values use the active PDK's
   `pcellParameterMap.json` label-to-parameter mapping. Save the current layout
   first if you may need its existing geometry.
-- When the commercial SDL Pro plugin is installed and compatible, it replaces
+- When the commercial RevSDL plugin is installed and compatible, it replaces
   `Load from Schematic...` with `Update from Schematic...` and adds
   `Show Flylines`, `Clear Flylines`, and `Probe in Schematic`. These actions
   remain visible without a license; selecting one opens the license dialog for

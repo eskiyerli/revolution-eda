@@ -42,6 +42,7 @@
 # nuitka-project: --nofollow-import-to=revedaPlot
 # nuitka-project: --nofollow-import-to=plugins
 # nuitka-project: --nofollow-import-to=revedaLicense
+# nuitka-project: --nofollow-import-to=revedaLicense.*
 # nuitka-project: --include-package=defaultPDK
 # nuitka-project: --include-package-data=defaultPDK
 # nuitka-project: --include-windows-runtime-dlls=yes
@@ -512,7 +513,9 @@ class revedaApp(QApplication):
         # user directory if the project directory is not writable.
         log_file_path = self._projectDir / "reveda.log"
         try:
-            handler = resilientFileHandler(log_file_path)
+            handler = resilientFileHandler(
+                log_file_path, encoding="utf-8", errors="backslashreplace"
+            )
             handler.setLevel(logging.INFO)
             handler.setFormatter(
                 logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")

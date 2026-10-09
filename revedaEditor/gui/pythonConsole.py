@@ -112,6 +112,11 @@ class Redirect:
 class pythonConsole(QWidget):
     """A GUI version of code.InteractiveConsole."""
 
+    # Logging and stdout/stderr can call write()/writeoutput() from any
+    # thread; the widget may only be touched on the GUI thread, so the
+    # actual append goes through this queued signal.
+    _writeRequest = Signal(str, object)
+
     def __init__(
             self,
             context=locals(),  # context for interpreter
@@ -152,6 +157,10 @@ class pythonConsole(QWidget):
         self.inpedit.newline.connect(self.push)
         self.inpedit.setFrame(False)
         self.content.addWidget(self.inpedit, 1, 1)
+
+        # Bound-method receiver → AutoConnection queues cross-thread
+        # emissions onto this widget's own (GUI) thread.
+        self._writeRequest.connect(self._writeoutput_ui)
 
     def setcontext(self, context):
         """Set context for interpreter"""
@@ -201,9 +210,13 @@ class pythonConsole(QWidget):
 
     def writeoutput(self, line: str, fmt: QTextCharFormat = None) -> None:
         """Set text formatting and display line in outdisplay"""
+        self._writeRequest.emit(line.rstrip(), fmt)
+
+    def _writeoutput_ui(self, line: str, fmt) -> None:
+        """Runs on the GUI thread via _writeRequest."""
         if fmt is not None:
             self.outdisplay.setCurrentCharFormat(fmt)
-        self.outdisplay.appendPlainText(line.rstrip())
+        self.outdisplay.appendPlainText(line)
 
     def sizeHint(self):
         return QSize(500, 200)

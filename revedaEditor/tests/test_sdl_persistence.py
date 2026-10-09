@@ -1,4 +1,4 @@
-"""Persistence compatibility for SDL Pro metadata owned by the free core."""
+"""Persistence compatibility for RevSDL metadata owned by the free core."""
 
 import json
 

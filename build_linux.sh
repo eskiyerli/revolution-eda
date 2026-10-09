@@ -14,6 +14,29 @@ cd "${SCRIPT_DIR}"
 VENV_BASE="${POETRY_VENV_BASE:-${HOME}/.poetryenvs}"
 OUTPUT_BASE="${HOME}/dist"
 
+# Fail the build if the private revedaLicense module leaked into output
+assert_no_bundled_license() {
+    local report_path="$1"
+    local dist_path="$2"
+
+    if [[ ! -f "${report_path}" ]]; then
+        echo "ERROR: Nuitka report not found: ${report_path}" >&2
+        exit 1
+    fi
+    if grep -qE '<module[^>]*name="revedaLicense(\.|")' "${report_path}"; then
+        echo "ERROR: Private license module included in Nuitka report:" >&2
+        grep -oE 'name="revedaLicense[^"]*"' "${report_path}" | sort -u >&2
+        exit 1
+    fi
+    local leaked
+    leaked="$(find "${dist_path}" -name 'revedaLicense' -o -name 'revedaLicense.*')"
+    if [[ -n "${leaked}" ]]; then
+        echo "ERROR: Private license module found in build output:" >&2
+        echo "${leaked}" >&2
+        exit 1
+    fi
+}
+
 # for PY_VER in 3.12 3.13 3.14; do
 for PY_VER in 3.14; do
     # ARTIFACT_NAME="linux-amd64-py${PY_VER}"
@@ -52,11 +75,14 @@ for PY_VER in 3.14; do
     fi
     mkdir -p "${OUTPUT_DIR}"
 
+    BUILD_REPORT="${OUTPUT_DIR}/nuitka-report.xml"
+
     # Build with Nuitka (most options come from nuitka-project directives in reveda.py)
     # Only specify overrides and platform-specific flags here
     echo "Building with Nuitka (this may take 10-30 minutes)..."
     "${PYTHON_PATH}" -m nuitka \
         --output-dir="${OUTPUT_DIR}" \
+        --report="${BUILD_REPORT}" \
         --assume-yes-for-downloads \
         --jobs=2 \
         --lto=no \
@@ -103,6 +129,8 @@ for PY_VER in 3.14; do
     if [[ -f "${ENV_EXAMPLE}" ]]; then
         cp "${ENV_EXAMPLE}" "${FINAL_FOLDER}/"
     fi
+
+    assert_no_bundled_license "${BUILD_REPORT}" "${FINAL_FOLDER}"
 
     # Clean up build artifacts
     echo "Cleaning up build artifacts..."

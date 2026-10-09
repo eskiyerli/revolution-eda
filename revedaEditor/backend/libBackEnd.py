@@ -174,6 +174,8 @@ class viewItem(QStandardItem):
             return "pcell"
         elif "revbench" in self.viewPath.stem:
             return "revbench"
+        elif "dcspec" in self.viewPath.stem:
+            return "dcspec"
         else:
             return None
 

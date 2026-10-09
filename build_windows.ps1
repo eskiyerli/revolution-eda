@@ -28,6 +28,28 @@ $VenvBase = if ($env:POETRY_VENV_BASE) { $env:POETRY_VENV_BASE } else { "C:\User
 $OutputBase = "C:\Users\eskiye50\dist"
 $Jobs = if ($env:NUITKA_JOBS) { [int]$env:NUITKA_JOBS } else { [Environment]::ProcessorCount }
 
+function Assert-NoBundledLicense {
+    param(
+        [string]$ReportPath,
+        [string]$DistPath
+    )
+
+    [xml]$Report = Get-Content -LiteralPath $ReportPath -Raw
+    if ($Report.DocumentElement.Name -ne "nuitka-compilation-report") {
+        throw "Unexpected Nuitka report format: $ReportPath"
+    }
+    $LicenseModules = @($Report.SelectNodes("/nuitka-compilation-report/module") |
+        Where-Object { $_.name -eq "revedaLicense" -or $_.name -like "revedaLicense.*" })
+    if ($LicenseModules.Count -gt 0) {
+        throw "Private license module included in Nuitka report: $($LicenseModules.name -join ', ')"
+    }
+    $LicenseFiles = @(Get-ChildItem -LiteralPath $DistPath -Recurse -Force |
+        Where-Object { $_.Name -eq "revedaLicense" -or $_.Name -like "revedaLicense.*" })
+    if ($LicenseFiles.Count -gt 0) {
+        throw "Private license module found in build output: $($LicenseFiles.FullName -join ', ')"
+    }
+}
+
 foreach ($PyVer in $PythonVersions) {
     $ArtifactName = "windows-amd64-py${PyVer}"
     Write-Host "========================================" -ForegroundColor Cyan
@@ -78,9 +100,11 @@ foreach ($PyVer in $PythonVersions) {
     # Build with Nuitka (most options come from nuitka-project directives in reveda.py)
     # Only specify overrides and platform-specific flags here
     Write-Host "Building with Nuitka $NuitkaVersion (this may take 10-30 minutes)..."
+    $BuildReport = Join-Path $OutputDir "nuitka-report.xml"
     & $PythonPath -m nuitka `
         --msvc=latest `
         --output-dir=$OutputDir `
+        --report=$BuildReport `
         --assume-yes-for-downloads `
         --jobs=$Jobs `
         --lto=no `
@@ -118,6 +142,8 @@ foreach ($PyVer in $PythonVersions) {
     if (Test-Path $EnvExample) {
         Copy-Item $EnvExample -Destination $FinalFolder -Force
     }
+
+    Assert-NoBundledLicense -ReportPath $BuildReport -DistPath $FinalFolder
 
     # Clean up build artifacts
     Write-Host "Cleaning up build artifacts..."

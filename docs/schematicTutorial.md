@@ -348,7 +348,7 @@ Available check rules:
 - `Tools -> Show Resolved Net Names`: when checked, displays the resolved
   electrical net name next to each net — useful for checking bus-ripper
   results and name propagation through the connectivity engine.
-- With the commercial SDL Pro plugin installed, `Tools -> Probe in Layout`
+- With the commercial RevSDL plugin installed, `Tools -> Probe in Layout`
   selects matching source-owned instances or highlights the corresponding
   layout connectivity group in the open sibling layout editor.
 - `Tools -> Renumber Instances`: This menu starts the process of renumbering of all schematic instances. This might be needed when the instance names could be repeated among different instances, making some operations like netlisting problematic.

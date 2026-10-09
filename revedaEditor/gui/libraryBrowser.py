@@ -32,13 +32,14 @@ from revedaEditor.backend.startThread import startThread
 
 class libraryBrowser(QMainWindow):
     CELLVIEWS = ["schematic", "symbol", "layout", "veriloga", "config", "spice",
-                 "spectre", "spef", "vacask", "pcell", "revbench", ]
+                 "spectre", "spef", "vacask", "pcell", "revbench", "dcspec", ]
 
     def __init__(self, appMainW: QMainWindow) -> None:
         super().__init__()
         self.resize(600, 600)
         self.appMainW = appMainW
         self._app = QApplication.instance()
+        self.logger = appMainW.logger
         self.libraryDict = appMainW.libraryDict
         self.cellViews = self.CELLVIEWS
         self.setWindowIcon(QIcon(":logo-color.png"))
@@ -56,7 +57,6 @@ class libraryBrowser(QMainWindow):
         self._createTriggers()
 
         # Setup library components
-        self.logger = appMainW.logger
         self.libFilePath = appMainW.libraryPathObj
         self.libBrowserCont = libraryBrowserContainer(self)
         self.setCentralWidget(self.libBrowserCont)

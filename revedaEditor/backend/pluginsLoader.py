@@ -225,6 +225,25 @@ class pluginsLoader(QObject):
                 callback(editorWindow)
         return licensed_callback
 
+    def _deferredPluginCallback(self, module, callbackName):
+        def deferredCallback(editorWindow):
+            try:
+                callback = getattr(module, callbackName, None)
+            except RuntimeError as e:
+                # Compiled plugins may still enforce licensing inside
+                # __getattr__ even after the license gate ran.
+                self._app.logger.warning(
+                    f"Plugin menu callback {callbackName} unavailable: {e}"
+                )
+                return
+            if callback is None:
+                self._app.logger.warning(
+                    f"Plugin menu callback not found: {callbackName}"
+                )
+                return
+            callback(editorWindow)
+        return deferredCallback
+
     def _loadPluginMenus(self):
         """Load plugin menu configurations from JSON file"""
         self.pluginMenuConfig = {}
@@ -266,7 +285,12 @@ class pluginsLoader(QObject):
                     continue
                 # Get callback
                 try:
-                    callback = getattr(module, menuItem["callback"], None)
+                    if self._plugin_requires_license(plugin_name, plugin_config):
+                        callback = self._deferredPluginCallback(
+                            module, menuItem["callback"]
+                        )
+                    else:
+                        callback = getattr(module, menuItem["callback"], None)
                 except RuntimeError as e:
                     # Compiled plugins may enforce licensing inside __getattr__.
                     # Provide a stub that opens the activation dialog and retries.
@@ -337,11 +361,20 @@ class pluginsLoader(QObject):
             plugin_name, payment_url, parent
         )
 
+    def _pluginViewTypes(self, pluginName, pluginModule):
+        try:
+            return getattr(pluginModule, "viewTypes", ())
+        except Exception as error:
+            self._app.logger.warning(
+                f"Skipping view dispatch for plugin {pluginName}: {error}"
+            )
+            return ()
+
     def createCellView(self, viewItemT: viewItemTuple):
         for pluginName, pluginModule in self.plugins.items():
-            if hasattr(
-                pluginModule, "viewTypes"
-            ) and viewItemT.viewItem.viewType in getattr(pluginModule, "viewTypes"):
+            if viewItemT.viewItem.viewType in self._pluginViewTypes(
+                pluginName, pluginModule
+            ):
                 plugin_config = self.pluginMenuConfig.get(pluginName, {})
                 if not self._check_license_or_prompt(pluginName, plugin_config):
                     return False
@@ -364,9 +397,9 @@ class pluginsLoader(QObject):
 
     def openCellView(self, viewItemT: viewItemTuple):
         for pluginName, pluginModule in self.plugins.items():
-            if hasattr(
-                pluginModule, "viewTypes"
-            ) and viewItemT.viewItem.viewType in getattr(pluginModule, "viewTypes"):
+            if viewItemT.viewItem.viewType in self._pluginViewTypes(
+                pluginName, pluginModule
+            ):
                 plugin_config = self.pluginMenuConfig.get(pluginName, {})
                 if not self._check_license_or_prompt(pluginName, plugin_config):
                     return False

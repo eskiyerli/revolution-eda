@@ -31,13 +31,21 @@ class startThread(QRunnable):
         self.kwargs = kwargs
         self.signals = workerSignals()
 
+    def _emit(self, signalName: str, *args) -> None:
+        try:
+            getattr(self.signals, signalName).emit(*args)
+        except RuntimeError:
+            # Qt may delete the signal source while the application is shutting down.
+            pass
+
     @Slot()
     def run(self) -> None:
         try:
             result = self.fn(*self.args, **self.kwargs)
-            if result:
-                self.signals.result.emit(result)
         except Exception as e:
-            self.signals.error.emit((type(e), e.args, str(e)))
+            self._emit("error", (type(e), e.args, str(e)))
+        else:
+            if result:
+                self._emit("result", result)
         finally:
-            self.signals.finished.emit()
+            self._emit("finished")

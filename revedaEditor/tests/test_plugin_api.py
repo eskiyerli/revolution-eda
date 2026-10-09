@@ -8,14 +8,86 @@ the session ``qapp`` fixture plus a monkeypatched ``logger`` attribute —
 import json
 import logging
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from PySide6.QtWidgets import QMainWindow
 
 from revedaEditor.backend import licenseManager, pluginApi
+from revedaEditor.backend.libraryModelView import BaseDesignLibrariesView
 from revedaEditor.backend.pluginsLoader import pluginsLoader
+from revedaEditor.gui.editorFactory import EditorFactory
 
 APP_VERSION = "1.0.0"
+
+
+def test_standard_view_never_dispatches_to_plugin(monkeypatch):
+    class editor:
+        centralW = SimpleNamespace(
+            scene=SimpleNamespace(fitItemsInView=lambda: None)
+        )
+
+        def loadSchematic(self):
+            pass
+
+        def show(self):
+            pass
+
+    plugin = SimpleNamespace(
+        openCellView=lambda _: pytest.fail("standard view reached plugin")
+    )
+    browser = BaseDesignLibrariesView.__new__(BaseDesignLibrariesView)
+    browser.appMainW = SimpleNamespace(openViews={})
+    browser.libraryDict = {}
+    browser._app = SimpleNamespace(pluginsObj=plugin)
+    viewName = object()
+    view = SimpleNamespace(
+        viewItem=SimpleNamespace(viewType="schematic"),
+        convertToViewNameTuple=lambda: viewName,
+    )
+    monkeypatch.setattr(EditorFactory, "getSupportedViewTypes", lambda: [])
+    monkeypatch.setattr(EditorFactory, "createEditor", lambda *args: editor())
+
+    assert browser.openCellView(view) is viewName
+
+
+@pytest.mark.parametrize("operation", ["openCellView", "createCellView"])
+def test_view_dispatch_isolates_plugin_metadata_failure(app_logger, tmp_path, operation):
+    class unlicensedPlugin:
+        def __getattr__(self, name):
+            raise RuntimeError("designCopilot requires a valid license")
+
+    loader = pluginsLoader(tmp_path)
+    calls = []
+    owner = SimpleNamespace(viewTypes=["revbench"])
+    setattr(owner, operation, calls.append)
+    loader.plugins = {"designCopilot": unlicensedPlugin(), "revedasim": owner}
+    view = SimpleNamespace(viewItem=SimpleNamespace(viewType="revbench"))
+
+    assert getattr(loader, operation)(view) is True
+    assert calls == [view]
+
+
+@pytest.mark.parametrize("operation", ["openCellView", "createCellView"])
+def test_view_dispatch_preserves_owner_license_gate(
+    app_logger, tmp_path, monkeypatch, operation
+):
+    loader = pluginsLoader(tmp_path)
+    calls = []
+    owner = SimpleNamespace(viewTypes=["dcspec"])
+    setattr(owner, operation, calls.append)
+    loader.plugins = {"designCopilot": owner}
+    loader.pluginMenuConfig = {"designCopilot": {"license_required": True}}
+    prompts = []
+    monkeypatch.setattr(
+        licenseManager, "check_and_prompt_license",
+        lambda name, url, parent: prompts.append(name) or False,
+    )
+    view = SimpleNamespace(viewItem=SimpleNamespace(viewType="dcspec"))
+
+    assert getattr(loader, operation)(view) is False
+    assert calls == []
+    assert prompts == ["designCopilot"]
 
 
 def _make_plugin(root: Path, name: str, config: dict | None) -> Path:
@@ -262,6 +334,61 @@ def test_capability_provider_injects_license_gated_menu_item(
         actions[0].trigger()
         assert len(prompts) == 2
         assert window.calls == ["run"]
+    finally:
+        window.deleteLater()
+
+
+@pytest.mark.parametrize("licenseConfig", [
+    {"license_required": True}, {"license": "Commercial"},
+])
+def test_commercial_menu_defers_callback_lookup(
+    app_logger, tmp_path, monkeypatch, licenseConfig
+):
+    licensed = {"value": False}
+    lookups = []
+    calls = []
+    prompts = []
+
+    class commercialPlugin:
+        def __getattr__(self, name):
+            lookups.append(name)
+            if not licensed["value"]:
+                raise RuntimeError("designCopilot requires a valid license")
+            return lambda window: calls.append((name, window))
+
+    def prompt(pluginName, paymentUrl, parent):
+        prompts.append(pluginName)
+        return licensed["value"]
+
+    monkeypatch.setattr(licenseManager, "check_and_prompt_license", prompt)
+    loader = pluginsLoader(tmp_path)
+    loader.plugins = {"designCopilot": commercialPlugin()}
+    loader.pluginMenuConfig = {"designCopilot": {
+        **licenseConfig,
+        "menu_items": [{
+            "location": "menuBar", "menu": "Utilities",
+            "action": "Design Copilot", "callback": "openDesignCopilot",
+            "apply": ["QMainWindow"],
+        }],
+    }}
+    window = QMainWindow()
+    menu = window.menuBar().addMenu("Utilities")
+    try:
+        loader.applyPluginMenus(window)
+        assert lookups == []
+        assert prompts == []
+        assert len(menu.actions()) == 1
+
+        menu.actions()[0].trigger()
+        assert prompts == ["designCopilot"]
+        assert lookups == []
+        assert calls == []
+
+        licensed["value"] = True
+        menu.actions()[0].trigger()
+        assert prompts == ["designCopilot", "designCopilot"]
+        assert lookups == ["openDesignCopilot"]
+        assert calls == [("openDesignCopilot", window)]
     finally:
         window.deleteLater()
 

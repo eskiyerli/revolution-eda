@@ -797,48 +797,61 @@ class schematicEditor(edw.editorWindow):
             else:
                 symbol_scene.addItem(shp.symbolPin(loc, name, default_dir, "Signal"))
 
-    def generateSymbol(self, symbolViewName: str) -> None:
+    def generateSymbol(self, symbolViewName: str, pin_names: dict | None = None,
+                       stub_length: int = 60, pin_distance: int = 80) -> bool:
         # Get schematic pins and categorize them
         schematic_pins = list(self.centralW.scene.findSceneSchemPinsSet())
         pin_categories = self._categorize_pins(schematic_pins)
         pin_map = self._create_pin_map(schematic_pins)
 
         # Setup dialog with categorized pins
-        dlg = pdlg.symbolCreateDialog(self)
-        dlg.leftPinsEdit.setText(", ".join(pin_categories['input']))
-        dlg.rightPinsEdit.setText(", ".join(pin_categories['output']))
-        dlg.topPinsEdit.setText(", ".join(pin_categories['inout']))
-
-        if dlg.exec() != QDialog.DialogCode.Accepted:
-            return
-
-        # Create symbol view and editor
-        libItem = libm.getLibItem(self.libraryView.libraryModel, self.libName)
-        cellItem = libm.getCellItem(libItem, self.cellName)
-        symbolViewItem = libb.createCellView(self, symbolViewName, cellItem)
-
-        symbolWindow = EditorFactory.createEditor("symbol", symbolViewItem,
-                                                  self.libraryDict, self.libraryView)
-
-        try:
-            # Parse pin configurations
+        from_dialog = pin_names is None
+        if from_dialog:
+            dlg = pdlg.symbolCreateDialog(self)
+            dlg.leftPinsEdit.setText(", ".join(pin_categories['input']))
+            dlg.rightPinsEdit.setText(", ".join(pin_categories['output']))
+            dlg.topPinsEdit.setText(", ".join(pin_categories['inout']))
+            if dlg.exec() != QDialog.DialogCode.Accepted:
+                return False
             pin_names = {'left': self._parse_pin_names(dlg.leftPinsEdit.text()),
                          'right': self._parse_pin_names(dlg.rightPinsEdit.text()),
                          'top': self._parse_pin_names(dlg.topPinsEdit.text()),
                          'bottom': self._parse_pin_names(dlg.bottomPinsEdit.text())}
+            try:
+                stub_length = int(float(dlg.stubLengthEdit.text().strip()))
+                pin_distance = int(float(dlg.pinDistanceEdit.text().strip()))
+            except ValueError:
+                self.logger.error("Enter valid value")
+                return False
 
-            stub_length = int(float(dlg.stubLengthEdit.text().strip()))
-            pin_distance = int(float(dlg.pinDistanceEdit.text().strip()))
+        # Parse pin configurations
+        edges = ('left', 'right', 'top', 'bottom')
+        if (not isinstance(pin_names, dict)
+                or any(not isinstance(pin_names.get(edge), list) for edge in edges)
+                or any(not isinstance(name, str) for edge in edges for name in pin_names[edge])
+                or {name for edge in edges for name in pin_names[edge]} != set(pin_map)
+                or sum(len(pin_names[edge]) for edge in edges) != len(pin_map)
+                or stub_length <= 0 or pin_distance <= 0):
+            self.logger.error("Symbol pin assignment or dimensions are invalid")
+            return False
 
-            # Calculate rectangle dimensions
-            rect_x_dim = (max(len(pin_names['top']),
-                              len(pin_names['bottom'])) + 1) * pin_distance
-            rect_y_dim = (max(len(pin_names['left']),
-                              len(pin_names['right'])) + 1) * pin_distance
+        # Calculate rectangle dimensions
+        rect_x_dim = (max(len(pin_names['top']),
+                          len(pin_names['bottom'])) + 1) * pin_distance
+        rect_y_dim = (max(len(pin_names['left']),
+                          len(pin_names['right'])) + 1) * pin_distance
 
-        except ValueError:
-            self.logger.error("Enter valid value")
-            return
+        # Create symbol view and editor
+        libItem = libm.getLibItem(self.libraryView.libraryModel, self.libName)
+        cellItem = libm.getCellItem(libItem, self.cellName)
+        if cellItem is None or (not from_dialog and
+                               (cellItem.cellPath / f"{symbolViewName}.json").exists()):
+            self.logger.error("Symbol view already exists or cell is unavailable")
+            return False
+        symbolViewItem = libb.createCellView(self, symbolViewName, cellItem)
+
+        symbolWindow = EditorFactory.createEditor("symbol", symbolViewItem,
+                                                  self.libraryDict, self.libraryView)
 
         # Draw symbol components
         sceneSymbol = symbolWindow.centralW.scene
@@ -885,6 +898,7 @@ class schematicEditor(edw.editorWindow):
         openCellViewTuple = ddef.viewNameTuple(self.libName, self.cellName, symbolViewName)
         self.appMainW.openViews[openCellViewTuple] = symbolWindow
         symbolWindow.show()
+        return True
 
     def checkRulesClick(self):
         dlg = pdlg.schematicCheckRulesDialogue(

@@ -35,7 +35,7 @@
 - [[revedaEditor\tests\test_schematic_ux|test_schematic_ux.py]] — Phase 4 schematic UX: find/replace, marker persistence, bus ripper,
 - [[revedaEditor\tests\test_sdl_adapter|test_sdl_adapter.py]] — Contract tests for the versioned core SDL plugin adapter
 - [[revedaEditor\tests\test_sdl_free_baseline|test_sdl_free_baseline.py]] — Regression contract for the SDL functionality already released on master
-- [[revedaEditor\tests\test_sdl_persistence|test_sdl_persistence.py]] — Persistence compatibility for SDL Pro metadata owned by the free core
+- [[revedaEditor\tests\test_sdl_persistence|test_sdl_persistence.py]] — Persistence compatibility for RevSDL metadata owned by the free core
 - [[revedaEditor\tests\test_selection_state|test_selection_state.py]]
 - [[revedaEditor\tests\test_spiceNetlist|test_spiceNetlist.py]]
 - [[revedaEditor\tests\test_symbol_pins|test_symbol_pins.py]]
