@@ -295,9 +295,11 @@ class schematicNet(QGraphicsItem):
                     and event.button() == Qt.MouseButton.LeftButton):
                 if self._probed:
                     scene.nameSceneNets()
-                    # Find which probe this net belongs to
+                    # Find which probe this net belongs to. Use identity:
+                    # netSet may hold wrappers whose C++ items were deleted,
+                    # and __eq__ touches C++ state on dead wrappers.
                     for probeName, netSet in scene._probedNets.items():
-                        if self in netSet:
+                        if any(item is self for item in netSet):
                             scene.removeProbe(probeName)
                             break
                 event.accept()

@@ -22,8 +22,6 @@ from PySide6.QtGui import (
 from revedaEditor.backend.dataDefinitions import layLayer
 from revedaEditor.gui.stippleEditor import stippleEditor
 
-# Set up logging for better error reporting
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 

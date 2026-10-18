@@ -7,6 +7,7 @@ the session ``qapp`` fixture plus a monkeypatched ``logger`` attribute —
 
 import json
 import logging
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -15,7 +16,10 @@ from PySide6.QtWidgets import QMainWindow
 
 from revedaEditor.backend import licenseManager, pluginApi
 from revedaEditor.backend.libraryModelView import BaseDesignLibrariesView
-from revedaEditor.backend.pluginsLoader import pluginsLoader
+from revedaEditor.backend.pluginsLoader import (
+    pluginsLoader,
+    unimportPluginPath,
+)
 from revedaEditor.gui.editorFactory import EditorFactory
 
 APP_VERSION = "1.0.0"
@@ -455,3 +459,170 @@ def test_registry_result_logs_updates(qapp, app_logger, tmp_path,
     assert loader.availableUpdates == {"ztold": ("1.0.0", "1.1.0")}
     assert emitted == [{"ztold": ("1.0.0", "1.1.0")}]
     assert "Plugin update available: ztold 1.0.0 -> 1.1.0" in caplog.text
+
+
+# ----------------------------------------------------------------------
+# Extension-module ABI tags
+# ----------------------------------------------------------------------
+
+_RUNNING_TAG = f"cpython-{sys.version_info.major}{sys.version_info.minor}"
+_OTHER_TAG = f"cpython-{sys.version_info.major}{sys.version_info.minor + 3}"
+
+
+@pytest.mark.parametrize(
+    "filename,expected",
+    [
+        ("sdl.cpython-314-x86_64-linux-gnu.so", (3, 14)),
+        ("x.cpython-312-x86_64-linux-gnu.so", (3, 12)),
+        ("mod.cp312-win_amd64.pyd", (3, 12)),
+        ("mod.cpython-38-x86_64-linux-gnu.so", (3, 8)),
+        ("mod.abi3.so", None),
+        ("mod.so", None),
+        ("mod.pyd", None),
+        ("plain.py", None),
+    ],
+)
+def test_extension_py_version(filename, expected):
+    assert pluginApi.extensionPyVersion(filename) == expected
+
+
+def test_mismatched_extensions_package_and_sibling(tmp_path):
+    pkg = _make_plugin(tmp_path, "ztbin", None)
+    (pkg / f"inner.{_OTHER_TAG}-x86_64-linux-gnu.so").write_bytes(b"\x7fELF")
+    (tmp_path / f"ztbin.{_OTHER_TAG}-x86_64-linux-gnu.so").write_bytes(b"\x7fELF")
+    (tmp_path / f"ztbin.{_RUNNING_TAG}-x86_64-linux-gnu.so").write_bytes(b"\x7fELF")
+    bad = pluginApi.mismatchedExtensions(tmp_path, "ztbin", True)
+    assert len(bad) == 2
+    for path, tag in bad:
+        assert _OTHER_TAG in path.name
+        assert tag == (sys.version_info.major, sys.version_info.minor + 3)
+
+
+def test_mismatched_extensions_module_plugin(tmp_path):
+    (tmp_path / f"ztmod.{_OTHER_TAG}-x86_64-linux-gnu.so").write_bytes(b"\x7fELF")
+    bad = pluginApi.mismatchedExtensions(tmp_path, "ztmod", False)
+    assert len(bad) == 1
+
+
+def test_mismatched_extensions_ignores_tagless(tmp_path):
+    (tmp_path / "ztmod.so").write_bytes(b"\x7fELF")
+    (tmp_path / "ztmod.abi3.so").write_bytes(b"\x7fELF")
+    assert pluginApi.mismatchedExtensions(tmp_path, "ztmod", False) == []
+
+
+def test_explain_import_error():
+    err = ImportError(
+        "/p/sdl.cpython-399-x86_64-linux-gnu.so: undefined symbol: _PyX")
+    hint = pluginApi.explainImportError(err)
+    assert hint and "3.99" in hint
+    hint = pluginApi.explainImportError(
+        ImportError("/p/m.abi3.so: undefined symbol: _PyFoo"))
+    assert hint and "incompatible" in hint
+    assert pluginApi.explainImportError(
+        ImportError("No module named 'dep'")) is None
+    assert pluginApi.explainImportError(RuntimeError("x")) is None
+
+
+def test_loader_skips_python_mismatched_plugin(qapp, app_logger, tmp_path,
+                                             monkeypatch):
+    monkeypatch.syspath_prepend(str(tmp_path))
+    _make_plugin(tmp_path, "ztbin", {"plugin_version": "1.0"})
+    (tmp_path / f"ztbin.{_OTHER_TAG}-x86_64-linux-gnu.so").write_bytes(
+        b"\x7fELF")
+    loader = pluginsLoader(tmp_path)
+    assert "ztbin" not in loader.plugins
+    issue = loader.incompatible["ztbin"][0]
+    assert f"Python {sys.version_info.major}.{sys.version_info.minor + 3}" \
+        in issue
+
+
+# ----------------------------------------------------------------------
+# Runtime plugin-path switching / sys.path hygiene
+# ----------------------------------------------------------------------
+
+
+def _clean_plugin_import_state(root: Path, *names: str) -> None:
+    """Drop sys.path entries under ``root`` and cached plugin modules."""
+    root_str = str(root)
+    sys.path[:] = [
+        entry for entry in sys.path if not str(entry).startswith(root_str)
+    ]
+    for name in names:
+        sys.modules.pop(name, None)
+
+
+def test_unimportPluginPath_detaches_directory(tmp_path):
+    """Removes sys.path entries (incl. package subdirs) and cached modules."""
+    pkg = tmp_path / "goneplug"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("MARKER = 'old'")
+    saved_path = list(sys.path)
+    sys.path.insert(0, str(tmp_path))
+    sys.path.insert(0, str(pkg))  # per-package dir a loader would append
+    try:
+        import goneplug
+        assert "goneplug" in sys.modules
+        unimportPluginPath(tmp_path)
+        assert str(tmp_path) not in sys.path
+        assert str(pkg) not in sys.path
+        assert "goneplug" not in sys.modules
+    finally:
+        sys.path[:] = saved_path
+        sys.modules.pop("goneplug", None)
+
+
+def test_loader_shadowed_package_resolves_own_directory(
+    qapp, app_logger, tmp_path, monkeypatch
+):
+    """A same-named package earlier on sys.path must not shadow the plugin.
+
+    Regression: switching the plugin path left the previous directory on
+    sys.path, so a same-named shim there was imported instead — and a shim
+    executing an incompatible binary extension crashes the interpreter.
+    """
+    stale = tmp_path / "stale"
+    target = tmp_path / "target"
+    (stale / "shadedplug").mkdir(parents=True)
+    (target / "shadedplug").mkdir(parents=True)
+    (stale / "shadedplug" / "__init__.py").write_text(
+        "raise RuntimeError('stale plugin must not be imported')"
+    )
+    (target / "shadedplug" / "__init__.py").write_text("MARKER = 'target'")
+    monkeypatch.syspath_prepend(str(stale))
+    loader = pluginsLoader(target)
+    try:
+        assert loader.plugins["shadedplug"].MARKER == "target"
+    finally:
+        _clean_plugin_import_state(target, "shadedplug")
+
+
+def test_loader_evicts_stale_cached_module(
+    qapp, app_logger, tmp_path, monkeypatch
+):
+    """A cached module imported from another directory must not shadow."""
+    foreign = tmp_path / "foreign"
+    target = tmp_path / "target"
+    (foreign / "evictplug").mkdir(parents=True)
+    (target / "evictplug").mkdir(parents=True)
+    (foreign / "evictplug" / "__init__.py").write_text("MARKER = 'foreign'")
+    (target / "evictplug" / "__init__.py").write_text("MARKER = 'target'")
+    monkeypatch.syspath_prepend(str(foreign))
+    import evictplug
+    assert evictplug.MARKER == "foreign"
+    loader = pluginsLoader(target)
+    try:
+        assert loader.plugins["evictplug"].MARKER == "target"
+    finally:
+        _clean_plugin_import_state(target, "evictplug")
+
+
+def test_loader_leaves_plugin_root_importable_once(qapp, app_logger, tmp_path):
+    """After a scan the plugin root stays on sys.path once, not promoted."""
+    _make_plugin(tmp_path, "rootrest", None)
+    loader = pluginsLoader(tmp_path)
+    try:
+        assert "rootrest" in loader.plugins
+        assert sys.path[0] != str(tmp_path)
+        assert sys.path.count(str(tmp_path)) == 1
+    finally:
+        _clean_plugin_import_state(tmp_path, "rootrest")

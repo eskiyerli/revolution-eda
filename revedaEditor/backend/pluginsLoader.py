@@ -31,6 +31,40 @@ from revedaEditor.backend.dataDefinitions import viewItemTuple
 from revedaEditor.backend.startThread import startThread
 
 
+def _moduleWithinDir(module, directory: Path) -> bool:
+    """True when ``module`` was imported from inside ``directory``."""
+    modFile = getattr(module, "__file__", None)
+    if modFile is not None and Path(modFile).is_relative_to(directory):
+        return True
+    modPaths = getattr(module, "__path__", None) or ()
+    return any(Path(p).is_relative_to(directory) for p in modPaths)
+
+
+def unimportPluginPath(pluginPathObj: Path) -> None:
+    """Detach a plugin directory from the import machinery.
+
+    Removes its ``sys.path`` entries (including per-package subdirectories
+    a loader may have appended) and evicts modules imported from it, so a
+    later scan cannot resolve stale or shadowed packages. Called when the
+    plugin path changes at runtime; without this a shim package left on
+    ``sys.path`` can execute an incompatible binary extension and crash
+    the interpreter.
+    """
+    root = str(pluginPathObj)
+    prefix = root + os.sep
+    sys.path[:] = [
+        entry for entry in sys.path
+        if entry != root and not entry.startswith(prefix)
+    ]
+    for modName, module in list(sys.modules.items()):
+        modFile = getattr(module, "__file__", "") or ""
+        modPaths = getattr(module, "__path__", None) or ()
+        if modFile.startswith(prefix) or any(
+            str(path).startswith(prefix) for path in modPaths
+        ):
+            del sys.modules[modName]
+
+
 class pluginsLoader(QObject):
     updatesChanged = Signal(dict)
     _UPDATE_SETTINGS_FILE = edf.APP_SETTINGS_FILE
@@ -54,36 +88,96 @@ class pluginsLoader(QObject):
         self._updateSettingsFile = self._UPDATE_SETTINGS_FILE
         self._appVersion = getattr(revedaEditor, "__version__", "0.0.0")
 
-        for _, name, ispkg in pkgutil.iter_modules([str(self.pluginsPathObj)]):
-            self._app.logger.info(f"Found plugin: {name}")
-            # Negotiate before importing: an incompatible plugin's code is
-            # never executed. Single-file plugins carry no config.json and
-            # load under the implicit plugin_api 1 contract.
-            config = (
-                pluginApi.readPluginConfig(self.pluginsPathObj / name)
-                if ispkg
-                else {}
-            )
-            issues = pluginApi.checkPluginConfig(config, self._appVersion)
-            if issues:
-                self.incompatible[name] = issues
-                self._app.logger.warning(
-                    f"Skipping incompatible plugin {name}: {'; '.join(issues)}"
-                )
-                continue
-            try:
-                if ispkg:
-                    plugin_dir = str(self.pluginsPathObj / name)
-                    if plugin_dir not in sys.path:
-                        sys.path.append(plugin_dir)
-                module = importlib.import_module(name)
-                self.plugins[f"{name}"] = module
-                self._registerPluginMetadata(name, config)
-            except Exception as e:  # Optional plugins must not block startup.
-                self._app.logger.exception(f"Failed to load plugin {name}: {e}")
+        self._importPlugins()
         self._app.logger.info(f"Loaded plugins: {list(self.plugins.keys())}")
         self._loadPluginMenus()
         self._loadCachedUpdates()
+
+    def _importPlugins(self):
+        """Scan ``pluginsPathObj`` and import compatible plugins.
+
+        The plugin root is promoted to the front of ``sys.path`` for the
+        duration of the scan so that same-named packages left over from a
+        previous plugin location cannot shadow — or hijack — the imports
+        (a stale shim can execute an incompatible binary extension and
+        crash the interpreter). Its original position is restored after.
+        """
+        plugins_root = str(self.pluginsPathObj)
+        prev_pos = (
+            sys.path.index(plugins_root) if plugins_root in sys.path else None
+        )
+        if prev_pos is not None:
+            sys.path.pop(prev_pos)
+        sys.path.insert(0, plugins_root)
+        try:
+            for _, name, ispkg in pkgutil.iter_modules([plugins_root]):
+                self._app.logger.info(f"Found plugin: {name}")
+                # Negotiate before importing: an incompatible plugin's code is
+                # never executed. Single-file plugins carry no config.json and
+                # load under the implicit plugin_api 1 contract.
+                config = (
+                    pluginApi.readPluginConfig(self.pluginsPathObj / name)
+                    if ispkg
+                    else {}
+                )
+                issues = pluginApi.checkPluginConfig(config, self._appVersion)
+                if issues:
+                    self.incompatible[name] = issues
+                    self._app.logger.warning(
+                        f"Skipping incompatible plugin {name}: {'; '.join(issues)}"
+                    )
+                    continue
+                # Binaries tagged for another CPython minor can never import —
+                # flag the version mismatch instead of a raw ImportError.
+                mismatch = pluginApi.mismatchedExtensions(
+                    self.pluginsPathObj, name, ispkg
+                )
+                if mismatch:
+                    extPath, tag = mismatch[0]
+                    issues = [
+                        f"{extPath.name} was built for Python "
+                        f"{tag[0]}.{tag[1]}, but this app runs Python "
+                        f"{sys.version_info.major}.{sys.version_info.minor}; "
+                        "install a plugin build matching the app"
+                    ]
+                    self.incompatible[name] = issues
+                    self._app.logger.warning(
+                        f"Skipping incompatible plugin {name}: {'; '.join(issues)}"
+                    )
+                    continue
+                try:
+                    if ispkg:
+                        plugin_dir = str(self.pluginsPathObj / name)
+                        if plugin_dir not in sys.path:
+                            sys.path.append(plugin_dir)
+                    cached = sys.modules.get(name)
+                    if cached is not None and not _moduleWithinDir(
+                        cached, self.pluginsPathObj
+                    ):
+                        # A stale same-named module imported from another
+                        # directory would shadow this plugin — evict it so the
+                        # import resolves inside pluginsPathObj.
+                        del sys.modules[name]
+                    module = importlib.import_module(name)
+                    self.plugins[f"{name}"] = module
+                    self._registerPluginMetadata(name, config)
+                except Exception as e:  # Optional plugins must not block startup.
+                    hint = pluginApi.explainImportError(e)
+                    if hint:
+                        self._app.logger.error(
+                            f"Failed to load plugin {name}: {hint} [{e}]"
+                        )
+                    else:
+                        self._app.logger.exception(
+                            f"Failed to load plugin {name}: {e}"
+                        )
+        finally:
+            while plugins_root in sys.path:
+                sys.path.remove(plugins_root)
+            if prev_pos is None:
+                sys.path.append(plugins_root)
+            else:
+                sys.path.insert(min(prev_pos, len(sys.path)), plugins_root)
 
     def _registerPluginMetadata(self, name: str, config: dict) -> None:
         """Record a successfully imported plugin's version/capabilities."""

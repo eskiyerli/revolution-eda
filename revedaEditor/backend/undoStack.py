@@ -10,7 +10,7 @@
 ##
 
 
-from typing import Callable, List, Tuple, Union
+from typing import Callable, List, Sequence, Tuple, Union
 
 from PySide6.QtCore import QPoint, QPointF
 from PySide6.QtGui import QUndoCommand, QUndoStack
@@ -53,8 +53,8 @@ class addDeleteShapesUndo(QUndoCommand):
     def __init__(
             self,
             scene: QGraphicsScene,
-            newShapes: List[QGraphicsItem],
-            oldShapes: List[QGraphicsItem],
+            newShapes: Sequence[QGraphicsItem],
+            oldShapes: Sequence[QGraphicsItem],
     ):
         super().__init__()
         self._scene = scene
@@ -162,6 +162,45 @@ class addDeleteShapeUndo(QUndoCommand):
     def redo(self):
         self._scene.addItem(self._addshape)
         self._scene.removeItem(self._deleteShape)
+
+
+class changeNetNameUndo(QUndoCommand):
+    """Undoable net naming — Net Name tool and find/replace renames.
+
+    ``redo`` assigns ``newName`` to each net (the ``name`` setter SETs the
+    label text, strength, and position). ``undo`` restores each net's
+    previous label text, strength, and label position — including clearing
+    a previously unnamed net, which the ``name`` setter's non-empty guard
+    cannot do.
+    """
+
+    def __init__(self, scene: QGraphicsScene, nets: list, newName: str):
+        super().__init__("Name Net")
+        self._scene = scene
+        self._nets = list(nets)
+        self._newName = newName
+        self._old = [
+            (net, net.name, net.nameStrength, net.nameItem.pos())
+            for net in self._nets
+        ]
+
+    def undo(self):
+        for net, name, strength, pos in self._old:
+            nameItem = net.nameItem
+            nameItem.name = name
+            nameItem.nameStrength = strength
+            nameItem.setPos(pos)
+        self._markConnectivityDirty()
+
+    def redo(self):
+        for net in self._nets:
+            net.name = self._newName
+        self._markConnectivityDirty()
+
+    def _markConnectivityDirty(self):
+        mark = getattr(self._scene, "markConnectivityDirty", None)
+        if mark is not None:
+            mark()
 
 
 class addDeleteNetUndo(QUndoCommand):

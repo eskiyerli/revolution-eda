@@ -187,12 +187,12 @@ class PDKRegistryWindow(QMainWindow):
                 try:
                     with open(config_path) as f:
                         config = json.load(f)
-                        local_version = config.get("pdk_version", "0.0.0")
+                        local_version = config.get("pdk_version") or config.get("version", "0.0.0")
                 except Exception:
                     local_version = "0.0.0"
             
             # Compare versions
-            remote_version = entry.get("pdk_version", "0.0.0")
+            remote_version = entry.get("pdk_version") or entry.get("version", "0.0.0")
             is_upgradeable = isInstalled and local_version and self._compare_versions(local_version, remote_version) < 0
             installedItem = QTableWidgetItem()
             installedItem.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
@@ -218,7 +218,7 @@ class PDKRegistryWindow(QMainWindow):
                 row, 3, QTableWidgetItem(entry.get("process", "N/A"))
             )
             self.tableWidget.setItem(
-                row, 4, QTableWidgetItem(entry.get("version", "0.0.0"))
+                row, 4, QTableWidgetItem(entry.get("version") or entry.get("pdk_version", "0.0.0"))
             )
             self.tableWidget.setItem(
                 row, 5, QTableWidgetItem(entry.get("license", "Unknown"))
@@ -292,15 +292,15 @@ class PDKRegistryWindow(QMainWindow):
         name = entry.get("name", "unknown")
         pdk_dir = self.pdksDir / re.sub(r"[^A-Za-z0-9_.-]", "_", name)
         config_path = pdk_dir / "config.json"
-        version_info = f"Remote Version: {entry.get('version', 'N/A')}"
+        version_info = f"Remote Version: {entry.get('version') or entry.get('pdk_version', 'N/A')}"
         
         if config_path.exists():
             try:
                 with open(config_path) as f:
                     config = json.load(f)
-                    local_version = config.get("version", "Unknown")
+                    local_version = config.get("version") or config.get("pdk_version", "Unknown")
                     version_info += f"\nInstalled Version: {local_version}"
-                    if self._compare_versions(local_version, entry.get('version', '0.0.0')) < 0:
+                    if self._compare_versions(local_version, entry.get('version') or entry.get('pdk_version', '0.0.0')) < 0:
                         version_info += " (Update available)"
             except Exception:
                 pass

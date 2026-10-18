@@ -32,7 +32,7 @@ def _finishAt(scene, point):
     scene._finishWire()
 
 
-def test_auto_route_l_and_single_undo_macro(scene):
+def test_auto_route_l_route_and_per_segment_undo(scene):
     scene.editModes.setMode("drawWire")
     scene._handleDrawNet(QPoint(0, 0))
     scene._handleDrawNet(QPoint(100, 50))
@@ -40,11 +40,30 @@ def test_auto_route_l_and_single_undo_macro(scene):
     assert (100, 0) in _endpoints(scene)  # horizontal-first corner
     _finishAt(scene, QPoint(100, 50))
     assert len(_nets(scene)) == 2
-    assert scene.undoStack.count() == 1
+    # Each committed leg is its own undo step, removed last-first.
+    assert scene.undoStack.count() == 2
+    scene.undoStack.undo()
+    assert _endpoints(scene) == [(0, 0), (100, 0)]
     scene.undoStack.undo()
     assert len(_nets(scene)) == 0
     scene.undoStack.redo()
+    scene.undoStack.redo()
     assert len(_nets(scene)) == 2
+
+
+def test_wire_chain_undoes_last_segment_first(scene):
+    scene.editModes.setMode("drawWire")
+    scene._wireAutoRoute = False
+    scene._handleDrawNet(QPoint(0, 900))
+    scene._handleDrawNet(QPoint(100, 900))
+    scene._handleDrawNet(QPoint(100, 1000))
+    _finishAt(scene, QPoint(100, 1000))
+    assert len(_nets(scene)) == 2
+    assert scene.undoStack.count() == 2
+    scene.undoStack.undo()
+    assert _endpoints(scene) == [(0, 900), (100, 900)]
+    scene.undoStack.undo()
+    assert len(_nets(scene)) == 0
 
 
 @pytest.mark.parametrize("start,end", [
@@ -164,8 +183,8 @@ def test_add_stretch_wires_l_route_orientation(scene):
 
 
 def test_uncommitted_wire_leaves_no_undo_entry(scene):
-    # Click once then finish at the same point: the draft is dropped and the
-    # empty "Draw Wire" macro must not linger on the undo stack.
+    # Click once then finish at the same point: the draft is dropped and no
+    # undo entry may be left on the stack.
     scene.editModes.setMode("drawWire")
     scene._handleDrawNet(QPoint(0, 0))
     _finishAt(scene, QPoint(0, 0))

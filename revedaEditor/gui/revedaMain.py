@@ -14,7 +14,7 @@ import shutil
 from datetime import date, timedelta
 from functools import partial
 from pathlib import Path
-from typing import Dict, List
+from typing import Any, Dict, List
 
 from dotenv import load_dotenv
 from PySide6.QtCore import (
@@ -25,11 +25,13 @@ from PySide6.QtCore import (
     QThread,
     QThreadPool,
     QTimer,
+    QUrl,
     Signal,
     Slot,
 )
 from PySide6.QtGui import (
     QAction,
+    QDesktopServices,
     QIcon,
 )
 from PySide6.QtWidgets import (
@@ -52,6 +54,8 @@ import revedaEditor.backend.bindkeys as bkeys
 import revedaEditor.backend.dataDefinitions as ddef
 import revedaEditor.backend.editFunctions as edf
 import revedaEditor.backend.libraryMethods as libm
+import revedaEditor.backend.updateCheck as updateCheck
+from revedaEditor.backend import pluginApi
 import revedaEditor.fileio.importEDIF as impedif
 import revedaEditor.fileio.importGDS as igds
 import revedaEditor.fileio.importLayp as imlyp
@@ -68,6 +72,21 @@ import revedaEditor.gui.revinit as revinit
 import revedaEditor.gui.stippleEditor as stip
 from revedaEditor.backend.projectManager import ProjectManager
 from revedaEditor.resources import resources  # noqa: F401
+
+
+class _resilientStreamHandler(logging.StreamHandler):
+    """StreamHandler that drops records when the console widget is torn down."""
+
+    def emit(self, record):
+        try:
+            super().emit(record)
+        except (OSError, RuntimeError, ValueError):
+            pass
+
+    def handleError(self, record):
+        # emit() routes stream write failures through handleError; suppress the
+        # "Logging error" traceback when the console stream can no longer write.
+        pass
 
 
 class EventLoopMonitor(QObject):
@@ -104,14 +123,42 @@ class pluginDiscoveryBanner(QFrame):
         self.dismissButton.clicked.connect(self.dismissed)
 
 
+class appUpdateBanner(QFrame):
+    downloadRequested = Signal()
+    dismissed = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("appUpdateBanner")
+        self.setFrameShape(QFrame.Shape.StyledPanel)
+        layout = QHBoxLayout(self)
+        self.text = QLabel()
+        self.text.setWordWrap(True)
+        self.downloadButton = QPushButton("Download")
+        self.dismissButton = QPushButton("Not now")
+        layout.addWidget(self.text, 1)
+        layout.addWidget(self.downloadButton)
+        layout.addWidget(self.dismissButton)
+        self.downloadButton.clicked.connect(self.downloadRequested)
+        self.dismissButton.clicked.connect(self.dismissed)
+
+    def setRelease(self, release: dict):
+        version = release.get("version", "")
+        notes = release.get("notes", "")
+        label = f"Revolution EDA {version} is available."
+        if notes and notes != version:
+            label += f" {notes}"
+        self.text.setText(label)
+
+
 class mainwContainer(QWidget):
     """
     Definition for the main app window layout.
     """
 
-    def __init__(self, parent):
+    def __init__(self, parent: "MainWindow"):
         super().__init__(parent=parent)
-        self.parent = parent
+        self.mainWindow = parent
         self.console = pcon.pythonConsole(globals())
         self.init_UI()
 
@@ -126,12 +173,19 @@ class mainwContainer(QWidget):
         # layout statements, using a grid layout
         gLayout = QVBoxLayout()
         gLayout.setSpacing(10)
+        self.appUpdateBanner = appUpdateBanner(self)
+        self.appUpdateBanner.setVisible(False)
+        self.appUpdateBanner.downloadRequested.connect(
+            self.mainWindow.downloadAppUpdate)
+        self.appUpdateBanner.dismissed.connect(
+            self.mainWindow.dismissAppUpdate)
+        gLayout.addWidget(self.appUpdateBanner)
         self.pluginBanner = pluginDiscoveryBanner(self)
         self.pluginBanner.setVisible(False)
         self.pluginBanner.browseRequested.connect(
-            self.parent.browsePluginsFromBanner)
+            self.mainWindow.browsePluginsFromBanner)
         self.pluginBanner.dismissed.connect(
-            self.parent.dismissPluginDiscovery)
+            self.mainWindow.dismissPluginDiscovery)
         gLayout.addWidget(self.pluginBanner)
         gLayout.addWidget(self.console)
         self.setLayout(gLayout)
@@ -202,6 +256,10 @@ class MainWindow(QMainWindow):
         self.bindkeyMap: dict = {}
         self._pluginRegistryWindow = None
         self._pluginDiscoverySettings = None
+        self._appUpdateChecker = None
+        self._latestAppRelease: dict = {}
+        self._manualUpdateCheck: bool = False
+        self._manualUpdateFound: bool = False
 
     def _initPaths(self) -> None:
         """Initialize application paths."""
@@ -236,7 +294,9 @@ class MainWindow(QMainWindow):
         """Initialize application components and resources."""
         try:
             # Core application components
-            self.app = QApplication.instance()
+            # The instance is a revedaApp (entrypoint subclass); duck-typed here
+            # since importing it would run entrypoint side effects.
+            self.app: Any = QApplication.instance()
             self.logger = logging.getLogger("reveda")
             self._setupThreadPool()
             # Project manager (handles per-project config loading)
@@ -262,6 +322,15 @@ class MainWindow(QMainWindow):
                     except Exception:
                         self.logger.exception('applyPluginMenus failed')
 
+            # Quiet background check for application updates: a banner links
+            # to the release page when GitHub has a newer tag than this build.
+            self._appUpdateChecker = updateCheck.appUpdateChecker(parent=self)
+            self._appUpdateChecker.updateFound.connect(self._onAppUpdateFound)
+            self._appUpdateChecker.checkFinished.connect(
+                self._onAppUpdateFinished)
+            self._appUpdateChecker.checkFailed.connect(self._onAppUpdateFailed)
+            self._appUpdateChecker.checkForUpdates()
+
             # Final initialization
             self.loadAppState()
             self._configurePluginDiscovery()
@@ -286,7 +355,7 @@ class MainWindow(QMainWindow):
 
     def _loggerDef(self):
 
-        c_handler = logging.StreamHandler(stream=self.centralW.console)
+        c_handler = _resilientStreamHandler(stream=self.centralW.console)
         c_handler.setLevel(logging.INFO)
         c_format = logging.Formatter("%(levelname)s - %(message)s")
         c_handler.setFormatter(c_format)
@@ -325,6 +394,7 @@ class MainWindow(QMainWindow):
         self.menuOptions.addAction(self.optionsAction)
         self.menuHelp.addAction(self.helpAction)
         self.menuHelp.addAction(self.licenseAction)
+        self.menuHelp.addAction(self.checkUpdatesAction)
         self.menuHelp.addAction(self.aboutAction)
         self.menuOptions.addAction(self.optionsAction)
 
@@ -374,6 +444,7 @@ class MainWindow(QMainWindow):
         self.aboutAction = QAction(self.aboutIcon, "About", self)
         licenseIcon = QIcon(":/icons/document-text.png")
         self.licenseAction = QAction(licenseIcon, "License...", self)
+        self.checkUpdatesAction = QAction("Check for Updates...", self)
 
     def _createTriggers(self):
         self.exitAction.triggered.connect(self.exitApp)
@@ -396,6 +467,7 @@ class MainWindow(QMainWindow):
         self.helpAction.triggered.connect(self.helpClick)
         self.aboutAction.triggered.connect(self.aboutClick)
         self.licenseAction.triggered.connect(self.licenseClick)
+        self.checkUpdatesAction.triggered.connect(self.checkUpdatesClick)
 
     def readLibDefFile(self, libPath: Path):
         libraryDict = dict()
@@ -620,6 +692,8 @@ class MainWindow(QMainWindow):
                 gdsImportLibDirObj, gdsImportLibItem = self.createNewLibrary(
                     gdsImportLibName
                 )
+            if gdsImportLibItem is None:
+                return
             try:
                 gdsImportObj = igds.gdsImporter(
                     self, gdsImportFileObj, gdsImportLibItem
@@ -671,20 +745,20 @@ class MainWindow(QMainWindow):
 
     def createNewLibrary(self, libraryName):
         warning = QMessageBox()
-        warning.setIcon(QMessageBox.Warning)
+        warning.setIcon(QMessageBox.Icon.Warning)
         warning.setWindowTitle("Warning")
         warning.setText("The library does not exist.")
         warning.setInformativeText(
             f"Do you want to create a new library: {libraryName}?\n"
             "Select the parentW directory of the library."
         )
-        warning.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
-        warning.setDefaultButton(QMessageBox.Yes)
+        warning.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        warning.setDefaultButton(QMessageBox.StandardButton.Yes)
         ret = warning.exec()
-        if ret == QMessageBox.Yes:
+        if ret == QMessageBox.StandardButton.Yes:
 
             libDialog = QFileDialog(self, "Select Parent Directory", str(self.runPath))
-            libDialog.setFileMode(QFileDialog.Directory)
+            libDialog.setFileMode(QFileDialog.FileMode.Directory)
             if libDialog.exec() == QDialog.DialogCode.Accepted:
                 selectedDir = libDialog.selectedFiles()[0]
                 libraryPath = Path(selectedDir).joinpath(libraryName)
@@ -750,6 +824,91 @@ class MainWindow(QMainWindow):
     def browsePluginsFromBanner(self) -> None:
         self.dismissPluginDiscovery()
         self.setupPluginsClick()
+
+    # ------------------------------------------------------------------
+    # Application update check (backend/updateCheck.py)
+    # ------------------------------------------------------------------
+
+    def checkUpdatesClick(self):
+        """Help -> Check for Updates: force a check and report the outcome."""
+        if self._appUpdateChecker is None:
+            self._appUpdateChecker = updateCheck.appUpdateChecker(parent=self)
+            self._appUpdateChecker.updateFound.connect(self._onAppUpdateFound)
+            self._appUpdateChecker.checkFinished.connect(
+                self._onAppUpdateFinished)
+            self._appUpdateChecker.checkFailed.connect(self._onAppUpdateFailed)
+        self._manualUpdateCheck = True
+        self._manualUpdateFound = False
+        if not self._appUpdateChecker.checkForUpdates(force=True):
+            self._manualUpdateCheck = False
+            QMessageBox.information(
+                self,
+                "Check for Updates",
+                "Update checks are disabled "
+                "(REVEDA_DISABLE_UPDATE_CHECK is set).",
+            )
+
+    def _onAppUpdateFound(self, release: dict) -> None:
+        self._latestAppRelease = release
+        if self._manualUpdateCheck:
+            self._manualUpdateFound = True
+            return
+        dismissed = edf.appSettings().value("appUpdateCheck/dismissed", "")
+        if dismissed and not pluginApi.versionNewer(
+            release.get("version", ""), dismissed
+        ):
+            return
+        self.centralW.appUpdateBanner.setRelease(release)
+        self.centralW.appUpdateBanner.setVisible(True)
+
+    def _onAppUpdateFinished(self, release: dict) -> None:
+        if not self._manualUpdateCheck:
+            return
+        self._manualUpdateCheck = False
+        if self._manualUpdateFound:
+            self._manualUpdateFound = False
+            version = self._latestAppRelease.get("version", "")
+            box = QMessageBox(self)
+            box.setWindowTitle("Update Available")
+            box.setIcon(QMessageBox.Information)
+            box.setText(
+                f"Revolution EDA {version} is available "
+                f"(running {revinit.__version__})."
+            )
+            download = box.addButton("Download", QMessageBox.AcceptRole)
+            box.addButton(QMessageBox.Close)
+            box.exec()
+            if box.clickedButton() is download:
+                self.downloadAppUpdate()
+        elif release:
+            QMessageBox.information(
+                self,
+                "Check for Updates",
+                f"Revolution EDA {revinit.__version__} is up to date.",
+            )
+
+    def _onAppUpdateFailed(self, message: str) -> None:
+        if self._manualUpdateCheck:
+            self._manualUpdateCheck = False
+            self._manualUpdateFound = False
+            QMessageBox.warning(
+                self,
+                "Check for Updates",
+                f"Could not check for updates:\n{message}",
+            )
+
+    def downloadAppUpdate(self) -> None:
+        url = self._latestAppRelease.get("url") or updateCheck.RELEASES_PAGE_URL
+        QDesktopServices.openUrl(QUrl(url))
+        self.dismissAppUpdate()
+
+    def dismissAppUpdate(self) -> None:
+        self.centralW.appUpdateBanner.hide()
+        version = self._latestAppRelease.get("version", "")
+        if version:
+            settings = edf.appSettings()
+            settings.setValue("appUpdateCheck/dismissed", version)
+            settings.sync()
 
     def setupPluginsClick(self):
         from revedaEditor.gui.pluginsRegistry import PluginRegistryWindow
@@ -957,10 +1116,10 @@ class MainWindow(QMainWindow):
             self,
             "Confirm Exit",
             "Are you sure you want to exit?",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
         )
-        if reply == QMessageBox.Yes:
+        if reply == QMessageBox.StandardButton.Yes:
             self.projectManager.save_current_state()
             if not self.threadPool.waitForDone(5000):
                 self.threadPool.clear()
@@ -978,8 +1137,8 @@ class MainWindow(QMainWindow):
 
     # def exitApp(self):
     #     reply = QMessageBox.question(self, "Confirm Exit", "Are you sure you want to exit?",
-    #         QMessageBox.Yes | QMessageBox.No, QMessageBox.No, )
-    #     if reply == QMessageBox.Yes:
+    #         QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No, )
+    #     if reply == QMessageBox.StandardButton.Yes:
     #         if not self.threadPool.waitForDone(5000):
     #             self.threadPool.clear()
     #         for item in self.app.topLevelWidgets():

@@ -192,31 +192,46 @@ class editorView(QGraphicsView):
         """
         Calculate the coordinates for drawing lines or points on a grid.
 
+        Spacing and phase are derived from the whole viewport rather than
+        the exposed rect, so partial background repaints (e.g. the region
+        invalidated under a net's bounding box while it is drawn) render
+        exactly the same grid a full-viewport repaint would.
+
         Returns:
             tuple: A tuple containing the x and y coordinates for drawing the lines or points.
         """
-        x_coords = range(self._left, self._right, self.majorGrid)
-        y_coords = range(self._top, self._bottom, self.majorGrid)
-
-        num_lines = len(x_coords)
-        if 120 <= num_lines < 240:
-            spacing = self.majorGrid * 2
-        elif 240 <= num_lines < 480:
-            spacing = self.majorGrid * 4
-        elif 480 <= num_lines < 960:
-            spacing = self.majorGrid * 8
-        elif 960 <= num_lines < 1920:
-            spacing = self.majorGrid * 16
-        elif num_lines >= 1920:
+        spacing = self._gridSpacing()
+        if spacing is None:
             return range(0, 0), range(0, 0)  # No grid when too dense
-        else:
-            spacing = self.majorGrid
 
-        if spacing != self.majorGrid:
-            x_coords = range(self._left, self._right, spacing)
-            y_coords = range(self._top, self._bottom, spacing)
-
+        # Anchor to scene-coordinate multiples of the effective spacing so
+        # the phase cannot drift between repaint regions.
+        x_coords = range(self._left - (self._left % spacing),
+                         self._right, spacing)
+        y_coords = range(self._top - (self._top % spacing),
+                         self._bottom, spacing)
         return x_coords, y_coords
+
+    def _gridSpacing(self):
+        """Effective grid step for the current zoom level, or None when the
+        grid would be too dense to draw.
+
+        Based on how many major-grid cells span the whole viewport, so the
+        result does not depend on which sub-rect is being repainted.
+        """
+        if self.majorGrid <= 0:
+            return None
+        visibleRect = self.mapToScene(
+            self.viewport().rect()).boundingRect()
+        num_lines = int(max(visibleRect.width(), visibleRect.height())
+                        // self.majorGrid)
+        if num_lines >= 1920:
+            return None
+        spacing = self.majorGrid
+        while num_lines >= 120:
+            spacing *= 2
+            num_lines //= 2
+        return spacing
 
     def keyPressEvent(self, event: QKeyEvent):
         self.keyPressedSignal.emit(event.key())

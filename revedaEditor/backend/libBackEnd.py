@@ -11,6 +11,7 @@
 import json
 # schematic editor backend
 import pathlib
+import re
 import shutil
 from pathlib import Path
 from typing import Union, Optional
@@ -43,7 +44,7 @@ class libraryItem(QStandardItem):
         self.setData(self.libraryName, Qt.ItemDataRole.UserRole + 3)
 
     def type(self):
-        return Qt.StandardItem.UserType
+        return QStandardItem.ItemType.UserType.value
 
     def __str__(self):
         return (
@@ -77,7 +78,7 @@ class cellItem(QStandardItem):
         self.setData(self.cellName, Qt.ItemDataRole.UserRole + 3)
 
     def type(self):
-        return QStandardItem.UserType + 1
+        return QStandardItem.ItemType.UserType.value + 1
 
     def __str__(self):
         return f"cell item path: {self.cellPath}, \ncell item name: {self.cellName}"
@@ -118,10 +119,15 @@ class cellItem(QStandardItem):
             self.appendRow(viewItem(viewPath))
 
 
+_VIEW_TYPE_HEADER_RE = re.compile(r'"viewType"\s*:\s*"([^"]+)"')
+
+
 class viewItem(QStandardItem):
     def __init__(self, viewPath: pathlib.Path) -> None:
         self.viewPath = viewPath
         self.viewName = viewPath.stem
+        self._viewType: Optional[str] = None
+        self._viewTypeResolved = False
         super().__init__(self.viewPath.stem)
         self.setEditable(False)
         self.setData("view", Qt.ItemDataRole.UserRole + 1)
@@ -130,7 +136,7 @@ class viewItem(QStandardItem):
         self.setData(self.viewName, Qt.ItemDataRole.UserRole + 3)
 
     def type(self):
-        return QStandardItem.UserType + 1
+        return QStandardItem.ItemType.UserType.value + 1
 
     def __str__(self):
         return f"view item path: {self.viewPath}, view item name: {self.viewName}"
@@ -148,33 +154,49 @@ class viewItem(QStandardItem):
 
     @property
     def viewType(self):
-        if "schematic" in self.viewPath.stem:
-            return "schematic"
-        elif "symbol" in self.viewPath.stem:
-            return "symbol"
-        elif "veriloga" in self.viewPath.stem:
-            return "veriloga"
-        elif "config" in self.viewPath.stem:
-            return "config"
-        elif "xyce" in self.viewPath.stem:
-            return "xyce"
-        elif "spice" in self.viewPath.stem:
-            return "spice"
-        elif "spectre" in self.viewPath.stem:
-            return "spectre"
-        elif "spef" in self.viewPath.stem:
-            return "spef"
-        elif "vacask" in self.viewPath.stem:
-            return "vacask"
-        elif "myhdl" in self.viewPath.stem:
-            return "myhdl"
-        elif "layout" in self.viewPath.stem:
-            return "layout"
-        elif "pcell" in self.viewPath.stem:
-            return "pcell"
-        elif "revbench" in self.viewPath.stem:
+        if not self._viewTypeResolved:
+            self._viewType = self._resolveViewType()
+            self._viewTypeResolved = True
+        return self._viewType
+
+    def _resolveViewType(self) -> Optional[str]:
+        # Prefer the viewType declared in the file header: view names such as
+        # "revbench_lin_vacask" legitimately contain other view keywords.
+        try:
+            with self.viewPath.open("r", encoding="utf-8") as f:
+                headerMatch = _VIEW_TYPE_HEADER_RE.search(f.read(4096))
+            if headerMatch:
+                return headerMatch.group(1)
+        except (OSError, UnicodeDecodeError):
+            pass
+        stem = self.viewPath.stem
+        if "revbench" in stem:
             return "revbench"
-        elif "dcspec" in self.viewPath.stem:
+        elif "schematic" in stem:
+            return "schematic"
+        elif "symbol" in stem:
+            return "symbol"
+        elif "veriloga" in stem:
+            return "veriloga"
+        elif "config" in stem:
+            return "config"
+        elif "xyce" in stem:
+            return "xyce"
+        elif "spice" in stem:
+            return "spice"
+        elif "spectre" in stem:
+            return "spectre"
+        elif "spef" in stem:
+            return "spef"
+        elif "vacask" in stem:
+            return "vacask"
+        elif "myhdl" in stem:
+            return "myhdl"
+        elif "layout" in stem:
+            return "layout"
+        elif "pcell" in stem:
+            return "pcell"
+        elif "dcspec" in stem:
             return "dcspec"
         else:
             return None
@@ -201,7 +223,10 @@ def textViewFilePath(cellItem: Union[cellItem, None],
     """
     if cellItem is None or viewItem is None:
         return None
-    suffix = TEXT_VIEW_SUFFIXES.get(viewItem.viewType)
+    viewType = viewItem.viewType
+    if viewType is None:
+        return None
+    suffix = TEXT_VIEW_SUFFIXES.get(viewType)
     if suffix is None:
         return None
     try:
@@ -269,7 +294,7 @@ def createNewCellItem(selectedLib, cellPath):
     return newCellItem
 
 
-def createCellView(parent: QWidget, viewName: str, cellItem: cellItem) -> viewItem:
+def createCellView(parent, viewName: str, cellItem: cellItem) -> Optional[viewItem]:
     """
     Create a cell view with the given view name and cell item.
     If the view name is empty, show a warning message.
@@ -342,7 +367,7 @@ def copyCell(parent, model, origCellItem: cellItem, copyName, selectedLibPath) -
         shutil.copytree(cellPath, copyPath)
 
         # Create new cell and add to library
-        libraryItem = model.findItems(selectedLibPath.name, flags=Qt.MatchExactly)[0]
+        libraryItem = model.findItems(selectedLibPath.name, flags=Qt.MatchFlag.MatchExactly)[0]
         newCellItem = cellItem(copyPath)
 
         # Add JSON files as view items

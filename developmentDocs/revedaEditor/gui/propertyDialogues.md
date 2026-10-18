@@ -28,12 +28,11 @@ Module in `revedaEditor\gui`.
 - `pinPropertyDialog(createPinDialog)`
 - `createSymbolLabelDialog(QDialog)`
 - `labelPropertyDialog(createSymbolLabelDialog)`
-- `symbolLabelsDialogue(QDialog)` — Dialog for changing symbol labels and attributes. Symbol properties... menu item.
+- `symbolLabelsDialogue(QDialog)` — Tabbed "Cellview Properties" dialog (Definition / Symbol Attributes / Parameters), one QTableWidget per tab. Symbol properties... menu item.
+  - `labelValues()`
+  - `symbolAttributes()`
   - `paramDefs()`
-  - `symbolAttrsMethod()`
-  - `updateAttributeDef()`
-  - `symbolLabelsMethod()`
-  - internals: `_populateParamsTable()`, `_setParamRow()`, `_paramCellChanged()`
+  - internals: `_buildLabelsTable()`, `_buildAttrsTable()`, `_attrCellChanged()`, `_buildParamsTable()`, `_populateParamsTable()`, `_setParamRow()`, `_paramCellChanged()`
 - `instanceProperties(QDialog)`
   - `initUI()`
 - `schematicCheckRulesDialogue(QDialog)` — Checkbox dialogue selecting which schematic check rules are applied.

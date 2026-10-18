@@ -1,12 +1,44 @@
 #!/usr/bin/env bash
 # Linux build script for Revolution EDA
 # Builds standalone binaries for Python 3.12, 3.13, and 3.14 using Poetry virtual environments
+# Runs inside the ubuntu_22_04 distrobox container (also used for AppImage packaging) so the
+# binaries link against an older, widely-compatible glibc.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_NAME="reveda"
 ENTRY_POINT="${SCRIPT_DIR}/reveda.py"
+CONTAINER_NAME="${REVEDA_BUILD_CONTAINER:-ubuntu_22_04}"
+
+# Re-execute inside the distrobox build container when invoked on the host (or another container)
+if [[ "${CONTAINER_ID:-}" != "${CONTAINER_NAME}" && "${REVEDA_IN_BUILD_CONTAINER:-}" != "1" ]]; then
+    if ! command -v distrobox >/dev/null 2>&1; then
+        echo "ERROR: distrobox not found; run this script inside '${CONTAINER_NAME}' manually." >&2
+        exit 1
+    fi
+    echo "Entering distrobox container '${CONTAINER_NAME}' for the build..."
+    ENTER_ENV=(REVEDA_IN_BUILD_CONTAINER=1)
+    if [[ -n "${POETRY_VENV_BASE:-}" ]]; then
+        ENTER_ENV+=("POETRY_VENV_BASE=${POETRY_VENV_BASE}")
+    fi
+    exec distrobox enter "${CONTAINER_NAME}" -- env "${ENTER_ENV[@]}" \
+        bash "${SCRIPT_DIR}/build_linux.sh" "$@"
+fi
+
+if ! command -v poetry >/dev/null 2>&1; then
+    echo "ERROR: 'poetry' not found inside '${CONTAINER_NAME}'. Install it in the container first." >&2
+    exit 1
+fi
+
+# Nuitka standalone mode needs a C toolchain and patchelf inside the container
+for TOOL in gcc g++ patchelf; do
+    if ! command -v "${TOOL}" >/dev/null 2>&1; then
+        echo "ERROR: '${TOOL}' not found inside '${CONTAINER_NAME}'." >&2
+        echo "Install it with: distrobox enter ${CONTAINER_NAME} -- sudo apt-get install -y build-essential patchelf ccache" >&2
+        exit 1
+    fi
+done
 
 # Change directory to the script/project root so relative Nuitka paths (like docs) are resolved correctly
 cd "${SCRIPT_DIR}"
@@ -38,7 +70,7 @@ assert_no_bundled_license() {
 }
 
 # for PY_VER in 3.12 3.13 3.14; do
-for PY_VER in 3.14; do
+for PY_VER in 3.13; do
     # ARTIFACT_NAME="linux-amd64-py${PY_VER}"
     ARTIFACT_NAME="linux-amd64"
     echo "========================================"
@@ -56,6 +88,12 @@ for PY_VER in 3.14; do
     PYTHON_PATH="${MATCHED_DIR}/bin/python"
     if [[ ! -x "${PYTHON_PATH}" ]]; then
         echo "WARNING: python not found in ${MATCHED_DIR} -- skipping"
+        continue
+    fi
+
+    # Host-built venvs link against the host glibc and cannot run inside the container
+    if ! "${PYTHON_PATH}" --version > /dev/null 2>&1; then
+        echo "WARNING: ${PYTHON_PATH} fails to run in '${CONTAINER_NAME}' (built for the host glibc?) -- skipping"
         continue
     fi
 

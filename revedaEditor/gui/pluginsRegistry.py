@@ -23,7 +23,7 @@ import zipfile
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QUrl, QThread, Signal
+from PySide6.QtCore import Qt, QUrl, QObject, QRunnable, QThreadPool, Signal, Slot
 from PySide6.QtGui import QBrush, QColor, QDesktopServices
 from PySide6.QtWidgets import (
     QApplication,
@@ -44,15 +44,40 @@ from revedaEditor.backend import licenseManager, pluginApi
 from revedaEditor.backend.fileUtils import safeExtractZip
 
 
-class DownloadThread(QThread):
+class _downloadSignals(QObject):
+    """Signals emitted by a running DownloadThread."""
     progress = Signal(int)
     finished = Signal(bytes)
     error = Signal(str)
-    
+
+
+class DownloadThread(QRunnable):
+    """Background download runnable executed on the global QThreadPool.
+
+    NOTE: intentionally a QRunnable rather than a QThread subclass — a
+    compiled ``QThread`` subclass segfaults in the Nuitka standalone build
+    when ``run()`` first executes on the new worker thread. The
+    QRunnable/QObject pattern (see backend/startThread.py) does not hit
+    that path. Keeps the QThread-like surface (``progress``/``finished``/
+    ``error`` signals plus ``start()``) for callers.
+    """
+
     def __init__(self, url: str):
         super().__init__()
         self.url = url
-    
+        self.signals = _downloadSignals()
+        # Keep Python ownership; QThreadPool must not auto-delete us.
+        self.setAutoDelete(False)
+        # QThread-compatible signal surface for callers.
+        self.progress = self.signals.progress
+        self.finished = self.signals.finished
+        self.error = self.signals.error
+
+    def start(self):
+        """Submit to the global thread pool (QThread.start() analogue)."""
+        QThreadPool.globalInstance().start(self)
+
+    @Slot()
     def run(self):
         try:
             with urllib.request.urlopen(self.url) as resp:
@@ -367,7 +392,24 @@ class PluginRegistryWindow(QMainWindow):
             # Hide progress bar after a delay
             QApplication.instance().processEvents()
         if installed:
-            self._showInstallSuccess(entry)
+            # Warn at install time when the package ships a binary built
+            # for a different Python minor — a restart would not help.
+            mismatch = pluginApi.mismatchedExtensions(
+                self.pluginsDir, entry.get("name", target_subdir.name), True
+            )
+            if mismatch:
+                extPath, tag = mismatch[0]
+                QMessageBox.warning(
+                    self,
+                    "Python Version Mismatch",
+                    f"{extPath.name} was built for Python "
+                    f"{tag[0]}.{tag[1]}, but this app runs Python "
+                    f"{sys.version_info.major}.{sys.version_info.minor}.\n\n"
+                    "The plugin will be skipped at startup. Install a "
+                    "build matching the app's Python version.",
+                )
+            else:
+                self._showInstallSuccess(entry)
             
     def _on_download_error(self, error_msg: str):
         """Handle download error."""

@@ -756,28 +756,22 @@ class symbolScene(editorScene):
             self.editorWindow, self.items(), attributeListCopy
         )
         if symbolPropDialogue.exec() == QDialog.DialogCode.Accepted:
-            for i, item in enumerate(symbolPropDialogue.labelItemList):
+            for item, (height, align, orient, use, ltype) in zip(
+                    symbolPropDialogue.labelItemList,
+                    symbolPropDialogue.labelValues()):
                 # label name is not changed.
-                item.labelHeight = int(
-                    float(symbolPropDialogue.labelHeightList[i].text())
-                )
-                item.labelAlign = symbolPropDialogue.labelAlignmentList[i].currentText()
-                item.labelOrient = symbolPropDialogue.labelOrientationList[
-                    i
-                ].currentText()
-                item.labelUse = symbolPropDialogue.labelUseList[i].currentText()
-                item.labelType = symbolPropDialogue.labelTypeList[i].currentText()
+                item.labelHeight = int(float(height))
+                item.labelAlign = align
+                item.labelOrient = orient
+                item.labelUse = use
+                item.labelType = ltype
                 item.update(item.boundingRect())
             # create an empty attribute list. If the dialog is OK, the local attribute list
             # will be copied to the symbol attribute list.
-            localAttributeList = []
-            for i, item in enumerate(symbolPropDialogue.attributeNameList):
-                if item.text().strip() != "":
-                    localAttributeList.append(
-                        symenc.symbolAttribute(
-                            item.text(), symbolPropDialogue.attributeDefList[i].text()
-                        )
-                    )
+            localAttributeList = [
+                symenc.symbolAttribute(name, definition)
+                for name, definition in symbolPropDialogue.symbolAttributes()
+            ]
             # Typed parameter definitions are authored in the Parameters
             # table and persisted as the reserved ``paramDefs`` attribute.
             paramDefs = symbolPropDialogue.paramDefs()

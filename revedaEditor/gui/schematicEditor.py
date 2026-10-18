@@ -909,9 +909,8 @@ class schematicEditor(edw.editorWindow):
     def undoClick(self, s):
         scene = self.centralW.scene
         if getattr(scene, '_wireChainActive', False):
-            # Mid-wire: the chain's commands live in an open macro not yet
-            # on the stack, so a plain undo would revert an older, unrelated
-            # action. Pop the last vertex (or drop the draft) instead.
+            # Mid-wire: undo steps back through the chain one committed
+            # segment at a time and resumes the draft at the freed vertex.
             if scene.editModes.drawWire or scene.editModes.drawBus:
                 scene.popWireVertex()
             else:

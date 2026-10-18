@@ -270,13 +270,12 @@ class edifImporter:
         libPath = self._libPath(libName)
         if libPath is None or not libPath.is_dir():
             return None
-        cellDir = libPath.joinpath(cellName)
-        if not cellDir.is_dir():
+        dirs = [entry for entry in libPath.iterdir() if entry.is_dir()]
+        cellDir = next((e for e in dirs if e.name == cellName), None)
+        if cellDir is None:
             folded = cellName.casefold()
             cellDir = next(
-                (entry for entry in libPath.iterdir()
-                 if entry.is_dir() and entry.name.casefold() == folded),
-                None)
+                (e for e in dirs if e.name.casefold() == folded), None)
             if cellDir is None:
                 return None
         viewJson = self._symbolViewJson(cellDir)

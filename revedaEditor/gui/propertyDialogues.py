@@ -32,6 +32,7 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QLineEdit,
     QPushButton,
@@ -87,6 +88,7 @@ def paramValueWidget(pdef: prm.ParamDef, value: str, parent=None):
         hints.append(f"max {pdef.maximum}")
     if pdef.parse and pdef.type in ("float", "int"):
         hints.append("SI suffixes allowed")
+    hints.append("{expr} deferred to simulator")
     widget.setToolTip(", ".join(hints))
     return (widget,
             lambda w=widget: w.text(),
@@ -606,46 +608,123 @@ class symbolLabelsDialogue(QDialog):
         self.parent = parent
         self.items = items
         self.attributes = attributes
-        self.setWindowTitle("Symbol Labels")
+        self.setWindowTitle("Cellview Properties")
         QBtn = QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
 
         self.buttonBox = QDialogButtonBox(QBtn)
+        tabWidget = QTabWidget(self)
+        tabWidget.addTab(self._buildLabelsTable(), "Definition")
+        tabWidget.addTab(self._buildAttrsTable(), "Symbol Attributes")
+        tabWidget.addTab(self._buildParamsTable(), "Parameters")
         self.mainLayout = QVBoxLayout()
-        self.symbolPropsLayout = QGridLayout()
-        self.symbolLabelsLayout = QGridLayout()
-        self.symbolAttrsMethod()
-        # Symbol Labels Layout
-        self.symbolLabelsMethod()
-        labelsGroup = QGroupBox("Symbol Labels")
-        labelsGroup.setLayout(self.symbolLabelsLayout)
-        self.mainLayout.addWidget(labelsGroup)
-        self.mainLayout.addStretch(1)
-        # self.mainLayout.addLayout(self.symbolLabelsLayout)
-        propsGroup = QGroupBox("Symbol Attributes")
-        propsGroup.setLayout(self.symbolPropsLayout)
-        self.mainLayout.addWidget(propsGroup)
-        self.mainLayout.addStretch(1)
-        # self.mainLayout.addLayout(self.symbolPropsLayout)
-        # Typed parameter definitions (CDF-lite) edit the reserved
-        # ``paramDefs`` attribute structurally rather than as raw JSON.
-        paramsGroup = QGroupBox("Parameters")
-        paramsLayout = QVBoxLayout()
+        self.mainLayout.addWidget(tabWidget)
+        self.mainLayout.addWidget(self.buttonBox)
+        self.setLayout(self.mainLayout)
+        self.buttonBox.accepted.connect(self.accept)
+        self.buttonBox.rejected.connect(self.reject)
+        self.resize(800, 480)
+
+    _PARAMDEF_COL = {"name": 1, "type": 2, "default": 3, "min": 4,
+                     "max": 5, "choices": 6, "display": 7, "parse": 8}
+
+    def _buildLabelsTable(self):
+        """Definition tab: one row per symbol label."""
+        self.labelsTable = QTableWidget(self)
+        self.labelsTable.setColumnCount(6)
+        self.labelsTable.setHorizontalHeaderLabels(
+            ["Definition", "Height", "Alignment", "Orientation", "Use",
+             "Type"])
+        self.labelItemList = [item for item in self.items
+                              if type(item) == lbl.symbolLabel]
+        self.labelsTable.setRowCount(len(self.labelItemList))
+        for row, item in enumerate(self.labelItemList):
+            definition = QTableWidgetItem(item.labelDefinition)
+            definition.setFlags(
+                definition.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            self.labelsTable.setItem(row, 0, definition)
+            self.labelsTable.setItem(
+                row, 1, QTableWidgetItem(str(item.labelHeight)))
+            for col, choices, current in (
+                    (2, lbl.symbolLabel.labelAlignments, item.labelAlign),
+                    (3, lbl.symbolLabel.labelOrients, item.labelOrient),
+                    (4, lbl.symbolLabel.labelUses, item.labelUse),
+                    (5, lbl.symbolLabel.labelTypes, item.labelType)):
+                combo = QComboBox()
+                combo.addItems(choices)
+                combo.setCurrentText(current)
+                self.labelsTable.setCellWidget(row, col, combo)
+        labelsHeader = self.labelsTable.horizontalHeader()
+        labelsHeader.setSectionResizeMode(
+            0, QHeaderView.ResizeMode.Stretch)
+        for col in range(1, 6):
+            labelsHeader.setSectionResizeMode(
+                col, QHeaderView.ResizeMode.ResizeToContents)
+        return self.labelsTable
+
+    def labelValues(self) -> list:
+        """Edited (height, align, orient, use, type) per ``labelItemList``."""
+        values = []
+        for row in range(len(self.labelItemList)):
+            heightItem = self.labelsTable.item(row, 1)
+            values.append(
+                (heightItem.text() if heightItem else "",
+                 self.labelsTable.cellWidget(row, 2).currentText(),
+                 self.labelsTable.cellWidget(row, 3).currentText(),
+                 self.labelsTable.cellWidget(row, 4).currentText(),
+                 self.labelsTable.cellWidget(row, 5).currentText()))
+        return values
+
+    def _buildAttrsTable(self):
+        """Symbol Attributes tab: free-form name/definition pairs.
+
+        The reserved ``paramDefs`` attribute is edited structurally on the
+        Parameters tab, not as raw JSON here."""
+        self.attrsTable = QTableWidget(self)
+        self.attrsTable.setColumnCount(2)
+        self.attrsTable.setHorizontalHeaderLabels(
+            ["Attribute Name", "Definition"])
+        attrs = [item for item in self.attributes
+                 if item.name != prm.PARAMDEFS_ATTR]
+        self.attrsTable.setRowCount(len(attrs) + 1)
+        for row, item in enumerate(attrs):
+            self.attrsTable.setItem(row, 0, QTableWidgetItem(item.name))
+            self.attrsTable.setItem(row, 1, QTableWidgetItem(item.definition))
+        self.attrsTable.cellChanged.connect(self._attrCellChanged)
+        attrsHeader = self.attrsTable.horizontalHeader()
+        attrsHeader.setSectionResizeMode(
+            0, QHeaderView.ResizeMode.ResizeToContents)
+        attrsHeader.setSectionResizeMode(
+            1, QHeaderView.ResizeMode.Stretch)
+        return self.attrsTable
+
+    def _attrCellChanged(self, row: int, column: int):
+        """Auto-append a row when a cell in the last row is filled."""
+        if row == self.attrsTable.rowCount() - 1:
+            item = self.attrsTable.item(row, column)
+            if item is not None and item.text().strip():
+                self.attrsTable.insertRow(row + 1)
+
+    def symbolAttributes(self) -> list:
+        """(name, definition) pairs from the attributes table."""
+        attrs = []
+        for row in range(self.attrsTable.rowCount()):
+            nameItem = self.attrsTable.item(row, 0)
+            name = nameItem.text().strip() if nameItem else ""
+            if name:
+                defItem = self.attrsTable.item(row, 1)
+                attrs.append((name, defItem.text() if defItem else ""))
+        return attrs
+
+    def _buildParamsTable(self):
+        """Parameters tab: typed parameter definitions (CDF-lite) editing
+        the reserved ``paramDefs`` attribute structurally."""
         self.paramsTable = QTableWidget(self)
         self.paramsTable.setColumnCount(9)
         self.paramsTable.setHorizontalHeaderLabels(
             ["Del.", "Name", "Type", "Default", "Min", "Max", "Choices",
              "Display", "Parse"])
-        paramsLayout.addWidget(self.paramsTable)
-        paramsGroup.setLayout(paramsLayout)
-        self.mainLayout.addWidget(paramsGroup)
         self._populateParamsTable()
-        self.mainLayout.addWidget(self.buttonBox)
-        self.setLayout(self.mainLayout)
-        self.buttonBox.accepted.connect(self.accept)
-        self.buttonBox.rejected.connect(self.reject)
-
-    _PARAMDEF_COL = {"name": 1, "type": 2, "default": 3, "min": 4,
-                     "max": 5, "choices": 6, "display": 7, "parse": 8}
+        return self.paramsTable
 
     def _populateParamsTable(self):
         """Fill the parameters table from the ``paramDefs`` attribute."""
@@ -716,95 +795,6 @@ class symbolLabelsDialogue(QDialog):
                 parse=(self.paramsTable.cellWidget(row, 8).isChecked()
                        if self.paramsTable.cellWidget(row, 8) else True)))
         return defs
-
-    def symbolAttrsMethod(self):
-        self.attributeNameList = []
-        # self.attributeTypeList = []
-        self.attributeDefList = []
-        # Symbol Properties
-        self.symbolPropsLayout.addWidget(QLabel("Attribute Name"), 0, 0)
-        # self.symbolPropsLayout.addWidget(QLabel("Type"), 0, 1)
-        self.symbolPropsLayout.addWidget(QLabel("Definition"), 0, 1)
-        i = 0
-        for item in self.attributes:
-            # paramDefs is authored structurally in the Parameters table,
-            # not as raw JSON in the attribute grid.
-            if item.name == prm.PARAMDEFS_ATTR:
-                continue
-            self.attributeNameList.append(edf.longLineEdit())
-            self.attributeNameList[i].setText(item.name)
-            self.symbolPropsLayout.addWidget(self.attributeNameList[i], i + 1, 0)
-            self.attributeDefList.append(edf.longLineEdit())
-            self.attributeDefList[i].setText(item.definition)
-            self.symbolPropsLayout.addWidget(self.attributeDefList[i], i + 1, 1)
-            i += 1
-
-        self.attributeNameList.append(edf.longLineEdit())
-        self.attributeDefList.append(edf.longLineEdit())
-        self.symbolPropsLayout.addWidget(self.attributeNameList[-1], i + 2, 0)
-        self.symbolPropsLayout.addWidget(self.attributeDefList[-1], i + 2, 1)
-        self.attributeNameList[-1].setPlaceholderText("Enter Attribute Name")
-        self.attributeDefList[-1].setToolTip("Enter Attribute Definition")
-        self.attributeDefList[-1].editingFinished.connect(
-            lambda: self.updateAttributeDef(i + 1)
-        )
-
-    def updateAttributeDef(self, i):
-        i += 1
-        self.attributeNameList.append(edf.longLineEdit())
-        self.attributeDefList.append(edf.longLineEdit())
-        self.symbolPropsLayout.addWidget(self.attributeNameList[-1], i + 1, 0)
-        self.symbolPropsLayout.addWidget(self.attributeDefList[-1], i + 1, 1)
-        self.attributeNameList[-1].setPlaceholderText("Enter Attribute Name")
-        self.attributeDefList[-1].setToolTip("Enter Attribute Definition")
-        self.attributeDefList[-1].editingFinished.connect(
-            lambda: self.updateAttributeDef(i)
-        )
-
-    def symbolLabelsMethod(self):
-        self.labelDefinitionList = []
-        self.labelHeightList = []
-        self.labelAlignmentList = []
-        self.labelOrientationList = []
-        self.labelUseList = []
-        self.labelTypeList = []
-        self.labelItemList = []
-        i = 0
-        self.symbolLabelsLayout.addWidget(edf.boldLabel("Definition"), 0, 0)
-        self.symbolLabelsLayout.addWidget(edf.boldLabel("Height"), 0, 1)
-        self.symbolLabelsLayout.addWidget(edf.boldLabel("Alignment"), 0, 2)
-        self.symbolLabelsLayout.addWidget(edf.boldLabel("Orientation"), 0, 3)
-        self.symbolLabelsLayout.addWidget(edf.boldLabel("Use"), 0, 4)
-        self.symbolLabelsLayout.addWidget(edf.boldLabel("Type"), 0, 5)
-        for item in self.items:
-            if type(item) == lbl.symbolLabel:
-                i += 1
-                self.labelItemList.append(item)
-                self.labelDefinitionList.append(edf.longLineEdit())
-                self.labelDefinitionList[-1].setText(item.labelDefinition)
-                self.labelDefinitionList[-1].setReadOnly(True)
-                self.symbolLabelsLayout.addWidget(self.labelDefinitionList[i - 1], i, 0)
-                self.labelHeightList.append(edf.shortLineEdit())
-                self.labelHeightList[-1].setText(str(item.labelHeight))
-                self.symbolLabelsLayout.addWidget(self.labelHeightList[i - 1], i, 1)
-                self.labelAlignmentList.append(QComboBox())
-                self.labelAlignmentList[-1].addItems(lbl.symbolLabel.labelAlignments)
-                self.labelAlignmentList[-1].setCurrentText(item.labelAlign)
-                self.symbolLabelsLayout.addWidget(self.labelAlignmentList[-1], i, 2)
-                self.labelOrientationList.append(QComboBox())
-                self.labelOrientationList[-1].addItems(lbl.symbolLabel.labelOrients)
-                self.labelOrientationList[-1].setCurrentText(item.labelOrient)
-                self.symbolLabelsLayout.addWidget(self.labelOrientationList[-1], i, 3)
-                self.labelUseList.append(QComboBox())
-                self.labelUseList[-1].addItems(lbl.symbolLabel.labelUses)
-                self.labelUseList[-1].setCurrentText(item.labelUse)
-                self.symbolLabelsLayout.addWidget(self.labelUseList[-1], i, 4)
-                self.labelTypeList.append(QComboBox())
-                self.labelTypeList[-1].addItems(lbl.symbolLabel.labelTypes)
-                self.labelTypeList[-1].setCurrentText(item.labelType)
-                self.symbolLabelsLayout.addWidget(self.labelTypeList[-1], i, 5)
-        if i == 0:  # no labels to edit
-            self.symbolLabelsLayout.addWidget(QLabel("No symbol labels found."), 1, 0)
 
 
 class instanceProperties(QDialog):

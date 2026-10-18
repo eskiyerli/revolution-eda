@@ -142,6 +142,26 @@ class TestValidation:
         pd = prm.ParamDef("r", "float", minimum="1")
         assert prm.validateValue(pd, "") == []
 
+    def test_deferred_expression(self):
+        """Whole-value ``{expr}`` is deferred to the simulator (parametric
+        sweeps), so it bypasses local type and range checks."""
+        pd = prm.ParamDef("dc", "float", minimum="0", maximum="5")
+        assert prm.validateValue(pd, "{dcin}") == []
+        assert prm.validateValue(pd, "{2*vdd}") == []
+        assert prm.validateValue(pd, "{}")  # empty braces are not deferred
+        assert prm.validateValue(prm.ParamDef("n", "int"), "{n}") == []
+        assert prm.validateValue(
+            prm.ParamDef("c", "choice", choices=("tt", "ff")),
+            "{corner}") == []
+        assert prm.validateValue(
+            prm.ParamDef("f", "boolean"), "{flag}") == []
+
+    def test_deferred_default(self):
+        defs, errors = prm.paramDefsFromJson(defsJson(
+            {"name": "dc", "type": "float", "default": "{dcin}"}))
+        assert errors == []
+        assert prm.effectiveValue(defs[0], "") == "{dcin}"
+
     def test_value_with_ppar(self):
         pd = prm.ParamDef("l", "float")
         assert prm.validateValue(pd, 'pPar("w")',
@@ -220,7 +240,7 @@ class TestInferType:
     @pytest.mark.parametrize("value,expected", [
         ("1k", "float"), ("2.5u", "float"), ("4", "int"),
         ("0", "int"), ("true", "boolean"), ("off", "boolean"),
-        ("name", "string"),
+        ("name", "string"), ("{dcin}", "float"),
     ])
     def test_infer(self, value, expected):
         assert prm.inferType(value) == expected
@@ -525,9 +545,9 @@ class TestDialogs:
                  symbolAttribute(prm.PARAMDEFS_ATTR, defsJson(
                      {"name": "r", "type": "float", "default": "1k"}))]
         dlg = symbolLabelsDialogue(None, [], attrs)
-        # Reserved attr excluded from the free-form attribute grid.
-        assert all(w.text() != prm.PARAMDEFS_ATTR
-                   for w in dlg.attributeNameList)
+        # Reserved attr excluded from the free-form attribute table.
+        assert all(name != prm.PARAMDEFS_ATTR
+                   for name, _ in dlg.symbolAttributes())
         defs = dlg.paramDefs()
         assert len(defs) == 1 and defs[0].name == "r" \
                and defs[0].default == "1k"

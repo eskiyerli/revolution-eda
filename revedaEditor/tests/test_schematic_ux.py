@@ -90,6 +90,63 @@ def test_replace_hit_renames_all_net_segments(qapp):
     assert n1.name == "new_net" and n2.name == "new_net"
 
 
+def test_name_net_undo_clears_and_redo_restores(qapp):
+    scene = makeSchematicScene()
+    net = _net(scene, QPoint(0, 0), QPoint(100, 0))
+    scene.netNameString = "vout"
+    scene._netNameAuto = None
+    scene._handleNameNet(QPoint(50, 0))
+    assert net.name == "vout"
+    assert net.nameStrength == snet.netNameStrengthEnum.SET
+    scene.undoStack.undo()
+    assert net.name == ""
+    assert net.nameStrength == snet.netNameStrengthEnum.NONAME
+    scene.undoStack.redo()
+    assert net.name == "vout"
+    assert net.nameStrength == snet.netNameStrengthEnum.SET
+
+
+def test_name_net_undo_restores_previous_name(qapp):
+    scene = makeSchematicScene()
+    net = _net(scene, QPoint(0, 0), QPoint(100, 0), "old")
+    scene.netNameString = "sig"
+    scene._netNameAuto = None
+    scene._handleNameNet(QPoint(50, 0))
+    assert net.name == "sig"
+    scene.undoStack.undo()
+    assert net.name == "old"
+    assert net.nameStrength == snet.netNameStrengthEnum.SET
+
+
+def test_name_net_bus_auto_increment_undo_steps(qapp):
+    """Each click of a 'base<i:j>' name is its own undo step."""
+    scene = makeSchematicScene()
+    net = _net(scene, QPoint(0, 0), QPoint(100, 0))
+    scene.netNameString = "d<0:1>"
+    scene._netNameAuto = None
+    scene._handleNameNet(QPoint(50, 0))
+    assert net.name == "d<0>"
+    scene._handleNameNet(QPoint(50, 0))
+    assert net.name == "d<1>"
+    scene.undoStack.undo()
+    assert net.name == "d<0>"
+    scene.undoStack.undo()
+    assert net.name == ""
+
+
+def test_replace_hit_net_rename_undo(qapp):
+    scene = makeSchematicScene()
+    n1 = _net(scene, QPoint(0, 0), QPoint(100, 0), "old")
+    n2 = _net(scene, QPoint(100, 0), QPoint(100, 100))
+    hit = next(iter(scene.findItems("net", "old")))
+    scene.replaceHitName(hit, "old", "new_net")
+    assert n1.name == "new_net" and n2.name == "new_net"
+    scene.undoStack.undo()
+    assert n1.name == "old" and n2.name == ""
+    scene.undoStack.redo()
+    assert n1.name == "new_net" and n2.name == "new_net"
+
+
 def test_replace_instance_and_pin(qapp):
     scene = makeSchematicScene()
     inst = _symbol(scene, "I1")

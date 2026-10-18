@@ -162,9 +162,14 @@ class BaseDesignLibrariesView(QWidget):
         """Handle text-based view opening (spice/veriloga)."""
         viewNameT = viewItemT.convertToViewNameTuple()
         filePath = None
+        relativePath = None
         with open(viewItemT.viewItem.viewPath) as f:
             try:
                 relativePath = json.load(f)[1].get("filePath")
+            except (IndexError, AttributeError, json.JSONDecodeError):
+                pass
+        if relativePath:
+            try:
                 cellPath = viewItemT.cellItem.cellPath.resolve()
                 candidate = (cellPath / relativePath).resolve()
                 candidate.relative_to(cellPath)
@@ -172,27 +177,12 @@ class BaseDesignLibrariesView(QWidget):
             except (TypeError, ValueError) as error:
                 self.logger.warning(
                     f"Ignoring text view path outside cell directory: {error}")
-            except IndexError:
-                if viewItemT.viewItem.viewType == 'spice':
-                    filePath = pathlib.Path(viewItemT.cellItem.cellPath.joinpath(
-                        viewNameT.cellName).with_suffix(".sp"))
-                    filePath.touch(exist_ok=True)
-                elif viewItemT.viewItem.viewType == 'veriloga':
-                    filePath = pathlib.Path(viewItemT.cellItem.cellPath.joinpath(
-                        viewNameT.cellName).with_suffix(".va"))
-                    filePath.touch(exist_ok=True)
-                elif viewItemT.viewItem.viewType == 'spectre':
-                    filePath = pathlib.Path(viewItemT.cellItem.cellPath.joinpath(
-                        viewNameT.cellName).with_suffix(".scs"))
-                    filePath.touch(exist_ok=True)
-                elif viewItemT.viewItem.viewType == 'vacask':
-                    filePath = pathlib.Path(viewItemT.cellItem.cellPath.joinpath(
-                        viewNameT.cellName).with_suffix(".vacask"))
-                    filePath.touch(exist_ok=True)
-                elif viewItemT.viewItem.viewType == 'spef':
-                    filePath = pathlib.Path(viewItemT.cellItem.cellPath.joinpath(
-                        viewNameT.cellName).with_suffix(".spef"))
-                    filePath.touch(exist_ok=True)
+        if filePath is None and not relativePath:
+            suffix = libb.TEXT_VIEW_SUFFIXES.get(viewItemT.viewItem.viewType)
+            if suffix is not None:
+                filePath = pathlib.Path(viewItemT.cellItem.cellPath.joinpath(
+                    viewNameT.cellName).with_suffix(suffix))
+                filePath.touch(exist_ok=True)
 
         if filePath:
             filePath = filePath.resolve()
@@ -203,7 +193,8 @@ class BaseDesignLibrariesView(QWidget):
             self.appMainW.openViews[viewNameT] = editor
             editor.show()
         else:
-            self.logger.warning(f"File {filePath} does not exist")
+            self.logger.warning(
+                f"Could not resolve a file for view {viewItemT.viewItem.viewPath.name}")
 
 
     def _handle_spice_view(self, viewItemT: ddef.viewItemTuple):

@@ -40,6 +40,11 @@ Each ``ParamDef`` declares:
     choices   allowed values for type "choice"
     display   False hides the parameter from the instance edit form
     parse     True: numeric values may use quantiphy suffixes ("1k", "2u")
+
+A value written as a whole ``{...}`` expression (e.g. ``{dcin}``,
+``{2*vdd}``) is *deferred*: netlisters emit it literally and the
+simulator evaluates it at run time (parametric sweeps such as
+``sweep variable="dcin"``), so local type and range checks cannot apply.
 """
 
 from __future__ import annotations
@@ -62,6 +67,15 @@ _PPAR_RE = re.compile(r'''pPar\(\s*["']([^"']+)["']\s*\)''')
 
 # Bound for iterative pPar resolution (pPar chains and cycles).
 _PPAR_MAX_DEPTH = 8
+
+# Whole-value ``{...}`` expressions are deferred to the simulator; their
+# type and range cannot be checked locally.
+_DEFERRED_RE = re.compile(r"^\{.+\}$", re.DOTALL)
+
+
+def _isDeferredExpression(text: str) -> bool:
+    """True for whole-value ``{...}`` simulator expressions."""
+    return bool(_DEFERRED_RE.match(text))
 
 
 @dataclass(frozen=True)
@@ -243,6 +257,8 @@ def _parseNumber(raw: str, pdef: ParamDef) -> Optional[float]:
 def _validateScalar(pdef: ParamDef, raw: str) -> list[str]:
     """Type checks for a single value (no range or pPar handling)."""
     text = str(raw).strip()
+    if _isDeferredExpression(text):
+        return []
     match pdef.type:
         case "float":
             if _parseNumber(text, pdef) is None:
@@ -395,6 +411,8 @@ def applyDefaults(paramDefs: list[ParamDef],
 def inferType(value: str) -> str:
     """Best-effort ParamDef type for an imported default value."""
     text = str(value).strip()
+    if _isDeferredExpression(text):
+        return "float"
     if text.lower() in ("true", "false", "yes", "no", "on", "off"):
         return "boolean"
     try:

@@ -13,6 +13,9 @@
 #    nuitka-project: --macos-create-app-bundle
 # nuitka-project: --standalone
 # nuitka-project: --deployment
+# Nuitka 4.3 can corrupt its compiled-frame freelist under PySide6 callback and
+# worker workloads on Python 3.13/3.14, causing delayed SIGSEGVs.
+# nuitka-project: --experimental=disable-freelist-all
 # nuitka-project: --windows-console-mode=disable
 # nuitka-project: --enable-plugin=pyside6
 # nuitka-project: --noinclude-qt-translations
@@ -73,8 +76,36 @@ class resilientFileHandler(logging.FileHandler):
     def emit(self, record):
         try:
             super().emit(record)
-        except OSError:
+        except (OSError, ValueError):
+            # OSError: transient I/O errors (e.g. OneDrive sync).
+            # ValueError: "I/O operation on closed file" during interpreter
+            # shutdown, when the stream is torn down before the final log
+            # records (e.g. closeEvent save timings) are emitted.
             pass
+
+    def handleError(self, record):
+        # StreamHandler.emit routes write failures through handleError, which
+        # would print a "Logging error" traceback for every record while the
+        # log file is unreachable.
+        pass
+
+
+class resilientStreamHandler(logging.StreamHandler):
+    """StreamHandler that silently drops records when the stream is gone.
+
+    Covers dead stderr/stdout (closed terminal, stale redirected file) and
+    torn-down widget streams during shutdown.
+    """
+
+    def emit(self, record):
+        try:
+            super().emit(record)
+        except (OSError, RuntimeError, ValueError):
+            pass
+
+    def handleError(self, record):
+        # See resilientFileHandler.handleError.
+        pass
 
 # Add ~/.reveda/ to sys.path early so that the compiled revedaLicense module
 # (installed there by the plugin registry) is discoverable before any module
@@ -172,7 +203,23 @@ from PySide6.QtWidgets import QApplication, QSplashScreen
 import revedaEditor.gui.pythonConsole as pcon
 import revedaEditor.gui.revedaMain as rvm
 from revedaEditor.backend.pdkLoader import pdkConfig
-from revedaEditor.backend.pluginsLoader import pluginsLoader
+from revedaEditor.backend.pluginsLoader import (
+    pluginsLoader,
+    unimportPluginPath,
+)
+
+# Preload modules that are only imported lazily at runtime. Under the
+# Nuitka standalone build on Python 3.14, first-time execution of a
+# compiled module after startup can segfault in Nuitka's compiled-object
+# freelist; importing them during startup turns the lazy sites into
+# harmless sys.modules cache hits. Interpreted runs are unaffected.
+import revedaEditor.gui.libraryRegistry  # noqa: F401  (used lazily in revedaMain)
+import revedaEditor.gui.lvsResults  # noqa: F401
+import revedaEditor.gui.pdkRegistry  # noqa: F401  (used lazily in revedaMain)
+import revedaEditor.gui.pluginsRegistry  # noqa: F401  (used lazily in revedaMain)
+import revedaEditor.gui.utilDialogues  # noqa: F401
+import revedaEditor.fileio.extractedSchematic  # noqa: F401
+import revedaEditor.fileio.importlyrdb  # noqa: F401  (used lazily in layoutDialogues)
 
 
 def _create_splash(project_name: str = "", base_path: Path | None = None) -> QSplashScreen:
@@ -508,6 +555,11 @@ class revedaApp(QApplication):
         """
         self.logger = logging.getLogger("reveda")
         self.logger.setLevel(logging.INFO)
+        # Never propagate to the root logger: stray handlers attached there
+        # (e.g. a basicConfig() call in an imported module) would write every
+        # record to stderr, which can be a dead fd when the app is detached
+        # from its launching terminal (OSError EIO on emit).
+        self.logger.propagate = False
 
         # Use the project directory for logs, falling back to a central
         # user directory if the project directory is not writable.
@@ -524,7 +576,7 @@ class revedaApp(QApplication):
         except OSError as e:
             # Fallback stream handler so the app never crashes due to logging permission errors
             print(f"Critical: Could not create log file at {log_file_path}: {e}", file=sys.stderr)
-            handler = logging.StreamHandler(sys.stderr)
+            handler = resilientStreamHandler(sys.stderr)
             handler.setLevel(logging.WARNING)
             self.logger.addHandler(handler)
             self.logger.warning("Logging to stderr due to file system error.")
@@ -640,13 +692,17 @@ class revedaApp(QApplication):
     def updatePluginsPath(self, newPath: str):
         """Update plugin path and persist to .env file"""
         if newPath:
-            self.revedaPluginPathObj = Path(newPath).resolve()
+            newPathObj = Path(newPath).resolve()
             # Update environment variable
-            os.environ["REVEDA_PLUGIN_PATH"] = str(self.revedaPluginPathObj)
+            os.environ["REVEDA_PLUGIN_PATH"] = str(newPathObj)
+            # Detach the previous plugin directory from sys.path/sys.modules
+            # first — packages left behind can shadow the new location's
+            # imports or execute an incompatible binary shim and crash.
+            oldPathObj = getattr(self, "revedaPluginPathObj", None)
+            if oldPathObj is not None and oldPathObj != newPathObj:
+                unimportPluginPath(oldPathObj)
+            self.revedaPluginPathObj = newPathObj
             self.pluginsObj = pluginsLoader(self.revedaPluginPathObj)
-            # Update sys.path
-            if str(self.revedaPluginPathObj) not in sys.path:
-                sys.path.append(str(self.revedaPluginPathObj))
             self.pluginsObj.checkForUpdates(force=True)
 
             # Persist to .env file

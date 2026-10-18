@@ -386,6 +386,7 @@ class symbolRectangle(symbolShape):
             eventPos = event.scenePos().toPoint()
             if self.scene():
                 eventPos = self.scene().snapToGrid(eventPos)
+            eventPos = self.mapFromScene(eventPos).toPoint()
             if self.stretchSide == symbolRectangle.sides[0]:
                 self.setCursor(Qt.SizeHorCursor)
                 self.rect.setLeft(eventPos.x())
@@ -782,6 +783,7 @@ class symbolArc(symbolShape):
             eventPos = event.scenePos().toPoint()
             if self.scene():
                 eventPos = self.scene().snapToGrid(eventPos)
+            eventPos = self.mapFromScene(eventPos).toPoint()
             rect = QRectF(self._rect)
             if self._stretchSide == symbolArc.sides[0]:
                 self.setCursor(Qt.CursorShape.SizeHorCursor)
@@ -957,6 +959,7 @@ class symbolLine(symbolShape):
             eventPos = event.scenePos().toPoint()
             if self.scene():
                 eventPos = self.scene().snapToGrid(eventPos)
+            eventPos = self.mapFromScene(eventPos).toPoint()
 
             if self._stretchSide == "start":
                 self._start = eventPos
@@ -1078,6 +1081,7 @@ class symbolPolygon(symbolShape):
             eventPos = event.scenePos().toPoint()
             if self.scene():
                 eventPos = self.scene().snapToGrid(eventPos)
+            eventPos = self.mapFromScene(eventPos).toPoint()
             self._points[self._selectedCornerIndex] = eventPos
             self.prepareGeometryChange()
             self._updatePolygon()

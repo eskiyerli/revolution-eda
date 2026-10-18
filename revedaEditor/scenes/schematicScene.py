@@ -14,7 +14,8 @@ import json
 import os
 import pathlib
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Set, Tuple, Union
+from typing import AbstractSet, Any, Dict, List, Optional, Set, Tuple, Union, \
+    cast
 
 import orjson
 import shiboken6
@@ -157,7 +158,7 @@ class schematicScene(editorScene):
         self._newNetNameObj = None
         self.textTuple = None
         self.netNameString = None
-        self.newInstanceTuple = None
+        self.newInstanceTuple: Optional[ddef.viewNameTuple] = None
         # Parameter values captured by the place-with-params form
         # (createInstClick); applied to each placed instance's labels.
         self.pendingInstanceParams = None
@@ -176,6 +177,7 @@ class schematicScene(editorScene):
         self._wireChainActive = False
         self._wireCommands = []
         self._wireResumePoints = []
+        self._wireCommandIndices = []
         self._wireWidth = 0
         self._suppressWireRestart = False
         # Bus ripper state: member name carried by the in-progress wire
@@ -185,7 +187,7 @@ class schematicScene(editorScene):
         self._busRipIndex = None
 
         # Stretch state
-        self._stretchBody = None
+        self._stretchBody: Optional[Dict[str, Any]] = None
         self._stretchOriginalNet = None
 
         # Net name auto-increment state
@@ -266,16 +268,21 @@ class schematicScene(editorScene):
         return self._snapPointRect
 
     @property
+    def schemModes(self) -> ddef.schematicModes:
+        """editModes narrowed to the schematic mode set for this scene."""
+        return cast(ddef.schematicModes, self.editModes)
+
+    @property
     def drawMode(self):
-        return any((self.editModes.drawPin, self.editModes.drawWire,
-                    self.editModes.drawText))
+        return any((self.schemModes.drawPin, self.schemModes.drawWire,
+                    self.schemModes.drawText))
 
     def mousePressEvent(self, event):
         super().mousePressEvent(event)
-        if event.button() == Qt.MouseButton.LeftButton and self.editModes.stretchItem:
+        if event.button() == Qt.MouseButton.LeftButton and self.schemModes.stretchItem:
             mousePos = event.scenePos().toPoint()
             self._initiateStretch(mousePos)
-        elif self.selectedItemGroup and self.editModes.moveItem:
+        elif self.selectedItemGroup and self.schemModes.moveItem:
             # Check if any movable items have connected nets that need stretching
             self._moveMacroActive = False
             hasStretchableItems = any(
@@ -302,32 +309,36 @@ class schematicScene(editorScene):
         """Handle mouse move event."""
         # super() already records mouseRawLoc and the snapped mouseMoveLoc.
         super().mouseMoveEvent(event)
+        rawLoc = self.mouseRawLoc
+        moveLoc = self.mouseMoveLoc
+        if rawLoc is None or moveLoc is None:
+            return
 
-        if self._newInstance and self.editModes.addInstance:
-            self._newInstance.setPos(self.mouseMoveLoc)
-        elif self._newPin and self.editModes.drawPin:
+        if self._newInstance and self.schemModes.addInstance:
+            self._newInstance.setPos(moveLoc)
+        elif self._newPin and self.schemModes.drawPin:
 
-            self._newPin.setPos(self.mouseMoveLoc - self._newPin.start)
-        elif self.editModes.drawWire or self.editModes.drawBus:
+            self._newPin.setPos(moveLoc - self._newPin.start)
+        elif self.schemModes.drawWire or self.schemModes.drawBus:
             if self._newNet is not None and self._newNet.scene() is None:
                 self._newNet = None  # removed while drawing (e.g. undo)
             # findSnapPoint already returns a grid-aligned point (a connection
             # point when one is nearby, otherwise the grid-snapped cursor).
             ignoredSet = {self._newNet} if self._newNet is not None else set()
-            netEndPoint = self.findSnapPoint(self.mouseRawLoc, ignoredSet)
+            netEndPoint = self.findSnapPoint(rawLoc, ignoredSet)
             snapRect = self._ensureSnapPointRect()
             if snapRect.scene() is None:
                 self.addItem(snapRect)
             snapRect.setVisible(True)
             snapRect.setPos(netEndPoint)
             self._updateWirePreview(netEndPoint)
-        elif self.newAlignLine and self.editModes.alignItems:
+        elif self.newAlignLine and self.schemModes.alignItems:
             self.newAlignLine.draftLine = QLineF(
-                self.newAlignLine.draftLine.p1(), self.mouseMoveLoc)
-        elif self._stretchNet and self.editModes.stretchItem:
+                self.newAlignLine.draftLine.p1(), moveLoc)
+        elif self._stretchNet and self.schemModes.stretchItem:
             # findSnapPoint returns a grid-aligned connection point when nearby,
             # otherwise the grid-snapped cursor.
-            netEndPoint = self.findSnapPoint(self.mouseRawLoc, set())
+            netEndPoint = self.findSnapPoint(rawLoc, set())
             snapRect = self._ensureSnapPointRect()
             snapRect.setVisible(True)
             snapRect.setPos(netEndPoint)
@@ -336,29 +347,30 @@ class schematicScene(editorScene):
             else:
                 self._stretchNet.draftLine = QLineF(
                     self._stretchNet.draftLine.p1(), netEndPoint)
-        elif self._newText and self.editModes.drawText:
+        elif self._newText and self.schemModes.drawText:
 
-            self._newText.start = self.mouseMoveLoc
-        elif self.editModes.moveItem and self.selectedItemGroup:
+            self._newText.start = moveLoc
+        elif self.schemModes.moveItem and self.selectedItemGroup:
             for item in self.selectedItemGroup.childItems():
                 if isinstance(item, (shp.schematicSymbol, shp.schematicPin,
                                      snet.schematicNet)):
                     item.updateSnapLines()
 
         # Hide snap indicator when not drawing or stretching a net
-        if not (self.editModes.drawWire or self.editModes.drawBus or
-                self.editModes.stretchItem):
+        if not (self.schemModes.drawWire or self.schemModes.drawBus or
+                self.schemModes.stretchItem):
             self._ensureSnapPointRect().setVisible(False)
             self._clearRouteGhost()
 
-        cursorPosition = self.snapToGrid(self.mouseMoveLoc - self.origin)
+        cursorPosition = self.snapToGrid(moveLoc - self.origin)
         self.statusLine.showMessage(
             f"Cursor Position: ({cursorPosition.x()}, {cursorPosition.y()})")
-        self.messageLine.setText(self.messages[self.editModes.mode()])
+        self.messageLine.setText(
+            self.messages.get(self.schemModes.mode() or "", ""))
 
     def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent):
         # Finalize snap lines for group net moves before the group is destroyed in super()
-        if self.editModes.moveItem and self.selectedItemGroup:
+        if self.schemModes.moveItem and self.selectedItemGroup:
             for item in self.selectedItemGroup.childItems():
                 if isinstance(item, snet.schematicNet):
                     item._finishSnapLines()
@@ -385,36 +397,36 @@ class schematicScene(editorScene):
         if button == Qt.MouseButton.LeftButton:
             # Abandoned wire draft left over by a mode switch: close it out.
             if self._newNet is not None and not (
-                    self.editModes.drawWire or self.editModes.drawBus):
+                    self.schemModes.drawWire or self.schemModes.drawBus):
                 self._finishWire()
             # Same for a stretch interrupted by a mode switch.
-            if self._stretchNet is not None and not self.editModes.stretchItem:
+            if self._stretchNet is not None and not self.schemModes.stretchItem:
                 self._cancelStretch()
             # modifiers = QGuiApplication.keyboardModifiers()
-            if self.editModes.addInstance:
+            if self.schemModes.addInstance:
                 self._handleAddInstance(mousePos)
-            elif self.editModes.drawPin:
+            elif self.schemModes.drawPin:
                 self._handleDrawPin(mousePos)
-            elif self.editModes.drawWire:
+            elif self.schemModes.drawWire:
                 self._handleDrawWire(self._releaseRawLoc(mousePos))
-            elif self.editModes.drawBus:
+            elif self.schemModes.drawBus:
                 self._handleDrawBus(self._releaseRawLoc(mousePos))
-            elif self.editModes.drawText:
+            elif self.schemModes.drawText:
                 self._handleDrawText(mousePos)
-            elif self.editModes.rotateItem:
+            elif self.schemModes.rotateItem:
                 self.rotateSelectedItems(mousePos)
-            elif self.editModes.stretchItem:
+            elif self.schemModes.stretchItem:
                 self._handleStretchItem()
-            elif self.editModes.nameNet:
+            elif self.schemModes.nameNet:
                 self._handleNameNet(mousePos)
-            elif self.editModes.alignItems:
+            elif self.schemModes.alignItems:
                 self._handleAlignItemLine(mousePos)
 
     def _cursorRawLoc(self) -> QPoint:
         """Raw cursor position for snap evaluation; falls back to the snapped
         location when no raw position has been recorded (e.g. in tests)."""
         raw = getattr(self, 'mouseRawLoc', None)
-        return raw if raw is not None else self.mouseMoveLoc
+        return raw if raw is not None else (self.mouseMoveLoc or QPoint(0, 0))
 
     def _releaseRawLoc(self, fallback: QPoint) -> QPoint:
         raw = getattr(self, 'mouseReleaseRawLoc', None)
@@ -422,11 +434,14 @@ class schematicScene(editorScene):
 
     def _handleAddInstance(self, eventLoc: QPoint) -> None:
         """Place one symbol or a schematic placement mosaic at ``eventLoc``."""
+        instanceTuple = self.newInstanceTuple
+        if instanceTuple is None:
+            return
         if self._newInstance:
             self._newInstance = None
         arraySpec = getattr(self, "pendingInstanceArraySpec", None)
         if arraySpec is None:
-            self._newInstance = self.drawInstance(self.newInstanceTuple, eventLoc)
+            self._newInstance = self.drawInstance(instanceTuple, eventLoc)
             if self._newInstance is None:
                 return
             self._applyPendingInstanceParams(self._newInstance)
@@ -439,7 +454,7 @@ class schematicScene(editorScene):
             for column in range(max(1, columns)):
                 position = self.snapToGrid(
                     eventLoc + QPoint(column * xPitch, row * yPitch))
-                instance = self.instSymbol(self.newInstanceTuple, position)
+                instance = self.instSymbol(instanceTuple, position)
                 if instance is None:
                     continue
                 self._applyPendingInstanceParams(instance)
@@ -508,12 +523,12 @@ class schematicScene(editorScene):
                     if label.labelType == nlpLabelType]
         bindings, missingCarriers = prm.paramDefLabelBindings(item.paramDefs,
                                                                nlpNames)
-        rows = []
+        rows: List[Dict[str, object]] = []
         claimed = set()
         for pdef, name in bindings:
             label = labels[name]
             claimed.add(name)
-            rows.append({"labelName": name, "value": str(label.labelValue),
+            rows.append({"labelName": name, "value": label.labelValue,
                          "paramDef": pdef, "isEditable": pdef.display,
                          "isVisible": pdef.display,
                          "isPyLabel": False, "section": "Parameters"})
@@ -523,7 +538,7 @@ class schematicScene(editorScene):
                     ((name, label) for name, label in labels.items()
                      if name not in claimed and label.labelType == labelType),
                     key=lambda entry: entry[1].labelName.lower()):
-                rows.append({"labelName": name, "value": str(label.labelValue),
+                rows.append({"labelName": name, "value": label.labelValue,
                              "paramDef": None, "isEditable": editable,
                              "isPyLabel": isPyLabel, "section": section})
 
@@ -543,7 +558,8 @@ class schematicScene(editorScene):
         # if self._newPin:
         #     self._newPin = None
         self._newPin = self.addPin(mouseReleaseLoc)
-        self._newPin.setSelected(True)
+        if self._newPin is not None:
+            self._newPin.setSelected(True)
 
     def _handleDrawWire(self, eventLoc: QPoint) -> None:
         """Handle draw wire logic with continuous mode."""
@@ -578,9 +594,9 @@ class schematicScene(editorScene):
             # First click of a new wire.
             self._routeHorizontalFirst = None
             self._wirePendingName = self._ripBusMemberName(snapPoint, width)
-            self._createNet(snapPoint, width)
-            if self._wirePendingName and self._newNet is not None:
-                self._newNet.name = self._wirePendingName
+            newNet = self._createNet(snapPoint, width)
+            if self._wirePendingName:
+                newNet.name = self._wirePendingName
             return
         endPoint = self._commitWirePoint(snapPoint, width)
         if endPoint is None:
@@ -594,16 +610,20 @@ class schematicScene(editorScene):
             return
         self._createNet(endPoint, width)
 
-    def _createNet(self, point: QPoint, width: int = 0) -> None:
-        self._newNet = snet.schematicNet(point, point, width,
-                                         self._wireDrawMode)
-        self.addItem(self._newNet)
+    def _createNet(self, point: QPoint,
+                   width: int = 0) -> snet.schematicNet:
+        newNet = snet.schematicNet(point, point, width, self._wireDrawMode)
+        self._newNet = newNet
+        self.addItem(newNet)
         if not self._wireChainActive:
-            # One undo step per wire chain; segments land as macro children.
-            self.undoStack.beginMacro("Draw Wire")
+            # Each committed segment is its own undo step on the stack;
+            # the parallel lists track this chain's commands so
+            # popWireVertex can step back through them while drawing.
             self._wireChainActive = True
             self._wireCommands = []
             self._wireResumePoints = []
+            self._wireCommandIndices = []
+        return newNet
 
     def _commitWirePoint(self, snapPoint: QPoint, width: int) -> Optional[
         QPoint]:
@@ -612,6 +632,8 @@ class schematicScene(editorScene):
         auto-route is active. Returns the committed end point, or None for a
         degenerate click."""
         draft = self._newNet
+        if draft is None:
+            return None
         startPoint = draft.sceneEndPoints[0]
         corner = self._routeCorner(startPoint, snapPoint)
         legs = ([(startPoint, corner), (corner, snapPoint)]
@@ -658,14 +680,18 @@ class schematicScene(editorScene):
                     netItem.name = self._wirePendingName
         if newNets or oldNets:
             command = us.addDeleteShapesUndo(self, newNets, oldNets)
+            command.setText("Draw Wire")
             self.undoStack.push(command)
             if self._wireChainActive:
                 self._wireCommands.append(command)
                 self._wireResumePoints.append(startPoint)
+                # Stack index just above the pushed command: popWireVertex
+                # uses it to tell whether the command still tops the stack.
+                self._wireCommandIndices.append(self.undoStack.index())
         self.invalidate(
             segment.mapToScene(segment.boundingRect()).boundingRect().adjusted(
                 -self.snapGrid, -self.snapGrid, self.snapGrid, self.snapGrid),
-            QGraphicsScene.BackgroundLayer)
+            QGraphicsScene.SceneLayer.BackgroundLayer)
         return endPoint
 
     def _splitPiercedNets(self, *points: QPoint) -> None:
@@ -726,7 +752,7 @@ class schematicScene(editorScene):
 
     def _finishWire(self) -> None:
         """Terminate the in-progress wire, committing a pending segment, and
-        close the wire undo macro. The draw mode stays active."""
+        close out the wire chain. The draw mode stays active."""
         if self._newNet is not None:
             draft = self._newNet
             if draft.scene() is not None:
@@ -738,18 +764,16 @@ class schematicScene(editorScene):
                     self._newNet = None
             else:
                 self._newNet = None
-        self._endWireMacro()
+        self._endWireChain()
         self._ensureSnapPointRect().setVisible(False)
 
-    def _endWireMacro(self) -> None:
-        if self._wireChainActive:
-            self.undoStack.endMacro()
-            if not self._wireCommands:
-                # Qt pushes even empty macros; drop the no-op entry.
-                self.undoStack.removeLastCommand()
-            self._wireChainActive = False
+    def _endWireChain(self) -> None:
+        """Reset wire-chain tracking once the chain has ended. Committed
+        segments stay on the undo stack as per-segment commands."""
+        self._wireChainActive = False
         self._wireCommands = []
         self._wireResumePoints = []
+        self._wireCommandIndices = []
         self._routeHorizontalFirst = None
         self._wirePendingName = ""
         self._clearRouteGhost()
@@ -757,13 +781,26 @@ class schematicScene(editorScene):
     def popWireVertex(self) -> None:
         """Remove the last committed wire segment and resume the chain from
         its start point (Backspace during wire drawing)."""
-        if not (self.editModes.drawWire or self.editModes.drawBus):
+        if not (self.schemModes.drawWire or self.schemModes.drawBus):
             return
         if self._wireCommands:
             command = self._wireCommands.pop()
             resumePoint = self._wireResumePoints.pop()
-            command.undo()
-            command.disable()
+            stackIndex = self._wireCommandIndices.pop()
+            if self.undoStack.index() == stackIndex:
+                # The segment still tops the stack: undo through the stack
+                # so the index and redo bookkeeping stay consistent.
+                self.undoStack.undo()
+            else:
+                try:
+                    # Stack traffic moved the command off the top (e.g. an
+                    # external undo): revert it surgically and keep it from
+                    # firing again as a stale stack entry.
+                    command.undo()
+                    command.disable()
+                except RuntimeError:
+                    # A truncating push already deleted the command object.
+                    pass
             if self._newNet is not None and self._newNet.scene() is not None:
                 self.removeItem(self._newNet)
             self._newNet = None
@@ -773,7 +810,7 @@ class schematicScene(editorScene):
             if self._newNet.scene() is not None:
                 self.removeItem(self._newNet)
             self._newNet = None
-            self._endWireMacro()
+            self._endWireChain()
 
     def cycleWireDrawMode(self) -> None:
         modes = list(snet.NetMode)
@@ -817,7 +854,7 @@ class schematicScene(editorScene):
                 self.newAlignLine.draftLine.p1(), eventLoc)
             self.alignLineFinished.emit(self.newAlignLine)
             # self.newAlignLine = None
-            self.editModes.setMode('selectItem')
+            self.schemModes.setMode('selectItem')
 
     def _handleDrawBus(self, eventLoc: QPoint):
         """Handle draw bus logic with continuous mode."""
@@ -904,9 +941,10 @@ class schematicScene(editorScene):
                     if snapLine.scene() is not None:
                         self.removeItem(snapLine)
             self._stretchBody = None
-        elif getattr(self, '_stretchOriginalNet', None) is not None:
-            if self._stretchOriginalNet.scene() is None:
-                self.addItem(self._stretchOriginalNet)
+        else:
+            origNet = getattr(self, '_stretchOriginalNet', None)
+            if origNet is not None and origNet.scene() is None:
+                self.addItem(origNet)
         if self._stretchNet is not None:
             if self._stretchNet.scene() is not None:
                 self.removeItem(self._stretchNet)
@@ -932,6 +970,9 @@ class schematicScene(editorScene):
             self._completeBodyStretch(releasePos)
             return
         try:
+            origNet = self._stretchOriginalNet
+            if origNet is None:
+                return
             # findSnapPoint returns a grid-aligned point: a nearby connection
             # point when available, otherwise the grid-snapped release position.
             snappedRelease = self.findSnapPoint(releasePos, set())
@@ -946,7 +987,7 @@ class schematicScene(editorScene):
                 # No geometric change: user released at the original clicked
                 # endpoint position. Restore the original net without pushing
                 # any undo command (nothing actually changed).
-                self.addItem(self._stretchOriginalNet)
+                self.addItem(origNet)
             else:
                 # Create manhattan segments from anchor to snapped release,
                 # preserving the original wire's direction.
@@ -964,7 +1005,7 @@ class schematicScene(editorScene):
                 if newSegments:
                     # Assign original net's name, nameStrength, and width
                     for segment in newSegments:
-                        segment.inherit(self._stretchOriginalNet)
+                        segment.inherit(origNet)
                         segment.width = self._stretchOriginalWidth
 
                     # Snapshot nets currently in the scene BEFORE adding new
@@ -994,7 +1035,7 @@ class schematicScene(editorScene):
 
                     # The undo must restore the original net AND any existing
                     # nets that were consumed during merge/split
-                    allOldNets = [self._stretchOriginalNet] + consumedNets
+                    allOldNets = [origNet] + consumedNets
 
                     # Push single undo command capturing the complete operation
                     undoCommand = us.addDeleteShapesUndo(
@@ -1028,13 +1069,13 @@ class schematicScene(editorScene):
             self.messageLine.setText(
                 "No net under cursor - click a net to name it")
             return
-        clickedNet.name = self._nextNetName()
-        clickedNet.nameStrength = snet.netNameStrengthEnum.SET
+        self.undoStack.push(
+            us.changeNetNameUndo(self, [clickedNet], self._nextNetName()))
         clickedNet.setSelected(False)
         if self.netNameString is None:
             # Bounded bus range exhausted: leave the mode.
             self._newNetNameObj = None
-            self.editModes.setMode("selectItem")
+            self.schemModes.setMode("selectItem")
 
     def _nextNetName(self) -> str:
         """Resolve the label to apply now and advance auto-increment state.
@@ -1044,12 +1085,14 @@ class schematicScene(editorScene):
         'base<i:j>'-> applies 'base<i>' ... 'base<j>', then exits the mode
         """
         if self._netNameAuto is None:
-            base, (start, end) = snet.schematicNet.parseArrayNotation(
-                self.netNameString)
+            nameStr = self.netNameString
+            if nameStr is None:
+                return ""
+            base, (start, end) = snet.schematicNet.parseArrayNotation(nameStr)
             if start == -1:
                 self._netNameAuto = {'repeat': True, 'base': base}
             else:
-                hasRange = ':' in self.netNameString.split('<', 1)[1]
+                hasRange = ':' in nameStr.split('<', 1)[1]
                 self._netNameAuto = {
                     'repeat': False, 'base': base, 'next': start,
                     'last': end if hasRange else None,
@@ -1068,10 +1111,12 @@ class schematicScene(editorScene):
         return applyName
 
     def updateStretchNet(self):
+        stretchNet = self._stretchNet
+        if stretchNet is None:
+            return
         # findSnapPoint returns a grid-aligned point already.
         netEndPoint = self.findSnapPoint(self._cursorRawLoc(), set())
-        self._stretchNet.draftLine = QLineF(self._stretchNet.draftLine.p1(),
-                                            netEndPoint)
+        stretchNet.draftLine = QLineF(stretchNet.draftLine.p1(), netEndPoint)
 
     @Slot(snet.schematicNet)
     def _handleWireFinished(self, newNet: snet.schematicNet):
@@ -1100,7 +1145,7 @@ class schematicScene(editorScene):
             if newNets or oldNets:
                 self.undoStack.push(
                     us.addDeleteShapesUndo(self, newNets, oldNets))
-            self.invalidate(newNetSceneRect, QGraphicsScene.BackgroundLayer)
+            self.invalidate(newNetSceneRect, QGraphicsScene.SceneLayer.BackgroundLayer)
 
     def _replaceNets(self, oldNets, newNets, name_source_net):
         """Replace a set of nets in the scene with a new set.
@@ -1302,7 +1347,8 @@ class schematicScene(editorScene):
         return closestPoint, True
 
     def findConnectPoints(self, sceneRect: QRect,
-                          ignoredSet: set[QGraphicsItem]) -> set[QPoint]:
+                          ignoredSet: AbstractSet[QGraphicsItem]
+                          ) -> set[QPoint]:
         """Collect grid-aligned connection points inside sceneRect: net
         endpoints, pins, and the projection of the probe point onto any wire
         body (for T-junction snaps). Points are snapped to grid so that
@@ -1339,7 +1385,7 @@ class schematicScene(editorScene):
         t = QPointF.dotProduct(QPointF(point - p1), direction) / lengthSq
         if t <= 0.0 or t >= 1.0:
             return None
-        projection = QPointF(p1) + t * direction
+        projection = QPointF(p1) + direction * t
         if (projection - QPointF(point)).manhattanLength() > \
                 self._snapRadius():
             return None
@@ -1372,7 +1418,7 @@ class schematicScene(editorScene):
         Find the two points with the maximum distance between them.
         """
         max_distance = 0
-        furthest_points = None
+        furthest_points: Optional[Tuple[QPoint, QPoint]] = None
 
         for i in range(len(points)):
             for j in range(i + 1, len(points)):
@@ -1381,7 +1427,9 @@ class schematicScene(editorScene):
                     max_distance = distance
                     furthest_points = (points[i], points[j])
 
-        return furthest_points[0], furthest_points[1]
+        if furthest_points is None:
+            raise ValueError("findFurthestPoints requires at least two points")
+        return furthest_points
 
     @Slot(str, str, str)
     def _handleSymbolChanged(self, libName: str, cellName: str, viewName: str):
@@ -1442,7 +1490,8 @@ class schematicScene(editorScene):
                 bestClickedEnd = clickedEnd
                 bestAnchorEnd = anchorEnd
 
-        if bestNet is not None:
+        if (bestNet is not None and bestClickedEnd is not None
+                and bestAnchorEnd is not None):
             return (bestNet, bestClickedEnd, bestAnchorEnd)
         return None
 
@@ -1551,13 +1600,16 @@ class schematicScene(editorScene):
         """Update the body-stretch preview: the grabbed segment slides
         perpendicular to its direction, attached guideLines follow."""
         body = self._stretchBody
+        stretchNet = self._stretchNet
+        if body is None or stretchNet is None:
+            return
         if body['horizontal']:
             delta = QPoint(0, netEndPoint.y() - body['p1'].y())
         else:
             delta = QPoint(netEndPoint.x() - body['p1'].x(), 0)
         body['delta'] = delta
-        self._stretchNet.draftLine = QLineF(body['p1'] + delta,
-                                            body['p2'] + delta)
+        stretchNet.draftLine = QLineF(body['p1'] + delta,
+                                      body['p2'] + delta)
         for index, snapLinesSet in body['snapLines'].items():
             movedEnd = (body['p1'] if index == 0 else body['p2']) + delta
             for snapLine in list(snapLinesSet):
@@ -1567,6 +1619,8 @@ class schematicScene(editorScene):
         """Commit a body stretch: recreate the slid segment and re-route the
         nets attached at both ends, captured as one undoable command."""
         body = self._stretchBody
+        if body is None:
+            return
         netItem = body['net']
         try:
             netEndPoint = self.findSnapPoint(releasePos, set())
@@ -1635,14 +1689,17 @@ class schematicScene(editorScene):
     def _handleStretchNet(self, netItem: snet.schematicNet, stretchEnd: str):
         match stretchEnd:
             case "p2":
-                self._stretchNet = snet.schematicNet(netItem.sceneEndPoints[0],
-                                                     netItem.sceneEndPoints[1])
+                stretchNet = snet.schematicNet(netItem.sceneEndPoints[0],
+                                              netItem.sceneEndPoints[1])
             case "p1":
-                self._stretchNet = snet.schematicNet(netItem.sceneEndPoints[1],
-                                                     netItem.sceneEndPoints[0])
-        self._stretchNet.stretch = True
-        self._stretchNet.mergeNetName(netItem)
-        addDeleteStretchNetCommand = us.addDeleteShapeUndo(self, self._stretchNet,
+                stretchNet = snet.schematicNet(netItem.sceneEndPoints[1],
+                                              netItem.sceneEndPoints[0])
+            case _:
+                return
+        self._stretchNet = stretchNet
+        stretchNet.stretch = True
+        stretchNet.mergeNetName(netItem)
+        addDeleteStretchNetCommand = us.addDeleteShapeUndo(self, stretchNet,
                                                            netItem)
         self.undoStack.push(addDeleteStretchNetCommand)
 
@@ -1764,7 +1821,7 @@ class schematicScene(editorScene):
             self.logger.error(f"Error in addStretchWires: {e}", exc_info=True)
             return []
 
-    def addPin(self, pos: QPoint) -> shp.schematicPin:
+    def addPin(self, pos: QPoint) -> Optional[shp.schematicPin]:
         try:
             pin = shp.schematicPin(pos, self.pinName, self.pinDir, self.pinType)
             pin.netExpr = self.pinExpr
@@ -1772,6 +1829,7 @@ class schematicScene(editorScene):
             return pin
         except Exception as e:
             self.logger.error(f"Pin add error: {e}")
+            return None
 
     def addNote(self, pos: QPoint, textTuple: Tuple) -> shp.text:
         """
@@ -1849,7 +1907,7 @@ class schematicScene(editorScene):
                           if item["type"] != "attr"]
             symbolInstance = shp.schematicSymbol(itemShapes, itemAttributes)
             cellItem = viewItem.parent()
-            libItem = cellItem.parent()
+            libItem = cellItem.parent() if cellItem is not None else None
             # Position the instance. Use setPos() rather than a raw ``pos``
             # attribute: assigning ``symbolInstance.pos = ...`` would shadow the
             # inherited QGraphicsItem.pos() method with a QPoint, breaking every
@@ -1865,8 +1923,9 @@ class schematicScene(editorScene):
                 counter, instanceName = 0, "I0"
             instanceProperties = {"counter": counter,
                                   "instanceName": instanceName,
-                                  "libraryName": libItem.libraryName,
-                                  "cellName": cellItem.cellName,
+                                  "libraryName": getattr(libItem, "libraryName",
+                                                         ""),
+                                  "cellName": getattr(cellItem, "cellName", ""),
                                   "viewName": viewItem.viewName, }
 
             for prop, value in instanceProperties.items():
@@ -1914,6 +1973,7 @@ class schematicScene(editorScene):
             IOError: If there are file operation errors
             JSONEncodeError: If there are JSON serialization errors
         """
+        tempFile: Optional[pathlib.Path] = None
         try:
             self.cleanUpNets()
             self.itemsRefSet = set(self.items())
@@ -1947,7 +2007,7 @@ class schematicScene(editorScene):
                         except Exception as json_err:
                             self.logger.error(
                                 f"Failed to serialize item: {str(json_err)}")
-                            return
+                            return False
 
                     # Persist check markers so the error browser survives
                     # save/load without re-running checks.
@@ -1979,11 +2039,11 @@ class schematicScene(editorScene):
             self.logger.error(
                 f"Unexpected error while saving schematic: {str(e)}")
             # Clean up temporary file if it exists
-            if tempFile.exists():
+            if tempFile is not None and tempFile.exists():
                 tempFile.unlink()
             return False
         finally:
-            if tempFile.exists():
+            if tempFile is not None and tempFile.exists():
                 tempFile.unlink()
 
     @staticmethod
@@ -2001,7 +2061,7 @@ class schematicScene(editorScene):
         else:
             return str(type(editorWindow))[index + 1: -2]
 
-    def loadDesign(self, filePathObj: pathlib.Path) -> None:
+    def loadDesign(self, filePathObj: pathlib.Path) -> bool:
         """
         Load schematic from a JSON file and initialize grid settings.
 
@@ -2024,7 +2084,7 @@ class schematicScene(editorScene):
                     self.logger.error(
                         f"Schematic compatibility error in "
                         f"'{filePathObj.name}': {err}")
-                return
+                return False
             if compatibility.migrated:
                 self.logger.info(
                     f"Migrated schematic schema {compatibility.sourceVersion} "
@@ -2054,13 +2114,13 @@ class schematicScene(editorScene):
 
         except (orjson.JSONDecodeError, FileNotFoundError) as e:
             self.logger.error(f"File error while loading schematic: {e}")
-            return
+            return False
         except KeyError as e:
             self.logger.error(f"Invalid schematic format - missing key: {e}")
-            return
+            return False
         except Exception as e:
             self.logger.error(f"Unexpected error loading schematic: {e}")
-            return
+            return False
 
     def _logRecordDiagnostics(self, itemData: List[Dict]) -> None:
         """Run conn.checkRecords on loaded records and log the findings.
@@ -2120,7 +2180,9 @@ class schematicScene(editorScene):
                     elif isinstance(item, shp.schematicPin):
                         self.setSchematicPinProperties(item)
                     elif isinstance(item, snet.netName):
-                        self.setNetProperties(item.parentItem())
+                        parentItem = item.parentItem()
+                        if isinstance(parentItem, snet.schematicNet):
+                            self.setNetProperties(parentItem)
         except Exception as e:
             self.logger.error(e)
 
@@ -2483,7 +2545,7 @@ class schematicScene(editorScene):
         # Clear local probes
         for netSet in self._probedNets.values():
             for netItem in netSet:
-                if netItem.scene():
+                if shiboken6.isValid(netItem) and netItem.scene():
                     netItem.unprobe()
         self._probedNets.clear()
         self._probeColorMap.clear()
@@ -2503,7 +2565,7 @@ class schematicScene(editorScene):
             if relatedScene._probedNets:
                 for netSet in relatedScene._probedNets.values():
                     for netItem in netSet:
-                        if netItem.scene():
+                        if shiboken6.isValid(netItem) and netItem.scene():
                             netItem.unprobe()
                 relatedScene._probedNets.clear()
                 relatedScene._probeColorMap.clear()
@@ -2557,7 +2619,7 @@ class schematicScene(editorScene):
         self._probeColorMap.pop(netName, None)
         if netSet:
             for netItem in netSet:
-                if netItem.scene():
+                if shiboken6.isValid(netItem) and netItem.scene():
                     netItem.unprobe()
         if propagate:
             self._propagateRemoveProbe(netName, {self.editorWindow})
@@ -2604,8 +2666,8 @@ class schematicScene(editorScene):
             childScene = w.centralW.scene
             if not hasattr(childScene, 'probeMode'):
                 continue
-            parentSymbol = w.parentObj
-            if not hasattr(parentSymbol, 'pins'):
+            parentSymbol = schematicScene._liveParentSymbol(w, self)
+            if parentSymbol is None or not hasattr(parentSymbol, 'pins'):
                 continue
             # Find which pins of the parent symbol are connected to the
             # probed net, using the connectivity engine's pin->group map.
@@ -2624,6 +2686,44 @@ class schematicScene(editorScene):
                     if snet.schematicNet._namesMatch(childProbeName, netName):
                         childScene._propagateProbeDown(
                             childProbeName, visited, colorIndex)
+
+    @staticmethod
+    def _liveParentSymbol(editor, parentScene):
+        """Return the live parent-instance item for a descended editor.
+
+        ``editor.parentObj`` is captured at descend time; a parent scene
+        reload destroys the scene items and leaves a deleted C++ wrapper
+        behind. When the stored reference is stale or detached, re-resolve
+        the instance by name (a stale wrapper's Python attrs survive, and
+        the child scene's ``hierarchyTrail`` ends with the instance name)
+        and refresh ``editor.parentObj``.
+        """
+        parentSymbol = getattr(editor, "parentObj", None)
+        try:
+            if (parentSymbol is not None
+                    and parentSymbol.scene() is parentScene):
+                return parentSymbol
+        except RuntimeError:
+            pass  # stale wrapper; re-resolve below
+        instName = ""
+        if parentSymbol is not None:
+            try:
+                instName = parentSymbol.instanceName or ""
+            except RuntimeError:
+                instName = ""
+        if not instName:
+            childScene = getattr(getattr(editor, "centralW", None), "scene",
+                                 None)
+            trail = getattr(childScene, "hierarchyTrail", "") or ""
+            instName = trail.rstrip(".").rsplit(".", 1)[-1]
+        if not instName:
+            return None
+        parentSymbol = next(
+            (item for item in parentScene.findSceneSymbolSet()
+             if item.instanceName == instName), None)
+        if parentSymbol is not None:
+            editor.parentObj = parentSymbol
+        return parentSymbol
 
     def _mapNetToParent(self, netName: str, editor) -> set:
         """Map a net name in the current scene to net name(s) in the parent
@@ -2650,8 +2750,8 @@ class schematicScene(editorScene):
         # Find nets connected to matching pins on the parent symbol
         parentScene = editor.parentEditor.centralW.scene
         parentScene.nameSceneNets()
-        parentSymbol = editor.parentObj
-        if not hasattr(parentSymbol, 'pins'):
+        parentSymbol = schematicScene._liveParentSymbol(editor, parentScene)
+        if parentSymbol is None or not hasattr(parentSymbol, 'pins'):
             return parentNetNames
 
         parentScene.genSymbolPinNetMap(parentSymbol)
@@ -3297,9 +3397,8 @@ class schematicScene(editorScene):
         elif hit.kind == "pin":
             hit.items[0].pinName = newName
         elif hit.kind == "net":
-            for netItem in hit.items:
-                netItem.name = newName
-            self.markConnectivityDirty()
+            self.undoStack.push(
+                us.changeNetNameUndo(self, list(hit.items), newName))
         return newName
 
     # ------------------------------------------------------------------

@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from pathlib import Path
 
 # Contract version implemented by this core. API 1 is the original
@@ -164,3 +165,85 @@ def updatesAvailable(
         if name and current and latest and versionNewer(latest, current):
             result[name] = (current, latest)
     return result
+
+
+# ----------------------------------------------------------------------
+# Extension-module ABI tags
+# ----------------------------------------------------------------------
+
+# Filename tags: "x.cpython-314-x86_64-linux-gnu.so", "x.cp312-win_amd64.pyd".
+# The digit run encodes major+minor ("314" -> 3.14, "38" -> 3.8).
+_EXT_TAG_RE = re.compile(r"\.cp(?:ython)?-?(\d)(\d+)[-.]")
+_EXT_SUFFIXES = {".so", ".pyd", ".dll"}
+
+
+def extensionPyVersion(filename) -> tuple[int, int] | None:
+    """``(major, minor)`` an extension filename's CPython tag encodes."""
+    match = _EXT_TAG_RE.search(str(filename))
+    if not match:
+        return None
+    return int(match.group(1)), int(match.group(2))
+
+
+def pluginExtensionFiles(pluginsDir, name: str, ispkg: bool) -> list[Path]:
+    """Binary extension files belonging to plugin ``name``.
+
+    Covers both layouts: modules inside ``pluginsDir/name/`` (compiled
+    package) and siblings like ``pluginsDir/name.cpython-314-...so``
+    (bare compiled module loaded by a shim ``__init__.py``).
+    """
+    root = Path(pluginsDir)
+    found: list[Path] = []
+    if ispkg:
+        pkgDir = root / name
+        if pkgDir.is_dir():
+            found.extend(
+                p for p in pkgDir.rglob("*")
+                if p.is_file() and p.suffix in _EXT_SUFFIXES
+            )
+    found.extend(
+        p for p in root.glob(f"{name}.*")
+        if p.is_file() and p.suffix in _EXT_SUFFIXES
+    )
+    return found
+
+
+def mismatchedExtensions(pluginsDir, name: str,
+                         ispkg: bool) -> list[tuple[Path, tuple[int, int]]]:
+    """Plugin extension files tagged for a different CPython minor."""
+    here = tuple(sys.version_info[:2])
+    bad = []
+    for path in pluginExtensionFiles(pluginsDir, name, ispkg):
+        tag = extensionPyVersion(path.name)
+        if tag is not None and tag != here:
+            bad.append((path, tag))
+    return bad
+
+
+def explainImportError(error: BaseException) -> str | None:
+    """Plain-language hint for a plugin ``ImportError``, else ``None``.
+
+    Identifies two common ABI failures: a filename tag for another CPython
+    minor (``cpython-314`` under 3.12) and unresolved ``_Py*``/Python symbols
+    or conflicting ``pythonXY.dll`` — both mean the binary was built for a
+    different Python than the app runs.
+    """
+    if not isinstance(error, ImportError):
+        return None
+    message = str(error)
+    running = f"{sys.version_info.major}.{sys.version_info.minor}"
+    tag = extensionPyVersion(message)
+    if tag and tag != tuple(sys.version_info[:2]):
+        return (
+            f"built for Python {tag[0]}.{tag[1]}, but this app runs "
+            f"Python {running} — install a plugin build matching the app"
+        )
+    if (
+        "undefined symbol" in message
+        or "conflicts with this version of Python" in message
+    ):
+        return (
+            "binary extension is incompatible with this app's Python "
+            f"{running} — install a plugin build matching the app"
+        )
+    return None
