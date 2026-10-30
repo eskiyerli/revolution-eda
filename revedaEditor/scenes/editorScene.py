@@ -816,12 +816,6 @@ class editorScene(QGraphicsScene):
         view.fitInView(newSceneRect, Qt.AspectRatioMode.KeepAspectRatio)
         view.viewport().update()
 
-    def zoomToRect(self, newSceneRect:QRect):
-        self.setSceneRect(newSceneRect)
-        view = self.views()[0]
-        view.fitInView(newSceneRect, Qt.AspectRatioMode.KeepAspectRatio)
-        view.viewport().update()    
-
     def moveSceneLeft(self) -> None:
         currentSceneRect = self.sceneRect()
         halfWidth = currentSceneRect.width() / 2.0
