@@ -1549,11 +1549,11 @@ class lvsResultsDialogue(QDialog):
     def onMismatchNetRowSelected(self, row_data: dict):
         """Highlight net or pin from net/pin mismatch table row."""
         lnet = row_data.get('layout_net_dict')
-        snet = row_data.get('schem_net_dict')
+        schemNet = row_data.get('schem_net_dict')
         if lnet:
             self.onNetDataSelected(lnet)
-        if snet:
-            self.onSchemNetSelected(snet)
+        if schemNet:
+            self.onSchemNetSelected(schemNet)
 
     def onMissingInLayoutRowSelected(self, row_data: dict):
         """Highlight missing schematic item in schematic editor."""
@@ -1953,9 +1953,9 @@ class lvsResultsDialogue(QDialog):
                     "item_dict": sdev,
                 })
 
-        for snet in schem_nets:
-            snid = str(snet.get("net_id", ""))
-            sname = snet.get("name") or snid
+        for schemNetRow in schem_nets:
+            snid = str(schemNetRow.get("net_id", ""))
+            sname = schemNetRow.get("name") or snid
             if snid not in matched_schem_nets and sname not in matched_schem_nets:
                 connected = []
                 for d in schem_devices:
@@ -1970,7 +1970,7 @@ class lvsResultsDialogue(QDialog):
                     "details": conn_str,
                     "terminals": "-",
                     "status": "❌ Missing in Layout",
-                    "item_dict": snet,
+                    "item_dict": schemNetRow,
                 })
 
         # 4. Missing in Schematic (Layout devices and nets not matched in schematic)
