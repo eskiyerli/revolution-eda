@@ -47,6 +47,7 @@ from PySide6.QtWidgets import (
     QGraphicsSceneMouseEvent,
 )
 
+import revedaEditor.backend.correspondence as corr
 import revedaEditor.backend.dataDefinitions as ddef
 import revedaEditor.backend.editFunctions as edf
 import revedaEditor.backend.libBackEnd as libb
@@ -3460,8 +3461,14 @@ class schematicScene(editorScene):
         items = []
         wanted = set(instances)
         if wanted:
-            items += [i for i in self.findSceneSymbolSet()
-                      if i.instanceName in wanted]
+            # Match by instanceName or, for views carrying an sdl stamp (the
+            # generated lvs_schematic), by the stamped layout instance name —
+            # symmetric with layoutScene.selectProbeTargets.
+            items += [
+                i for i in self.findSceneSymbolSet()
+                if i.instanceName in wanted
+                or corr.sdlInstName(getattr(i, "_sdlSource", None)) in wanted
+            ]
         if netEndpoints:
             result = self.connectivity
             wantedEP = set(netEndpoints)
@@ -3495,7 +3502,11 @@ class schematicScene(editorScene):
         instances, netEndpoints = [], []
         for item in self.selectedItems():
             if isinstance(item, shp.schematicSymbol):
-                instances.append(item.instanceName)
+                # The sdl stamp (lvs_schematic) names the counterpart layout
+                # instance; fall back to the symbol's own name otherwise.
+                instances.append(
+                    corr.sdlInstName(getattr(item, "_sdlSource", None))
+                    or item.instanceName)
             elif isinstance(item, snet.schematicNet):
                 netEndpoints.extend(self.netEndpointsForItem(item))
             elif isinstance(item, shp.schematicPin):

@@ -3301,6 +3301,37 @@ class layoutScene(editorScene):
         editor.raise_()
         editor.activateWindow()
 
+    def probeLvsSchematic(self) -> None:
+        """Cross-probe selected instances/nets into the LVS-extracted schematic.
+
+        The ``lvs_schematic`` view shares this layout's lib+cell, so it is
+        addressed directly (unlike :meth:`probeSchematic`, which resolves the
+        *original* source schematic from sdl stamps). The generator stamps each
+        lvs_schematic symbol's sdl.inst with this layout's instance name, so the
+        probe-target instance names (this scene's instanceName/sdlInstName)
+        resolve on the lvs_schematic side through the same sdl currency.
+        """
+        appMainW = getattr(self.editorWindow, "appMainW", None)
+        key = ddef.viewNameTuple(self.editorWindow.libName,
+                                 self.editorWindow.cellName, "lvs_schematic")
+        editor = (appMainW.openViews.get(key)
+                  if appMainW is not None else None)
+        if editor is None:
+            self.messageLine.setText(
+                f"Open {key.libraryName}/{key.cellName}/lvs_schematic to probe")
+            return
+        instances, netEndpoints = self.probeTargets()
+        if not instances and not netEndpoints:
+            self.messageLine.setText(
+                "Select instances or net members to probe")
+            return
+        count = editor.centralW.scene.selectProbeTargets(
+            instances=instances, netEndpoints=netEndpoints)
+        self.messageLine.setText(
+            f"Probed {count} item(s) in lvs_schematic")
+        editor.raise_()
+        editor.activateWindow()
+
     def selectProbeTargets(self, instances=(), netEndpoints=()) -> int:
         """Select instances by name; highlight groups for endpoints.
 
