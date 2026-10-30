@@ -236,5 +236,79 @@ def test_collect_subcircuit_content_ignored_symbol(qapp, libraryModel, tmp_path)
     assert content == ["*I0 is excluded via NetlistIgnore attribute\n"]
 
 
+# --- vacaskNetlist include dedup ---------------------------------------------
+
+def test_vacask_include_dedup_symlinked_cellpath(qapp, tmp_path):
+    """A cell's .vacask file is included once even under aliased roots.
+
+    Selecting the vacask view emits an include via textViewFilePath
+    (resolved path), while the symbol's VacaskIncludeFile attribute emits
+    one via cellItem.cellPath (unresolved). On systems where /home is a
+    symlink to /var/home the two spellings differed and the file was
+    included twice.
+    """
+    from revedaEditor.netlisting.vacaskNetlist import vacaskNetlist
+
+    realLib = tmp_path / "real" / "testLib"
+    cellDir = realLib / "xtal"
+    cellDir.mkdir(parents=True)
+    realLib.joinpath("reveda.lib").write_text("")
+    cellDir.joinpath("symbol.json").write_text("[]")
+    cellDir.joinpath("vacask.json").write_text(
+        '[{"cellView": "vacask"}, {"filePath": "xtal.vacask"}]')
+    cellDir.joinpath("xtal.vacask").write_text(
+        "subckt xtal (1 2)\nends xtal\n")
+
+    linkRoot = tmp_path / "link"
+    try:
+        linkRoot.symlink_to(tmp_path / "real", target_is_directory=True)
+    except (OSError, NotImplementedError) as error:
+        pytest.skip(f"Directory symlinks are unavailable: {error}")
+    model = lmview.designLibrariesModel({"testLib": linkRoot / "testLib"})
+
+    netlister = vacaskNetlist(
+        _fakeEditor(makeSchematicScene(), model), tmp_path / "out.cir")
+
+    symbolItem = _makeSymbol(
+        qapp, instName="I0",
+        symattrs={"VacaskNetlistLine": "@instName (%pinOrder) xtal",
+                  "VacaskIncludeFile": "xtal.vacask"})
+    symbolItem.libraryName = "testLib"
+    symbolItem.cellName = "xtal"
+    symbolItem.pinNetMap = {"plus": "a", "minus": "b"}
+
+    cellItem = netlister._getCellItem("testLib", "xtal")
+    netlister.createTextViewLine(symbolItem, cellItem, "vacask")
+    netlister._collectModelLoadInfo(symbolItem)
+
+    expected = (cellDir / "xtal.vacask").resolve().as_posix()
+    assert netlister.includeLines == {f'include "{expected}"'}
+
+
+def test_extracted_schematic_sheet_pins_keep_device_endpoints(qapp):
+    from revedaEditor.fileio.extractedSchematic import klayoutSchematicGenerator
+
+    scene = makeSchematicScene()
+    generator = object.__new__(klayoutSchematicGenerator)
+    generator._getScene = lambda: scene
+    netEndpoints = {}
+    endpoint = QPoint(100, 0)
+
+    def createPinNet(pinItem, symbolItem, device, endpoints):
+        endpoints.setdefault("VDD", []).append(endpoint)
+        return snet.schematicNet(QPoint(0, 0), endpoint)
+
+    generator.createPinNet = createPinNet
+    symbolItem = types.SimpleNamespace(pins={"plus": object()})
+    generator.addDeviceNets(symbolItem, {}, netEndpoints)
+
+    assert netEndpoints == {"VDD": [endpoint]}
+    generator.addExtractedPins({"pins": ["VDD"]}, netEndpoints)
+    pins = [item for item in scene.items() if isinstance(item, shp.schematicPin)]
+    assert len(pins) == 1
+    assert pins[0].pinName == "VDD"
+    assert pins[0].scenePos() == endpoint
+
+
 if __name__ == "__main__":
     pytest.main()

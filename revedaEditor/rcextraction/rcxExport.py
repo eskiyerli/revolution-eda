@@ -301,13 +301,15 @@ def buildRcxDatabase(
     )
 
     # Diagnostics: log the geometry, anchors, and resulting names so a real
-    # in-app run can be inspected in reveda.log.
+    # in-app run can be inspected in reveda.log. The per-group dump is DEBUG
+    # level — it is far too verbose for normal operation.
     if logger.isEnabledFor(logging.INFO):
         logger.info(
             f"RCX export {layoutCellName}: {len(groups)} geometric groups, "
             f"{len(devicePinAnchors or [])} device-pin anchors, "
             f"{len(portFootprints or [])} port pins"
         )
+    if logger.isEnabledFor(logging.DEBUG):
         for gi, group in enumerate(groups):
             fps = [s.footprint for s in group.shapes]
             if fps:
@@ -316,7 +318,7 @@ def buildRcxDatabase(
             else:
                 bx1 = by1 = bx2 = by2 = 0
             layers = sorted({s.layer_name for s in group.shapes})
-            logger.info(
+            logger.debug(
                 f"  group {gi} -> net '{naming[gi][0]}' "
                 f"layers={layers} nvias={len(group.vias)} "
                 f"bbox=[{bx1:.0f},{by1:.0f},{bx2:.0f},{by2:.0f}]"

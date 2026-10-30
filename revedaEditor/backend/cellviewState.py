@@ -218,6 +218,46 @@ def acquireLock(lockPath: Path) -> tuple[str, dict]:
     return "contended", readLockFile(lockPath) or existing or {}
 
 
+def inspectLock(viewPath: Path) -> tuple[str, dict | None]:
+    """Classify the lock state of a cellview JSON file.
+
+    Returns ``("none", None)`` when no lock exists, ``("mine", record)`` when
+    this process holds it, ``("locked", record)`` when another live process or
+    a remote host holds it, and ``("stale", record|None)`` when the lock is
+    dead or unreadable (``acquireLock`` would take it over).
+    """
+    lockPath = lockPathFor(viewPath)
+    if not lockPath.exists():
+        return "none", None
+    record = readLockFile(lockPath)
+    if not record:
+        return "stale", None
+    localHost = socket.gethostname().casefold()
+    ownerHost = str(record.get("host", "")).casefold()
+    ownerPid = record.get("pid")
+    if ownerHost == localHost and ownerPid == os.getpid():
+        return "mine", record
+    if ownerHost != localHost or (isinstance(ownerPid, int)
+                                  and processAlive(ownerPid)):
+        return "locked", record
+    return "stale", record
+
+
+def forceReleaseLock(lockPath: Path) -> bool:
+    """Remove a lock file regardless of ownership (user-confirmed break).
+
+    Unlike :func:`releaseLock`, this does not check that the lock is ours; it
+    exists so the library browser can break another session's lock after the
+    user confirms. Returns True when no lock file remains.
+    """
+    lockPath = Path(lockPath)
+    try:
+        lockPath.unlink(missing_ok=True)
+    except OSError as e:
+        logger.warning(f"Cannot remove cellview lock {lockPath}: {e}")
+    return not lockPath.exists()
+
+
 def releaseLock(lockPath: Path) -> None:
     """Remove the lock only when it is still owned by this process and host."""
     lockPath = Path(lockPath)

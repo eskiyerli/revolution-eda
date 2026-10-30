@@ -20,7 +20,9 @@ from PySide6.QtWidgets import (QAbstractItemView, QDialog, QMenu, QMessageBox, Q
                                QWidget, QApplication, QListView, QHBoxLayout, QVBoxLayout,
                                QLabel, )
 
+import revedaEditor.backend.cellviewState as cvstate
 import revedaEditor.backend.dataDefinitions as ddef
+import revedaEditor.backend.itemIcons as itemIcons
 import revedaEditor.backend.libBackEnd as libb
 import revedaEditor.backend.libraryMethods as libm
 import revedaEditor.gui.fileDialogues as fd
@@ -157,6 +159,42 @@ class BaseDesignLibrariesView(QWidget):
         To be implemented by child classes.
         """
         pass
+
+    def unlockView(self, selectedViewItem: libb.viewItem) -> None:
+        """Break another session's cellview lock after user confirmation."""
+        viewPath = selectedViewItem.data(Qt.ItemDataRole.UserRole + 2)
+        status, record = cvstate.inspectLock(viewPath)
+        if status == "none":
+            QMessageBox.information(self, "Unlock CellView",
+                                    f"{viewPath.name} is not locked.")
+            return
+        if status == "mine":
+            QMessageBox.information(
+                self, "Unlock CellView",
+                f"{viewPath.name} is locked by this session. "
+                "Close the open editor to release the lock.")
+            return
+        lockKind = "stale lock" if status == "stale" else "lock"
+        button = QMessageBox.question(
+            self, "Unlock CellView",
+            f"Remove the {lockKind} on {viewPath.name}?\n\n"
+            f"{itemIcons.lockStatusText(status, record)}.\n"
+            "If another session still has this cellview open, "
+            "it may overwrite your changes.")
+        if button != QMessageBox.Yes:
+            return
+        if cvstate.forceReleaseLock(cvstate.lockPathFor(viewPath)):
+            selectedViewItem.refreshDecoration()
+            cellItem = selectedViewItem.parent()
+            viewsListView = getattr(self, "viewsListView", None)
+            if viewsListView is not None and viewsListView.model() is not None \
+                    and cellItem is not None:
+                viewsListView.setModel(self.createViewsListModel(cellItem))
+            self.logger.info(f"Removed {lockKind} on {viewPath.name}")
+        else:
+            QMessageBox.warning(self, "Unlock CellView",
+                                f"Could not remove the lock file for "
+                                f"{viewPath.name}.")
 
     def _handle_text_view(self, viewItemT: ddef.viewItemTuple, editor_class, finished_callback):
         """Handle text-based view opening (spice/veriloga)."""
@@ -595,6 +633,13 @@ class designLibrariesColumnView(BaseDesignLibrariesView):
             menu.addAction(QAction("Delete View...", self,
                                    triggered=lambda: self.deleteView(
                                        selectedCloneViewItem), ))
+            lockStatus, _ = cvstate.inspectLock(
+                selectedViewItem.data(Qt.ItemDataRole.UserRole + 2))
+            unlockAction = QAction(
+                "Unlock CellView...", self,
+                triggered=lambda: self.unlockView(selectedViewItem))
+            unlockAction.setEnabled(lockStatus in ("locked", "stale"))
+            menu.addAction(unlockAction)
             menu.addAction(QAction("File Information...", self,
                                    triggered=lambda: self.showClonedItemFileInfo(
                                        selectedCloneViewItem), ))
@@ -1042,6 +1087,13 @@ class designLibrariesTreeView(BaseDesignLibrariesView):
                                        triggered=lambda: self.renameView(selectedItem), ))
                 menu.addAction(QAction("Delete View...", self.treeView,
                                        triggered=lambda: self.deleteView(selectedItem), ))
+                lockStatus, _ = cvstate.inspectLock(
+                    selectedItem.data(Qt.ItemDataRole.UserRole + 2))
+                unlockAction = QAction(
+                    "Unlock CellView...", self.treeView,
+                    triggered=lambda: self.unlockView(selectedItem))
+                unlockAction.setEnabled(lockStatus in ("locked", "stale"))
+                menu.addAction(unlockAction)
             menu.addAction(QAction("File Information...", self.treeView,
                                    triggered=lambda: self.showFileInfo(selectedItem), ))
             # Use global position for context menu

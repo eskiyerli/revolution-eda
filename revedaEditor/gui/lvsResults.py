@@ -56,6 +56,14 @@ class lvsResultsDialogue(QDialog):
                  source_netlist_path=None, extracted_netlist_path=None):
         super().__init__(parent)
         self.layoutEditor = parent
+        # A child dialog always floats above its parent, which would pin this
+        # window over the layout editor forever. Reparent to the application
+        # main window so both windows can be raised freely, and close the
+        # dialog if the editor it reports on is destroyed first.
+        mainWindow = getattr(parent, "appMainW", None)
+        if mainWindow is not None and mainWindow is not parent:
+            self.setParent(mainWindow, self.windowFlags() | Qt.WindowType.Window)
+        parent.destroyed.connect(self._on_editor_destroyed)
         self.parser = parser
         self.schematicEditor = schematic_editor
         self._lvs_transform: tuple[float, float, int] | None = None
@@ -125,6 +133,10 @@ class lvsResultsDialogue(QDialog):
         self.setWindowTitle("Revolution EDA LVS Results Dialogue")
         self.setMinimumSize(700, 600)
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.Window)
+        # Modeless: the layout/schematic editors must stay interactive while
+        # the results are reviewed (highlighting, fixing, re-running LVS).
+        self.setWindowModality(Qt.WindowModality.NonModal)
+        self.setModal(False)
         layout = QVBoxLayout()
 
         self.tabWidget = QTabWidget()
@@ -146,6 +158,11 @@ class lvsResultsDialogue(QDialog):
         layout.addWidget(self.buttonBox)
 
         self.setLayout(layout)
+
+    def _on_editor_destroyed(self, *args):
+        """The layout editor was closed: drop the reference and close safely."""
+        self.layoutEditor = None
+        self.close()
 
     def _cleanup_highlights(self):
         """Remove all LVS highlights and disable future highlight replay."""
@@ -830,6 +847,8 @@ class lvsResultsDialogue(QDialog):
 
         if pin_mism > 0:
             details += f"\n--- Pin Mismatches ---\n"
+            for msg in diagnostics.get('port_mismatch_messages', []):
+                details += f"  {msg}\n"
             for pin in mapping.get('pins', []):
                 if LVSDBParser._is_mismatch(pin):
                     details += (
@@ -1832,9 +1851,9 @@ class lvsResultsDialogue(QDialog):
                         else:
                             t_status = "❌ Mismatch"
                     elif lnid is not None:
-                        t_status = "❌ Open in Schem"
+                        t_status = "❌ Unconnected in Schematic (terminal wired in layout, floating in schematic)"
                     else:
-                        t_status = "❌ Open in Layout"
+                        t_status = "❌ Unconnected in Layout (terminal wired in schematic, floating in layout)"
 
                     terminal_rows.append({
                         "device_name": f"{ldev_name} ↔ {sdev_name}",

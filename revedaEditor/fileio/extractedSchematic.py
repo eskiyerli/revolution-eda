@@ -8,6 +8,7 @@
 # Add-ons and extensions developed for this software may be distributed
 # under their own separate licenses.
 
+import functools
 import logging
 import json
 import pathlib
@@ -27,6 +28,14 @@ import revedaEditor.backend.libBackEnd as libb
 import revedaEditor.backend.libraryMethods as libm
 import revedaEditor.common.net as snet
 
+
+
+logger = logging.getLogger(__name__)
+
+
+@functools.lru_cache(maxsize=8)
+def _cachedParseSourceNetlist(pathStr: str, mtimeNs: int):
+    return spiceNetlist.parse_spice_netlist(pathlib.Path(pathStr))
 
 
 SYMBOL_PIN_DISTANCE = 80
@@ -56,7 +65,6 @@ class klayoutSchematicGenerator:
         self.schem_to_layout_pos = {}
         self._symbol_view_cache: dict[str, Optional[ddef.viewNameTuple]] = {}
         self._generated_hierarchy_cells: set[tuple[str, str]] = set()
-        self._generated_net_endpoints: dict[str, list[QPoint]] = {}
 
     @staticmethod
     def _make_hashable(obj):
@@ -66,7 +74,14 @@ class klayoutSchematicGenerator:
     def _parse_source_netlist(
         cls, sourceNetlistPath: pathlib.Path | None
     ) -> dict[str, dict[str, Any]]:
-        return spiceNetlist.parse_spice_netlist(sourceNetlistPath)
+        # Cached by (path, mtime): the same reference netlist is consulted at
+        # every level of the generated hierarchy.
+        if sourceNetlistPath is None:
+            return {}
+        path = pathlib.Path(sourceNetlistPath)
+        if not path.exists():
+            return {}
+        return _cachedParseSourceNetlist(str(path), path.stat().st_mtime_ns)
 
     @classmethod
     def _build_hierarchy_node(
@@ -74,7 +89,9 @@ class klayoutSchematicGenerator:
         cellName: str,
         groupedDevices: list[tuple[list[str], dict]],
         subcktMap: dict[str, dict[str, Any]],
+        _visited: frozenset = frozenset(),
     ) -> dict[str, Any]:
+        visited = _visited | {cellName.casefold()}
         node = {
             "name": cellName,
             "pins": list(subcktMap.get(cellName.casefold(), {}).get("pins", [])),
@@ -107,12 +124,23 @@ class klayoutSchematicGenerator:
         for instanceName, instanceInfo in subcktInstances.items():
             instanceDevices = nestedGroups.get(instanceName)
             if not instanceDevices:
+                logger.debug(
+                    f"Hierarchy instance {instanceName} of {cellName} extracted "
+                    "no devices; omitting it from the generated schematic.")
                 continue
 
             childCellName = instanceInfo.get("cell_name")
+            if not childCellName:
+                continue
+            if childCellName.casefold() in visited:
+                logger.warning(
+                    f"Skipping recursive hierarchy instance {instanceName} "
+                    f"of {childCellName} inside {cellName}.")
+                continue
             childPins = subcktMap.get(childCellName.casefold(), {}).get("pins", [])
             connections = instanceInfo.get("connections", [])
-            childNode = cls._build_hierarchy_node(childCellName, instanceDevices, subcktMap)
+            childNode = cls._build_hierarchy_node(
+                childCellName, instanceDevices, subcktMap, visited)
             node["instances"].append(
                 {
                     "name": instanceName,
@@ -214,7 +242,8 @@ class klayoutSchematicGenerator:
 
         if layout_devices:
             layout_pos_by_id = {
-                self._make_hashable(d["id"]): d.get("position") for d in layout_devices
+                self._make_hashable(d["id"]): d.get("position")
+                for d in layout_devices if d.get("id") is not None
             }
 
             # Direct mapping: layout device ID -> position
@@ -426,13 +455,16 @@ class klayoutSchematicGenerator:
             self.logger.warning(f"Could not instantiate symbol for device: {device}")
             return None
 
-        symbolItem.instanceName = device.get("name", str(schem_dev_id or "I0"))
+        symbolItem.instanceName = device.get("name") or str(schem_dev_id or "I0")
         self._applyExtractedParamsToSymbol(symbolItem, device)
         if "@instName" in symbolItem.labels:
             symbolItem.labels["@instName"].labelDefs()
         if targetPos is not None:
             symbolItem.setPos(targetPos)
         scene.addItem(symbolItem)
+        # Keep a Python reference so the C++ item is not collected; generated
+        # items bypass the undo stack, which is what normally anchors them.
+        scene.itemsRefSet.add(symbolItem)
         return symbolItem
 
     @staticmethod
@@ -522,7 +554,8 @@ class klayoutSchematicGenerator:
                 )
 
     def createPinNet(
-        self, pinItem, symbolItem: shp.schematicSymbol, device: dict
+        self, pinItem, symbolItem: shp.schematicSymbol, device: dict,
+        netEndpoints: dict | None = None,
     ) -> "snet.schematicNet":
         """Create a schematic net for a device pin based on pin side."""
         localPos = pinItem.start
@@ -618,12 +651,14 @@ class klayoutSchematicGenerator:
         if name:
             pinNetItem.name = name
             pinNetItem.nameStrength = snet.netNameStrengthEnum.SET
-            self._generated_net_endpoints.setdefault(str(name), []).append(
-                pinNetItem.sceneEndPoints[1]
-            )
+            if netEndpoints is not None:
+                netEndpoints.setdefault(str(name), []).append(
+                    pinNetItem.sceneEndPoints[1]
+                )
         return pinNetItem
 
-    def addDeviceNets(self, symbolItem, device: dict):
+    def addDeviceNets(self, symbolItem, device: dict,
+                    netEndpoints: dict | None = None):
         """Add nets for all pins of a device."""
         scene = self._getScene()
         if scene is None:
@@ -631,10 +666,13 @@ class klayoutSchematicGenerator:
             return
 
         for pinItem in symbolItem.pins.values():
-            pinNetItem = self.createPinNet(pinItem, symbolItem, device)
+            pinNetItem = self.createPinNet(pinItem, symbolItem, device,
+                                         netEndpoints)
             scene.addItem(pinNetItem)
+            scene.itemsRefSet.add(pinNetItem)
 
-    def addExtractedPins(self, extracted: dict):
+    def addExtractedPins(self, extracted: dict,
+                         netEndpoints: dict | None = None):
         """Add named extracted top-level pins to the generated schematic.
 
         KLayout emits pin names as metadata and uses numeric net IDs in the
@@ -651,7 +689,7 @@ class klayoutSchematicGenerator:
             name = str(pin_name).strip()
             if not name or name in added_names:
                 continue
-            endpoints = self._generated_net_endpoints.get(name, [])
+            endpoints = (netEndpoints or {}).get(name, [])
             if not endpoints:
                 self.logger.warning(
                     f"Could not place extracted pin {name!r}: matching net not found."
@@ -661,6 +699,7 @@ class klayoutSchematicGenerator:
             pin_item = shp.schematicPin(QPoint(0, 0), name, "Inout", "Signal")
             pin_item.setPos(endpoints[0])
             scene.addItem(pin_item)
+            scene.itemsRefSet.add(pin_item)
             added_names.add(name)
 
     def generateSchematic(
@@ -672,8 +711,10 @@ class klayoutSchematicGenerator:
     ):
         """Generate the full schematic from extracted data."""
         extracted = self.infer_hierarchical_extraction(extracted, sourceNetlistPath)
-        self.buildPositionMapping()
-        targetCellName = extracted.get("name", self.layoutEditor.cellName)
+        # The mapping is identical for every hierarchy level; build it once.
+        if not self.schem_to_layout_pos:
+            self.buildPositionMapping()
+        targetCellName = extracted.get("name") or self.layoutEditor.cellName
         self.createTempSchematicEditor(targetCellName)
         if self.tempSchematicEditor is None:
             return None
@@ -693,7 +734,7 @@ class klayoutSchematicGenerator:
 
         # Restore this cell's editor after child views have been generated.
         self.tempSchematicEditor = currentEditor
-        self._generated_net_endpoints = {}
+        netEndpoints: dict[str, list[QPoint]] = {}
 
         devices: Any = extracted.get("primitive_devices", extracted.get("devices", []))
         if not isinstance(devices, list):
@@ -712,7 +753,7 @@ class klayoutSchematicGenerator:
             }
             symbolItem = self.addDeviceToSchematic(hierarchicalDevice)
             if symbolItem:
-                self.addDeviceNets(symbolItem, hierarchicalDevice)
+                self.addDeviceNets(symbolItem, hierarchicalDevice, netEndpoints)
 
         for device in devices:
             if not isinstance(device, dict):
@@ -720,9 +761,19 @@ class klayoutSchematicGenerator:
                 continue
             symbolItem = self.addDeviceToSchematic(device)
             if symbolItem:
-                self.addDeviceNets(symbolItem, device)
+                self.addDeviceNets(symbolItem, device, netEndpoints)
 
-        self.addExtractedPins(extracted)
+        self.addExtractedPins(extracted, netEndpoints)
+
+        # Persist the generated view: the file on disk was initialized empty,
+        # so without a save the schematic is lost when the editor closes.
+        scene = self._getScene()
+        if scene is not None:
+            try:
+                scene.saveSchematic(self.tempSchematicEditor.file)
+            except Exception as e:
+                self.logger.warning(
+                    f"Could not save generated lvs_schematic: {e}")
 
         if callable(self.highlight_callback):
             self.highlight_callback(self.tempSchematicEditor, extracted, hierarchy_path)

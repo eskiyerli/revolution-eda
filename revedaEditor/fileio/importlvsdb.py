@@ -100,8 +100,12 @@ class LVSDBParser:
         Yields:
             Individual tokens as strings (e.g., '(', ')', 'cell_name', '"quoted string"').
         """
-        # Handle both single and double quotes, including empty strings
-        token_pattern = r'\(|\)|"[^"]*"|\'[^\']*\'|[^\s()\'"]+'
+        # Handle both single and double quotes, including empty strings and
+        # backslash-escaped quotes (KLayout escapes ' inside messages, e.g.
+        # 'Port mismatch \'$I115\' vs. \'VDD\'').
+        token_pattern = (
+            r'\(|\)|"(?:[^"\\]|\\.)*"|\'(?:[^\'\\]|\\.)*\'|[^\s()\'"]+'
+        )
         for match in re.finditer(token_pattern, text):
             yield match.group(0)
 
@@ -316,22 +320,35 @@ class LVSDBParser:
         """
         messages = []
         net_mismatch_messages = []
+        port_mismatch_messages = []
+        error_messages = []
 
         for i in range(0, len(diagnostic_items), 2):
             tag = self._safe_get(diagnostic_items, i)
             if tag != 'M' or i + 1 >= len(diagnostic_items):
                 continue
             content = diagnostic_items[i + 1]
+            severity = ''
+            if (isinstance(content, list) and content
+                    and content[0] in ('E', 'W', 'I')):
+                severity = content[0]
             message = self._extract_diagnostic_message(content)
             if not message:
                 continue
             messages.append(message)
-            if 'not matching any net from reference netlist' in message.lower():
+            lowered = message.lower()
+            if severity == 'E':
+                error_messages.append(message)
+            if 'not matching any net from reference netlist' in lowered:
                 net_mismatch_messages.append(message)
+            elif lowered.startswith('port mismatch'):
+                port_mismatch_messages.append(message)
 
         return {
             'messages': messages,
             'net_mismatch_messages': net_mismatch_messages,
+            'port_mismatch_messages': port_mismatch_messages,
+            'error_messages': error_messages,
         }
 
     def _extract_diagnostic_message(self, content: Any) -> str:
@@ -352,6 +369,9 @@ class LVSDBParser:
                 return payload
             if isinstance(payload, list) and len(payload) == 1 and isinstance(payload[0], str):
                 return payload[0]
+            if isinstance(payload, list) and all(
+                    isinstance(item, str) for item in payload):
+                return "".join(payload)
 
         for item in content:
             message = self._extract_diagnostic_message(item)
@@ -971,10 +991,19 @@ class LVSDBParser:
             else:
                 net_mismatches = self._count_explicit_net_mismatches(diagnostics)
 
+            # flag_missing_ports reports unlabeled/mislabeled top-level ports
+            # as error-level diagnostics without changing the stored match
+            # status, so count them as pin mismatches and honor any error-level
+            # diagnostic as a real failure.
+            port_mismatches = len(diagnostics.get('port_mismatch_messages', []))
+            pin_mismatches += port_mismatches
+            equivalent = (xref.get('equivalent', False)
+                          and not diagnostics.get('error_messages'))
+
             result.append({
                 'layout_cell': layout_cell_name,
                 'schem_cell': xref.get('schematic_name', ''),
-                'equivalent': xref.get('equivalent', False),
+                'equivalent': equivalent,
                 'net_mismatches': net_mismatches,
                 'pin_mismatches': pin_mismatches,
                 'device_mismatches': device_mismatches,

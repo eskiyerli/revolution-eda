@@ -551,9 +551,8 @@ class vacaskNetlist:
             )
             if cellItem is not None:
                 vacaskFileName = vacaskIncludeFile.strip().replace("\\", "/")
-                incFilePath = pathlib.Path(cellItem.cellPath) / vacaskFileName
-                self.includeLines.add(f'include "{incFilePath.as_posix()}"')
-                self._includeFilePaths.add(incFilePath)
+                self._addIncludeFile(
+                    pathlib.Path(cellItem.cellPath) / vacaskFileName)
 
         if not skipLoadFile:
             loadFile = elementSymbol.symattrs.get("VacaskLoadFile")
@@ -625,6 +624,18 @@ class vacaskNetlist:
             if candidate.is_file():
                 return candidate
         return None
+
+    def _addIncludeFile(self, filePath: pathlib.Path) -> None:
+        """Register an ``include`` directive for a local file.
+
+        The path is canonicalised so the same file reached through
+        different spellings (e.g. a ``/home`` -> ``/var/home`` symlink)
+        produces a single include line and a single entry in
+        :attr:`_includeFilePaths`.
+        """
+        resolved = filePath.resolve()
+        self.includeLines.add(f'include "{resolved.as_posix()}"')
+        self._includeFilePaths.add(resolved)
 
     def _suppressIncludeDefinedModels(self):
         """Drop model lines whose model is already defined in an included file.
@@ -1201,8 +1212,7 @@ class vacaskNetlist:
                 cellItem, libm.getViewItem(cellItem, netlistView))
             if incFilePath is None:
                 incFilePath = pathlib.Path(cellPath) / f"{elementSymbol.cellName}.sp"
-            self.includeLines.add(f'include "{incFilePath.as_posix()}"')
-            self._includeFilePaths.add(incFilePath)
+            self._addIncludeFile(incFilePath)
             return spiceLines
         except Exception as e:
             self._scene.logger.error(
@@ -1226,8 +1236,7 @@ class vacaskNetlist:
             viewItem = libm.getViewItem(cellItem, netlistView)
             filePath = libb.textViewFilePath(cellItem, viewItem)
             if filePath is not None:
-                self.includeLines.add(f'include "{filePath.as_posix()}"')
-                self._includeFilePaths.add(filePath)
+                self._addIncludeFile(filePath)
             else:
                 self._scene.logger.warning(
                     f"View '{netlistView}' of {elementSymbol.cellName} has no "

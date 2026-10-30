@@ -36,6 +36,8 @@ from PySide6.QtWidgets import (
     QMenu,
 )
 
+import revedaEditor.backend.cellviewState as cvstate
+import revedaEditor.backend.itemIcons as itemIcons
 import revedaEditor.backend.libraryMethods as libm
 import revedaEditor.gui.editFunctions as edf
 
@@ -1299,6 +1301,7 @@ class fileInfoDialogue(QDialog):
         super().__init__(parent)
         self.setWindowTitle("File Information")
         self.setMinimumSize(500, 200)
+        self._filePath = filePath
         layout = QFormLayout(self)
         # Get file stats
         stats = filePath.stat()
@@ -1323,9 +1326,45 @@ class fileInfoDialogue(QDialog):
         # layout.addRow("Owner:", QLabel(str(stats.st_uid)))
         self.buttonBox = QDialogButtonBox(QDialogButtonBox.Ok)
         self.buttonBox.accepted.connect(self.accept)
+
+        self._unlockButton = None
+        if filePath.is_file() and filePath.suffix == ".json":
+            status, record = cvstate.inspectLock(filePath)
+            self._lockStatusLabel = QLabel(itemIcons.lockStatusText(status, record))
+            layout.addRow("Lock:", self._lockStatusLabel)
+            if status in ("locked", "stale"):
+                self._unlockButton = self.buttonBox.addButton(
+                    "Unlock...", QDialogButtonBox.ActionRole)
+                self._unlockButton.clicked.connect(self._unlockClicked)
+
         layout.addWidget(self.buttonBox)
 
         self.setLayout(layout)
+
+    def _unlockClicked(self):
+        status, record = cvstate.inspectLock(self._filePath)
+        if status not in ("locked", "stale"):
+            self._lockStatusLabel.setText(itemIcons.lockStatusText(status, record))
+            if self._unlockButton is not None:
+                self._unlockButton.setEnabled(False)
+            return
+        lockKind = "stale lock" if status == "stale" else "lock"
+        button = QMessageBox.question(
+            self, "Unlock CellView",
+            f"Remove the {lockKind} on {self._filePath.name}?\n\n"
+            f"{itemIcons.lockStatusText(status, record)}.\n"
+            "If another session still has this cellview open, "
+            "it may overwrite your changes.")
+        if button != QMessageBox.Yes:
+            return
+        if cvstate.forceReleaseLock(cvstate.lockPathFor(self._filePath)):
+            self._lockStatusLabel.setText("Not locked")
+            if self._unlockButton is not None:
+                self._unlockButton.setEnabled(False)
+        else:
+            QMessageBox.warning(self, "Unlock CellView",
+                                f"Could not remove the lock file for "
+                                f"{self._filePath.name}.")
 
 
 class imageExportDialog(QDialog):

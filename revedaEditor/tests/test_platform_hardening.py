@@ -121,6 +121,42 @@ def test_release_lock_only_ours(tmp_path: Path):
     assert not lockPath.exists()
 
 
+def test_inspect_lock_states(tmp_path: Path):
+    viewFile = tmp_path / "cell" / "schematic.json"
+    lockPath = cvstate.lockPathFor(viewFile)
+    assert cvstate.inspectLock(viewFile) == ("none", None)
+
+    cvstate.writeLockFile(lockPath)
+    status, record = cvstate.inspectLock(viewFile)
+    assert status == "mine" and record["pid"] == os.getpid()
+
+    foreign = {"pid": os.getpid(), "user": "other", "host": "remote-host",
+               "time": time.time()}
+    lockPath.write_text(json.dumps(foreign))
+    status, record = cvstate.inspectLock(viewFile)
+    assert status == "locked" and record == foreign
+
+    proc = subprocess.Popen([sys.executable, "-c", "pass"])
+    proc.wait()
+    stale = {"pid": proc.pid, "user": "ghost", "host": socket.gethostname(),
+             "time": time.time()}
+    lockPath.write_text(json.dumps(stale))
+    status, _ = cvstate.inspectLock(viewFile)
+    assert status == "stale"
+
+    lockPath.write_text("{ not json !")
+    assert cvstate.inspectLock(viewFile) == ("stale", None)
+
+
+def test_force_release_lock(tmp_path: Path):
+    lockPath = tmp_path / "layout.json.lock"
+    foreign = {"pid": 424242, "user": "other", "host": "x", "time": 1.0}
+    lockPath.write_text(json.dumps(foreign))
+    assert cvstate.forceReleaseLock(lockPath)
+    assert not lockPath.exists()
+    assert cvstate.forceReleaseLock(lockPath)  # idempotent
+
+
 def test_process_alive_checks():
     assert cvstate.processAlive(os.getpid())
     proc = subprocess.Popen([sys.executable, "-c", "pass"])

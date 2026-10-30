@@ -233,17 +233,27 @@ class schematicScene(editorScene):
         fontFamilies = QFontDatabase.families(QFontDatabase.WritingSystem.Latin)
 
         # Find first fixed-pitch font family
-        fixedFamily = next(family for family in fontFamilies if
-                           QFontDatabase.isFixedPitch(family))
+        fixedFamily = next((family for family in fontFamilies if
+                            QFontDatabase.isFixedPitch(family)), None)
+        if fixedFamily is None:
+            self.fixedFont = QFontDatabase.systemFont(
+                QFontDatabase.SystemFont.FixedFont)
+            self.fixedFont.setKerning(False)
+            return
 
         # Get font style and create font
-        fontStyle = QFontDatabase.styles(fixedFamily)[1]
+        styles = QFontDatabase.styles(fixedFamily)
+        fontStyle = styles[1] if len(styles) > 1 else (styles[0] if styles else "")
         self.fixedFont = QFont(fixedFamily)
-        self.fixedFont.setStyleName(fontStyle)
+        if fontStyle:
+            self.fixedFont.setStyleName(fontStyle)
 
         # Set font size
-        fontSize = QFontDatabase.pointSizes(fixedFamily, fontStyle)[3]
-        self.fixedFont.setPointSize(fontSize)
+        sizes = QFontDatabase.pointSizes(fixedFamily, fontStyle)
+        if len(sizes) > 3:
+            self.fixedFont.setPointSize(sizes[3])
+        elif sizes:
+            self.fixedFont.setPointSize(min(sizes, key=lambda s: abs(s - 9)))
         self.fixedFont.setKerning(False)
 
     def defineSnapRect(self):

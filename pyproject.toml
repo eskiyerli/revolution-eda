@@ -68,6 +68,7 @@ pyqtgraph = "~0.14.0"
 google-genai = "^2.31.0"
 pygments = "^2.21"
 nuitka = "^4.3"
+boto3 = "1.40.76"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "~9.1.1"

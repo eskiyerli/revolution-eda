@@ -20,6 +20,7 @@ from PySide6.QtCore import (Qt, )
 from PySide6.QtGui import (QStandardItem, )
 from PySide6.QtWidgets import QMessageBox, QWidget
 
+import revedaEditor.backend.itemIcons as itemIcons
 import revedaEditor.fileio.schemaValidation as sv
 
 # File-backed text view types and the suffix of the netlist/model file each
@@ -42,6 +43,10 @@ class libraryItem(QStandardItem):
         self.setData(libraryPath, Qt.ItemDataRole.UserRole + 2)
         self.setData("library", Qt.ItemDataRole.UserRole + 1)
         self.setData(self.libraryName, Qt.ItemDataRole.UserRole + 3)
+        self.refreshDecoration()
+
+    def refreshDecoration(self):
+        itemIcons.decorate(self)
 
     def type(self):
         return QStandardItem.ItemType.UserType.value
@@ -76,6 +81,10 @@ class cellItem(QStandardItem):
         self.setData("cell", Qt.ItemDataRole.UserRole + 1)
         self.setData(cellPath, Qt.ItemDataRole.UserRole + 2)
         self.setData(self.cellName, Qt.ItemDataRole.UserRole + 3)
+        self.refreshDecoration()
+
+    def refreshDecoration(self):
+        itemIcons.decorate(self)
 
     def type(self):
         return QStandardItem.ItemType.UserType.value + 1
@@ -134,6 +143,10 @@ class viewItem(QStandardItem):
         # set the data to the item to be the path to the view.
         self.setData(viewPath, Qt.ItemDataRole.UserRole + 2)
         self.setData(self.viewName, Qt.ItemDataRole.UserRole + 3)
+        self.refreshDecoration()
+
+    def refreshDecoration(self):
+        itemIcons.decorate(self)
 
     def type(self):
         return QStandardItem.ItemType.UserType.value + 1
