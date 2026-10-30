@@ -153,6 +153,27 @@ class schematicEditor(edw.editorWindow):
         self.viewCheckAction.setText("Check Schematic")
         self.viewCheckAction.setToolTip(
             "Run enabled schematic check rules without saving")
+        if self._lvsProbeActionWanted():
+            self.probeLayoutAction = QAction("Probe in Layout", self)
+            self.probeLayoutAction.setToolTip(
+                "Select the counterpart device/net in the sibling layout "
+                "editor for the current selection")
+
+    def _lvsProbeActionWanted(self) -> bool:
+        """True when core should own the lvs_schematic->layout probe trigger.
+
+        The LVS-extracted schematic (``lvs_schematic``) opens as an ordinary
+        schematicEditor, so the scene-level ``probeLayout`` primitive already
+        exists; it just has no reachable UI trigger in the base app (RevSDL
+        wires the generic schematic probe, but it is commercial/optional).
+        Surface a core action only for the lvs_schematic view, and only when a
+        provider plugin is not already wiring the same capability, so RevSDL's
+        menu item is never duplicated.
+        """
+        if getattr(self, "viewName", "") != "lvs_schematic":
+            return False
+        pluginsObj = getattr(self._app, "pluginsObj", None)
+        return not (pluginsObj and pluginsObj.provides("sdl"))
 
     def _addActions(self):
         super()._addActions()
@@ -198,6 +219,9 @@ class schematicEditor(edw.editorWindow):
         self.menuTools.addAction(self.renumberInstanceAction)
         self.menuTools.addAction(self.showResolvedNamesAction)
         self.menuTools.addAction(self.findRelatedEditors)
+        if hasattr(self, "probeLayoutAction"):
+            self.menuTools.addSeparator()
+            self.menuTools.addAction(self.probeLayoutAction)
         # utilities Menu
         self.selectMenu = self.menuUtilities.addMenu("Selection")
         self.selectMenu.addAction(self.selectDeviceAction)
@@ -253,6 +277,8 @@ class schematicEditor(edw.editorWindow):
             self.showResolvedNamesClick)
         self.findRelatedEditors.triggered.connect(self.findRelatedEditorsClick)
         self.findAction.triggered.connect(self.findClick)
+        if hasattr(self, "probeLayoutAction"):
+            self.probeLayoutAction.triggered.connect(self.probeLayoutClick)
 
     def _createToolBars(self):
         super()._createToolBars()
@@ -717,6 +743,15 @@ class schematicEditor(edw.editorWindow):
 
     def probeNetClick(self, s):
         self.centralW.scene.probeNets()
+
+    def probeLayoutClick(self, s=False):
+        """Cross-probe the selection into the sibling layout editor.
+
+        Routes to the scene-level Phase-6 primitive; wired only for the
+        lvs_schematic view when no SDL provider owns the capability (see
+        :meth:`_lvsProbeActionWanted`).
+        """
+        self.centralW.scene.probeLayout()
 
     def removeProbeNetClick(self, s):
         self.centralW.scene.removeProbeMode()
