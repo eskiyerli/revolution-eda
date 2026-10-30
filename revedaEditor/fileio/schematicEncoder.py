@@ -16,6 +16,7 @@ from PySide6.QtCore import QPointF
 
 import revedaEditor.common.net as net
 import revedaEditor.common.shapes as shp
+import revedaEditor.fileio.schemaValidation as sv
 
 
 class schematicEncoder(json.JSONEncoder):
@@ -56,6 +57,12 @@ class schematicEncoder(json.JSONEncoder):
         }
         if item.netSet:
             record["nst"] = dict(item.netSet)
+        # Schematic<->layout correspondence (backend/correspondence): written
+        # only for symbols carrying a canonical sdl stamp (e.g. the generated
+        # lvs_schematic view). Same persisted shape as layout Inst records.
+        sdl = getattr(item, "_sdlSource", None)
+        if sv.is_canonical_sdl_source(sdl):
+            record["sdl"] = sdl
         return record
 
     def _encodeSchematicGroup(self, item: shp.schematicGroup) -> Dict[str, Any]:

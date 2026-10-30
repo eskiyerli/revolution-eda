@@ -354,6 +354,16 @@ class schematicItems:
 
         return netItem
 
+    def _restoreSdlSource(self, obj, item):
+        """Restore only canonical persisted SDL correspondence metadata."""
+        if "sdl" not in item:
+            return
+        if sv.is_canonical_sdl_source(item["sdl"]):
+            obj._sdlSource = item["sdl"]
+        else:
+            self.scene.logger.warning(
+                "Ignoring noncanonical sdl metadata on schematic symbol")
+
     def _createSymbolShape(self, item):
         itemShapes = list()
         symbolAttributes = dict()
@@ -366,6 +376,9 @@ class schematicItems:
         symbolInstance.netlistIgnore = bool(item.get("ign", 0))
         # Inherited-connection overrides (netSet): {exprName: localNet}.
         symbolInstance.netSet = item.get("nst", {})
+        # Schematic<->layout correspondence (backend/correspondence): restored
+        # before the branching returns so draft placeholders keep it too.
+        self._restoreSdlSource(symbolInstance, item)
         labelDict = item["ld"]
         symbolInstance.setPos(*item["loc"])
         for labelItem in symbolInstance.labels.values():
