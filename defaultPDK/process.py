@@ -11,11 +11,11 @@
 from quantiphy import Quantity
 
 import revedaEditor.backend.dataDefinitions as ddef
-from revedaEditor.backend.pdkLoader import importPDKModule
+from revedaEditor.backend.pdkLoader import lazyPDKModule
 
-fabproc = importPDKModule("process")
+fabproc = lazyPDKModule("process")
 
-laylyr = importPDKModule("layoutLayers")
+laylyr = lazyPDKModule("layoutLayers")
 
 # common process parameters
 dbu = 1000  # distance between two points, 1um/1000=1n

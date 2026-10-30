@@ -13,10 +13,10 @@ from PySide6.QtCore import (
     QPoint,
 )
 
-from revedaEditor.backend.pdkLoader import importPDKModule
+from revedaEditor.backend.pdkLoader import lazyPDKModule
 
-laylyr = importPDKModule('layoutLayers')
-fabproc = importPDKModule('process')
+laylyr = lazyPDKModule('layoutLayers')
+fabproc = lazyPDKModule('process')
 import revedaEditor.common.layoutShapes as lshp
 
 
