@@ -105,11 +105,19 @@ class schematicScene(editorScene):
         self.netCounter = 0
 
         # Unified connectivity cache (revedaEditor.connectivity engine).
-        # Rebuilt by rebuildConnectivity(); invalidated on any scene change.
+        # Rebuilt by rebuildConnectivity(); invalidated on structural changes.
         self._connectivityCache = None
         self._connectivitySegIdByItem = {}
         self._connectivityPortIdByItem = {}
-        self.changed.connect(self.markConnectivityDirty)
+        # Invalidate on structural changes only, never on the blanket Qt
+        # ``changed`` signal (which fires on selection and mid-drag geometry
+        # churn, forcing needless O(n) rebuilds). addItem/removeItem cover
+        # inserts/removals and the net property setters (name/strength/expr/
+        # geometry) mark dirty directly; item moves (symbol/pin position
+        # changes that shift pin coordinates) don't touch any of those, so
+        # the undo stack's index change — emitted once per committed command
+        # (move, rotate, property edit, add, delete) — invalidates the cache.
+        self.undoStack.indexChanged.connect(self.markConnectivityDirty)
 
         # Initialize modes with default values
         self.editModes = ddef.schematicModes(selectItem=True, deleteItem=False,

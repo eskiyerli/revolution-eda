@@ -220,7 +220,6 @@ class layoutScene(editorScene):
         # geometry work while a large set of top-level items is inserted.
         self._bulkLoadDepth = 0
         self._connectivityDirtyDuringBulkLoad = False
-        self._discardQueuedBulkChange = False
         # member item -> overlay QGraphicsRectItem
         self._netHighlightItems = {}
         # Schematic->layout rat's nest: drawn layoutFlightLine items, their
@@ -230,9 +229,16 @@ class layoutScene(editorScene):
         self._flylinePins = {}
         self._flylineSource = None
         self._syncingFlylines = False
-        self.changed.connect(self.markConnectivityDirty)
-        # Undo/redo moves don't emit changed() reliably — refresh flyline
-        # topology (island merge/split) on command-stack index changes.
+        # Connectivity cache is invalidated on structural changes only, never
+        # on the blanket Qt ``changed`` signal (which fires on selection and
+        # mid-drag geometry churn, forcing needless O(n) engine rebuilds).
+        # addItem/removeItem cover inserts/removals; the undo stack's index
+        # change — emitted once per committed command (move/rotate/edit/add/
+        # delete) — invalidates the cache for position changes that don't go
+        # through addItem/removeItem. The ``changed`` signal is kept only for
+        # the CHEAP flyline geometry re-anchor (no connectivity work) so the
+        # rat's nest still tracks dragged pins live frame-by-frame.
+        self.changed.connect(self._reanchorFlylinesOnChange)
         self.undoStack.indexChanged.connect(self._onUndoIndexChanged)
 
     @property
@@ -2096,7 +2102,7 @@ class layoutScene(editorScene):
             if hasattr(self, "_applyObjectFilters"):
                 self._applyObjectFilters()
             if callable(endBulkLoad):
-                endBulkLoad(discardQueuedChanged=not signalsWereBlocked)
+                endBulkLoad()
             self.blockSignals(signalsWereBlocked)
 
     def deleteSelectedItems(self):
@@ -2788,25 +2794,22 @@ class layoutScene(editorScene):
     def _beginBulkLoad(self):
         self._bulkLoadDepth += 1
 
-    def _endBulkLoad(self, discardQueuedChanged: bool = False):
+    def _endBulkLoad(self):
         self._bulkLoadDepth -= 1
         if self._bulkLoadDepth:
             return
         if self._connectivityDirtyDuringBulkLoad:
             self._connectivityDirtyDuringBulkLoad = False
             self._connectivityCache = None
-            self._discardQueuedBulkChange = discardQueuedChanged
             self._updateFlylineGeometry()
             self.connectivityInvalidated.emit()
 
     def markConnectivityDirty(self, *args):
-        """Invalidate cached connectivity after a scene change."""
-        if args and self._discardQueuedBulkChange:
-            # QGraphicsScene posts one changed signal after its signals are
-            # unblocked. The bulk completion above already invalidated the
-            # cache and refreshed overlays for that exact batch.
-            self._discardQueuedBulkChange = False
-            return
+        """Invalidate cached connectivity after a structural scene change.
+
+        No longer driven by the blanket Qt ``changed`` signal — reached only
+        from addItem/removeItem, _endBulkLoad, and explicit callers — so it
+        never fires on selection or mid-drag churn."""
         if self._bulkLoadDepth:
             self._connectivityDirtyDuringBulkLoad = True
             return
@@ -3091,9 +3094,25 @@ class layoutScene(editorScene):
         return drawn
 
     def _onUndoIndexChanged(self, *_):
-        """Refresh flyline topology after undo/redo positional changes."""
+        """Invalidate connectivity and refresh flyline topology after a
+        committed command (move/rotate/edit/add/delete). Position changes
+        that shift pin coordinates don't pass through addItem/removeItem, so
+        this is where the cache is dropped for them; ``self.connectivity``
+        then rebuilds lazily on next access and ``_syncFlylines`` re-derives
+        island topology (merge/split) when flylines are active."""
+        self.markConnectivityDirty()
         if self._flylinePins:
             _ = self.connectivity  # rebuild -> _syncFlylines
+
+    def _reanchorFlylinesOnChange(self, *_):
+        """Cheap flyline re-anchor driven by the Qt ``changed`` signal.
+
+        Keeps drawn flylines glued to their endpoint pins during live drags
+        WITHOUT invalidating the connectivity cache or running the engine —
+        the expensive rebuild happens on the undo-stack index change when the
+        move commits. No-op when no flylines are drawn."""
+        if self._flylines:
+            self._updateFlylineGeometry()
 
     def _updateFlylineGeometry(self):
         """Re-anchor drawn flylines to current pin positions.
