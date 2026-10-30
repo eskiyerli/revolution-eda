@@ -23,9 +23,11 @@ from revedaEditor.fileio import schemaValidation as sv
 
 
 import revedaEditor.common.shapes as shp
+import revedaEditor.backend.correspondence as corr
 import revedaEditor.backend.dataDefinitions as ddef
 import revedaEditor.backend.libBackEnd as libb
 import revedaEditor.backend.libraryMethods as libm
+import revedaEditor.common.layoutShapes as lshp
 import revedaEditor.common.net as snet
 
 
@@ -63,6 +65,10 @@ class klayoutSchematicGenerator:
         self.highlight_callback = highlight_callback
         self.tempSchematicEditor = None
         self.schem_to_layout_pos = {}
+        # device id -> layout instance name, used to stamp the sdl
+        # correspondence field onto generated lvs_schematic symbols so the
+        # Phase-6 probe primitives can resolve layout<->lvs_schematic identity.
+        self.schem_to_layout_name: dict = {}
         self._symbol_view_cache: dict[str, Optional[ddef.viewNameTuple]] = {}
         self._generated_hierarchy_cells: set[tuple[str, str]] = set()
 
@@ -235,31 +241,84 @@ class klayoutSchematicGenerator:
         return enrichedExtracted
 
     def buildPositionMapping(self) -> dict:
-        """Build mapping from device IDs to layout positions."""
+        """Build mappings from device IDs to layout position and instance name.
+
+        The position map (``schem_to_layout_pos``) drives placement; the name
+        map (``schem_to_layout_name``) drives the ``sdl`` correspondence stamp
+        so the Phase-6 probe engine can pair lvs_schematic symbols with their
+        layout instances. Both are keyed by the layout device id and, when the
+        xref is present, by the paired schematic device id for compatibility.
+        """
         self.schem_to_layout_pos = {}
+        self.schem_to_layout_name = {}
         layout_devices = self.parser.get_layout_devices(self.layoutEditor.cellName)
         xref = self.parser.get_crossref(self.layoutEditor.cellName)
+        # Real layout instance names keyed by extracted device name, resolved
+        # from the open layout view when available. The LVS device name is the
+        # bridge the layout<->extracted-device pairing shares.
+        layout_names_by_device = self._layoutInstanceNamesByDevice()
 
         if layout_devices:
             layout_pos_by_id = {
                 self._make_hashable(d["id"]): d.get("position")
                 for d in layout_devices if d.get("id") is not None
             }
+            layout_name_by_id = {
+                self._make_hashable(d["id"]):
+                    (layout_names_by_device.get(d.get("name"))
+                     or d.get("name"))
+                for d in layout_devices if d.get("id") is not None
+            }
 
-            # Direct mapping: layout device ID -> position
+            # Direct mapping: layout device ID -> position / instance name
             for dev_id, pos in layout_pos_by_id.items():
                 if pos is not None:
                     self.schem_to_layout_pos[dev_id] = pos
+            for dev_id, name in layout_name_by_id.items():
+                if name:
+                    self.schem_to_layout_name[dev_id] = name
 
-            # Also add xref-based schematic ID -> position mapping for compatibility
+            # Also add xref-based schematic ID -> position/name mapping for
+            # compatibility with device records keyed by the schematic id.
             if xref:
                 for mapping in xref.get("mapping", {}).get("devices", []):
                     layout_dev = self._make_hashable(mapping.get("layout_dev"))
                     schem_dev = self._make_hashable(mapping.get("schem_dev"))
-                    if layout_dev in layout_pos_by_id and schem_dev is not None:
-                        self.schem_to_layout_pos[schem_dev] = layout_pos_by_id[layout_dev]
+                    if schem_dev is None:
+                        continue
+                    if layout_dev in layout_pos_by_id:
+                        self.schem_to_layout_pos[schem_dev] = \
+                            layout_pos_by_id[layout_dev]
+                    name = layout_name_by_id.get(layout_dev)
+                    if name:
+                        self.schem_to_layout_name[schem_dev] = name
 
         return self.schem_to_layout_pos
+
+    def _layoutInstanceNamesByDevice(self) -> dict:
+        """Map extracted device name -> real layout ``layoutInstance.instanceName``.
+
+        Preferred over the raw LVS device name when the layout view is open:
+        the layout placement name is what the probe engine selects on. Returns
+        an empty map (triggering the LVS-device-name fallback) when the layout
+        scene is not reachable.
+        """
+        names: dict = {}
+        editor = self.layoutEditor
+        scene = getattr(getattr(editor, "centralW", None), "scene", None)
+        if scene is None:
+            return names
+        try:
+            items = scene.items()
+        except (RuntimeError, AttributeError):
+            return names
+        for item in items:
+            if not isinstance(item, lshp.layoutInstance):
+                continue
+            instanceName = getattr(item, "instanceName", "")
+            if instanceName:
+                names[instanceName] = instanceName
+        return names
 
     def _findCellItem(self, cellName: str):
         libItem = libm.getLibItem(self.revedaMain.libraryModel, self.layoutEditor.libName)
@@ -364,6 +423,67 @@ class klayoutSchematicGenerator:
         # print(f"DEBUG: _getMappedLayoutPosition: deviceId={deviceId}, hashed={hashed}, pos={pos}")
         return pos
 
+    def _getMappedLayoutName(self, deviceId: Any) -> Optional[str]:
+        """Layout instance name mapped from a single device id, or None."""
+        if deviceId is None:
+            return None
+        return self.schem_to_layout_name.get(self._make_hashable(deviceId))
+
+    def _resolveLayoutInstanceNames(self, device: dict) -> list[str]:
+        """All layout instance names a device maps to (primary first).
+
+        One extracted device can correspond to several layout devices (a
+        merged/multi-finger device aggregated via ``source_device_ids``); the
+        full ordered, de-duplicated set is returned so the caller can stamp the
+        primary and record the rest. Falls back to the device's own id/name
+        when no mapping resolves, matching the generator's placement fallback.
+        """
+        names: list[str] = []
+        deviceId = device.get("id")
+        if deviceId is not None:
+            # Primitive device: resolve its own id, then aggregate the merged
+            # layout devices (multi-finger) recorded in source_device_ids.
+            candidateIds = [deviceId, *device.get("source_device_ids", [])]
+            for candidateId in candidateIds:
+                name = self._getMappedLayoutName(candidateId)
+                if name and name not in names:
+                    names.append(name)
+        if not names:
+            # Hierarchical instances (id is None) and unmapped primitives name
+            # the layout instance by the extracted device/instance name itself.
+            fallback = device.get("name")
+            if fallback:
+                names.append(str(fallback))
+        return names
+
+    def _stampSdlSource(self, symbolItem: shp.schematicSymbol, device: dict):
+        """Stamp the layout-correspondence ``sdl`` field on a generated symbol.
+
+        Unresolvable devices are skipped (logged) rather than crashing, in
+        keeping with the draft-placeholder-not-crash philosophy.
+        """
+        layoutNames = self._resolveLayoutInstanceNames(device)
+        if not layoutNames:
+            self.logger.warning(
+                "No layout instance resolved for extracted device "
+                f"{device.get('id')!r} ({device.get('name')!r}); "
+                "skipping sdl correspondence stamp.")
+            return
+        labels = {
+            "lvsDeviceName": [str(device.get("name") or ""), False],
+        }
+        # Many-to-one (merged/multi-finger): record the full layout-device set
+        # so correspondence is not silently reduced to the primary instance.
+        if len(layoutNames) > 1:
+            labels["lvsLayoutInstances"] = [",".join(layoutNames), False]
+        symbolItem._sdlSource = corr.makeSdlSource(
+            self.layoutEditor.libName,
+            self.layoutEditor.cellName,
+            "layout",
+            layoutNames[0],
+            labels,
+        )
+
     def _getAggregateLayoutPosition(self, deviceIds: list[Any]) -> Any:
         if not deviceIds:
             return None
@@ -456,6 +576,7 @@ class klayoutSchematicGenerator:
             return None
 
         symbolItem.instanceName = device.get("name") or str(schem_dev_id or "I0")
+        self._stampSdlSource(symbolItem, device)
         self._applyExtractedParamsToSymbol(symbolItem, device)
         if "@instName" in symbolItem.labels:
             symbolItem.labels["@instName"].labelDefs()
