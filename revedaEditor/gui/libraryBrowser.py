@@ -464,10 +464,10 @@ class libraryListView(QDialog):
                                                     self.origLibNameLineEdit.text().strip(),
                                                     self.newLibNameCB.currentText(), ))
                 updateLibraryRunner.signals.finished.connect(
-                    lambda: self.appMainW.logger.info(
+                    lambda *a, libName=libName: self.appMainW.logger.info(
                         f"Updated library {libName} successfully."))
                 updateLibraryRunner.signals.error.connect(
-                    lambda e: self.appMainW.logger.error(
+                    lambda e, libName=libName: self.appMainW.logger.error(
                         f"Error updating library {libName}: {e}"))
                 self.appMainW.threadPool.start(updateLibraryRunner)
         return super().accept()
