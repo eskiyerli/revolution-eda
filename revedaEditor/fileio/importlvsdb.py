@@ -22,6 +22,54 @@ from PySide6.QtWidgets import QGraphicsRectItem
 logger = logging.getLogger("reveda")
 
 
+# KLayout LVS DB status tokens (see dbLayoutVsSchematicFormatDefs.h):
+#   '0' = mismatch, '1' = match, 'X' = nomatch, 'W' = warning, 'S' = skipped.
+# Each token maps to a tier so the GUI can show the real category and so only
+# hard mismatches ('0' mismatch, 'X' nomatch) fail a cell. 'W'/'S' are
+# surfaced as warning/skipped tiers and never counted as hard mismatches.
+# A status token may be ABSENT in the DB ([status]? is optional); that case is
+# represented by the ABSENT tier and is not a hard mismatch on its own.
+STATUS_MATCH = 'match'
+STATUS_MISMATCH = 'mismatch'
+STATUS_NOMATCH = 'nomatch'
+STATUS_WARNING = 'warning'
+STATUS_SKIPPED = 'skipped'
+STATUS_ABSENT = 'absent'
+
+# Tokens that unambiguously identify a status (used to tell a real status token
+# apart from a trailing message/log element when [status] is omitted).
+_STATUS_TOKEN_TIERS = {
+    '0': STATUS_MISMATCH,
+    '1': STATUS_MATCH,
+    'X': STATUS_NOMATCH,
+    'W': STATUS_WARNING,
+    'S': STATUS_SKIPPED,
+}
+
+# Tiers that count as a hard mismatch (fail the cell / inflate mismatch counts).
+_HARD_MISMATCH_TIERS = frozenset({STATUS_MISMATCH, STATUS_NOMATCH})
+
+
+def classifyStatusToken(token: Any) -> str:
+    """Classify a KLayout LVS status token into a tier.
+
+    Only the five documented single-character tokens ('0'/'1'/'X'/'W'/'S') are
+    recognised. Anything else — including ``None`` or an empty string (status
+    absent) — maps to :data:`STATUS_ABSENT`, which callers treat as "no explicit
+    verdict" rather than guessing it to a mismatch.
+    """
+    return _STATUS_TOKEN_TIERS.get(token, STATUS_ABSENT)
+
+
+def isStatusToken(token: Any) -> bool:
+    """Return True when *token* is one of the five documented status tokens.
+
+    Used to detect an absent optional [status] where ``item[2]`` is actually a
+    message/log element rather than a status string.
+    """
+    return token in _STATUS_TOKEN_TIERS
+
+
 class LVSErrorRect(QGraphicsRectItem):
     def __init__(self, rect: QRect) -> None:
         super().__init__(rect)
@@ -83,6 +131,10 @@ class LVSDBParser:
         self.layout_cells: Dict[str, Dict] = {}
         self.schematic_cells: Dict[str, Dict] = {}
         self.crossrefs: Dict[str, Dict] = {}
+        # Per-section counters of dropped/unparsed records, for diagnostics.
+        # Distinguishes "section absent" (key missing) from "section present
+        # but had N malformed records" (key present with a count).
+        self._dropped_records: Dict[str, int] = {}
 
         if pdk_module:
             self._build_gds_lookup()
@@ -144,32 +196,49 @@ class LVSDBParser:
         and builds the parse tree. After loading, processes layer mappings
         and cross-reference sections.
 
+        KLayout writes the .lvsdb as UTF-8, so the file is read with an explicit
+        utf-8 encoding (never the platform default, which is cp1252 on Windows
+        and would raise or corrupt on non-ASCII names/parameters such as µ/Ω).
+        The tokenizer treats CR/LF/tab/space uniformly, so CRLF and LF inputs
+        tokenize identically on every OS.
+
         Returns:
             The parsed data structure (list of S-expressions).
 
         Raises:
             FileNotFoundError: If the filepath does not exist.
             IOError: If the file cannot be read.
+            UnicodeDecodeError: If the file is not valid UTF-8 (a genuinely
+                corrupt file); logged here then re-raised so the caller's
+                existing failure handling still fires.
         """
-        with open(self.filepath, 'r') as f:
-            content = f.read()
-            # Check and strip the LVSDB header, warn on unrecognized format
-            header_match = re.match(r'^#%lvsdb-klayout(?:-([\d.]+))?', content)
-            if header_match:
-                version = header_match.group(1)
-                if version is not None:
-                    logger.info(f"LVSDB format version: {version}")
-                content = content[header_match.end():].strip()
-            else:
-                logger.warning(
-                    f"Unrecognized LVSDB header in {self.filepath}; "
-                    "parsing may fail or produce incomplete results."
-                )
-            # Wrap in extra parens so all top-level sections are parsed as one list
-            tokens = self.tokenize('(' + content + ')')
-            result = self.parse_expression(tokens)
-            # Unwrap the outer list to get [tag, content, tag, content, ...]
-            self.data = result[0] if (isinstance(result, list) and len(result) == 1) else result
+        try:
+            with open(self.filepath, 'r', encoding='utf-8') as f:
+                content = f.read()
+        except (OSError, UnicodeDecodeError) as err:
+            # Preserve the existing failure contract (the caller catches load()
+            # exceptions) while making the cause visible in reveda.log instead
+            # of surfacing as a confidently-empty, clean-looking LVS result.
+            logger.error(f"Failed to read LVSDB file {self.filepath}: {err}")
+            raise
+
+        # Check and strip the LVSDB header, warn on unrecognized format
+        header_match = re.match(r'^#%lvsdb-klayout(?:-([\d.]+))?', content)
+        if header_match:
+            version = header_match.group(1)
+            if version is not None:
+                logger.info(f"LVSDB format version: {version}")
+            content = content[header_match.end():].strip()
+        else:
+            logger.warning(
+                f"Unrecognized LVSDB header in {self.filepath}; "
+                "parsing may fail or produce incomplete results."
+            )
+        # Wrap in extra parens so all top-level sections are parsed as one list
+        tokens = self.tokenize('(' + content + ')')
+        result = self.parse_expression(tokens)
+        # Unwrap the outer list to get [tag, content, tag, content, ...]
+        self.data = result[0] if (isinstance(result, list) and len(result) == 1) else result
 
         self._process_units()
         self._process_layers()
@@ -212,28 +281,44 @@ class LVSDBParser:
         cells, including net, pin, and device mappings. Populates self.crossrefs
         with mappings for each cell.
 
-        Cross-reference format: X(cell_name schematic_name equiv [L(...)] Z(...))
-        where L(...) carries optional diagnostics and Z(...) contains net, pin,
-        and device correspondences.
+        Cross-reference format: X(cell_name schematic_name [status] [L(...)] Z(...))
+        where [status] is the optional circuit-pair status token (see
+        classifyStatusToken), L(...) carries optional diagnostics and Z(...)
+        contains net, pin, and device correspondences.
         """
         section = self._find_section('Z')
         if section is None:
+            self._dropped_records['crossrefs'] = 0
             return
+        dropped = 0
         # Z section has tag-pair format: X, (content), X, (content)...
         for j in range(0, len(section), 2):
             tag = self._safe_get(section, j)
             if tag != 'X' or j + 1 >= len(section):
                 continue
             item = section[j + 1]
-            if not isinstance(item, list) or len(item) < 3:
+            if not isinstance(item, list) or len(item) < 2:
+                dropped += 1
                 continue
             cell_name = self._safe_get(item, 0)
             schematic_name = self._safe_get(item, 1)
-            equiv = self._safe_get(item, 2)
+
+            # [status] is optional per spec. Only treat item[2] as the status
+            # token when it is one of the documented tokens; otherwise it is a
+            # trailing message/log element and the status is absent.
+            raw_status = self._safe_get(item, 2)
+            if isStatusToken(raw_status):
+                status_tier = classifyStatusToken(raw_status)
+                inner_start = 3
+            else:
+                raw_status = None
+                status_tier = STATUS_ABSENT
+                inner_start = 2
+
             diagnostics = {"messages": [], "net_mismatch_messages": []}
             mapping_items = []
 
-            for idx in range(3, len(item), 2):
+            for idx in range(inner_start, len(item), 2):
                 inner_tag = self._safe_get(item, idx)
                 if idx + 1 >= len(item):
                     continue
@@ -244,12 +329,23 @@ class LVSDBParser:
                     mapping_items.extend([inner_tag, inner_content])
 
             mapping = self._parse_crossref_mapping(mapping_items)
+            # A circuit is equivalent only when KLayout recorded a match ('1').
+            # nomatch/warning/skipped/absent are all "not a confirmed match",
+            # but the tier is stored so the GUI can distinguish them.
             self.crossrefs[cell_name] = {
                 'schematic_name': schematic_name,
-                'equivalent': equiv == '1',
+                'equivalent': status_tier == STATUS_MATCH,
+                'status': raw_status,
+                'status_tier': status_tier,
                 'mapping': mapping,
                 'diagnostics': diagnostics,
             }
+        self._dropped_records['crossrefs'] = dropped
+        if dropped:
+            logger.warning(
+                f"LVSDB crossref (Z) section: skipped {dropped} malformed "
+                f"circuit-pair record(s) in {self.filepath}."
+            )
 
     def _parse_crossref_mapping(self, mapping_items: List) -> Dict:
         """
@@ -291,24 +387,44 @@ class LVSDBParser:
                     continue
 
                 if subtag == 'N' and len(subcontent) >= 2:
+                    raw_status, tier = self._pairStatus(subcontent)
                     mapping['nets'].append({
                         'layout_net': self._safe_get(subcontent, 0),
                         'schem_net': self._safe_get(subcontent, 1),
-                        'status': self._safe_get(subcontent, 2)
+                        'status': raw_status,
+                        'status_tier': tier,
                     })
                 elif subtag == 'P' and len(subcontent) >= 2:
+                    raw_status, tier = self._pairStatus(subcontent)
                     mapping['pins'].append({
                         'layout_pin': self._safe_get(subcontent, 0),
                         'schem_pin': self._safe_get(subcontent, 1),
-                        'status': self._safe_get(subcontent, 2)
+                        'status': raw_status,
+                        'status_tier': tier,
                     })
                 elif subtag == 'D' and len(subcontent) >= 2:
+                    raw_status, tier = self._pairStatus(subcontent)
                     mapping['devices'].append({
                         'layout_dev': self._safe_get(subcontent, 0),
                         'schem_dev': self._safe_get(subcontent, 1),
-                        'status': self._safe_get(subcontent, 2)
+                        'status': raw_status,
+                        'status_tier': tier,
                     })
         return mapping
+
+    @staticmethod
+    def _pairStatus(subcontent: List) -> Tuple[Optional[str], str]:
+        """Extract the optional [status] token from an N/P/D pair and classify it.
+
+        The pair is ``tag(<id-or-()> <id-or-()> [status]? [message]? ...)``.
+        ``subcontent[2]`` is the status only when it is a documented token;
+        otherwise [status] is absent and the element is a trailing message/log.
+        Returns ``(raw_status_or_None, tier)``.
+        """
+        raw_status = subcontent[2] if len(subcontent) >= 3 else None
+        if isStatusToken(raw_status):
+            return raw_status, classifyStatusToken(raw_status)
+        return None, STATUS_ABSENT
 
     def _parse_crossref_diagnostics(self, diagnostic_items: List) -> Dict:
         """
@@ -893,41 +1009,63 @@ class LVSDBParser:
         return self.crossrefs.get(cell_name)
 
     @staticmethod
+    def statusTier(mapping_item: Dict) -> str:
+        """Return the classified status tier for a mapping item.
+
+        Prefers the tier parsed once at load time (stored as ``status_tier``);
+        falls back to classifying the raw ``status`` token for mapping items
+        built by older code paths that only stored the raw token.
+        """
+        tier = mapping_item.get('status_tier')
+        if tier is not None:
+            return tier
+        return classifyStatusToken(mapping_item.get('status'))
+
+    @staticmethod
     def _is_mismatch(mapping_item: Dict) -> bool:
         """
-        Determine if a mapping item represents an actual mismatch.
+        Determine if a mapping item represents a HARD mismatch.
 
-        In KLayout LVSDB format, the status field indicates match quality:
-        - '1' indicates a successful match (both sides correspond correctly)
-        - '0', empty string, or None indicates no match/unmatched
-        - Other codes like 'X' indicate specific mismatch types
-        - Also checks if either layout or schematic reference is missing
+        KLayout LVS status tokens classify to tiers (see classifyStatusToken):
+        - match ('1')    — a confirmed correspondence; never a mismatch.
+        - mismatch ('0') — a hard mismatch.
+        - nomatch ('X')  — a hard mismatch (one side has no counterpart).
+        - warning ('W')  — surfaced as a warning, NOT counted as a mismatch.
+        - skipped ('S')  — informational/skipped, NOT counted as a mismatch.
+        - absent         — [status] omitted; only a mismatch when a side is
+                           missing (a genuinely unmatched pair with one () id).
 
         Args:
-            mapping_item: Dict with 'layout_*', 'schem_*', and 'status' keys
+            mapping_item: Dict with 'layout_*', 'schem_*', 'status' and
+                (preferably) 'status_tier' keys.
 
         Returns:
-            True if this item represents a mismatch, False otherwise
+            True only for a hard mismatch (mismatch/nomatch tiers, or an
+            absent-status pair with a missing side).
         """
-        status = mapping_item.get('status', '')
-        layout_ref = mapping_item.get('layout_net') or mapping_item.get('layout_pin') or mapping_item.get('layout_dev')
-        schem_ref = mapping_item.get('schem_net') or mapping_item.get('schem_pin') or mapping_item.get('schem_dev')
+        tier = LVSDBParser.statusTier(mapping_item)
 
-        # Status '1' means KLayout confirmed a successful match — trust this first,
-        # even when one side is () (an anonymous/unresolved reference).
-        if status == '1':
+        # A confirmed match is never a mismatch, even when one side is ()
+        # (an anonymous/unresolved reference).
+        if tier == STATUS_MATCH:
             return False
 
-        # If either side is missing and not matched by status, it's a mismatch
-        if not layout_ref or not schem_ref:
+        # Warning and skipped tiers are not hard mismatches.
+        if tier in (STATUS_WARNING, STATUS_SKIPPED):
+            return False
+
+        # Mismatch and nomatch tiers are hard mismatches.
+        if tier in _HARD_MISMATCH_TIERS:
             return True
 
-        # Status '0', empty, or None means unmatched/mismatch
-        if not status or status == '0':
-            return True
-
-        # Any other status code (e.g. 'W' for width, 'X') indicates a specific mismatch type
-        return True
+        # Status absent: only a mismatch when a side has no counterpart.
+        layout_ref = (mapping_item.get('layout_net')
+                      or mapping_item.get('layout_pin')
+                      or mapping_item.get('layout_dev'))
+        schem_ref = (mapping_item.get('schem_net')
+                     or mapping_item.get('schem_pin')
+                     or mapping_item.get('schem_dev'))
+        return not layout_ref or not schem_ref
 
     def get_all_crossrefs_formatted(self) -> List[Dict]:
         """
@@ -964,14 +1102,30 @@ class LVSDBParser:
             devices = mapping.get('devices', [])
 
             pin_mismatches = sum(1 for p in pins if self._is_mismatch(p))
+            # Explicit = KLayout gave a specific non-'0' hard-mismatch verdict
+            # (nomatch 'X'); generic = plain mismatch '0' or an absent-status
+            # pair with a missing side. Warning/skipped tiers are never hard
+            # mismatches (_is_mismatch already excludes them).
             explicit_device_mismatches = [
                 device for device in devices
-                if self._is_mismatch(device) and device.get('status') not in {'', None, '0'}
+                if self._is_mismatch(device)
+                and self.statusTier(device) not in (STATUS_MISMATCH, STATUS_ABSENT)
             ]
             generic_device_mismatches = [
                 device for device in devices
-                if self._is_mismatch(device) and device.get('status') in {'', None, '0'}
+                if self._is_mismatch(device)
+                and self.statusTier(device) in (STATUS_MISMATCH, STATUS_ABSENT)
             ]
+            # Warning/skipped tiers across nets/pins/devices, surfaced for the
+            # GUI so it can show a warning/skipped tier instead of a failure.
+            warning_count = sum(
+                1 for items in (nets, pins, devices) for item in items
+                if self.statusTier(item) == STATUS_WARNING
+            )
+            skipped_count = sum(
+                1 for items in (nets, pins, devices) for item in items
+                if self.statusTier(item) == STATUS_SKIPPED
+            )
             estimated_device_mismatches, device_mismatch_summaries, device_mismatch_details = (0, [], [])
             if generic_device_mismatches and not explicit_device_mismatches:
                 estimated_device_mismatches, device_mismatch_summaries, device_mismatch_details = (
@@ -1004,9 +1158,12 @@ class LVSDBParser:
                 'layout_cell': layout_cell_name,
                 'schem_cell': xref.get('schematic_name', ''),
                 'equivalent': equivalent,
+                'status_tier': xref.get('status_tier', STATUS_ABSENT),
                 'net_mismatches': net_mismatches,
                 'pin_mismatches': pin_mismatches,
                 'device_mismatches': device_mismatches,
+                'warning_count': warning_count,
+                'skipped_count': skipped_count,
                 'device_mismatch_summaries': device_mismatch_summaries,
                 'device_mismatch_details': device_mismatch_details,
                 'total_mappings': net_mismatches + pin_mismatches + device_mismatches,
@@ -1107,8 +1264,16 @@ class LVSDBParser:
                 if section[j] == 'X' and j + 1 < len(section):
                     item = section[j + 1]
                     if isinstance(item, list) and len(item) >= 1 and item[0] == cell_name:
+                        dropped_before = self._dropped_records.get('net_shapes', 0)
                         cell_data = self._parse_layout_cell(item)
                         self.layout_cells[cell_name] = cell_data
+                        dropped = self._dropped_records.get('net_shapes', 0) - dropped_before
+                        if dropped:
+                            logger.warning(
+                                f"LVSDB layout cell '{cell_name}': dropped "
+                                f"{dropped} unparseable net shape(s) in "
+                                f"{self.filepath}."
+                            )
                         return cell_data
         return None
 
@@ -1425,6 +1590,8 @@ class LVSDBParser:
                         "bbox": bbox
                     })
                 except (ValueError, TypeError, IndexError):
+                    self._dropped_records['net_shapes'] = (
+                        self._dropped_records.get('net_shapes', 0) + 1)
                     continue
             elif tag == 'Q' and isinstance(content, list) and len(content) >= 2:
                 lvsdb_layer_id = content[0]
@@ -1446,6 +1613,8 @@ class LVSDBParser:
                             "points": points
                         })
                 except (ValueError, TypeError):
+                    self._dropped_records['net_shapes'] = (
+                        self._dropped_records.get('net_shapes', 0) + 1)
                     continue
             elif tag == 'J' and isinstance(content, list) and len(content) >= 3:
                 lvsdb_layer_id = content[0]
@@ -1464,6 +1633,8 @@ class LVSDBParser:
                         "pos": [px, py]
                     })
                 except (ValueError, TypeError):
+                    self._dropped_records['net_shapes'] = (
+                        self._dropped_records.get('net_shapes', 0) + 1)
                     continue
 
         return {
