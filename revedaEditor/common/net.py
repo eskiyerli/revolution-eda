@@ -563,72 +563,17 @@ class schematicNet(QGraphicsItem):
             }
             return overlapNets - {self}
 
-    def inheritNetName(self, otherNet: "schematicNet") -> bool:
-        """
-        Inherit or resolve net names based on name strength and handle conflicts.
-        """
-
-        def resolve_name(weakNet: "schematicNet", strongNet: "schematicNet"):
-            weakNet.name = strongNet.name
-            weakNet.nameStrength = netNameStrengthEnum.INHERIT
-
-        self_strength = self.nameStrength.value
-        other_strength = otherNet.nameStrength.value
-
-        if self_strength == 3:  # SET
-            if other_strength < 3:
-                resolve_name(otherNet, self)
-                return True
-            if self.name != otherNet.name:
-                self.nameConflict = otherNet.nameConflict = True
-                return False
-            return True
-
-        if self_strength == 2:  # INHERIT
-            match other_strength:
-                case 0 | 1:  # NONAME or WEAK
-                    resolve_name(otherNet, self)
-                    return True
-                case 2:  # INHERIT
-                    if self.name != otherNet.name:
-                        self.nameConflict = otherNet.nameConflict = True
-                        return False
-                    return True
-                case 3:
-                    resolve_name(self, otherNet)
-                    return True
-
-        if self_strength == 1:  # WEAK
-            match other_strength:
-                case 0:  # NONAME
-                    # name setter forces SET strength; assign name first.
-                    otherNet.name = self.name
-                    otherNet.nameStrength = netNameStrengthEnum.WEAK
-                    return True
-                case 1:  # WEAK
-                    if self.name != otherNet.name:
-                        self.nameConflict = otherNet.nameConflict = True
-                        return False
-                    return True
-                case 2 | 3:  # INHERIT or SET
-                    resolve_name(self, otherNet)
-                    return True
-
-        if self_strength == 0:  # NONAME
-            if other_strength > 0:
-                resolve_name(self, otherNet)
-                return True
-            else:
-                if self.name != "" or otherNet.name != "":
-                    self.nameConflict = otherNet.nameConflict = True
-                    return False
-                return True
-
-        return False
-
     def mergeNetName(self, otherNet: "schematicNet") -> bool:
         """
         Merge net names based on name strength and handle conflicts.
+
+        NOTE: This is a transient pre-pass used by the live schematicScene
+        wire merge/stretch paths to carry a provisional name onto a freshly
+        folded/stretched net object. It is NOT the authoritative net naming:
+        ``connectivity.resolve.nameSceneNets`` (the single connectivity engine)
+        re-derives every scene net name from the connected-group strength
+        resolution after the structural edit, overwriting whatever this
+        pairwise pass produced. See AGENTS.md "Connectivity architecture".
 
         Rules:
         - Higher nameStrength wins: receiver gets the winner's name and

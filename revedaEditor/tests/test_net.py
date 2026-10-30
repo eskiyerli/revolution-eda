@@ -20,178 +20,48 @@ def setup_nets(qtbot):
     return net1, net2, scene
 
 
-def test_inheritNetName_set_to_noname(setup_nets):
+# NOTE: the former ``test_inheritNetName_*`` matrix was removed together with
+# the dead ``schematicNet.inheritNetName`` pairwise resolver. The strength
+# resolution it exercised (SET/INHERIT/WEAK/NONAME propagation and conflict
+# flagging) is owned by the single connectivity engine and is covered by
+# ``test_connectivity.py`` (e.g. ``test_set_name_propagates``,
+# ``test_schematic_pin_names_net_inherit``, ``test_set_name_conflict_flagged``
+# and the ``test_parity_*`` cases against ``nameSceneNets``).
+
+
+def test_mergeNetName_higher_strength_wins(setup_nets):
     net1, net2, scene = setup_nets
-    net1.nameStrength = netNameStrengthEnum.SET
-    net1.name = "Net1"
-    net2.nameStrength = netNameStrengthEnum.NONAME
-    result = net1.inheritNetName(net2)
-    assert result
-    assert net2.name == "Net1"
-    assert net2.nameStrength == netNameStrengthEnum.INHERIT
-
-
-def test_inheritNetName_set_to_inherit(setup_nets):
-    net1, net2, scene = setup_nets
-    net1.nameStrength = netNameStrengthEnum.SET
-    net1.name = "Net1"
-    net2.nameStrength = netNameStrengthEnum.INHERIT
-    result = net1.inheritNetName(net2)
-    assert result
-    assert net2.name == "Net1"
-    assert net2.nameStrength == netNameStrengthEnum.INHERIT
-
-
-def test_inheritNetName_set_to_set_conflict(setup_nets):
-    net1, net2, scene = setup_nets
-    net1.nameStrength = netNameStrengthEnum.SET
-    net1.name = "Net1"
+    net1.name = "weakNet"
+    net1.nameStrength = netNameStrengthEnum.WEAK
+    net2.name = "setNet"
     net2.nameStrength = netNameStrengthEnum.SET
-    net2.name = "Net2"
-    result = net1.inheritNetName(net2)
+    result = net1.mergeNetName(net2)
+    assert result
+    assert net1.name == "setNet"
+    assert net1.nameStrength == netNameStrengthEnum.INHERIT
+
+
+def test_mergeNetName_equal_strength_conflict(setup_nets):
+    net1, net2, scene = setup_nets
+    net1.name = "a"
+    net1.nameStrength = netNameStrengthEnum.SET
+    net2.name = "b"
+    net2.nameStrength = netNameStrengthEnum.SET
+    result = net1.mergeNetName(net2)
     assert not result
     assert net1.nameConflict
     assert net2.nameConflict
 
 
-def test_inheritNetName_inherit_to_noname(setup_nets):
+def test_mergeNetName_self_higher_strength_kept(setup_nets):
     net1, net2, scene = setup_nets
-    # Assigning .name forces SET strength; override strength afterwards.
-    net1.name = "Net1"
-    net1.nameStrength = netNameStrengthEnum.INHERIT
-    net2.name = "Net2"
-    net2.nameStrength = netNameStrengthEnum.NONAME
-    result = net1.inheritNetName(net2)
-    assert result
-    assert net2.name == "Net1"
-    assert net2.nameStrength == netNameStrengthEnum.INHERIT
-
-
-def test_inheritNetName_inherit_to_weak(setup_nets):
-    net1, net2, scene = setup_nets
-    net1.name = "Net1"
-    net1.nameStrength = netNameStrengthEnum.INHERIT
-    net2.name = "Net2"
+    net1.name = "keepMe"
+    net1.nameStrength = netNameStrengthEnum.SET
+    net2.name = "weak"
     net2.nameStrength = netNameStrengthEnum.WEAK
-    result = net1.inheritNetName(net2)
+    result = net1.mergeNetName(net2)
     assert result
-    assert net2.name == "Net1"
-    assert net2.nameStrength == netNameStrengthEnum.INHERIT
-
-
-def test_inheritNetName_inherit_to_inherit(setup_nets):
-    net1, net2, scene = setup_nets
-    net1.nameStrength = netNameStrengthEnum.INHERIT
-    net1.name = "Net1"
-    net2.nameStrength = netNameStrengthEnum.INHERIT
-    net2.name = "Net2"
-    result = net1.inheritNetName(net2)
-    assert not result
-    assert net1.nameConflict
-    assert net2.nameConflict
-
-
-def test_inheritNetName_inherit_to_set(setup_nets):
-    net1, net2, scene = setup_nets
-    net1.name = "Net1"
-    net1.nameStrength = netNameStrengthEnum.INHERIT
-    net2.name = "Net2"
-    net2.nameStrength = netNameStrengthEnum.SET
-    result = net1.inheritNetName(net2)
-    assert result
-    assert net1.name == "Net2"
-    assert net1.nameStrength == netNameStrengthEnum.INHERIT
-
-
-def test_inheritNetName_weak_to_noname(setup_nets):
-    net1, net2, scene = setup_nets
-    net1.name = "Net1"
-    net1.nameStrength = netNameStrengthEnum.WEAK
-    net2.nameStrength = netNameStrengthEnum.NONAME
-    result = net1.inheritNetName(net2)
-    assert result
-    assert net2.name == "Net1"
-    assert net2.nameStrength == netNameStrengthEnum.WEAK
-
-
-def test_inheritNetName_weak_to_weak_different_name(setup_nets):
-    net1, net2, scene = setup_nets
-    net1.nameStrength = netNameStrengthEnum.WEAK
-    net1.name = "Net1"
-    net2.nameStrength = netNameStrengthEnum.WEAK
-    net2.name = "Net2"
-    result = net1.inheritNetName(net2)
-    assert not result
-
-
-def test_inheritNetName_weak_to_same_name(setup_nets):
-    net1, net2, scene = setup_nets
-    net1.name = "Net1"
-    net1.nameStrength = netNameStrengthEnum.WEAK
-    net2.name = "Net1"
-    net2.nameStrength = netNameStrengthEnum.WEAK
-    result = net1.inheritNetName(net2)
-    assert result
-    assert net2.name == "Net1"
-    assert net2.nameStrength == netNameStrengthEnum.WEAK
-
-
-def test_inheritNetName_weak_to_inherit(setup_nets):
-    net1, net2, scene = setup_nets
-    net1.name = "Net1"
-    net1.nameStrength = netNameStrengthEnum.WEAK
-    net2.name = "Net2"
-    net2.nameStrength = netNameStrengthEnum.INHERIT
-    result = net1.inheritNetName(net2)
-    assert result
-    assert net1.name == "Net2"
-    assert net1.nameStrength == netNameStrengthEnum.INHERIT
-
-
-def test_inheritNetName_weak_to_set(setup_nets):
-    net1, net2, scene = setup_nets
-    net1.name = "Net1"
-    net1.nameStrength = netNameStrengthEnum.WEAK
-    net2.name = "Net2"
-    net2.nameStrength = netNameStrengthEnum.SET
-    result = net1.inheritNetName(net2)
-    assert result
-    assert net1.name == "Net2"
-    assert net1.nameStrength == netNameStrengthEnum.INHERIT
-
-
-def test_inheritNetName_noname_to_inherit(setup_nets):
-    net1, net2, scene = setup_nets
-    net1.nameStrength = netNameStrengthEnum.NONAME
-    net1.name = ""
-    net2.nameStrength = netNameStrengthEnum.INHERIT
-    net2.name = "Net2"
-    result = net1.inheritNetName(net2)
-    assert result
-    assert net1.name == "Net2"
-    assert net1.nameStrength == netNameStrengthEnum.INHERIT
-
-
-def test_inheritNetName_noname_to_set(setup_nets):
-    net1, net2, scene = setup_nets
-    net1.nameStrength = netNameStrengthEnum.NONAME
-    net1.name = ""
-    net2.nameStrength = netNameStrengthEnum.SET
-    net2.name = "Net2"
-    result = net1.inheritNetName(net2)
-    assert result
-    assert net1.name == "Net2"
-    assert net1.nameStrength == netNameStrengthEnum.INHERIT
-
-
-def test_inheritNetName_noname_to_noname(setup_nets):
-    net1, net2, scene = setup_nets
-    net1.nameStrength = netNameStrengthEnum.NONAME
-    net1.name = ""
-    net2.nameStrength = netNameStrengthEnum.NONAME
-    net2.name = ""
-    result = net1.inheritNetName(net2)
-    assert result
+    assert net1.name == "keepMe"
 
 
 def test_findOverlapNets_no_overlap(setup_nets):
