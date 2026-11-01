@@ -1,3 +1,8 @@
+# SPDX-License-Identifier: MPL-2.0
+#
+# Revolution EDA
+# Copyright (c) 2026 Revolution Semiconductor
+
 """RCX database schema — the contract between LVS and RC extraction.
 
 The .rcx.json file is the extraction database that LVS produces and the

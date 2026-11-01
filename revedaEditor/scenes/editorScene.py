@@ -1,13 +1,8 @@
-# 
+# SPDX-License-Identifier: MPL-2.0
+#
 # Revolution EDA
-# 
 # Copyright (c) 2026 Revolution Semiconductor
-#
-# This Source Code Form is subject to the terms of the
-# Mozilla Public License, v. 2.0.
-# If a copy of the MPL was not distributed with this
-# file, You can obtain one at https://mozilla.org/MPL/2.0/.
-#
+
 import json
 import pathlib
 import time
@@ -656,6 +651,14 @@ class editorScene(QGraphicsScene):
         self._armedCopyUndoIndex = -1
         if editorScene._armedCopyScene is self:
             editorScene._armedCopyScene = None
+        # Grouping/ungrouping bypasses addItem/removeItem, so a connectivity
+        # cache rebuilt while the copy floated (members were group children,
+        # invisible to the top-level filter) or at pre-move positions stays
+        # stale. Invalidate so the committed shapes join nets at their final
+        # positions. Scenes without connectivity skip this via getattr.
+        markDirty = getattr(self, "markConnectivityDirty", None)
+        if callable(markDirty):
+            markDirty()
 
     def rearmClipboardPaste(self) -> int:
         """Rebuild the armed floating copy with the current
@@ -706,9 +709,9 @@ class editorScene(QGraphicsScene):
         self.messageLine.setText("All items deselected")
 
     def deleteSelectedItems(self) -> None:
-        if self.selectedItems() is not None:
-            for item in self.selectedItems():
-                # self.removeItem(item)
+        selectedItems = self.selectedItems()
+        if selectedItems:
+            for item in selectedItems:
                 undoCommand = us.deleteShapeUndo(self, item)
                 self.undoStack.push(undoCommand)
             self.update()  # update the scene

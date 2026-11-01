@@ -1,3 +1,8 @@
+# SPDX-License-Identifier: MPL-2.0
+#
+# Revolution EDA
+# Copyright (c) 2026 Revolution Semiconductor
+
 import math
 from pathlib import Path
 from types import SimpleNamespace
@@ -418,4 +423,3 @@ def test_encoder_writes_deferred_instance_bbox_without_realising(tmp_path):
 
     assert saved["bbox"] == pytest.approx((0, 0, 10, 20))
     assert instance._deferredLoader is not None
-

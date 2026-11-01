@@ -1,3 +1,8 @@
+# SPDX-License-Identifier: MPL-2.0
+#
+# Revolution EDA
+# Copyright (c) 2026 Revolution Semiconductor
+
 """Persistence compatibility for RevSDL metadata owned by the free core."""
 
 import json

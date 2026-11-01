@@ -1,14 +1,7 @@
-# 
-# Revolution EDA
-# 
-# Copyright (c) 2026 Revolution Semiconductor
+# SPDX-License-Identifier: MPL-2.0
 #
-# This Source Code Form is subject to the terms of the
-# Mozilla Public License, v. 2.0.
-# If a copy of the MPL was not distributed with this
-# file, You can obtain one at https://mozilla.org/MPL/2.0/.
-##
-
+# Revolution EDA
+# Copyright (c) 2026 Revolution Semiconductor
 
 import json
 import os
@@ -110,6 +103,11 @@ class schematicScene(editorScene):
         self._connectivityCache = None
         self._connectivitySegIdByItem = {}
         self._connectivityPortIdByItem = {}
+        # Cached item partition (nets/symbols/schematic pins) feeding the
+        # findScene*Set hot paths. Invalidated on add/remove/clear only.
+        self._sceneNetsCache = None
+        self._sceneSymbolsCache = None
+        self._sceneSchemPinsCache = None
         # Invalidate on structural changes only, never on the blanket Qt
         # ``changed`` signal (which fires on selection and mid-drag geometry
         # churn, forcing needless O(n) rebuilds). addItem/removeItem cover
@@ -1233,10 +1231,7 @@ class schematicScene(editorScene):
 
     def cleanUpNets(self):
         """Run mergeSplitNets on every net in the scene to remove duplicates."""
-        netSnapshot = list(
-            item for item in self.items() if isinstance(item, snet.schematicNet)
-            and not self._isEipGhost(item)
-        )
+        netSnapshot = list(self.findSceneNetsSet())
         for netItem in netSnapshot:
             if netItem.scene() is self:
                 self.mergeSplitNets(netItem)
@@ -1743,18 +1738,52 @@ class schematicScene(editorScene):
             item = item.parentItem()
         return False
 
+    def _rebuildItemPartition(self) -> None:
+        """Partition the scene's items into net/symbol/schematic-pin sets in a
+        single pass over ``self.items()``.
+
+        The three ``findScene*Set`` helpers are hot paths (connectivity
+        rebuilds, wire editing, naming, find/replace) that each used to walk
+        the whole scene and isinstance-filter independently. Caching the
+        partition collapses those repeated O(n) walks into one; the cache is
+        invalidated whenever items are added, removed, or the scene cleared
+        (see ``addItem``/``removeItem``/``clear``). Item *moves* never change
+        partition membership, so they do not invalidate it.
+        """
+        nets: set[snet.schematicNet] = set()
+        symbols: set[shp.schematicSymbol] = set()
+        schemPins: set[shp.schematicPin] = set()
+        for item in self.items():
+            if self._isEipGhost(item):
+                continue
+            if isinstance(item, snet.schematicNet):
+                nets.add(item)
+            elif isinstance(item, shp.schematicSymbol):
+                symbols.add(item)
+            elif isinstance(item, shp.schematicPin):
+                schemPins.add(item)
+        self._sceneNetsCache = nets
+        self._sceneSymbolsCache = symbols
+        self._sceneSchemPinsCache = schemPins
+
+    def _invalidateItemPartition(self) -> None:
+        """Drop the cached item partition; rebuilt lazily on next access."""
+        self._sceneNetsCache = None
+        self._sceneSymbolsCache = None
+        self._sceneSchemPinsCache = None
+
     def findSceneSymbolSet(self) -> set[shp.schematicSymbol]:
         """
         Find all the symbols on the scene as a set.
         """
-        return {item for item in self.items() if
-                isinstance(item, shp.schematicSymbol)
-                and not self._isEipGhost(item)}
+        if self._sceneSymbolsCache is None:
+            self._rebuildItemPartition()
+        return set(self._sceneSymbolsCache)
 
     def findSceneNetsSet(self) -> set[snet.schematicNet]:
-        return {item for item in self.items() if
-                isinstance(item, snet.schematicNet)
-                and not self._isEipGhost(item)}
+        if self._sceneNetsCache is None:
+            self._rebuildItemPartition()
+        return set(self._sceneNetsCache)
 
     def _filterBySelectModes(self, items: set) -> set:
         """Filter rubber-band selected items by the active selection filter."""
@@ -1789,9 +1818,9 @@ class schematicScene(editorScene):
         return pinsRectSet
 
     def findSceneSchemPinsSet(self) -> set[shp.schematicPin]:
-        pinsSceneSet = {item for item in self.items() if
-                        isinstance(item, shp.schematicPin)
-                        and not self._isEipGhost(item)}
+        if self._sceneSchemPinsCache is None:
+            self._rebuildItemPartition()
+        pinsSceneSet = set(self._sceneSchemPinsCache)
         if pinsSceneSet:  # check pinsSceneSet is empty
             return pinsSceneSet
         else:
@@ -3129,6 +3158,9 @@ class schematicScene(editorScene):
             self.logger.warning("No symbol selected")
 
     def renumberInstances(self):
+        # NOTE: order matters here — instances are renumbered by enumeration
+        # order, so keep the deterministic self.items() z-order rather than the
+        # unordered findSceneSymbolSet().
         symbolList = [item for item in self.items() if
                       isinstance(item, shp.schematicSymbol)
                       and not self._isEipGhost(item)]
@@ -3200,8 +3232,18 @@ class schematicScene(editorScene):
     # --- Unified connectivity (revedaEditor.connectivity engine) -----------
 
     def markConnectivityDirty(self, *args):
-        """Invalidate the cached connectivity result on any scene change."""
+        """Invalidate cached scene state on any structural change.
+
+        Covers both the connectivity result and the item partition
+        (findScene*Set). Every path that changes partition membership —
+        add/remove/clear and edit-in-place group reparenting — routes
+        through here, so the partition cache can never go stale. Moves also
+        reach here via the undo stack's indexChanged signal; they do not
+        change membership, so the extra partition rebuild they trigger is
+        harmless.
+        """
         self._connectivityCache = None
+        self._invalidateItemPartition()
 
     def addItem(self, item):
         super().addItem(item)
@@ -3209,6 +3251,10 @@ class schematicScene(editorScene):
 
     def removeItem(self, item):
         super().removeItem(item)
+        self.markConnectivityDirty()
+
+    def clear(self):
+        super().clear()
         self.markConnectivityDirty()
 
     def rebuildConnectivity(self, netSet: Optional[dict] = None

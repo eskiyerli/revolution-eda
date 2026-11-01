@@ -1,13 +1,7 @@
-# 
-# Revolution EDA
-# 
-# Copyright (c) 2026 Revolution Semiconductor
+# SPDX-License-Identifier: MPL-2.0
 #
-# This Source Code Form is subject to the terms of the
-# Mozilla Public License, v. 2.0.
-# If a copy of the MPL was not distributed with this
-# file, You can obtain one at https://mozilla.org/MPL/2.0/.
-##
+# Revolution EDA
+# Copyright (c) 2026 Revolution Semiconductor
 
 from collections import Counter, defaultdict
 import functools
@@ -1287,6 +1281,7 @@ class lvsResultsDialogue(QDialog):
             self._highlight_schematic_nets({"name": net_data.get("name", "")})
 
     def onNetSelected(self, shapes):
+        self._clear_layout_highlights()
         dx, dy, y_sign = self._infer_lvs_transform(shapes)
         color = self._color_for_shapes(shapes)
         lvsShapes = [
@@ -1296,11 +1291,16 @@ class lvsResultsDialogue(QDialog):
         ]
         self.layoutEditor.handleLVSRectSelection(lvsShapes)
 
-    def onDeviceSelected(self, device):
-        """Handle device selection from devices table."""
+    def _layout_rect_for_device(self, device: dict):
+        """Build the layout highlight rect for a device.
+
+        Returns the LVSErrorRect, or None when the device has no usable
+        position. Shared by the devices table and the mismatch batch path so
+        both produce the same rect.
+        """
         position = device.get("position")
         if not position:
-            return
+            return None
 
         if isinstance(position, (list, tuple)) and len(position) >= 2:
             x, y = position[0], position[1]
@@ -1308,14 +1308,14 @@ class lvsResultsDialogue(QDialog):
             x = position.get("x")
             y = position.get("y")
             if x is None or y is None:
-                return
+                return None
         else:
-            return
+            return None
 
         try:
             x, y = float(x), float(y)
         except (TypeError, ValueError):
-            return
+            return None
 
         half = self._DEVICE_HIGHLIGHT_SIZE / 2
         shape_bbox = [[x - half, y - half], [x + half, y + half]]
@@ -1341,7 +1341,14 @@ class lvsResultsDialogue(QDialog):
         rect_item._cell = (
             f"{device.get('type', '?')} ({device.get('id', '?')}) - {device.get('name', '?')}"
         )
-        self.layoutEditor.handleLVSRectSelection([rect_item])
+        return rect_item
+
+    def onDeviceSelected(self, device):
+        """Handle device selection from devices table."""
+        self._clear_layout_highlights()
+        rect_item = self._layout_rect_for_device(device)
+        if rect_item is not None:
+            self.layoutEditor.handleLVSRectSelection([rect_item])
 
         # Also highlight corresponding device in lvs_schematic
         # Layout device ID (e.g., 2) maps to SPICE instance "$2" or "M$2"
@@ -1353,6 +1360,7 @@ class lvsResultsDialogue(QDialog):
 
     def onCellSelected(self, cell):
         """Handle cell selection from cells table."""
+        self._clear_layout_highlights()
         raw_bbox = cell.get("bbox")
         if not raw_bbox or not (isinstance(raw_bbox, list) and len(raw_bbox) == 2):
             return
@@ -1534,6 +1542,9 @@ class lvsResultsDialogue(QDialog):
         sdev = row_data.get('schem_dev_dict')
         if ldev:
             self.onDeviceSelected(ldev)
+        elif sdev:
+            # Schematic-only row: drop stale layout error highlights.
+            self._clear_layout_highlights()
         if sdev:
             self.onSchemDeviceSelected(sdev)
 
@@ -1543,6 +1554,9 @@ class lvsResultsDialogue(QDialog):
         sdev = row_data.get('schem_dev_dict')
         if ldev:
             self.onDeviceSelected(ldev)
+        elif sdev:
+            # Schematic-only row: drop stale layout error highlights.
+            self._clear_layout_highlights()
         if sdev:
             self.onSchemDeviceSelected(sdev)
 
@@ -1551,12 +1565,21 @@ class lvsResultsDialogue(QDialog):
         lnet = row_data.get('layout_net_dict')
         schemNet = row_data.get('schem_net_dict')
         if lnet:
+            shapes = lnet.get('shapes') if isinstance(lnet, dict) else None
+            if shapes:
+                self.onNetSelected(shapes)
+            else:
+                self._clear_layout_highlights()
             self.onNetDataSelected(lnet)
+        else:
+            self._clear_layout_highlights()
         if schemNet:
             self.onSchemNetSelected(schemNet)
 
     def onMissingInLayoutRowSelected(self, row_data: dict):
         """Highlight missing schematic item in schematic editor."""
+        # Schematic-only selection: drop stale layout error highlights.
+        self._clear_layout_highlights()
         item = row_data.get('item_dict')
         cat = row_data.get('category')
         if cat == 'Device' and item:
@@ -1571,6 +1594,11 @@ class lvsResultsDialogue(QDialog):
         if cat == 'Device' and item:
             self.onDeviceSelected(item)
         elif cat == 'Net' and item:
+            shapes = item.get('shapes') if isinstance(item, dict) else None
+            if shapes:
+                self.onNetSelected(shapes)
+            else:
+                self._clear_layout_highlights()
             self.onNetDataSelected(item)
 
     @staticmethod
@@ -2041,8 +2069,9 @@ class lvsResultsDialogue(QDialog):
         self._clear_schematic_highlights()
 
         # Highlight mismatched nets on both views
+        layout_rects = []
         for net in nets:
-            self._highlight_mismatched_net(net)
+            layout_rects.extend(self._highlight_mismatched_net(net))
 
         # Highlight mismatched pins on both views
         for pin in pins:
@@ -2050,12 +2079,18 @@ class lvsResultsDialogue(QDialog):
 
         # Highlight mismatched devices on both views
         if device_details:
-            self._highlight_device_property_mismatches(device_details)
+            layout_rects.extend(
+                self._highlight_device_property_mismatches(device_details))
         else:
             for device in devices:
-                self._highlight_mismatched_device(device)
+                layout_rects.extend(self._highlight_mismatched_device(device))
 
-    def _highlight_device_property_mismatches(self, device_details: list[dict]):
+        # Register the whole batch through the editor so the next error
+        # selection replaces these rects instead of accumulating on top.
+        if layout_rects:
+            self.layoutEditor.handleLVSRectSelection(layout_rects)
+
+    def _highlight_device_property_mismatches(self, device_details: list[dict]) -> list:
         """Highlight specific layout and schematic devices identified by property mismatch analysis."""
         layout_devices = []
         schematic_devices = []
@@ -2064,63 +2099,20 @@ class lvsResultsDialogue(QDialog):
             schematic_devices.extend(detail.get('schematic_devices', []))
 
         self._pending_schematic_device_highlights = list(device_details)
-        self._highlight_layout_devices(layout_devices)
+        layout_rects = self._highlight_layout_devices(layout_devices)
         self._highlight_schematic_devices(schematic_devices)
+        return layout_rects
 
-    def _highlight_layout_devices(self, devices: list[dict]):
+    def _highlight_layout_devices(self, devices: list[dict]) -> list:
         if not devices or not hasattr(self.layoutEditor, 'centralW'):
-            return
-
-        # Pre-compute the transform using the first valid device position as a reference
-        _transform_shapes = []
-        for device in devices:
-            pos = device.get('position')
-            if isinstance(pos, (list, tuple)) and len(pos) >= 2:
-                try:
-                    x, y = float(pos[0]), float(pos[1])
-                    half = self._DEVICE_HIGHLIGHT_SIZE / 2
-                    _transform_shapes.append({"type": "rect", "bbox": [[x - half, y - half], [x + half, y + half]]})
-                    break
-                except (TypeError, ValueError):
-                    pass
-        dx, dy, y_sign = self._infer_lvs_transform(_transform_shapes) if _transform_shapes else (0.0, 0.0, 1)
+            return []
 
         rects = []
         for device in devices:
-            position = device.get('position')
-            if not isinstance(position, (list, tuple)) or len(position) < 2:
-                continue
-            try:
-                x, y = float(position[0]), float(position[1])
-            except (TypeError, ValueError):
-                continue
-
-            color = self._next_highlight_color()
-            # Convert LVS position to scene coordinates
-            sx = x + dx
-            sy = y_sign * y + dy
-            instance = self._find_layout_instance_at(sx, sy)
-            if instance is not None:
-                sbr = instance.sceneBoundingRect().normalized()
-                scene_rect = QRect(
-                    int(round(sbr.left())),
-                    int(round(sbr.top())),
-                    max(1, int(round(sbr.width()))),
-                    max(1, int(round(sbr.height()))),
-                )
-            else:
-                half = self._DEVICE_HIGHLIGHT_SIZE / 2
-                scene_rect = self._apply_transform(
-                    (x - half, y - half, x + half, y + half), dx, dy, y_sign
-                )
-            rect_item = self._make_lvs_rect(scene_rect, color)
-            rect_item._cell = (
-                f"{device.get('type', '?')} ({device.get('id', '?')})"
-            )
-            rects.append(rect_item)
-
-        if rects:
-            self.layoutEditor.handleLVSRectSelection(rects)
+            rect_item = self._layout_rect_for_device(device)
+            if rect_item is not None:
+                rects.append(rect_item)
+        return rects
 
     def register_schematic_view(self, schematic_editor, extracted: dict | None = None,
                                 hierarchy_path: tuple[str, ...] = ()): 
@@ -2668,12 +2660,18 @@ class lvsResultsDialogue(QDialog):
 
         return '.'.join(parts[len(path):])
 
-    def _highlight_mismatched_net(self, net: dict):
-        """Highlight a mismatched net on both schematic and layout views."""
+    def _highlight_mismatched_net(self, net: dict) -> list:
+        """Highlight a mismatched net on the schematic and return its layout rects.
+
+        The caller registers the returned rects through
+        handleLVSRectSelection — direct scene adds are not tracked and would
+        survive the next error selection as stale highlights.
+        """
         # Get net info
         layout_net_id = net.get('layout_net', '')
         schem_net_id = net.get('schem_net', '')
 
+        layout_rects = []
         # Highlight on layout view using net shapes from parser
         if self.parser and layout_net_id and hasattr(self.layoutEditor, 'centralW'):
             layout_cell = None
@@ -2690,7 +2688,8 @@ class lvsResultsDialogue(QDialog):
                 nets_data = self.parser.get_nets_with_schematic_names(layout_cell)
                 for net_data in nets_data:
                     if net_data.get('net_id') == layout_net_id:
-                        self._highlight_layout_net_shapes(net_data.get('shapes', []))
+                        layout_rects = self._highlight_layout_net_shapes(
+                            net_data.get('shapes', []))
                         break
 
         # Highlight on schematic view using net name lookup
@@ -2711,20 +2710,24 @@ class lvsResultsDialogue(QDialog):
             if schem_net_name:
                 self._highlight_schematic_nets({'name': schem_net_name})
 
-    def _highlight_layout_net_shapes(self, shapes: list):
-        """Highlight net shapes on the layout view."""
-        if not shapes or not hasattr(self.layoutEditor, 'centralW'):
-            return
+        return layout_rects
 
-        scene = self.layoutEditor.centralW.scene
+    def _highlight_layout_net_shapes(self, shapes: list) -> list:
+        """Build highlight rects for net shapes on the layout view."""
+        if not shapes or not hasattr(self.layoutEditor, 'centralW'):
+            return []
+
         color = self._next_highlight_color()
         dx, dy, y_sign = self._infer_lvs_transform(shapes)
 
+        rects = []
         for shape in shapes:
             bbox = self._shape_to_bbox(shape)
             if bbox is None:
                 continue
-            scene.addItem(self._make_lvs_rect(self._apply_transform(bbox, dx, dy, y_sign), color))
+            rects.append(self._make_lvs_rect(
+                self._apply_transform(bbox, dx, dy, y_sign), color))
+        return rects
 
     def _highlight_mismatched_pin(self, pin: dict):
         """Highlight a mismatched pin on both schematic and layout views.
@@ -2745,8 +2748,8 @@ class lvsResultsDialogue(QDialog):
             # Attempt to find connected net via parser
             pass
 
-    def _highlight_mismatched_device(self, device: dict):
-        """Highlight a mismatched device on both schematic and layout views."""
+    def _highlight_mismatched_device(self, device: dict) -> list:
+        """Highlight a mismatched device on the schematic and return its layout rect."""
         layout_dev_id = device.get('layout_dev', '')
         schem_dev_id = device.get('schem_dev', '')
 
@@ -2763,14 +2766,16 @@ class lvsResultsDialogue(QDialog):
                         break
             self._highlight_schematic_device({"name": name, "id": schem_dev_id})
 
-        # Layout side — look up device position via parser and delegate to onDeviceSelected
+        # Layout side — look up device position via parser and build its rect;
+        # the caller registers it through handleLVSRectSelection.
         if layout_dev_id and self.parser and hasattr(self.layoutEditor, 'centralW'):
             layout_cell = next(iter(self.parser.crossrefs), None)
             if layout_cell:
                 for dev in self.parser.get_layout_devices(layout_cell):
                     if dev.get('id') == layout_dev_id:
-                        self.onDeviceSelected(dev)
-                        break
+                        rect_item = self._layout_rect_for_device(dev)
+                        return [rect_item] if rect_item is not None else []
+        return []
 
     def onSchemNetSelected(self, net_data):
         """Handle extracted schematic net selection in the lvs_schematic editor."""
@@ -2779,4 +2784,3 @@ class lvsResultsDialogue(QDialog):
     def onSchemDeviceSelected(self, device):
         """Handle extracted schematic device selection in the lvs_schematic editor."""
         self._highlight_schematic_device(device)
-

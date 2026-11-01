@@ -1,3 +1,8 @@
+# SPDX-License-Identifier: MPL-2.0
+#
+# Revolution EDA
+# Copyright (c) 2026 Revolution Semiconductor
+
 """Application update-check tests (``backend/updateCheck.py``).
 
 The fetch helper is exercised through a monkeypatched ``urlopen``; the

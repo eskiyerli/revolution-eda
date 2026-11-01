@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MPL-2.0
+#
+# Revolution EDA
+# Copyright (c) 2026 Revolution Semiconductor
+
 """
 KLayout DRC XML report to dictionary converter using lxml.
 Handles nested categories, cells, and DRC violations with polygons.

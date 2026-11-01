@@ -1,12 +1,7 @@
 # SPDX-License-Identifier: MPL-2.0
 #
-# Copyright (c) 2024-2026 Revolution Semiconductor (Registered in the Netherlands)
-# This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0.
-# If a copy of the MPL was not distributed with this file, You can obtain one at
-# https://mozilla.org/MPL/2.0/.
-#
-# Add-ons and extensions developed for this software may be distributed
-# under their own separate licenses.
+# Revolution EDA
+# Copyright (c) 2026 Revolution Semiconductor
 
 from collections import Counter
 import logging
@@ -494,13 +489,6 @@ class LVSDBParser:
             if message:
                 return message
         return ""
-
-    @staticmethod
-    def _count_explicit_net_mismatches(diagnostics: Dict) -> int:
-        """Return the number of explicit net mismatch diagnostics in a crossref."""
-        if not diagnostics:
-            return 0
-        return len(diagnostics.get('net_mismatch_messages', []))
 
     @staticmethod
     def _is_internal_net_mismatch_message(message: str) -> bool:
@@ -1138,12 +1126,32 @@ class LVSDBParser:
             else:
                 device_mismatches = len(generic_device_mismatches)
             net_messages = diagnostics.get('net_mismatch_messages', [])
-            if net_messages and device_mismatches > 0 and all(
-                self._is_internal_net_mismatch_message(message) for message in net_messages
-            ):
-                net_mismatches = 0
+            if net_messages:
+                if device_mismatches > 0 and all(
+                    self._is_internal_net_mismatch_message(message) for message in net_messages
+                ):
+                    net_mismatches = 0
+                else:
+                    net_mismatches = len(net_messages)
             else:
-                net_mismatches = self._count_explicit_net_mismatches(diagnostics)
+                # No L(...) diagnostics: raw N(...) pairs carrying a hard
+                # mismatch status are the only net verdict KLayout recorded.
+                # Mirror the internal-net suppression so device/property
+                # fallout on anonymous '$' nets is not reported as a net
+                # mismatch when device mismatches exist.
+                raw_net_mismatches = [
+                    net for net in nets if self._is_mismatch(net)]
+                if raw_net_mismatches and device_mismatches > 0:
+                    net_names = {
+                        str(net.get('net_id')): str(net.get('name', ''))
+                        for net in self.get_nets(layout_cell_name)
+                    }
+                    raw_net_mismatches = [
+                        net for net in raw_net_mismatches
+                        if not net_names.get(
+                            str(net.get('layout_net')), '').startswith('$')
+                    ]
+                net_mismatches = len(raw_net_mismatches)
 
             # flag_missing_ports reports unlabeled/mislabeled top-level ports
             # as error-level diagnostics without changing the stored match

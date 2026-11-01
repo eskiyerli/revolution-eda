@@ -1,14 +1,7 @@
 # SPDX-License-Identifier: MPL-2.0
 #
-# Parser-level unit tests for the KLayout LVS .lvsdb reader
-# (revedaEditor/fileio/importlvsdb.py).
-#
-# These guard the status-token classification fix (A1/A2): KLayout's LVS DB
-# status tokens are '0'=mismatch, '1'=match, 'X'=nomatch, 'W'=warning,
-# 'S'=skipped (plus an optional absent [status]). Only '0'/'X' are hard
-# mismatches; 'W'/'S' must NOT be counted as failures. They also cover the
-# encoding fix (A4, explicit UTF-8), CRLF vs LF equivalence, and a minimal
-# end-to-end parse.
+# Revolution EDA
+# Copyright (c) 2026 Revolution Semiconductor
 
 import os
 import tempfile
@@ -183,6 +176,83 @@ def test_plain_mismatch_device_is_counted():
     row = _parse(lvsdb).get_all_crossrefs_formatted()[0]
     assert row["device_mismatches"] == 1
     assert row["equivalent"] is False
+
+
+def test_net_mismatches_counted_without_diagnostics_block():
+    """When the optional L(...) diagnostics block is absent, net mismatches
+    fall back to raw N(...) pairs with a hard-mismatch status — otherwise a
+    failing cell would report 'no mismatches'."""
+    lvsdb = "\n".join([
+        "#%lvsdb-klayout",
+        "J( U(1.0) X(top R((0 0) (10 10))",
+        "   N(1 I('VDD')) N(2 I('VSS')) N(3 I('$5'))) )",
+        "H( X(top N(1 I('VDD')) N(2 I('VSS')) N(3 I('VSS')) N(4 I('NET0'))) )",
+        "Z( X(top top X",
+        "   Z(",
+        "    N(1 1 1)",   # match
+        "    N(3 4 0)",   # mismatch (no L diagnostics emitted)
+        "    N(2 3 0)",   # mismatch
+        "    P(1 1 1)",
+        "    D(1 1 1)",
+        "   )) )",
+        "",
+    ])
+    row = _parse(lvsdb).get_all_crossrefs_formatted()[0]
+    assert row["net_mismatches"] == 2
+    assert row["equivalent"] is False
+    assert row["status_tier"] == STATUS_NOMATCH
+
+
+def test_internal_net_fallout_suppressed_when_devices_mismatch():
+    """Without diagnostics, raw '0' pairs on anonymous '$' layout nets are
+    treated as device/property fallout — not net mismatches — when device
+    mismatches exist. Named-net fallout is still counted."""
+    lvsdb = "\n".join([
+        "#%lvsdb-klayout",
+        "J( U(1.0) X(top R((0 0) (10 10))",
+        "   N(1 I('VDD')) N(2 I('$7')) N(3 I('$8'))",
+        "   D(1 nmos Y(0 0) E(W 1.0))",
+        "   D(2 nmos Y(0 0) E(W 1.0))) )",
+        "H( X(top N(1 I('VDD')) N(2 I('NET0')) N(3 I('NET1'))",
+        "   D(1 nmos I('M0') E(W 1.0)) D(2 nmos I('M1') E(W 2.0))) )",
+        "Z( X(top top 0",
+        "   Z(",
+        "    N(1 1 1)",
+        "    N(2 2 0)",   # internal '$7' fallout
+        "    N(3 3 0)",   # internal '$8' fallout
+        "    D(1 1 X)",    # explicit device nomatch -> hard mismatch
+        "    D(2 2 X)",
+        "   )) )",
+        "",
+    ])
+    row = _parse(lvsdb).get_all_crossrefs_formatted()[0]
+    assert row["device_mismatches"] == 2
+    # All mismatched nets are anonymous '$' nets + device mismatches exist.
+    assert row["net_mismatches"] == 0
+
+
+def test_named_net_fallout_counted_when_devices_mismatch():
+    """The internal-net suppression must not hide genuine named-net
+    mismatches: a mismatched pair on a labeled layout net is counted even
+    when device mismatches exist."""
+    lvsdb = "\n".join([
+        "#%lvsdb-klayout",
+        "J( U(1.0) X(top R((0 0) (10 10))",
+        "   N(1 I('VDD')) N(2 I('OUT'))",
+        "   D(1 nmos Y(0 0) E(W 1.0))) )",
+        "H( X(top N(1 I('VDD')) N(2 I('OUT'))",
+        "   D(1 nmos I('M0') E(W 1.0))) )",
+        "Z( X(top top 0",
+        "   Z(",
+        "    N(1 1 1)",
+        "    N(2 2 0)",   # named 'OUT' net mismatch
+        "    D(1 1 X)",
+        "   )) )",
+        "",
+    ])
+    row = _parse(lvsdb).get_all_crossrefs_formatted()[0]
+    assert row["device_mismatches"] == 1
+    assert row["net_mismatches"] == 1
 
 
 def test_circuit_status_absent_is_not_equivalent_but_distinguished():

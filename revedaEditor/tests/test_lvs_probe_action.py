@@ -1,3 +1,8 @@
+# SPDX-License-Identifier: MPL-2.0
+#
+# Revolution EDA
+# Copyright (c) 2026 Revolution Semiconductor
+
 """Regression tests for the core lvs_schematic->layout probe UI trigger.
 
 The scene-level probe primitive (``schematicScene.probeLayout``) and the sdl

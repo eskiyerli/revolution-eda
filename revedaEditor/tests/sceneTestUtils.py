@@ -1,3 +1,8 @@
+# SPDX-License-Identifier: MPL-2.0
+#
+# Revolution EDA
+# Copyright (c) 2026 Revolution Semiconductor
+
 """Helpers for building an offscreen schematicScene in tests without
 pytest-qt: a QObject container with a stubbed editor window."""
 

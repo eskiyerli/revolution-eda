@@ -1,13 +1,7 @@
-# 
-# Revolution EDA
-# 
-# Copyright (c) 2026 Revolution Semiconductor
+# SPDX-License-Identifier: MPL-2.0
 #
-# This Source Code Form is subject to the terms of the
-# Mozilla Public License, v. 2.0.
-# If a copy of the MPL was not distributed with this
-# file, You can obtain one at https://mozilla.org/MPL/2.0/.
-##
+# Revolution EDA
+# Copyright (c) 2026 Revolution Semiconductor
 
 # from hashlib import new
 import json
@@ -405,7 +399,6 @@ class symbolScene(editorScene):
         for item in self.selectedItems():
             if hasattr(item, "stretch"):
                 item.stretch = True
-                break
 
     def itemProperties(self):
         """
@@ -631,7 +624,7 @@ class symbolScene(editorScene):
             return True
         return False
 
-    def loadDesign(self, filePathObj: pathlib.Path) -> None:
+    def loadDesign(self, filePathObj: pathlib.Path) -> bool:
         try:
             with filePathObj.open("rb") as file:
                 decodedData = orjson.loads(file.read())
@@ -660,23 +653,23 @@ class symbolScene(editorScene):
                     self.snapConnectDistance = snapConnectDistance
                 self.attributeList = []
                 self.createSymbolItems(itemData)
-            self.itemsRef = set(self.items())
+            self.itemsRefSet = set(self.items())
             return True
         except (orjson.JSONDecodeError, FileNotFoundError) as e:
             self.logger.error(f"File error while loading symbol: {e}")
             self.attributeList = []
             self.clear()
-            return
+            return False
         except KeyError as e:
             self.logger.error(f"Invalid symbol format - missing key: {e}")
             self.attributeList = []
             self.clear()
-            return
+            return False
         except Exception as e:
             self.logger.error(f"Unexpected error loading symbol: {e}")
             self.attributeList = []
             self.clear()
-            return
+            return False
         finally:
             self.blockSignals(False)
             self.update()
@@ -782,5 +775,3 @@ class symbolScene(editorScene):
                     symenc.symbolAttribute(
                         prm.PARAMDEFS_ATTR, prm.paramDefsToJson(paramDefs)))
             self.attributeList = deepcopy(localAttributeList)
-
-

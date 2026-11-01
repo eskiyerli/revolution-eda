@@ -1,3 +1,8 @@
+# SPDX-License-Identifier: MPL-2.0
+#
+# Revolution EDA
+# Copyright (c) 2026 Revolution Semiconductor
+
 """Phase 5 layout-editing productivity tests.
 
 Covers instance arrays (mosaics), multipart items, boolean layer ops,

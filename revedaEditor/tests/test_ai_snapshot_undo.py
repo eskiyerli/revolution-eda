@@ -1,3 +1,8 @@
+# SPDX-License-Identifier: MPL-2.0
+#
+# Revolution EDA
+# Copyright (c) 2026 Revolution Semiconductor
+
 """Tests for the editor-owned AI JSON snapshot undo command."""
 
 from PySide6.QtGui import QUndoCommand, QUndoStack

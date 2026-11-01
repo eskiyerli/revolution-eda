@@ -1,3 +1,8 @@
+# SPDX-License-Identifier: MPL-2.0
+#
+# Revolution EDA
+# Copyright (c) 2026 Revolution Semiconductor
+
 """Tests for LVS lvs_schematic <-> layout cross-probing (milestone D1+D2).
 
 D1 stamps the ``sdl`` correspondence field onto generated lvs_schematic

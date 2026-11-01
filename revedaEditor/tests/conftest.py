@@ -1,3 +1,8 @@
+# SPDX-License-Identifier: MPL-2.0
+#
+# Revolution EDA
+# Copyright (c) 2026 Revolution Semiconductor
+
 """Shared pytest fixtures for revedaEditor tests.
 
 Provides a minimal ``qtbot`` shim so tests written against pytest-qt run

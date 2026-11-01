@@ -1,13 +1,7 @@
-# 
-# Revolution EDA
-# 
-# Copyright (c) 2026 Revolution Semiconductor
+# SPDX-License-Identifier: MPL-2.0
 #
-# This Source Code Form is subject to the terms of the
-# Mozilla Public License, v. 2.0.
-# If a copy of the MPL was not distributed with this
-# file, You can obtain one at https://mozilla.org/MPL/2.0/.
-##
+# Revolution EDA
+# Copyright (c) 2026 Revolution Semiconductor
 
 # properties dialogues for various editor functions
 
@@ -635,7 +629,7 @@ class symbolLabelsDialogue(QDialog):
             ["Definition", "Height", "Alignment", "Orientation", "Use",
              "Type"])
         self.labelItemList = [item for item in self.items
-                              if type(item) == lbl.symbolLabel]
+                              if isinstance(item, lbl.symbolLabel)]
         self.labelsTable.setRowCount(len(self.labelItemList))
         for row, item in enumerate(self.labelItemList):
             definition = QTableWidgetItem(item.labelDefinition)

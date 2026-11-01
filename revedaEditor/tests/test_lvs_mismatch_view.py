@@ -1,3 +1,8 @@
+# SPDX-License-Identifier: MPL-2.0
+#
+# Revolution EDA
+# Copyright (c) 2026 Revolution Semiconductor
+
 from revedaEditor.backend.LVSModelView import (
     LVSDeviceParamMismatchTableModel,
     LVSTerminalMismatchTableModel,
@@ -114,4 +119,3 @@ def test_missing_item_table_model():
     assert model.data(model.index(0, 5)) == "❌ Missing in Layout"
     assert model.data(model.index(1, 0)) == "Net"
     assert model.data(model.index(1, 1)) == "VDD"
-

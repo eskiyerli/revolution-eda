@@ -1,3 +1,8 @@
+# SPDX-License-Identifier: MPL-2.0
+#
+# Revolution EDA
+# Copyright (c) 2026 Revolution Semiconductor
+
 """Plugin contract tests: version/capability negotiation and update checks.
 
 The pure helpers in ``backend/pluginApi.py`` need no Qt. Loader tests use

@@ -1,3 +1,8 @@
+# SPDX-License-Identifier: MPL-2.0
+#
+# Revolution EDA
+# Copyright (c) 2026 Revolution Semiconductor
+
 """Regression test: fitItemsInView must not feed back through items whose
 boundingRect depends on the current view zoom (layoutRuler's inverse-scaled
 label margin). Each 'f' press used to zoom out further."""

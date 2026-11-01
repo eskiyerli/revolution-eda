@@ -1,3 +1,8 @@
+# SPDX-License-Identifier: MPL-2.0
+#
+# Revolution EDA
+# Copyright (c) 2026 Revolution Semiconductor
+
 """Unified RC extractor that consumes an RCX database.
 
 This is the main extraction engine. It reads a pre-solved .rcx.json

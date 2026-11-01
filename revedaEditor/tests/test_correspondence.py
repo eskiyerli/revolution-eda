@@ -1,3 +1,8 @@
+# SPDX-License-Identifier: MPL-2.0
+#
+# Revolution EDA
+# Copyright (c) 2026 Revolution Semiconductor
+
 """Tests for schematic<->layout correspondence (backend/correspondence.py)
 and the layoutScene SDL sync / flyline / cross-probe integration."""
 

@@ -1,3 +1,8 @@
+# SPDX-License-Identifier: MPL-2.0
+#
+# Revolution EDA
+# Copyright (c) 2026 Revolution Semiconductor
+
 """Tests for the unified connectivity engine (revedaEditor.connectivity).
 
 Covers geometric joins (endpoint coincidence, endpoint-on-body T contacts,

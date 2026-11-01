@@ -1,3 +1,8 @@
+# SPDX-License-Identifier: MPL-2.0
+#
+# Revolution EDA
+# Copyright (c) 2026 Revolution Semiconductor
+
 import pytest
 from PySide6.QtCore import QPoint
 from PySide6.QtWidgets import (QGraphicsScene, QGraphicsView)

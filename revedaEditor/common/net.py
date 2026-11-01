@@ -1,12 +1,7 @@
 # SPDX-License-Identifier: MPL-2.0
 #
-# Copyright (c) 2024-2026 Revolution Semiconductor (Registered in the Netherlands)
-# This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0.
-# If a copy of the MPL was not distributed with this file, You can obtain one at
-# https://mozilla.org/MPL/2.0/.
-#
-# Add-ons and extensions developed for this software may be distributed
-# under their own separate licenses.
+# Revolution EDA
+# Copyright (c) 2026 Revolution Semiconductor
 
 from enum import IntEnum
 from functools import cached_property
@@ -85,7 +80,7 @@ class schematicNet(QGraphicsItem):
         # Collections
         self._flightLinesSet: Set["schematicNet"] = set()
         self._connectedNetsSet: Set["schematicNet"] = set()
-        self._endPointNetDict: Dict[int, Set["schematicNet"]]
+        self._endPointNetDict: Dict[int, Set["schematicNet"]] = {}
         # track nets connected to each end point.
         self._netSnapLines: dict[QPoint, Set["schematicNet"]] = {}
         self._removedNets: list = []
@@ -1075,24 +1070,3 @@ class guideLine(QGraphicsLineItem):
     @property
     def horizontalFirst(self) -> Optional[bool]:
         return self._horizontalFirst
-
-    def _finishSnapLines(self):
-        if self._netSnapLines:
-            scene = self.scene()
-            for snapLinesSet in self._netSnapLines.values():
-                for snapLine in snapLinesSet:
-                    if snapLine.scene() is None:
-                        continue  # Already removed
-                    p1 = snapLine.line().p1().toPoint()
-                    p2 = snapLine.line().p2().toPoint()
-                    if p1 == p2:
-                        # Zero-length: remove guideLine without creating segments
-                        scene.removeItem(snapLine)
-                        continue
-                    newNets = scene.addStretchWires(p1, p2)
-                    if newNets:
-                        for netItem in newNets:
-                            netItem.inherit(snapLine)
-                        scene.addListUndoStack(newNets)
-                    scene.removeItem(snapLine)
-            self._netSnapLines = dict()

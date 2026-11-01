@@ -1,12 +1,7 @@
 # SPDX-License-Identifier: MPL-2.0
 #
-# Copyright (c) 2024-2026 Revolution Semiconductor (Registered in the Netherlands)
-# This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0.
-# If a copy of the MPL was not distributed with this file, You can obtain one at
-# https://mozilla.org/MPL/2.0/.
-#
-# Add-ons and extensions developed for this software may be distributed
-# under their own separate licenses.
+# Revolution EDA
+# Copyright (c) 2026 Revolution Semiconductor
 
 """VACASK netlist generation for schematic editors.
 
@@ -43,13 +38,12 @@ Device loading categories:
 from __future__ import annotations
 
 import datetime
-import functools
 import io
 import json
 import os
 import pathlib
 import re
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING
 
 from PySide6.QtCore import Qt
 
@@ -58,13 +52,14 @@ import revedaEditor.backend.libBackEnd as libb
 import revedaEditor.backend.libraryMethods as libm
 import revedaEditor.common.shapes as shp
 from revedaEditor.netlisting import exprSupport
+from revedaEditor.netlisting.baseNetlist import NetlistBase
 from revedaEditor.scenes.schematicScene import schematicScene
 
 if TYPE_CHECKING:
     from revedaEditor.gui.schematicEditor import schematicEditor
 
 
-class vacaskNetlist:
+class vacaskNetlist(NetlistBase):
     """Generate VACASK-compatible netlists from schematic designs.
 
     This class handles recursive netlisting of hierarchical designs, supports
@@ -85,8 +80,9 @@ class vacaskNetlist:
 
     # Pre-compiled regex to strip dangling parameter assignments (e.g. `` width =``) left
     # after token substitution.  Compiled once at class level avoids re.compile() on every
-    # netlist line inside the hot loop.
-    _PARAM_RE = re.compile(r'\s+\w+\s*=\s*@\w+|\s+\w+\s*=(?=\s|$)')
+    # netlist line inside the hot loop.  ``$`` is allowed as a parameter-name prefix so
+    # VACASK system parameters such as ``$mfactor`` are cleaned up as well.
+    _PARAM_RE = re.compile(r'\s+\$?\w+\s*=\s*@\w+|\s+\$?\w+\s*=(?=\s|$)')
 
     # Regexes for scanning included files for ``model`` statements so
     # locally generated model lines can be suppressed when an included
@@ -174,33 +170,6 @@ class vacaskNetlist:
     # ------------------------------------------------------------------
     # Properties
     # ------------------------------------------------------------------
-
-    @property
-    def switchViewList(self) -> List[str]:
-        """List of view names to try when determining how to netlist a cell."""
-        return self._switchViewList
-
-    @switchViewList.setter
-    def switchViewList(self, value: List[str]):
-        self._switchViewList = value
-
-    @property
-    def stopViewList(self) -> List[str]:
-        """List of view names that stop hierarchical expansion."""
-        return self._stopViewList
-
-    @stopViewList.setter
-    def stopViewList(self, value: List[str]):
-        self._stopViewList = value
-
-    @property
-    def configDict(self):
-        """Configuration dictionary for view switching (used with config views)."""
-        return self._configDict
-
-    @configDict.setter
-    def configDict(self, value: dict):
-        self._configDict = value
 
     # ------------------------------------------------------------------
     # Public API
@@ -744,17 +713,6 @@ class vacaskNetlist:
                         nestedPath, nestedSections, modelNames, visited,
                         depth + 1)
 
-    def _getCellItem(self, libraryName: str, cellName: str) -> libb.cellItem | None:
-        """Return the cellItem for *(libraryName, cellName)*, cached to avoid repeated model traversals.
-
-        Returns ``None`` if the cell is not found in the library.
-        """
-        key = (libraryName, cellName)
-        if key not in self._cellItemCache:
-            libItem = libm.getLibItem(self.libraryView.libraryModel, libraryName)
-            self._cellItemCache[key] = libm.getCellItem(libItem, cellName)
-        return self._cellItemCache[key]
-
     @staticmethod
     def _getSubcktParams(elementSymbol: shp.schematicSymbol) -> list[tuple[str, str, str]]:
         """Extract NLP label parameters suitable for subcircuit parameter declaration.
@@ -808,76 +766,6 @@ class vacaskNetlist:
                             defaultValue = defStr
             params.append((paramName, instanceValue, defaultValue))
         return params
-
-    def determineNetlistView(self, elementSymbol, cellItem) -> str:
-        """Determine which view to use for netlisting a symbol instance.
-
-        Uses *configDict* in config mode, otherwise iterates through *switchViewList*
-        to find the first matching view.
-
-        Args:
-            elementSymbol: The symbol instance being netlisted.
-            cellItem: The cell item containing available views.
-
-        Returns:
-            The view name to use for netlisting.
-        """
-        cacheKey = (elementSymbol.libraryName, elementSymbol.cellName)
-        if cacheKey in self._viewNameCache:
-            return self._viewNameCache[cacheKey]
-
-        viewItems = [cellItem.child(row) for row in range(cellItem.rowCount())]
-
-        if self._useConfig and self.configDict:
-            config_entry = self.configDict.get(elementSymbol.cellName)
-            if config_entry:
-                # Verify library name matches
-                if config_entry[0] == elementSymbol.libraryName:
-                    result = config_entry[1]
-                else:
-                    # Library mismatch, fall back to switchViewList
-                    result = self._findViewFromSwitchList(viewItems)
-            else:
-                # Cell not in config, fall back to switchViewList
-                result = self._findViewFromSwitchList(viewItems)
-        else:
-            # Not using config or config dict is empty
-            result = self._findViewFromSwitchList(viewItems)
-
-        self._viewNameCache[cacheKey] = result
-        return result
-
-    def _findViewFromSwitchList(self, viewItems: list) -> str:
-        """Find the first matching view from switchViewList.
-
-        switchViewList holds view *types* (e.g. "schematic", "symbol"); they
-        are matched against each view item's viewType, so views like
-        "schematic2" are covered by the "schematic" type. The switch-list
-        order defines priority.
-
-        Args:
-            viewItems: List of available view items for the cell.
-
-        Returns:
-            The name of the first matching view, or "symbol" if none match.
-        """
-        viewNameByType = {}
-        for viewItem in viewItems:
-            if (viewItem.viewType not in viewNameByType
-                    or viewItem.viewName == viewItem.viewType):
-                viewNameByType[viewItem.viewType] = viewItem.viewName
-        for viewType in self._switchViewList:
-            if viewType in viewNameByType:
-                return viewNameByType[viewType]
-        return "symbol"
-
-    def _isStopView(self, viewName: str) -> bool:
-        """Check whether a view name belongs to a stop view type.
-
-        View types are matched as substrings of the view name, the same way
-        viewItem.viewType is derived from the file stem.
-        """
-        return any(stopType in viewName for stopType in self._stopViewList)
 
     def createItemLine(
         self,
@@ -1334,63 +1222,14 @@ class vacaskNetlist:
         return name
 
     @staticmethod
-    @functools.lru_cache(maxsize=1024)
-    def parseArrayNotation(name: str) -> tuple[str, tuple[int, int]]:
-        """Parse net/instance array notation like ``'name<0:5>'`` into base name and index range.
+    def _formatExpandedPin(pinName: str) -> str:
+        """VACASK quotes bus identifiers; see :meth:`_quoteId`.
 
-        Also handles single instance/net notation like ``'name<0>'``.
-
-        Args:
-            name: The net name with optional bus notation.
-
-        Returns:
-            A tuple of *(base_name, (start, end))*.
-            For scalar names, returns *(name, (-1, -1))*.
-
-        Examples:
-            >>> vacaskNetlist.parseArrayNotation("net<0:3>")
-            ('net', (0, 3))
-            >>> vacaskNetlist.parseArrayNotation("bus<5>")
-            ('bus', (5, 5))
-            >>> vacaskNetlist.parseArrayNotation("scalar")
-            ('scalar', (-1, -1))
+        Overrides the identity hook used by
+        :meth:`NetlistBase.expandPinNames`.
         """
-        if '<' not in name or '>' not in name:
-            return name, (-1, -1)
+        return vacaskNetlist._quoteId(pinName)
 
-        baseName = name.split('<')[0]
-        indexRange = name.split('<')[1].split('>')[0]
-
-        if ':' not in indexRange:
-            singleIndex = int(indexRange)
-            return baseName, (singleIndex, singleIndex)
-
-        start, end = map(int, indexRange.split(':'))
-        return baseName, (start, end)
-
-    @staticmethod
-    def expandPinNames(pinNamesList: List[str]) -> str:
-        """Expand a list of pin names, expanding array notation into individual pins.
-
-        Args:
-            pinNamesList: List of pin names, may contain array notation.
-
-        Returns:
-            Space-separated string of expanded pin names.
-
-        Example:
-            >>> vacaskNetlist.expandPinNames(["a<0:1>", "b"])
-            "'a<0>' 'a<1>' b"
-        """
-        expandedPinNameList: list[str] = []
-        for pinName in pinNamesList:
-            pinBaseName, pinTuple = vacaskNetlist.parseArrayNotation(pinName)
-            if pinTuple[0] == pinTuple[1] == -1:
-                expandedPinNameList.append(vacaskNetlist._quoteId(pinBaseName))
-            else:
-                pinStep = 1 if pinTuple[1] >= pinTuple[0] else -1
-                for i in range(pinTuple[0], pinTuple[1] + pinStep):
-                    expandedPinNameList.append(
-                        vacaskNetlist._quoteId(f'{pinBaseName}<{i}>')
-                    )
-        return ' '.join(expandedPinNameList)
+    # parseArrayNotation / expandPinNames / _getCellItem /
+    # determineNetlistView / _findViewFromSwitchList / _isStopView and the
+    # switch/stop/config view properties are inherited from NetlistBase.

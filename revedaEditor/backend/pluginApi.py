@@ -1,13 +1,8 @@
+# SPDX-License-Identifier: MPL-2.0
 #
 # Revolution EDA
-#
 # Copyright (c) 2026 Revolution Semiconductor
-#
-# This Source Code Form is subject to the terms of the
-# Mozilla Public License, v. 2.0.
-# If a copy of the MPL was not distributed with this
-# file, You can obtain one at https://mozilla.org/MPL/2.0/.
-#
+
 """Qt-free plugin contract: version/capability negotiation and update checks.
 
 ``pluginsLoader`` evaluates this contract *before* importing a plugin, so an

@@ -1,3 +1,8 @@
+# SPDX-License-Identifier: MPL-2.0
+#
+# Revolution EDA
+# Copyright (c) 2026 Revolution Semiconductor
+
 """Packaging regression tests: Nuitka build directives embedded in reveda.py."""
 
 from pathlib import Path

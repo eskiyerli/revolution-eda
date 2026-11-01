@@ -1,12 +1,7 @@
 # SPDX-License-Identifier: MPL-2.0
 #
-# Copyright (c) 2024-2026 Revolution Semiconductor (Registered in the Netherlands)
-# This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0.
-# If a copy of the MPL was not distributed with this file, You can obtain one at
-# https://mozilla.org/MPL/2.0/.
-#
-# Add-ons and extensions developed for this software may be distributed
-# under their own separate licenses.
+# Revolution EDA
+# Copyright (c) 2026 Revolution Semiconductor
 
 import json
 import logging
@@ -702,7 +697,8 @@ class designLibrariesColumnView(BaseDesignLibrariesView):
                     cloneCellItem.setText(newName)
                     cloneCellItem.setData(cellItem.data(Qt.ItemDataRole.UserRole + 2),
                                           Qt.ItemDataRole.UserRole + 2)
-                updateJSONFieldInCell(self.libraryModel, libName, 'cell', oldName, newName)
+                updateJSONFieldInCell(
+                    self.libraryModel, libName, newName, 'cell', oldName, newName)
                 self.logger.info(f"Renamed {oldName} to {newName}")
         except OSError as e:
             self.logger.warning(f"Error renaming cell: {e}")
@@ -857,13 +853,17 @@ class designLibrariesColumnView(BaseDesignLibrariesView):
         viewPath = selectedItem.data(Qt.ItemDataRole.UserRole + 2)
         if viewPath.exists():
             dlg = fd.fileInfoDialogue(viewPath, self.libBrowsW)
-        dlg.exec()
+            dlg.exec()
+        else:
+            self.logger.warning(f"File not found: {viewPath}")
 
     def showItemFileInfo(self, selectedItem: libb.viewItem):
         viewPath = selectedItem.data(Qt.ItemDataRole.UserRole + 2)
         if viewPath.exists():
             dlg = fd.fileInfoDialogue(viewPath, self.libBrowsW)
-        dlg.exec()
+            dlg.exec()
+        else:
+            self.logger.warning(f"File not found: {viewPath}")
 
 
 class designLibrariesTreeView(BaseDesignLibrariesView):
@@ -920,8 +920,8 @@ class designLibrariesTreeView(BaseDesignLibrariesView):
                 if success:
                     newName = selectedCell.cellName
                     self.logger.info(f"Cell {oldName} renamed to {dlg.nameEdit.text()}.")
-                    updateJSONFieldInCell(self.libraryModel, libName, 'cell', oldName,
-                                          newName)
+                    updateJSONFieldInCell(
+                        self.libraryModel, libName, newName, 'cell', oldName, newName)
         except OSError as e:
             self.logger.warning(f"Error in renaming cell:{e}")
 
@@ -1044,7 +1044,9 @@ class designLibrariesTreeView(BaseDesignLibrariesView):
         viewPath = selectedItem.data(Qt.ItemDataRole.UserRole + 2)
         if viewPath.exists():
             dlg = fd.fileInfoDialogue(viewPath, self.libBrowsW)
-        dlg.exec()
+            dlg.exec()
+        else:
+            self.logger.warning(f"File not found: {viewPath}")
 
     # context menu
     # def contextMenuEvent(self, event):
@@ -1335,24 +1337,26 @@ def updateJSONFieldInCell(model: "designLibrariesModel", libraryName: str, cellN
         oldValue: The old value to match
         newValue: The new value to set for the key
     """
-    import json
+    logger = logging.getLogger("reveda")
     libItem = libm.getLibItem(model, libraryName)
     cellItem = libm.getCellItem(libItem, cellName)
 
-    if cellItem.hasChildren():
-        for row in range(cellItem.rowCount()):
-            viewItem = cellItem.child(row)
-            try:
-                with open(viewItem.viewPath, "r") as f:
-                    data = json.load(f)
-                    updated = False
-                    for item in data:
-                        if item.get(key) == oldValue:
-                            updated = True
-                            item[key] = newValue
+    if cellItem is None or not cellItem.hasChildren():
+        return
 
-                if updated:
-                    with open(viewItem.viewPath, "w") as f:
-                        json.dump(data, f, indent=4)
-            except Exception as e:
-                print(f"Error updating {viewItem.viewPath}: {str(e)}")
+    for row in range(cellItem.rowCount()):
+        viewItem = cellItem.child(row)
+        try:
+            with open(viewItem.viewPath, "r") as f:
+                data = json.load(f)
+            updated = False
+            for item in data:
+                if item.get(key) == oldValue:
+                    updated = True
+                    item[key] = newValue
+
+            if updated:
+                with open(viewItem.viewPath, "w") as f:
+                    json.dump(data, f, indent=4)
+        except (OSError, json.JSONDecodeError) as e:
+            logger.warning(f"Error updating {viewItem.viewPath}: {e}")

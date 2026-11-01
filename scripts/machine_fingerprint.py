@@ -1,23 +1,8 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MPL-2.0
 #
-# Copyright (c) 2024-2026 Revolution Semiconductor (Registered in the Netherlands)
-#
-# Standalone machine-fingerprint utility for Revolution EDA licensing.
-#
-# Share THIS SINGLE FILE with customers. They do NOT need Revolution EDA,
-# PySide6, cryptography, or any third-party package installed - only a
-# standard Python 3 interpreter (3.8+).
-#
-# The value printed here is IDENTICAL to the fingerprint the licensed
-# application computes internally, so it can be pasted straight into a
-# license request.
-#
-# Usage:
-#     python machine_fingerprint.py
-#
-# The fingerprint algorithm MUST stay in sync with
-# revedaLicense.licenseManager.get_machine_fingerprint().
+# Revolution EDA
+# Copyright (c) 2026 Revolution Semiconductor
 
 import hashlib
 import platform

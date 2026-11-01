@@ -1,3 +1,8 @@
+# SPDX-License-Identifier: MPL-2.0
+#
+# Revolution EDA
+# Copyright (c) 2026 Revolution Semiconductor
+
 """Netlister tests against the real xyceNetlist API.
 
 Covers the pure helpers (parseArrayNotation, expandPinNames), view selection
@@ -217,6 +222,58 @@ def test_collect_subcircuit_content_flat(qapp, libraryModel, tmp_path):
     content = []
     netlister.collectSubcircuitContent(netlister.schematic, content)
     assert content == ["RI0 in out r=1k"]
+
+
+def _vacaskNetlister(libraryModel, tmp_path):
+    """A real vacaskNetlist over the temp library (mirrors the xyce fixture)."""
+    from revedaEditor.netlisting.vacaskNetlist import vacaskNetlist
+    scene = makeSchematicScene()
+    return vacaskNetlist(_fakeEditor(scene, libraryModel),
+                         tmp_path / "out.cir")
+
+
+def test_vacask_symbol_line_mfactor(qapp, libraryModel, tmp_path):
+    """$mfactor=@m resolves like any other parameter token."""
+    netlister = _vacaskNetlister(libraryModel, tmp_path)
+    symbolItem = _makeSymbol(
+        qapp, instName="I0",
+        labels=(("[@instName]", "I0"), ("[@r:r=%:1k]", None),
+                ("[@m:m=%:m=1]", "4")),
+        symattrs={
+            "VacaskNetlistLine":
+                "@instName ( %pinOrder ) res r=@r $mfactor=@m"})
+    symbolItem.pinNetMap = {"plus": "in", "minus": "out"}
+    assert netlister.createVacaskSymbolLine(symbolItem) == [
+        "I0 ( in out ) res r=1k $mfactor=4"]
+
+
+def test_vacask_symbol_line_mfactor_missing_label(qapp, libraryModel,
+                                                  tmp_path):
+    """An ``@m`` token with no matching label is stripped with its ``=``."""
+    netlister = _vacaskNetlister(libraryModel, tmp_path)
+    symbolItem = _makeSymbol(
+        qapp, instName="I0",
+        symattrs={
+            "VacaskNetlistLine":
+                "@instName ( %pinOrder ) res r=@r $mfactor=@m"})
+    symbolItem.pinNetMap = {"plus": "in", "minus": "out"}
+    assert netlister.createVacaskSymbolLine(symbolItem) == [
+        "I0 ( in out ) res r=1k"]
+
+
+def test_vacask_symbol_line_mfactor_empty_value(qapp, libraryModel, tmp_path):
+    """An empty ``@m`` value leaves a dangling ``$mfactor=`` to be stripped."""
+    netlister = _vacaskNetlister(libraryModel, tmp_path)
+    symbolItem = _makeSymbol(
+        qapp, instName="I0",
+        labels=(("[@instName]", "I0"), ("[@r:r=%:1k]", None),
+                ("[@m]", "")),
+        symattrs={
+            "VacaskNetlistLine":
+                "@instName ( %pinOrder ) res r=@r $mfactor=@m"})
+    symbolItem.pinNetMap = {"plus": "in", "minus": "out"}
+    assert netlister.createVacaskSymbolLine(symbolItem) == [
+        "I0 ( in out ) res r=1k"]
 
 
 def test_collect_subcircuit_content_ignored_symbol(qapp, libraryModel, tmp_path):

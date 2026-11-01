@@ -1,14 +1,7 @@
-# 
-# Revolution EDA
-# 
-# Copyright (c) 2026 Revolution Semiconductor
+# SPDX-License-Identifier: MPL-2.0
 #
-# This Source Code Form is subject to the terms of the
-# Mozilla Public License, v. 2.0.
-# If a copy of the MPL was not distributed with this
-# file, You can obtain one at https://mozilla.org/MPL/2.0/.
-##
-
+# Revolution EDA
+# Copyright (c) 2026 Revolution Semiconductor
 
 from __future__ import annotations
 
@@ -45,7 +38,6 @@ import revedaEditor.gui.helpBrowser as hlp
 import revedaEditor.gui.fileDialogues as fdlg
 import revedaEditor.gui.propertyDialogues as pdlg
 import revedaEditor.resources.resources  # noqa: F401
-from revedaEditor.backend.startThread import startThread
 from revedaEditor.gui.editorViews import editorView
 from revedaEditor.scenes.editorScene import editorScene
 
@@ -850,10 +842,10 @@ class editorWindow(QMainWindow):
         dlg = QPrintDialog(self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
             printer = dlg.printer()
-            printRunner = startThread(self.centralW.view.printView(printer))
-            self.appMainW.threadPool.start(printRunner)
-            self.logger.info(
-                "Printing started")  # self.centralW.view.printView(printer)
+            # Printing drives a QPainter over GUI items, which must run on the
+            # main thread; do not dispatch it to the worker pool.
+            self.centralW.view.printView(printer)
+            self.logger.info("Printing started")
 
     def printPreviewClick(self):
         printer = QPrinter(QPrinter.PrinterMode.ScreenResolution)

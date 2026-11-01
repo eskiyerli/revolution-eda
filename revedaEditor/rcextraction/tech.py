@@ -1,3 +1,8 @@
+# SPDX-License-Identifier: MPL-2.0
+#
+# Revolution EDA
+# Copyright (c) 2026 Revolution Semiconductor
+
 """Technology file loader and layer stackup definitions.
 
 A tech file defines the physical properties of each layer needed for

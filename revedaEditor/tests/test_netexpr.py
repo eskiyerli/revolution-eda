@@ -1,3 +1,8 @@
+# SPDX-License-Identifier: MPL-2.0
+#
+# Revolution EDA
+# Copyright (c) 2026 Revolution Semiconductor
+
 """Phase 3 tests — net expressions and inherited connections (netSet).
 
 Covers the Qt-free ``connectivity.netexpr`` helpers, expression evaluation

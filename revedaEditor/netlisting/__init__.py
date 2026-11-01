@@ -1,4 +1,8 @@
-# Netlisting module for Revolution EDA
+# SPDX-License-Identifier: MPL-2.0
+#
+# Revolution EDA
+# Copyright (c) 2026 Revolution Semiconductor
+
 from revedaEditor.netlisting.xyceNetlist import xyceNetlist
 from revedaEditor.netlisting.spectreNetlist import spectreNetlist
 from revedaEditor.netlisting.vacaskNetlist import vacaskNetlist
