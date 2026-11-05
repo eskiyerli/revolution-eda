@@ -51,7 +51,7 @@ import revedaEditor.backend.dataDefinitions as ddef
 import revedaEditor.backend.libBackEnd as libb
 import revedaEditor.backend.libraryMethods as libm
 import revedaEditor.common.shapes as shp
-from revedaEditor.netlisting import exprSupport
+from revedaEditor.netlisting import exprSupport, vacaskFormat
 from revedaEditor.netlisting.baseNetlist import NetlistBase
 from revedaEditor.scenes.schematicScene import schematicScene
 
@@ -82,27 +82,16 @@ class vacaskNetlist(NetlistBase):
     # after token substitution.  Compiled once at class level avoids re.compile() on every
     # netlist line inside the hot loop.  ``$`` is allowed as a parameter-name prefix so
     # VACASK system parameters such as ``$mfactor`` are cleaned up as well.
-    _PARAM_RE = re.compile(r'\s+\$?\w+\s*=\s*@\w+|\s+\$?\w+\s*=(?=\s|$)')
-
-    # Regexes for scanning included files for ``model`` statements so
-    # locally generated model lines can be suppressed when an included
-    # file already defines the same model name.
-    _MODEL_STMT_RE = re.compile(r'^\s*\.?model\s+([^\s(=]+)', re.IGNORECASE)
-    _INCLUDE_STMT_RE = re.compile(
-        r'^\s*\.?include\s+"([^"]+)"', re.IGNORECASE)
-    # ``section=``/``lang=`` options are searched in the text following the
-    # quoted filename so they are recognised in either order
-    # (``include "f" lang=ngspice section=tt``).
-    _INCLUDE_SECTION_RE = re.compile(
-        r'\bsection\s*=\s*"?([\w.\-]+)"?', re.IGNORECASE)
-    # ``lang=`` marks a foreign-format (SPICE/Spectre) include: those are
-    # handed to the bundled foreign parser, which registers SPICE ``.model``
-    # names with an ``m_`` prefix — scanning them as native ``model``
-    # statements would collect names VACASK never defines.
-    _FOREIGN_INCLUDE_RE = re.compile(r'\blang\s*=', re.IGNORECASE)
-    _SECTION_RE = re.compile(r'^\s*section\s+([^\s=]+)', re.IGNORECASE)
-    _ENDSECTION_RE = re.compile(r'^\s*endsection\b', re.IGNORECASE)
-    _MAX_INCLUDE_DEPTH = 8
+    # The Qt-free formatting implementation lives in ``vacaskFormat``;
+    # the constants are kept here as aliases for backwards compatibility.
+    _PARAM_RE = vacaskFormat.PARAM_RE
+    _MODEL_STMT_RE = vacaskFormat.MODEL_STMT_RE
+    _INCLUDE_STMT_RE = vacaskFormat.INCLUDE_STMT_RE
+    _INCLUDE_SECTION_RE = vacaskFormat.INCLUDE_SECTION_RE
+    _FOREIGN_INCLUDE_RE = vacaskFormat.FOREIGN_INCLUDE_RE
+    _SECTION_RE = vacaskFormat.SECTION_RE
+    _ENDSECTION_RE = vacaskFormat.ENDSECTION_RE
+    _MAX_INCLUDE_DEPTH = vacaskFormat.MAX_INCLUDE_DEPTH
 
     def __init__(
         self,
@@ -139,23 +128,23 @@ class vacaskNetlist(NetlistBase):
         self._switchViewList = schematic.switchViewList
         self._stopViewList = schematic.stopViewList
         self.netlistedViewsSet: set = set()
-        self.includeLines: set[str] = set()
-        self.vahdlLines: set[str] = set()
-        self.loadLines: set[str] = set()
-        self.groundNets: set[str] = set()
-        self.globalNets: set[str] = set()
+        # Directive collection (ground/global nets, includes, loads,
+        # models) is owned by the Qt-free DeckCollector; the familiar
+        # attribute names alias its members so existing readers keep
+        # working unchanged.
+        self._deck = vacaskFormat.DeckCollector()
+        self.includeLines = self._deck.includeLines
+        self.vahdlLines = self._deck.vahdlLines
+        self.loadLines = self._deck.loadLines
+        self.groundNets = self._deck.globals.groundNets
+        self.globalNets = self._deck.globals.globalNets
         # (lib, cell, view) -> {exprName: default} implicit-terminal defs.
         self._exprDefsCache: dict[tuple, dict] = {}
-        self.modelLines: set[str] = set()
-        # model name -> normalized ``model`` line; a model name may be
-        # defined only once in the netlist regardless of its source.
-        self._modelDefs: dict[str, str] = {}
-        # Local paths of files pulled in via ``include`` directives;
-        # scanned for model definitions so duplicate model lines from
-        # symbol attributes can be suppressed.
-        self._includeFilePaths: set[pathlib.Path] = set()
-        self.osdiLoadLines: set[str] = set()
-        self.includeLibLines: set[str] = set()
+        self.modelLines = self._deck.modelLines
+        self._modelDefs = self._deck._model_defs
+        self._includeFilePaths = self._deck._include_file_paths
+        self.osdiLoadLines = self._deck.osdiLoadLines
+        self.includeLibLines = self._deck.includeLibLines
         # Caches to avoid repeated Qt model traversals for the same cells.
         self._viewNameCache: dict[tuple, str] = {}
         self._cellItemCache: dict[tuple, libb.cellItem | None] = {}
@@ -461,257 +450,63 @@ class vacaskNetlist(NetlistBase):
         return self._exprDefsCache[key]
 
     def _processGlobalNet(self, netName: str) -> str:
-        """Strip trailing ``!`` from global net names and track them for directives.
+        """Strip trailing ``!`` from global nets and register directives.
 
-        VACASK does not accept ``!`` in net names.  Global nets (those ending
-        with ``!``) are handled as follows:
-
-        - ``gnd!`` is converted to ``gnd`` and added to :attr:`groundNets`
-          for the ``ground 0`` directive.
-        - Any other global net (e.g. ``vdd!``) has the ``!`` stripped and is
-          added to :attr:`globalNets` for the ``global`` directive.
+        ``gnd!`` becomes ``gnd`` and lands in :attr:`groundNets` for the
+        ``ground 0`` directive; other ``x!`` nets drop the ``!`` and join
+        :attr:`globalNets` for the ``global`` directive.
         """
-        if "gnd!" in netName:
-            self.groundNets.add("gnd")
-            return netName.replace("gnd!", "gnd")
-        if netName.endswith("!"):
-            globalName = netName[:-1]
-            self.globalNets.add(globalName)
-            return globalName
-        return netName
+        return self._deck.process_global_net(netName)
 
     def _collectModelLoadInfo(
         self, elementSymbol: shp.schematicSymbol, skipLoadFile: bool = False
     ):
-        """Collect model, load, and include-library directives from symbol attributes.
+        """Collect model, load, and include-library directives from attributes.
 
-        Reads ``VacaskModelLine``, ``VacaskLoadFile``, and ``VacaskIncludeLib``
-        from *elementSymbol.symattrs* and populates the corresponding sets on
-        this netlister.  All directives are deduplicated via sets so they are
-        written only once per netlist.
-
-        - ``VacaskModelLine``: added to :attr:`modelLines` unless
-          ``VacaskIncludeLib`` is present (the library file provides the
-          model).  Models already defined inside any included file are
-          suppressed later by :meth:`_suppressIncludeDefinedModels`.
-        - ``VacaskLoadFile``: bare filenames (no path separator) go to
-          :attr:`osdiLoadLines`; paths go to :attr:`loadLines`.
-          Skipped when *skipLoadFile* is ``True`` (e.g. when the load path
-          is resolved from the veriloga view JSON instead).
-        - ``VacaskIncludeLib``: added to :attr:`includeLibLines`.
+        Reads ``VacaskModelLine``, ``VacaskLoadFile``, ``VacaskIncludeLib``
+        and ``VacaskIncludeFile`` from *elementSymbol.symattrs* into the
+        deck collector.  ``VacaskIncludeFile`` is resolved relative to the
+        cell directory; everything else delegates to
+        :meth:`DeckCollector.collect_symbol_directives`.
         """
-        includeLib = elementSymbol.symattrs.get("VacaskIncludeLib")
-        if includeLib:
-            includeLib = includeLib.strip().replace("\\", "/")
-            self.includeLibLines.add(f'include "{includeLib}"')
-            libPath = self._resolveIncludePath(includeLib)
-            if libPath is not None:
-                self._includeFilePaths.add(libPath)
-
-        if not includeLib:
-            modelLine = elementSymbol.symattrs.get("VacaskModelLine")
-            if modelLine:
-                self._addModelLine(modelLine.strip())
-
-        vacaskIncludeFile = elementSymbol.symattrs.get("VacaskIncludeFile")
-        if vacaskIncludeFile:
+        cell_dir = None
+        if elementSymbol.symattrs.get("VacaskIncludeFile"):
             cellItem = self._getCellItem(
                 elementSymbol.libraryName, elementSymbol.cellName
             )
             if cellItem is not None:
-                vacaskFileName = vacaskIncludeFile.strip().replace("\\", "/")
-                self._addIncludeFile(
-                    pathlib.Path(cellItem.cellPath) / vacaskFileName)
-
-        if not skipLoadFile:
-            loadFile = elementSymbol.symattrs.get("VacaskLoadFile")
-            if loadFile:
-                loadFile = loadFile.strip().replace("\\", "/")
-                if "/" in loadFile:
-                    self.loadLines.add(f'load "{loadFile}"')
-                else:
-                    self.osdiLoadLines.add(f'load "{loadFile}"')
+                cell_dir = pathlib.Path(cellItem.cellPath)
+        self._deck.collect_symbol_directives(
+            elementSymbol.symattrs, cell_dir=cell_dir,
+            skip_load_file=skipLoadFile,
+            base_dirs=(self.filePathObj.parent,))
 
     def _addModelLine(self, modelLine: str):
-        """Register a ``model`` statement, deduplicating on the model name.
-
-        The model name (second token, e.g. ``res`` in
-        ``model res resistor``) may be defined only once per netlist —
-        VACASK rejects redefinition.  Lines that only differ in
-        whitespace are normalized first; when two distinct statements
-        define the same model name, the first one wins and a warning is
-        logged.
-        """
-        for rawLine in modelLine.splitlines():
-            normalized = " ".join(rawLine.split())
-            if not normalized:
-                continue
-            modelName = self._modelName(normalized)
-            previous = self._modelDefs.get(modelName)
-            if previous is not None:
-                if previous != normalized:
-                    self._scene.logger.warning(
-                        f"Duplicate model definition for '{modelName}' "
-                        f"ignored: '{normalized}' (keeping '{previous}')"
-                    )
-                continue
-            self._modelDefs[modelName] = normalized
-            self.modelLines.add(normalized)
+        """Register a ``model`` statement, deduplicating on the model name."""
+        self._deck.add_model_line(modelLine,
+                                  warn=self._scene.logger.warning)
 
     @staticmethod
     def _modelName(modelLine: str) -> str:
-        """Model name declared by a ``model`` statement line.
-
-        For ``model res resistor`` returns ``res``.  Falls back to the
-        whole line when it has no second token.
-        """
-        tokens = modelLine.split()
-        return tokens[1] if len(tokens) > 1 else modelLine.strip()
+        """Model name declared by a ``model`` statement line."""
+        return vacaskFormat.model_name(modelLine)
 
     def _resolveIncludePath(
         self, includeName: str, *extraBases: pathlib.Path
     ) -> pathlib.Path | None:
-        """Resolve an ``include`` file name to a readable local path.
-
-        Relative names are tried against *extraBases* (e.g. the
-        including file's directory), then the netlist directory, then
-        the current working directory, and finally the directories on
-        ``SIM_INCLUDE_PATH`` (VACASK's own search order).  Returns
-        ``None`` when the file cannot be found locally.
-        """
-        includePath = pathlib.Path(includeName)
-        if includePath.is_absolute():
-            return includePath if includePath.is_file() else None
-        bases = [*extraBases, self.filePathObj.parent, pathlib.Path.cwd()]
-        bases.extend(
-            pathlib.Path(entry)
-            for entry in os.environ.get("SIM_INCLUDE_PATH", "").split(
-                os.pathsep)
-            if entry)
-        for base in bases:
-            candidate = base / includePath
-            if candidate.is_file():
-                return candidate
-        return None
+        """Resolve an ``include`` file name to a readable local path."""
+        return vacaskFormat.resolve_include_file(
+            includeName, *extraBases, self.filePathObj.parent)
 
     def _addIncludeFile(self, filePath: pathlib.Path) -> None:
-        """Register an ``include`` directive for a local file.
-
-        The path is canonicalised so the same file reached through
-        different spellings (e.g. a ``/home`` -> ``/var/home`` symlink)
-        produces a single include line and a single entry in
-        :attr:`_includeFilePaths`.
-        """
-        resolved = filePath.resolve()
-        self.includeLines.add(f'include "{resolved.as_posix()}"')
-        self._includeFilePaths.add(resolved)
+        """Register an ``include`` directive for a local file."""
+        self._deck.add_include_file(filePath)
 
     def _suppressIncludeDefinedModels(self):
-        """Drop model lines whose model is already defined in an included file.
-
-        ``include`` directives are written before ``model`` statements,
-        so a model defined inside an included file would be redefined by
-        a locally generated ``model`` line.  Scans resolvable include
-        files for ``model``/``.model`` statements and removes the
-        matching entries from :attr:`modelLines`.
-        """
-        if not self.modelLines or not self._includeFilePaths:
-            return
-        includeModelNames: set[str] = set()
-        visited: set[tuple[pathlib.Path, frozenset]] = set()
-        for path in self._includeFilePaths:
-            self._scanIncludeFile(path, frozenset(), includeModelNames,
-                                  visited, depth=0)
-        if not includeModelNames:
-            return
-        suppressed = {line for line in self.modelLines
-                      if self._modelName(line) in includeModelNames}
-        for line in sorted(suppressed):
-            self._scene.logger.info(
-                f"Model '{self._modelName(line)}' is already defined in an "
-                f"included file — dropping local model line '{line}'")
-            self._modelDefs.pop(self._modelName(line), None)
-        self.modelLines -= suppressed
-
-    def _scanIncludeFile(
-        self,
-        path: pathlib.Path,
-        requestedSections: frozenset,
-        modelNames: set[str],
-        visited: set[tuple[pathlib.Path, frozenset]],
-        depth: int,
-    ):
-        """Collect model names defined in *path* into *modelNames*.
-
-        ``section``/``endsection`` blocks count only when their name is
-        in *requestedSections* (the ``section=`` option of the
-        ``include`` directive that pulled the file in).  When
-        *requestedSections* is non-empty only section content counts —
-        VACASK skips everything outside the named section; a plain
-        include of a file containing ``section`` directives is a parse
-        error anyway, so its sections are treated as inactive.  Nested
-        ``include`` directives are followed up to
-        :attr:`_MAX_INCLUDE_DEPTH` levels; ``lang=`` foreign includes
-        are not followed because their model names do not map
-        one-to-one (SPICE ``.model`` names gain an ``m_`` prefix).
-        """
-        if depth > self._MAX_INCLUDE_DEPTH:
-            return
-        try:
-            resolved = path.resolve()
-        except OSError:
-            return
-        key = (resolved, requestedSections)
-        if key in visited or not resolved.is_file():
-            return
-        visited.add(key)
-        try:
-            lines = resolved.read_text(
-                encoding="utf-8", errors="replace").splitlines()
-        except OSError:
-            return
-        activeSection: str | None = None
-        for rawLine in lines:
-            line = rawLine.split("//", 1)[0]
-            if not line.strip() or line.lstrip().startswith(("*", "#")):
-                continue
-            sectionMatch = self._SECTION_RE.match(line)
-            if sectionMatch:
-                activeSection = sectionMatch.group(1)
-                continue
-            if self._ENDSECTION_RE.match(line):
-                if (activeSection is not None
-                        and activeSection in requestedSections):
-                    # A section= include reads only the first matching
-                    # section — VACASK returns to the including file at
-                    # endsection, so nothing later in this file counts.
-                    break
-                activeSection = None
-                continue
-            if activeSection is None:
-                if requestedSections:
-                    continue
-            elif activeSection not in requestedSections:
-                continue
-            modelMatch = self._MODEL_STMT_RE.match(line)
-            if modelMatch:
-                modelNames.add(modelMatch.group(1))
-                continue
-            includeMatch = self._INCLUDE_STMT_RE.match(line)
-            if includeMatch:
-                tail = line[includeMatch.end():]
-                if self._FOREIGN_INCLUDE_RE.search(tail):
-                    continue
-                nestedPath = self._resolveIncludePath(
-                    includeMatch.group(1), resolved.parent)
-                if nestedPath is not None:
-                    sectionOption = self._INCLUDE_SECTION_RE.search(tail)
-                    nestedSections = (
-                        frozenset({sectionOption.group(1)})
-                        if sectionOption else frozenset())
-                    self._scanIncludeFile(
-                        nestedPath, nestedSections, modelNames, visited,
-                        depth + 1)
+        """Drop model lines already defined inside an included file."""
+        self._deck.suppress_include_defined_models(
+            info=self._scene.logger.info,
+            base_dirs=(self.filePathObj.parent,))
 
     @staticmethod
     def _getSubcktParams(elementSymbol: shp.schematicSymbol) -> list[tuple[str, str, str]]:
@@ -751,19 +546,10 @@ class vacaskNetlist(NetlistBase):
                 instanceValue = value[1:-1].strip()
             else:
                 instanceValue = value
-            # Extract default value from label definition
-            defaultValue = instanceValue
-            labelDef = label.labelDefinition
-            if labelDef.startswith("[@"):
-                endIdx = labelDef.find("]")
-                if endIdx != -1:
-                    parts = labelDef[1:endIdx].split(":")
-                    if len(parts) >= 3:
-                        defStr = parts[2].strip()
-                        if "=" in defStr:
-                            defaultValue = defStr.split("=", 1)[1].strip()
-                        else:
-                            defaultValue = defStr
+            # Extract default value from the label definition
+            defaultValue = (
+                vacaskFormat.nlp_label_default(label.labelDefinition)
+                or instanceValue)
             params.append((paramName, instanceValue, defaultValue))
         return params
 
@@ -875,183 +661,23 @@ class vacaskNetlist(NetlistBase):
             instNameLabel = elementSymbol.labels.get('@instName')
             if not instNameLabel:
                 return []
+            if netlistLineKey not in (elementSymbol.symattrs or {}):
+                raise KeyError(netlistLineKey)
 
-            baseInstName, arrayTuple = self.parseArrayNotation(
-                instNameLabel.labelValue.strip()
+            ir = vacaskFormat.InstanceIR(
+                name=instNameLabel.labelValue.strip(),
+                attrs=dict(elementSymbol.symattrs or {}),
+                labels={
+                    lbl.labelName: lbl.labelValue
+                    for lbl in elementSymbol.labels.values()
+                },
+                pinNets=list(elementSymbol.pinNetMap.items()),
+                exprNets=list(exprNets or ()),
             )
-            arrayStep = -1 if arrayTuple[0] > arrayTuple[1] else 1
-            arraySize = abs(arrayTuple[0] - arrayTuple[1]) + 1
-
-            baseNetlistLine = elementSymbol.symattrs[netlistLineKey].strip()
-            instNameToken = instNameLabel.labelName
-            symbolLines: list[str] = []
-
-            # Single-pass token substitution over the template. Only whole
-            # "@name"/"%name" tokens match, so "@w" never substitutes inside
-            # "@wfeed"; unresolved tokens are left for _PARAM_RE cleanup.
-            tokenMap = {f"%{attrName}": attrValue
-                        for attrName, attrValue in elementSymbol.symattrs.items()}
-            tokenMap.update(
-                (lbl.labelName, lbl.labelValue)
-                for lbl in elementSymbol.labels.values())
-            tokenPattern = re.compile("(?:" + "|".join(sorted(
-                (re.escape(token)
-                 for token in (*tokenMap, instNameToken, "%pinOrder",
-                               "%lvsPinOrder")),
-                key=len, reverse=True)) + r")(?!\w)")
-
-            def createInstanceLine(instanceName: str, netsList: str,
-                                   lvsNetsList: str) -> str:
-                def substituteToken(match):
-                    token = match.group(0)
-                    if token == instNameToken:
-                        return instanceName
-                    if token == "%pinOrder":
-                        return netsList
-                    if token == "%lvsPinOrder":
-                        return lvsNetsList
-                    return tokenMap.get(token, token)
-                return tokenPattern.sub(substituteToken, baseNetlistLine)
-
-            def processLine(line: str) -> str:
-                line = vacaskNetlist._PARAM_RE.sub('', line)
-                line = line.replace('{', '').replace('}', '')
-                return line
-
-            def expandNet(netName: str) -> list[str]:
-                baseName, netTuple = self.parseArrayNotation(netName)
-                if netTuple[0] == netTuple[1] == -1:
-                    return [vacaskNetlist._quoteId(baseName)]
-                netStep = 1 if netTuple[1] >= netTuple[0] else -1
-                return [
-                    vacaskNetlist._quoteId(f"{baseName}<{i}>")
-                    for i in range(netTuple[0], netTuple[1] + netStep, netStep)
-                ]
-
-            def getNetVectorInfo(netName: str) -> tuple[str, tuple[int, int] | None]:
-                """Get base name and array tuple for a net, or (name, None) if scalar."""
-                baseName, netTuple = self.parseArrayNotation(netName)
-                if netTuple[0] == netTuple[1] == -1:
-                    return baseName, None
-                return baseName, netTuple
-
-            # Process net names: strip ! from global nets and track them.
-            pinNets = [self._processGlobalNet(n) for n in elementSymbol.pinNetMap.values()]
-            # Implicit-terminal nets: same global-net processing, quoted.
-            exprNets = [
-                vacaskNetlist._quoteId(self._processGlobalNet(n))
-                for n in (exprNets or ())
-            ]
-
-            # Collect net vector information
-            netVectorInfos = [
-                getNetVectorInfo(netName) for netName in pinNets
-            ]
-
-            # 'lvsPinOrder' reorders the same pin nets for the LVS line when
-            # the extracted terminal order differs from pinOrder (e.g.
-            # inductor3's center tap extracts between the outer ports).
-            lvsPinOrder = (elementSymbol.symattrs or {}).get("lvsPinOrder")
-            lvsPinNets = pinNets
-            if lvsPinOrder:
-                lvsPinNets = [
-                    self._processGlobalNet(elementSymbol.pinNetMap[pinName])
-                    for pinName in (pin.strip() for pin in str(lvsPinOrder).split(","))
-                    if pinName in elementSymbol.pinNetMap
-                ]
-            lvsNetVectorInfos = [
-                getNetVectorInfo(netName) for netName in lvsPinNets
-            ]
-
-            # Check if we can preserve vector notation
-            # All nets must be scalars or vectors of the same dimension as the instance
-            canUseVectorNotation = arraySize > 1
-            if canUseVectorNotation:
-                for netBaseName, netTuple in netVectorInfos:
-                    if netTuple is None:
-                        # Scalar net connected to vector instance - need expansion
-                        canUseVectorNotation = False
-                        break
-                    netSize = abs(netTuple[0] - netTuple[1]) + 1
-                    if netSize != arraySize:
-                        # Dimension mismatch - need expansion
-                        canUseVectorNotation = False
-                        break
-
-            if canUseVectorNotation:
-                # Preserve vector notation: 'I5<0:3>' ('OUT<0:3>' 'INP<0:3>') resistor r=1k
-                _q = vacaskNetlist._quoteId
-                vectorNetsList = " ".join([
-                    _q(f"{baseName}<{netTuple[0]}:{netTuple[1]}>")
-                    if netTuple else baseName
-                    for baseName, netTuple in netVectorInfos
-                ] + exprNets)
-                vectorLvsNetsList = " ".join([
-                    _q(f"{baseName}<{netTuple[0]}:{netTuple[1]}>")
-                    if netTuple else baseName
-                    for baseName, netTuple in lvsNetVectorInfos
-                ] + exprNets)
-                vectorInstName = _q(f"{baseInstName}<{arrayTuple[0]}:{arrayTuple[1]}>")
-                symbolLines.append(
-                    processLine(createInstanceLine(
-                        vectorInstName, vectorNetsList, vectorLvsNetsList))
-                )
-            else:
-                # Fall back to expansion
-                expandedPinNets = [
-                    expandNet(netName) for netName in pinNets
-                ]
-                expandedLvsPinNets = [
-                    expandNet(netName) for netName in lvsPinNets
-                ]
-
-                def selectNets(expandedNets, index):
-                    """Pick per-instance nets honoring array broadcast rules."""
-                    pickedNets = []
-                    for nets in expandedNets:
-                        if len(nets) == arraySize:
-                            pickedNets.append(nets[index])
-                        elif len(nets) == 1:
-                            pickedNets.append(nets[0])
-                        else:
-                            self._scene.logger.warning(
-                                f"Net connection width mismatch for "
-                                f"{elementSymbol.instanceName}: "
-                                f"expected 1 or {arraySize}, got {len(nets)}. "
-                                f"Falling back to element 0."
-                            )
-                            pickedNets.append(nets[0])
-                    return pickedNets
-
-                if arraySize == 1:
-                    flatNetsList = " ".join([nets[0] for nets in expandedPinNets]
-                                            + exprNets)
-                    flatLvsNetsList = " ".join(
-                        [nets[0] for nets in expandedLvsPinNets] + exprNets)
-                    symbolLines.append(
-                        processLine(createInstanceLine(
-                            baseInstName, flatNetsList, flatLvsNetsList))
-                    )
-                else:
-                    arrayIndices = list(
-                        range(arrayTuple[0], arrayTuple[1] + arrayStep, arrayStep)
-                    )
-                    for j, i in enumerate(arrayIndices):
-                        specificNetsList = " ".join(
-                            selectNets(expandedPinNets, j) + exprNets)
-                        specificLvsNetsList = " ".join(
-                            selectNets(expandedLvsPinNets, j) + exprNets)
-                        symbolLines.append(
-                            processLine(
-                                createInstanceLine(
-                                    vacaskNetlist._quoteId(f"{baseInstName}<{i}>"),
-                                    specificNetsList,
-                                    specificLvsNetsList,
-                                ),
-                            )
-                        )
-
-            return symbolLines
+            return vacaskFormat.format_instance_lines(
+                ir, netlistLineKey,
+                globals_tracker=self._deck.globals,
+                warn=self._scene.logger.warning)
 
         except Exception as e:
             self._scene.logger.error(
@@ -1208,18 +834,8 @@ class vacaskNetlist(NetlistBase):
 
     @staticmethod
     def _quoteId(name: str) -> str:
-        """Quote an identifier with single quotes if it contains ``<`` or ``>``.
-
-        VACASK treats ``<`` and ``>`` as operators, so net/instance names that
-        use angle-bracket bus notation must be wrapped in single quotes to form
-        a valid quoted identifier.  Plain identifiers are returned unchanged.
-
-        Any embedded single quotes in *name* are escaped as ``''`` per VACASK
-        quoted-identifier rules.
-        """
-        if '<' in name or '>' in name:
-            return "'" + name.replace("'", "''") + "'"
-        return name
+        """Quote a bus-tap identifier with single quotes (see vacaskFormat)."""
+        return vacaskFormat.quote_id(name)
 
     @staticmethod
     def _formatExpandedPin(pinName: str) -> str:
