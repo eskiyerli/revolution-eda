@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MPL-2.0
 #
 # Revolution EDA
-# Copyright (c) 2026 Revolution Semiconductor
+# Copyright (c) 2024-2026 Revolution Semiconductor
 
 """Phase 7 — platform hardening: autosave/crash recovery, cellview lock
 files, configurable bindkeys, and session save/restore in reveda.conf."""

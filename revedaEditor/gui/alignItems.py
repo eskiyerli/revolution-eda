@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MPL-2.0
 #
 # Revolution EDA
-# Copyright (c) 2026 Revolution Semiconductor
+# Copyright (c) 2024-2026 Revolution Semiconductor
 
 from typing import TYPE_CHECKING, Union
 
@@ -306,11 +306,17 @@ def handleAlignAction(dlg: alignItemsDialogue, closeDialog: bool):
 
     selectedItems = dlg.scene.selectedItems()
     spacingText = dlg.alignSpacingTextEdit.text().strip()
-    if dlg.editor.__class__.__name__ in ("schematicEditor", "symbolEditor"):
-        spacing = int(Quantity(dlg.alignSpacingTextEdit.text()).real)
-    elif dlg.editor.__class__.__name__ in ("layoutEditor"):
-        spacing = (int(Quantity(spacingText).real * process.dbu) if spacingText != ""
-                   else "")
+    editorName = dlg.editor.__class__.__name__
+    spacing = ""
+    if spacingText:
+        try:
+            if editorName in ("schematicEditor", "symbolEditor"):
+                spacing = int(Quantity(spacingText).real)
+            elif editorName == "layoutEditor":
+                spacing = int(Quantity(spacingText).real * process.dbu)
+        except ValueError:
+            dlg.scene.logger.error(f"Invalid spacing value: {spacingText}")
+            return
 
     if dlg.alignEdgesButton.isChecked():
         if len(selectedItems) < 2:

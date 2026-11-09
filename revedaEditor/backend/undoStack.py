@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MPL-2.0
 #
 # Revolution EDA
-# Copyright (c) 2026 Revolution Semiconductor
+# Copyright (c) 2024-2026 Revolution Semiconductor
 
 from typing import Callable, List, Sequence, Tuple, Union
 
@@ -18,9 +18,15 @@ class undoStack(QUndoStack):
         super().__init__()
 
     def removeLastCommand(self):
-        # Remove the last command without undoing it
+        # Discard the last command: undo it (callers rely on undo removing
+        # the item), then mark it obsolete so a later redo cannot resurrect
+        # it — setIndex alone leaves the command redoable.
         if self.canUndo():
-            self.setIndex(self.index() - 1)
+            index = self.index()
+            command = self.command(index - 1)
+            self.setIndex(index - 1)
+            if command is not None:
+                command.setObsolete(True)
 
 
 class addShapeUndo(QUndoCommand):

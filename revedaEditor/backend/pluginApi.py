@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MPL-2.0
 #
 # Revolution EDA
-# Copyright (c) 2026 Revolution Semiconductor
+# Copyright (c) 2024-2026 Revolution Semiconductor
 
 """Qt-free plugin contract: version/capability negotiation and update checks.
 
@@ -215,13 +215,41 @@ def mismatchedExtensions(pluginsDir, name: str,
     return bad
 
 
+def isCompiledShimPackage(pluginDir) -> bool:
+    """True when ``pluginDir/__init__.py`` is a compiled-module bootstrap.
+
+    Distribution builds ship proprietary plugins as a tiny ``__init__.py``
+    that locates a ``name.cpython-*.so``/``.pyd`` payload and execs it via
+    ``spec_from_file_location``. The real implementation lives in the
+    extension, so without it the package can never import.
+    """
+    try:
+        text = (Path(pluginDir) / "__init__.py").read_text(
+            encoding="utf-8", errors="replace"
+        )
+    except OSError:
+        return False
+    return "spec_from_file_location" in text and (
+        "cpython-" in text or ".pyd" in text
+    )
+
+
+def missingCompiledModule(pluginsDir, name: str, ispkg: bool) -> bool:
+    """True for a compiled-shim package whose binary payload is absent."""
+    if not ispkg or not isCompiledShimPackage(Path(pluginsDir) / name):
+        return False
+    return not pluginExtensionFiles(pluginsDir, name, ispkg)
+
+
 def explainImportError(error: BaseException) -> str | None:
     """Plain-language hint for a plugin ``ImportError``, else ``None``.
 
-    Identifies two common ABI failures: a filename tag for another CPython
-    minor (``cpython-314`` under 3.12) and unresolved ``_Py*``/Python symbols
-    or conflicting ``pythonXY.dll`` — both mean the binary was built for a
-    different Python than the app runs.
+    Identifies common binary failures: a filename tag for another CPython
+    minor (``cpython-314`` under 3.12), unresolved ``_Py*``/Python symbols
+    or conflicting ``pythonXY.dll`` (both mean the binary was built for a
+    different Python than the app runs), a compiled-shim package reporting
+    its payload module as missing, and binaries that cannot load because a
+    shared-library dependency is absent.
     """
     if not isinstance(error, ImportError):
         return None
@@ -240,5 +268,18 @@ def explainImportError(error: BaseException) -> str | None:
         return (
             "binary extension is incompatible with this app's Python "
             f"{running} — install a plugin build matching the app"
+        )
+    if "compiled plugin module" in message.lower():
+        return (
+            "compiled plugin module is missing — reinstall the plugin "
+            f"build for this platform and Python {running}"
+        )
+    if (
+        "cannot open shared object file" in message
+        or "DLL load failed" in message
+    ):
+        return (
+            "the plugin's binary or one of its shared-library "
+            "dependencies cannot load on this system"
         )
     return None

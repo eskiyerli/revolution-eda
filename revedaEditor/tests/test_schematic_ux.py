@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MPL-2.0
 #
 # Revolution EDA
-# Copyright (c) 2026 Revolution Semiconductor
+# Copyright (c) 2024-2026 Revolution Semiconductor
 
 """Phase 4 schematic UX: find/replace, marker persistence, bus ripper,
 clipboard paste, and descend edit-in-place."""

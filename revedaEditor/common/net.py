@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MPL-2.0
 #
 # Revolution EDA
-# Copyright (c) 2026 Revolution Semiconductor
+# Copyright (c) 2024-2026 Revolution Semiconductor
 
 from enum import IntEnum
 from functools import cached_property
@@ -33,6 +33,18 @@ from PySide6.QtWidgets import (
 from revedaEditor.backend.pdkLoader import lazyPDKModule
 
 schlyr = lazyPDKModule("schLayers")
+
+
+def _isEipGhostItem(item) -> bool:
+    """True for items hosted by an edit-in-place ghost group — they
+    render inside the parent scene but belong to the child cellview.
+    Only direct group children carry ``_eipChild``, so walk the
+    ``parentItem`` chain to catch nested items."""
+    while item is not None:
+        if getattr(item, "_eipChild", False):
+            return True
+        item = item.parentItem()
+    return False
 
 
 class NetMode(IntEnum):
@@ -156,11 +168,19 @@ class schematicNet(QGraphicsItem):
         unit = direction.p2() - direction.p1()
         length = max(0.0, QPointF.dotProduct(self._draftLine.p2() - p1, unit))
         scene = self.scene()
-        grid = getattr(scene, "snapGrid", 0)
-        if grid:
-            step = grid / max(abs(unit.x()), abs(unit.y()))
-            length = round(length / step) * step
-        self._draftLine.setP2(p1 + unit * length)
+        snapToGrid = getattr(scene, "snapToGrid", None)
+        if callable(snapToGrid):
+            # Snap the effective end point itself. Equivalent to length
+            # snapping on square grids, and it also lands on-grid when the
+            # X/Y grids differ (a diagonal line can't hit both otherwise).
+            end = p1 + unit * length
+            self._draftLine.setP2(QPointF(snapToGrid(end.toPoint())))
+        else:
+            grid = getattr(scene, "snapGrid", 0)
+            if grid:
+                step = grid / max(abs(unit.x()), abs(unit.y()))
+                length = round(length / step) * step
+            self._draftLine.setP2(p1 + unit * length)
 
     @cached_property
     def _extractRect(self) -> QRectF:
@@ -323,6 +343,7 @@ class schematicNet(QGraphicsItem):
                                                   item
                                                   for item in self.scene().items(endPoint)
                                                   if isinstance(item, schematicNet)
+                                                  and not _isEipGhostItem(item)
                                               } - {self} - coSelectedNets
                 self._endPointNetDict[i] = netSet
 
@@ -438,12 +459,17 @@ class schematicNet(QGraphicsItem):
         baseName = name.split("<")[0]
         indexRange = name.split("<")[1].split(">")[0]
 
-        if ":" not in indexRange:
-            singleIndex = int(indexRange)
-            return baseName, (singleIndex, singleIndex)
+        # Non-numeric or malformed ranges (e.g. 'name<x>', 'name<1:2:3>')
+        # are not bus notation: treat the whole string as a plain name.
+        try:
+            if ":" not in indexRange:
+                singleIndex = int(indexRange)
+                return baseName, (singleIndex, singleIndex)
 
-        start, end = map(int, indexRange.split(":"))
-        return baseName, (start, end)
+            start, end = map(int, indexRange.split(":"))
+            return baseName, (start, end)
+        except ValueError:
+            return name, (-1, -1)
 
     @staticmethod
     def _namesMatch(name1: str, name2: str) -> bool:
@@ -555,6 +581,7 @@ class schematicNet(QGraphicsItem):
                 netItem
                 for netItem in self.collidingItems()
                 if isinstance(netItem, schematicNet)
+                and not _isEipGhostItem(netItem)
             }
             return overlapNets - {self}
 

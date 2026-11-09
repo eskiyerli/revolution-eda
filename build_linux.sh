@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: MPL-2.0
+#
+# Revolution EDA
+# Copyright (c) 2024-2026 Revolution Semiconductor
+
 # Linux build script for Revolution EDA
 # Builds standalone binaries for Python 3.12, 3.13, and 3.14 using Poetry virtual environments
 # Runs inside the ubuntu_22_04 distrobox container (also used for AppImage packaging) so the

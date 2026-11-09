@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MPL-2.0
 #
 # Revolution EDA
-# Copyright (c) 2026 Revolution Semiconductor
+# Copyright (c) 2024-2026 Revolution Semiconductor
 
 """Plugin contract tests: version/capability negotiation and update checks.
 
@@ -523,6 +523,15 @@ def test_explain_import_error():
     hint = pluginApi.explainImportError(
         ImportError("/p/m.abi3.so: undefined symbol: _PyFoo"))
     assert hint and "incompatible" in hint
+    hint = pluginApi.explainImportError(
+        ImportError("Compiled plugin module for 'x' was not found"))
+    assert hint and "missing" in hint
+    hint = pluginApi.explainImportError(
+        ImportError("Unable to load compiled plugin module /p/x.so"))
+    assert hint and "missing" in hint
+    hint = pluginApi.explainImportError(
+        ImportError("libdep.so: cannot open shared object file"))
+    assert hint and "shared-library" in hint
     assert pluginApi.explainImportError(
         ImportError("No module named 'dep'")) is None
     assert pluginApi.explainImportError(RuntimeError("x")) is None
@@ -539,6 +548,48 @@ def test_loader_skips_python_mismatched_plugin(qapp, app_logger, tmp_path,
     issue = loader.incompatible["ztbin"][0]
     assert f"Python {sys.version_info.major}.{sys.version_info.minor + 3}" \
         in issue
+
+
+# Compiled-shim bootstrap as shipped by the plugin builds: the real module
+# is a ``name.cpython-*.so`` sibling; without it the shim raises ImportError.
+_SHIM_INIT = """\
+from importlib.util import module_from_spec, spec_from_file_location
+from pathlib import Path
+_package_dir = Path(__file__).resolve().parent
+_extension = next(_package_dir.parent.glob(f"{__name__}.cpython-*.so"), None)
+if _extension is None:
+    raise ImportError(f"Compiled plugin module for {__name__!r} was not found")
+"""
+
+
+def test_missing_compiled_module_detection(tmp_path):
+    pkg = _make_plugin(tmp_path, "ztshim", None)
+    (pkg / "__init__.py").write_text(_SHIM_INIT)
+    assert pluginApi.missingCompiledModule(tmp_path, "ztshim", True)
+    assert not pluginApi.missingCompiledModule(tmp_path, "ztshim", False)
+    (tmp_path / f"ztshim.{_RUNNING_TAG}-x86_64-linux-gnu.so").write_bytes(
+        b"\x7fELF")
+    assert not pluginApi.missingCompiledModule(tmp_path, "ztshim", True)
+
+
+def test_plain_package_is_not_a_shim(tmp_path):
+    _make_plugin(tmp_path, "ztplain", None)
+    assert not pluginApi.isCompiledShimPackage(tmp_path / "ztplain")
+    assert not pluginApi.missingCompiledModule(tmp_path, "ztplain", True)
+
+
+def test_loader_skips_shim_missing_binary(qapp, app_logger, tmp_path,
+                                          monkeypatch, caplog):
+    """A shim without its binary is skipped with a one-line warning."""
+    monkeypatch.syspath_prepend(str(tmp_path))
+    pkg = _make_plugin(tmp_path, "ztshim", {"plugin_version": "1.0"})
+    (pkg / "__init__.py").write_text(_SHIM_INIT)
+    with caplog.at_level(logging.WARNING, "reveda"):
+        loader = pluginsLoader(tmp_path)
+    assert "ztshim" not in loader.plugins
+    assert "compiled plugin module" in loader.incompatible["ztshim"][0]
+    assert "Skipping incompatible plugin ztshim" in caplog.text
+    assert "Traceback" not in caplog.text
 
 
 # ----------------------------------------------------------------------

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MPL-2.0
 #
 # Revolution EDA
-# Copyright (c) 2026 Revolution Semiconductor
+# Copyright (c) 2024-2026 Revolution Semiconductor
 
 """Tests for the unified layout connectivity engine and layoutScene
 integration (connectivity.layout + adapters.fromLayoutItems)."""

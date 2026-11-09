@@ -1,4 +1,9 @@
 #!/bin/bash
+# SPDX-License-Identifier: MPL-2.0
+#
+# Revolution EDA
+# Copyright (c) 2024-2026 Revolution Semiconductor
+
 for py in python3.12 python3.13 python3.14; do
     if command -v "$py" &> /dev/null; then
         echo "Building defaultPDK with Poetry env ($py)..."

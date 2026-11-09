@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MPL-2.0
 #
 # Revolution EDA
-# Copyright (c) 2026 Revolution Semiconductor
+# Copyright (c) 2024-2026 Revolution Semiconductor
 
 """Array copy options: rows×columns clipboard paste with X/Y pitch
 (Virtuoso-style copy options driven by scene.copyOptions)."""

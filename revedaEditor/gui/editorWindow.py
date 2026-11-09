@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MPL-2.0
 #
 # Revolution EDA
-# Copyright (c) 2026 Revolution Semiconductor
+# Copyright (c) 2024-2026 Revolution Semiconductor
 
 from __future__ import annotations
 
@@ -780,9 +780,13 @@ class editorWindow(QMainWindow):
         dcd.snapGridEdit.setText(str(self.snapGrid))
         dcd.snapConnectEdit.setText(str(self.snapConnectDistance))
         if dcd.exec() == QDialog.DialogCode.Accepted:
-            self.configureGridSettings(
-                (int(dcd.majorGridEntry.text()), int(dcd.snapGridEdit.text())))
-            self.snapConnectDistance = int(dcd.snapConnectEdit.text())
+            try:
+                self.configureGridSettings(
+                    (int(dcd.majorGridEntry.text()), int(dcd.snapGridEdit.text())))
+                self.snapConnectDistance = int(dcd.snapConnectEdit.text())
+            except ValueError:
+                self.logger.error("Grid and snap values must be integers.")
+                return
             if hasattr(self, 'centralW') and self.centralW:
                 self.centralW.scene.snapConnectDistance = self.snapConnectDistance
             if dcd.dotType.isChecked():

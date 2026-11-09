@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MPL-2.0
 #
 # Revolution EDA
-# Copyright (c) 2026 Revolution Semiconductor
+# Copyright (c) 2024-2026 Revolution Semiconductor
 
 """Qt-free VACASK netlist formatting primitives.
 
@@ -108,6 +108,17 @@ def quote_id(name: str) -> str:
     if '<' in name or '>' in name:
         return "'" + name.replace("'", "''") + "'"
     return name
+
+
+def unquote_id(token: str) -> str:
+    """Inverse of :func:`quote_id`.
+
+    Strips the single-quote wrapper of a quoted identifier and decodes
+    ``''`` escapes back to ``'``; bare tokens pass through unchanged.
+    """
+    if len(token) >= 2 and token.startswith("'") and token.endswith("'"):
+        return token[1:-1].replace("''", "'")
+    return token
 
 
 def parse_array_notation(name: str) -> tuple[str, tuple[int, int]]:
@@ -224,6 +235,24 @@ class InstanceIR:
     exprNets: list = field(default_factory=list)
 
 
+def strip_global_marker(net_name: str) -> str:
+    """Compiled-netlist spelling of a schematic net name.
+
+    ``gnd!`` becomes ``gnd`` and any other ``x!`` global drops its
+    ``!`` marker — the same rename the netlister applies to instance
+    pin nets (``_GlobalTracker`` additionally records the ``ground``/
+    ``global`` directives those names imply). Use this for any
+    simulator-facing text that references schematic net names (save
+    targets, probe expressions, analysis node options): a raw ``x!``
+    token is not a legal VACASK identifier.
+    """
+    if "gnd!" in net_name:
+        return net_name.replace("gnd!", "gnd")
+    if net_name.endswith("!"):
+        return net_name[:-1]
+    return net_name
+
+
 class _GlobalTracker:
     """Collect ``ground``/``global`` directives while stripping ``!``."""
 
@@ -235,12 +264,9 @@ class _GlobalTracker:
         """Strip trailing ``!`` from global nets; register directives."""
         if "gnd!" in net_name:
             self.groundNets.add("gnd")
-            return net_name.replace("gnd!", "gnd")
-        if net_name.endswith("!"):
-            global_name = net_name[:-1]
-            self.globalNets.add(global_name)
-            return global_name
-        return net_name
+        elif net_name.endswith("!"):
+            self.globalNets.add(net_name[:-1])
+        return strip_global_marker(net_name)
 
 
 def format_instance_lines(
@@ -522,6 +548,12 @@ class DeckCollector:
         self.modelLines: set[str] = set()
         self._model_defs: dict[str, str] = {}
         self._include_file_paths: set[pathlib.Path] = set()
+        # resolved path -> distinct scan requests for ``section=``
+        # includes.  Each emitted include contributes one frozenset of
+        # section names (``frozenset()`` for an unsectioned read); they
+        # are kept separate rather than merged because a ``section=``
+        # scan returns after the first matching section.
+        self._include_sections: dict[pathlib.Path, set[frozenset]] = {}
 
     # -- net directives ---------------------------------------------------
     def process_global_net(self, net_name: str) -> str:
@@ -544,14 +576,24 @@ class DeckCollector:
         include_lib = str(attrs.get("VacaskIncludeLib", "") or "")
         if include_lib:
             include_lib = include_lib.strip().replace("\\", "/")
-            self.includeLibLines.add(f'include "{include_lib}"')
-            lib_file = include_lib
+            # A ``section=name`` option restricts the include to that
+            # section's models — emit it outside the quoted filename.
             section_opt = INCLUDE_SECTION_RE.search(include_lib)
+            lib_file = include_lib
+            lib_sections = frozenset()
+            directive = f'include "{include_lib}"'
             if section_opt:
                 lib_file = include_lib[:section_opt.start()].strip()
+                lib_sections = frozenset({section_opt.group(1)})
+                directive = (f'include "{lib_file}"'
+                             f' section={section_opt.group(1)}')
+            self.includeLibLines.add(directive)
             lib_path = resolve_include_file(lib_file, *base_dirs)
             if lib_path is not None:
+                lib_path = lib_path.resolve()
                 self._include_file_paths.add(lib_path)
+                self._include_sections.setdefault(
+                    lib_path, set()).add(lib_sections)
         if not include_lib:
             model_line = str(attrs.get("VacaskModelLine", "") or "")
             if model_line:
@@ -593,6 +635,9 @@ class DeckCollector:
         resolved = file_path.resolve()
         self.includeLines.add(f'include "{resolved.as_posix()}"')
         self._include_file_paths.add(resolved)
+        # Register the unsectioned read so it coexists with any
+        # ``section=`` requests for the same file, in either order.
+        self._include_sections.setdefault(resolved, set()).add(frozenset())
 
     def suppress_include_defined_models(
             self, info: Callable[[str], None] | None = None,
@@ -603,8 +648,14 @@ class DeckCollector:
         include_model_names: set[str] = set()
         visited: set[tuple[pathlib.Path, frozenset]] = set()
         for path in self._include_file_paths:
-            scan_include_file(path, frozenset(), include_model_names,
-                              visited, 0, *base_dirs)
+            # Every registered request is scanned; paths added directly
+            # through the ``_include_file_paths`` alias default to an
+            # unsectioned read.
+            requests = self._include_sections.get(path, {frozenset()})
+            for requested_sections in requests:
+                scan_include_file(
+                    path, requested_sections, include_model_names,
+                    visited, 0, *base_dirs)
         if not include_model_names:
             return
         suppressed = {line for line in self.modelLines
@@ -659,3 +710,152 @@ def render_netlist(header_text: str, body_lines: list[str],
     for line in collector.vahdlLines:
         parts.append(f"{line}\n")
     return "".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# Device current save conventions (verified against vacask 0.3.4)
+# ---------------------------------------------------------------------------
+#
+# VACASK has no terminal-current save directive.  ``i(inst)`` binds the
+# ``inst:flow(br)`` unknown and works only for instances that introduce a
+# branch-flow unknown; ``i(inst:pin)`` is not a pin reference — ``:`` is the
+# hierarchy separator, so it silently reads as a nested-instance path.
+# Everything else exposes current only through model output variables via
+# ``p(inst, outvar)`` — and many models (bsim4, vbic13, sp_bjt, sp_jfet1,
+# sp_diode, capacitor, isource, opamp, all subcircuits) expose none.
+
+# Devices whose instances introduce a ``flow(br)`` unknown: ``i(inst)``
+# saves the branch current.
+FLOW_DEVICES = frozenset({
+    "vsource", "vcvs", "ccvs", "inductor",
+})
+
+# Devices exposing a per-terminal current output variable named
+# ``i_<terminal>`` (verified on sp_mos1: i_d/i_s/i_g/i_b; the spice mos
+# family follows the same convention).
+PIN_CURRENT_DEVICES = frozenset({
+    "sp_mos1", "sp_mos2", "sp_mos3", "sp_mos6", "sp_mos9",
+    "mos1", "mos2", "mos3", "mos6", "mos9",
+})
+
+# Devices exposing a single whole-device current output variable
+# (``p(inst, <name>)``); the pin is irrelevant.
+DEVICE_CURRENT_OPVAR = {
+    "resistor": "i", "sp_resistor": "i", "diode": "id",
+    "vccs": "i", "cccs": "i",
+    "vcvs": "i", "ccvs": "i", "vsource": "i",
+}
+
+# A VACASK identifier token: either a single-quoted literal in which
+# ``''`` encodes an embedded quote, or a bare token.
+_QUOTED_ID = r"'(?:''|[^'])*'"
+_INST_LINE_RE = re.compile(
+    r"^\s*(" + _QUOTED_ID + r"|[^\s(=/\"']+)"
+    r"\s*\(([^)]*)\)\s*(" + _QUOTED_ID + r"|[^\s(=]+)")
+_MODEL_LINE_RE = re.compile(
+    r"^\s*model\s+(" + _QUOTED_ID + r"|[^\s(=]+)"
+    r"\s+(" + _QUOTED_ID + r"|[^\s(=]+)", re.IGNORECASE)
+_SUBCKT_LINE_RE = re.compile(
+    r"^\s*subckt\s+(" + _QUOTED_ID + r"|[^\s(=]+)", re.IGNORECASE)
+_ENDS_LINE_RE = re.compile(r"^\s*ends\b", re.IGNORECASE)
+
+
+def parse_netlist_device_map(text: str) -> dict:
+    """Parse a VACASK netlist into instance→device resolution data.
+
+    Returns ``{"top": {inst: model}, "inner": {subckt: {inst: model}},
+    "models": {model: device}}``.  ``model`` cards map a model name to its
+    device; ``subckt`` names stay out of ``models`` so a subcircuit master
+    resolves to no device (its terminal currents are not saveable).
+    """
+    top: dict[str, str] = {}
+    inner: dict[str, dict[str, str]] = {}
+    models: dict[str, str] = {}
+    subckt = None
+    for raw in text.splitlines():
+        line = raw.split("//", 1)[0].strip()
+        if not line:
+            continue
+        m = _MODEL_LINE_RE.match(line)
+        if m:
+            models[unquote_id(m.group(1))] = unquote_id(m.group(2))
+            continue
+        m = _SUBCKT_LINE_RE.match(line)
+        if m:
+            subckt = unquote_id(m.group(1))
+            inner.setdefault(subckt, {})
+            continue
+        if _ENDS_LINE_RE.match(line):
+            subckt = None
+            continue
+        m = _INST_LINE_RE.match(line)
+        if m:
+            (inner[subckt] if subckt else top)[
+                unquote_id(m.group(1))] = unquote_id(m.group(3))
+    return {"top": top, "inner": inner, "models": models}
+
+
+def resolve_instance_device(inst_path: str, device_map: dict) -> str | None:
+    """Resolve a hierarchical instance path (``x1:m1``) to its device name."""
+    if not device_map:
+        return None
+    # ``:`` separates hierarchy, but inside a ``<start:end>`` array suffix
+    # it is part of the identifier — don't split there.
+    parts = [p for p in re.split(r"[/:](?![^<>]*>)", inst_path) if p]
+    if not parts:
+        return None
+    model = device_map.get("top", {}).get(parts[0])
+    for seg in parts[1:]:
+        model = device_map.get("inner", {}).get(model, {}).get(seg)
+        if model is None:
+            return None
+    return device_map.get("models", {}).get(model)
+
+
+def current_save_for_ref(inner: str, device_map: dict | None = None
+                         ) -> str | None:
+    """``I[...]``/``i(...)`` inner text → VACASK save directive, or None.
+
+    ``inst/pin`` is ambiguous: ``/`` separates both hierarchy and terminal.
+    With a device map the longest prefix resolving to an instance wins and
+    the remainder is the pin.  Without a map the legacy whole-path form
+    ``i(inst:pin)`` is kept — correct only when the last segment is itself
+    a leaf instance inside a subcircuit (e.g. a 0 V probe).
+    """
+    inner = inner.strip()
+    if not inner:
+        return None
+    if device_map is None:
+        inst = inner.replace("/", ":")
+        return f"i({_quote_save_ref(inst)})"
+    parts = [p for p in inner.split("/") if p]
+    for k in range(len(parts), 0, -1):
+        cand = ":".join(parts[:k])
+        if resolve_instance_device(cand, device_map):
+            inst = cand
+            pin = parts[k] if k < len(parts) else ""
+            break
+    else:
+        return None
+    quoted = _quote_save_ref(inst)
+    device = (resolve_instance_device(inst, device_map) or "").lower()
+    if device in FLOW_DEVICES:
+        return f"i({quoted})"
+    if device in PIN_CURRENT_DEVICES:
+        return f"p({quoted}, i_{(pin or 'd').strip().lower()})"
+    opvar = DEVICE_CURRENT_OPVAR.get(device)
+    if opvar:
+        return f"p({quoted}, {opvar})"
+    return None
+
+
+def _quote_save_ref(inst: str) -> str:
+    """Quote a save target for ``i(...)``/``p(...)`` directives.
+
+    Hierarchical paths (``:``-separated) are quoted whole with embedded
+    single quotes doubled; a leaf identifier goes through
+    :func:`quote_id`, which only quotes when ``<``/``>`` require it.
+    """
+    if ":" in inst:
+        return "'" + inst.replace("'", "''") + "'"
+    return quote_id(inst)

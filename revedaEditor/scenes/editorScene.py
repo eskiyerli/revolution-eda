@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MPL-2.0
 #
 # Revolution EDA
-# Copyright (c) 2026 Revolution Semiconductor
+# Copyright (c) 2024-2026 Revolution Semiconductor
 
 import json
 import pathlib
@@ -924,8 +924,12 @@ class editorScene(QGraphicsScene):
             dlg.xEdit.setText("0")
             dlg.yEdit.setText("0")
             if dlg.exec() == QDialog.DialogCode.Accepted:
-                dx = self.snapToBase(float(dlg.xEdit.text()), self.snapTuple[0])
-                dy = self.snapToBase(float(dlg.yEdit.text()), self.snapTuple[1])
+                try:
+                    dx = self.snapToBase(float(dlg.xEdit.text()), self.snapTuple[0])
+                    dy = self.snapToBase(float(dlg.yEdit.text()), self.snapTuple[1])
+                except ValueError:
+                    self.logger.error("Enter a valid numeric move distance.")
+                    return
                 moveCommand = us.undoMoveByCommand(self, self.selectedItems(), dx, dy)
                 self.undoStack.push(moveCommand)
                 self.editorWindow.messageLine.setText(

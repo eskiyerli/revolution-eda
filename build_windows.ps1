@@ -1,3 +1,8 @@
+# SPDX-License-Identifier: MPL-2.0
+#
+# Revolution EDA
+# Copyright (c) 2024-2026 Revolution Semiconductor
+
 # Windows build script for Revolution EDA
 # Builds a standalone binary using a Poetry virtual environment.
 # Most Nuitka options come from nuitka-project directives in reveda.py;

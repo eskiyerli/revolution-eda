@@ -129,6 +129,14 @@ never imported** — and the reasons are logged to `reveda.log` and recorded in
 `pluginsObj.incompatible`. Plugins that declare nothing load under the implicit
 `plugin_api` 1 contract, exactly as before.
 
+Binary plugins are checked without importing them: extension files tagged for
+a different CPython minor (`mismatchedExtensions`) and compiled-shim packages
+whose `name.cpython-*` payload is absent (`missingCompiledModule`) are both
+skipped as incompatible with a one-line reason, so users see a warning instead
+of an `ImportError` traceback at startup. `explainImportError` maps the
+remaining binary-related `ImportError`s (shim-miss messages, undefined
+symbols, missing shared-library dependencies) to plain-language one-liners.
+
 | Field | Meaning |
 |---|---|
 | `plugin_api` | Plugin-contract version (integer). Current core implements `2`; anything higher is skipped. |

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MPL-2.0
 #
 # Revolution EDA
-# Copyright (c) 2026 Revolution Semiconductor
+# Copyright (c) 2024-2026 Revolution Semiconductor
 
 """Tests for the Qt-free VACASK formatter (vacaskFormat + recordsNetlist).
 
@@ -231,6 +231,83 @@ def test_include_defined_model_suppression(tmp_path):
     assert deck.modelLines == {"model mydev bsim"}
 
 
+_SECTIONED_LIB = (
+    "section a\nmodel ma resistor\nendsection\n"
+    "section b\nmodel mb resistor\nendsection\n"
+    "section c\nmodel mc capacitor\nendsection\n"
+)
+
+
+@pytest.mark.parametrize("order", [("a", "b"), ("b", "a")])
+def test_include_lib_multiple_sections_same_file(tmp_path, order):
+    """Two ``section=`` includes of one file are distinct scan requests.
+
+    ``section=`` reads only the named section, so each emitted directive
+    must contribute its own section's models to suppression — registration
+    order must not matter.
+    """
+    lib = tmp_path / "models.lib"
+    lib.write_text(_SECTIONED_LIB)
+    deck = vacaskFormat.DeckCollector()
+    for section in order:
+        deck.collect_symbol_directives(
+            {"VacaskIncludeLib": f"{lib.as_posix()} section={section}"})
+    deck.add_model_line("model ma resistor")
+    deck.add_model_line("model mb resistor")
+    deck.add_model_line("model mc capacitor")
+    deck.suppress_include_defined_models()
+    assert deck.includeLibLines == {
+        f'include "{lib.as_posix()}" section={order[0]}',
+        f'include "{lib.as_posix()}" section={order[1]}',
+    }
+    # ma/mb are covered by emitted includes; section c was never requested.
+    assert deck.modelLines == {"model mc capacitor"}
+
+
+_TOP_SECTION_LIB = (
+    "model mtop topdev\n"
+    "section a\nmodel ma resistor\nendsection\n"
+    "section c\nmodel mc capacitor\nendsection\n"
+)
+
+
+@pytest.mark.parametrize("bare_via", ["add_include_file", "include_lib"])
+@pytest.mark.parametrize("bare_first", [True, False])
+def test_sectioned_and_unsectioned_includes_coexist(
+        tmp_path, bare_via, bare_first):
+    """A ``section=`` include and a bare include of the same file both scan.
+
+    The unsectioned request reads the file's top-level models (sections are
+    skipped); the sectioned request reads only its named section — either
+    registration order must produce the union.
+    """
+    lib = tmp_path / "models.lib"
+    lib.write_text(_TOP_SECTION_LIB)
+    deck = vacaskFormat.DeckCollector()
+
+    def register_sectioned():
+        deck.collect_symbol_directives(
+            {"VacaskIncludeLib": f"{lib.as_posix()} section=a"})
+
+    def register_bare():
+        if bare_via == "add_include_file":
+            deck.add_include_file(lib)
+        else:
+            deck.collect_symbol_directives(
+                {"VacaskIncludeLib": lib.as_posix()})
+
+    for register in ((register_bare, register_sectioned) if bare_first
+                     else (register_sectioned, register_bare)):
+        register()
+    deck.add_model_line("model mtop topdev")
+    deck.add_model_line("model ma resistor")
+    deck.add_model_line("model mc capacitor")
+    deck.suppress_include_defined_models()
+    # mtop comes from the bare scan, ma from the section=a scan; mc lives
+    # in section c which neither emitted include activates.
+    assert deck.modelLines == {"model mc capacitor"}
+
+
 def test_render_netlist_ordering():
     deck = vacaskFormat.DeckCollector()
     deck.process_global_net("vdd!")
@@ -397,3 +474,78 @@ def test_format_parity_with_editor_path(qapp, tmp_path):
 
     assert ir_lines == editor_lines
     assert not warnings
+
+
+# ---------------------------------------------------------------------------
+# parse_netlist_device_map / current_save_for_ref — quoted identifiers
+# ---------------------------------------------------------------------------
+
+def test_device_map_bare_ref_current_save():
+    mapping = vacaskFormat.parse_netlist_device_map(
+        "model res resistor\nR0 (a b) res r=1\n")
+    assert mapping["top"] == {"R0": "res"}
+    assert (vacaskFormat.current_save_for_ref("R0", mapping)
+            == "p(R0, i)")
+
+
+def test_device_map_quoted_array_ref():
+    mapping = vacaskFormat.parse_netlist_device_map(
+        "model res resistor\n'R<0>' (a b) res r=1\n")
+    # Map keys are logical names, not the quoted spelling.
+    assert mapping["top"] == {"R<0>": "res"}
+    assert (vacaskFormat.current_save_for_ref("R<0>", mapping)
+            == "p('R<0>', i)")
+
+
+def test_device_map_quoted_vector_ref():
+    mapping = vacaskFormat.parse_netlist_device_map(
+        "model res resistor\n'R<1:0>' (a b) res r=1\n")
+    assert mapping["top"] == {"R<1:0>": "res"}
+    assert (vacaskFormat.current_save_for_ref("R<1:0>", mapping)
+            == "p('R<1:0>', i)")
+
+
+def test_device_map_nested_quoted_ref():
+    mapping = vacaskFormat.parse_netlist_device_map(
+        "model res resistor\n"
+        "x1 (a b) sub\n"
+        "subckt sub\n"
+        "'R<0>' (a b) res r=1\n"
+        "ends\n")
+    assert mapping["top"] == {"x1": "sub"}
+    assert mapping["inner"] == {"sub": {"R<0>": "res"}}
+    assert (vacaskFormat.current_save_for_ref("x1/R<0>", mapping)
+            == "p('x1:R<0>', i)")
+
+
+def test_device_map_doubled_quote_normalizes():
+    mapping = vacaskFormat.parse_netlist_device_map(
+        "model res resistor\n'we''ird<0>' (a b) res r=1\n")
+    assert mapping["top"] == {"we'ird<0>": "res"}
+    assert (vacaskFormat.current_save_for_ref("we'ird<0>", mapping)
+            == "p('we''ird<0>', i)")
+
+
+def test_current_save_unknown_ref_none():
+    mapping = vacaskFormat.parse_netlist_device_map(
+        "model res resistor\nR0 (a b) res r=1\n")
+    assert vacaskFormat.current_save_for_ref("nope", mapping) is None
+
+
+def test_current_save_no_map_quotes_angle_brackets():
+    assert (vacaskFormat.current_save_for_ref("R<0>")
+            == "i('R<0>')")
+
+
+def test_device_map_parses_emitted_array_line():
+    """End to end: a line produced by format_instance_lines parses and its
+    quoted identifier resolves for a current save."""
+    lines, warnings = _fmt(_res_ir(
+        name="R<1:0>",
+        pin_nets=(("PLUS", "in<1:0>"), ("MINUS", "out<1:0>"))))
+    assert warnings == []
+    text = "model res resistor\n" + "\n".join(lines) + "\n"
+    mapping = vacaskFormat.parse_netlist_device_map(text)
+    assert mapping["top"] == {"R<1:0>": "res"}
+    assert (vacaskFormat.current_save_for_ref("R<1:0>", mapping)
+            == "p('R<1:0>', i)")

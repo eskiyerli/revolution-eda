@@ -1,3 +1,8 @@
+# SPDX-License-Identifier: MPL-2.0
+#
+# Revolution EDA
+# Copyright (c) 2024-2026 Revolution Semiconductor
+
 # Build the machine-fingerprint utility as a single-file Nuitka executable (Windows)
 # Output: dist/machineFingerprint/reveda-machine-fingerprint.exe
 #

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MPL-2.0
 #
 # Revolution EDA
-# Copyright (c) 2026 Revolution Semiconductor
+# Copyright (c) 2024-2026 Revolution Semiconductor
 
 import importlib
 import json
@@ -133,6 +133,23 @@ class pluginsLoader(QObject):
                         f"{tag[0]}.{tag[1]}, but this app runs Python "
                         f"{sys.version_info.major}.{sys.version_info.minor}; "
                         "install a plugin build matching the app"
+                    ]
+                    self.incompatible[name] = issues
+                    self._app.logger.warning(
+                        f"Skipping incompatible plugin {name}: {'; '.join(issues)}"
+                    )
+                    continue
+                # A compiled-shim package whose binary payload is absent can
+                # never import — flag the missing module instead of letting
+                # the shim raise a raw ImportError traceback.
+                if pluginApi.missingCompiledModule(
+                    self.pluginsPathObj, name, ispkg
+                ):
+                    issues = [
+                        f"compiled plugin module for {name!r} is missing; "
+                        "install a plugin build for this platform and "
+                        f"Python {sys.version_info.major}."
+                        f"{sys.version_info.minor}"
                     ]
                     self.incompatible[name] = issues
                     self._app.logger.warning(

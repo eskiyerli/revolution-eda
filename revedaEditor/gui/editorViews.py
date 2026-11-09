@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MPL-2.0
 #
 # Revolution EDA
-# Copyright (c) 2026 Revolution Semiconductor
+# Copyright (c) 2024-2026 Revolution Semiconductor
 
 from collections import Counter
 
@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 )
 
 import revedaEditor.common.net as net
+import revedaEditor.backend.undoStack as us
 from revedaEditor.backend.pdkLoader import lazyPDKModule
 from revedaEditor.scenes.editorScene import editorScene
 from revedaEditor.scenes.layoutScene import layoutScene
@@ -486,8 +487,25 @@ class schematicView(editorView):
         self.viewRect = self.mapToScene(self.rect()).boundingRect().toRect()
         super().mouseReleaseEvent(event)
         if not (self.viewScene.editModes.drawWire or self.viewScene.editModes.drawBus):
-            self.pruneShortNets()
-            self.mergeSplitViewNets()
+            self.reconcileViewNets()
+
+    def reconcileViewNets(self):
+        """Prune sub-grid stubs and re-merge/split nets in the view.
+
+        Captured as a single undoable command: previously the scene was
+        mutated silently here, so undoing a past command could resurrect
+        nets the cleanup had already replaced. Edit-in-place ghost nets
+        are never touched."""
+        scene = self.viewScene
+        netsBefore = scene.findSceneNetsSet()
+        self.pruneShortNets()
+        self.mergeSplitViewNets()
+        netsAfter = scene.findSceneNetsSet()
+        newNets = list(netsAfter - netsBefore)
+        oldNets = list(netsBefore - netsAfter)
+        if newNets or oldNets:
+            scene.undoStack.push(
+                us.addDeleteShapesUndo(scene, newNets, oldNets))
 
     def pruneShortNets(self):
         """Remove nets shorter than snap spacing."""
@@ -496,6 +514,7 @@ class schematicView(editorView):
             netItem
             for netItem in self.viewScene.items(self.viewRect)
             if isinstance(netItem, net.schematicNet)
+            and not self.viewScene._isEipGhost(netItem)
         ]
         for netItem in netsInView:
             if netItem.scene() and netItem.draftLine.length() < snapSpacing:
@@ -506,6 +525,7 @@ class schematicView(editorView):
             netItem
             for netItem in self.viewScene.items(self.viewRect)
             if isinstance(netItem, net.schematicNet)
+            and not self.viewScene._isEipGhost(netItem)
         )
         for netItem in netsInView:
             if netItem.scene():
@@ -524,6 +544,7 @@ class schematicView(editorView):
             item
             for item in self.viewScene.items(rect)
             if isinstance(item, net.schematicNet)
+            and not self.viewScene._isEipGhost(item)
         ]
 
         if not netsInView:
@@ -553,6 +574,7 @@ class schematicView(editorView):
         netsInScene = [
             item for item in self.viewScene.items()
             if isinstance(item, net.schematicNet)
+            and not self.viewScene._isEipGhost(item)
         ]
         if not netsInScene:
             return
@@ -594,7 +616,7 @@ class schematicView(editorView):
             # Esc key pressed, remove snap rect and reset states
             self.viewScene._ensureSnapPointRect().setVisible(False)
             self.viewScene._cancelStretch()
-            self.viewScene._finishWire()
+            self.viewScene._cancelWire()
             self.viewScene._newInstance = None
             self.viewScene._newPin = None
             self.viewScene._newText = None

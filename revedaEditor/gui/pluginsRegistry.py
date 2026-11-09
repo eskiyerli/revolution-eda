@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MPL-2.0
 #
 # Revolution EDA
-# Copyright (c) 2026 Revolution Semiconductor
+# Copyright (c) 2024-2026 Revolution Semiconductor
 
 import importlib
 import json
@@ -387,8 +387,9 @@ class PluginRegistryWindow(QMainWindow):
         if installed:
             # Warn at install time when the package ships a binary built
             # for a different Python minor — a restart would not help.
+            plugin_name = entry.get("name", target_subdir.name)
             mismatch = pluginApi.mismatchedExtensions(
-                self.pluginsDir, entry.get("name", target_subdir.name), True
+                self.pluginsDir, plugin_name, True
             )
             if mismatch:
                 extPath, tag = mismatch[0]
@@ -400,6 +401,16 @@ class PluginRegistryWindow(QMainWindow):
                     f"{sys.version_info.major}.{sys.version_info.minor}.\n\n"
                     "The plugin will be skipped at startup. Install a "
                     "build matching the app's Python version.",
+                )
+            elif pluginApi.missingCompiledModule(
+                self.pluginsDir, plugin_name, True
+            ):
+                QMessageBox.warning(
+                    self,
+                    "Compiled Module Missing",
+                    f"{plugin_name} does not include a compiled module "
+                    "for this platform.\n\nThe plugin will be skipped at "
+                    "startup. Install a build matching this system.",
                 )
             else:
                 self._showInstallSuccess(entry)

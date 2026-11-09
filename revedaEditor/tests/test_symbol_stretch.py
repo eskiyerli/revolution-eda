@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MPL-2.0
 #
 # Revolution EDA
-# Copyright (c) 2026 Revolution Semiconductor
+# Copyright (c) 2024-2026 Revolution Semiconductor
 
 """Symbol-shape stretch regression: the snapped scene target must be
 mapped back to item coordinates, or stretching an item whose pos() is
